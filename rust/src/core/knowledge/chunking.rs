@@ -168,7 +168,7 @@ pub fn render_chunked(clusters: &[FactCluster<'_>]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn fact(cat: &str, key: &str, val: &str) -> KnowledgeFact {
         // Build via serde so all `#[serde(default)]` fields fill themselves.
@@ -178,8 +178,8 @@ mod tests {
             "value": val,
             "source_session": "test",
             "confidence": 0.9,
-            "created_at": Utc::now(),
-            "last_confirmed": Utc::now(),
+            "created_at": UtcDateTime::now(),
+            "last_confirmed": UtcDateTime::now(),
         }))
         .expect("valid fact json")
     }

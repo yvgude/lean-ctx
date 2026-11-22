@@ -393,7 +393,9 @@ fn export_ledger(
 
     let mut written: Option<std::path::PathBuf> = None;
     if write || get_str(args, "path").is_some() || get_str(args, "filename").is_some() {
-        let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let ts = lean_ctx_time::UtcDateTime::now()
+            .format("%Y%m%dT%H%M%SZ")
+            .to_string();
         let candidate = if let Some(p) = get_str(args, "path") {
             let p = std::path::PathBuf::from(p);
             if p.is_absolute() {
@@ -768,7 +770,8 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
         let role = lean_ctx::core::roles::active_role();
         if !role.io.allow_cross_project_search {
             let event = lean_ctx::core::memory_boundary::CrossProjectAuditEvent {
-                timestamp: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                timestamp: lean_ctx_time::UtcDateTime::now()
+                    .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
                 event_type: lean_ctx::core::memory_boundary::CrossProjectEventType::Import,
                 source_project_hash: source_hash.to_string(),
                 target_project_hash: target_hash,

@@ -40,7 +40,7 @@ fn cmd_workspace_health() -> i32 {
 fn cmd_workspace_health_watch() -> i32 {
     loop {
         print!("\x1b[2J\x1b[H");
-        let now = chrono::Local::now().format("%H:%M:%S");
+        let now = lean_ctx_time::LocalDateTime::now().format("%H:%M:%S");
         println!("lean-ctx health --watch  [{now}]\n");
         print_workspace_health();
         println!("\nRefreshing every 10s — Ctrl+C to stop");

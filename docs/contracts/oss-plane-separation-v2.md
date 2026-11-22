@@ -113,7 +113,7 @@ a library or embedding business logic in open source:
   that consumes the open engine via `/v1` + the `lean-ctx-client` crate.
 - **Payments / Stripe, entitlement issuance, invoicing** → private
   service + secrets in the secret manager, **never** in the repo.
-- **LeanCTX Hive control and proof — filter packs, extended protection,
+- **LeanCTX Cloud control and proof — filter packs, extended protection,
   code-security hints, automatic device sync and named-recipient sharing** →
   separately licensed private implementations. Public clients verify admission
   and retain protection on failure; the private component also enforces the
@@ -127,7 +127,7 @@ a library or embedding business logic in open source:
 The public host, CLI, public SDK/protocol code, plugins/WASM and plan catalog
 retain their existing licenses. Enterprise team management and services remain
 in their separate repositories. Publishing this host grants no rights to private
-LeanCTX Hive implementations or SDK production/OEM services beyond their
+LeanCTX Cloud implementations or SDK production/OEM services beyond their
 applicable terms; existing open-source grants are not withdrawn.
 
 ## Maintainer checklist (before pushing `main` to GitHub)

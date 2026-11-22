@@ -1,0 +1,49 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+  "body": {
+    "body_nonce": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+    "from": "n_aaaaaaaaaaaaaaaaaaaaaadnta",
+    "kind": "about",
+    "to": "n_aaaaaaaaaaaaaaaaaaaaaadsea"
+  },
+  "body_commit": "3d95fed9d396941aead9015831ad5d595472a19edc170f79fc9a324042a595de",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 25,
+  "event_id": "01M5NKAVCG005000000000D026",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800026000
+  },
+  "key_id": "47983724220c8521",
+  "op": "edge.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800026350,
+  "schema": "leanctx.cloud.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 26,
+  "signature": "23156052634a45bb7e817380a98a85f9b4f7c99ebcb6020fb98345fbabd55800c381ab52ce4834c3cccec033b44108a57579d3eb2029f411ff2c44c29cc20a06",
+  "target": "e_aaaaaaaaaaaaaaaaaaaaaadaba",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

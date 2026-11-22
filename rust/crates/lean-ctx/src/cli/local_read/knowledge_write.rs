@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx knowledge remember|edit|relate|remove --json`: the knowledge
-//! writes of a local reader (Hive Desktop) with a JSON result. Each runs the
+//! writes of a local reader (Cloud Desktop) with a JSON result. Each runs the
 //! `ctx_knowledge` action itself (memory policy, admission, protection,
 //! locks unchanged) inside the released CLI run, then reads the store back
 //! to say what happened. A write the gateway refused is `withheld`.

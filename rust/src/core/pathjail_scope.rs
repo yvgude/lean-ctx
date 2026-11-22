@@ -18,7 +18,7 @@
 //!   where credentials and other programs' private state live (every
 //!   top-level dot entry such as `~/.ssh`, `~/.aws`, `~/.config`, `~/.zshrc` or
 //!   other agents' `~/.claude`, plus `~/Library` on macOS, `~/AppData` and the
-//!   `NTUSER.DAT*` registry hive on Windows). Paths outside the home directory
+//!   `NTUSER.DAT*` registry cloud on Windows). Paths outside the home directory
 //!   stay jailed. It admits writes wherever it admits reads, so it is reported
 //!   as a jail relaxation.
 //! - `project`: the classic boundary — the project root plus allow-lists.
@@ -147,7 +147,7 @@ fn first_component_below<'a>(path: &'a Path, home: &Path) -> Option<&'a std::ffi
 fn protected_zone_in(path: &Path, home: &Path) -> Option<PathBuf> {
     let first = first_component_below(path, home)?;
     let name = first.to_string_lossy();
-    // Windows keeps the user's registry hive (`NTUSER.DAT*`) directly in home.
+    // Windows keeps the user's registry cloud (`NTUSER.DAT*`) directly in home.
     let protected = name.starts_with('.')
         || name.to_ascii_lowercase().starts_with("ntuser.")
         || PROTECTED_HOME_DIRS
@@ -280,8 +280,9 @@ pub(crate) fn home_scope_write_denial(target: &Path) -> Option<String> {
         return None;
     }
     Some(format!(
-        "{} is outside the active project — path_jail_scope = projects opens other \
-         projects for reading only. To allow writes there, the user runs in their terminal: \
+        "Write refused: {} is outside the active project, and path_jail_scope = projects \
+         opens other projects for reading only. {AGENT_BIND_ACTION} and write inside that \
+         project. To allow writes there, the user runs in their terminal: \
          lean-ctx allow-path {} — or `lean-ctx config set path_jail_scope home` for all of ~ \
          — takes effect immediately, no restart.",
         target.display(),
@@ -315,6 +316,11 @@ fn suggested_allow_dir(path: &Path, home: Option<&Path>) -> PathBuf {
     start
 }
 
+/// First sentence of every jail and walk refusal: what the *agent* can do on
+/// its next call, before the allow-path hint addressed to the user. Constant
+/// text, so refusals stay byte-stable (#498).
+pub const AGENT_BIND_ACTION: &str = "Agent: pass the project directory as path=<abs project dir>";
+
 /// Agent-facing explanation for a path the jail rejected, naming the one
 /// command the *user* runs to admit it (agent shells refuse it, see
 /// `shell_allowlist::self_config`). `candidate` is the requested path, `base`
@@ -329,10 +335,11 @@ pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String 
     let home = zone_home();
 
     if home.as_deref() == Some(base) {
-        return ". Your home directory itself is not a project root — it holds ~/.ssh, \
-                ~/Library and other protected locations. Point the tool at a project \
-                below it."
-            .to_string();
+        return format!(
+            ". {AGENT_BIND_ACTION}. Your home directory itself is not a project root — it \
+             holds ~/.ssh, ~/Library and other protected locations. Point the tool at a \
+             project below it."
+        );
     }
     if let Some(zone) = home.as_deref().and_then(|h| protected_zone_in(base, h)) {
         // Offer the narrowest directory, never the whole zone by default.
@@ -342,7 +349,7 @@ pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String 
             base.parent().unwrap_or(base)
         };
         return format!(
-            ". {} is a protected location (credentials and other programs' private data \
+            ". {AGENT_BIND_ACTION}. {} is a protected location (credentials and other programs' private data \
              stay jailed). To allow it anyway: lean-ctx allow-path {}{TAIL}",
             zone.display(),
             dir.display()
@@ -354,7 +361,7 @@ pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String 
     // `projects` scope: below ~ but not inside any project — loose personal files.
     if under_home && PathJailScope::resolve() == PathJailScope::Projects {
         return format!(
-            ". {} is in your home directory but not inside a project (no .git, Cargo.toml, \
+            ". {AGENT_BIND_ACTION}. {} is in your home directory but not inside a project (no .git, Cargo.toml, \
              package.json, … above it), so path_jail_scope = projects does not open it. To \
              allow it: lean-ctx allow-path {} — or all of ~: lean-ctx config set \
              path_jail_scope home{TAIL}",
@@ -364,7 +371,7 @@ pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String 
     }
     if under_home {
         return format!(
-            ". {} is outside the active project ({}). Allow your whole home directory \
+            ". {AGENT_BIND_ACTION}. {} is outside the active project ({}). Allow your whole home directory \
              (protected locations stay jailed): lean-ctx config set path_jail_scope home — \
              or only this one: lean-ctx allow-path {}{TAIL}",
             candidate.display(),
@@ -373,7 +380,8 @@ pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String 
         );
     }
     format!(
-        ". {} is outside the active project ({}) and outside your home directory. To \
+        ". {AGENT_BIND_ACTION}. {} is outside the active project ({}) and outside your \
+         home directory. To \
          allow it: lean-ctx allow-path {}{TAIL}",
         candidate.display(),
         root.display(),
@@ -568,7 +576,14 @@ mod tests {
         assert!(jail(&home.join("code"), &a).is_ok(), "parent of projects");
         let err = jail(&ssh.join("id_ed25519"), &a).unwrap_err().to_string();
         assert!(err.contains("protected location"), "{err}");
+        // The agent's next step comes before the user's allow-path command.
+        let agent_first = |err: &str| {
+            let agent = err.find(AGENT_BIND_ACTION);
+            agent.is_some() && err.find("allow-path").is_none_or(|user| agent < Some(user))
+        };
+        assert!(agent_first(&err), "{err}");
         let err = jail(&outside, &a).unwrap_err().to_string();
+        assert!(agent_first(&err), "{err}");
         assert!(err.contains("outside your home directory"), "{err}");
         let err = jail(&home, &a).unwrap_err().to_string();
         assert!(err.contains("not a project root"), "{err}");
@@ -604,6 +619,7 @@ mod tests {
             err.contains("for reading only") && err.contains("allow-path"),
             "{err}"
         );
+        assert!(agent_first(&err), "{err}");
         assert!(write(&b.join(".git/hooks/pre-commit")).is_err());
         let as_call = |roots: &[&Path], target: &Path| {
             let roots: Vec<String> = roots.iter().map(|r| r.to_string_lossy().into()).collect();

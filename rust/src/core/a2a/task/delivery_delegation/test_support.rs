@@ -3,12 +3,12 @@
 
 use super::{
     DELIVERY_DELEGATE, DeliveryDelegationV1, DeliveryExecutionBindingV1, SigningKey,
-    TaskAuthorityConfigV1, TaskCapabilityGrantV1, TaskPeerTrustV1, TaskScopeV1, Utc,
+    TaskAuthorityConfigV1, TaskCapabilityGrantV1, TaskPeerTrustV1, TaskScopeV1, UtcDateTime,
 };
 
 /// A signed delegation with its authority policy and the host signing key.
 pub fn fixture() -> (DeliveryDelegationV1, TaskAuthorityConfigV1, SigningKey) {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let key = SigningKey::from_bytes(&[31; 32]);
     let child = SigningKey::from_bytes(&[32; 32]);
     let mut certificate = DeliveryDelegationV1 {
@@ -34,7 +34,7 @@ pub fn fixture() -> (DeliveryDelegationV1, TaskAuthorityConfigV1, SigningKey) {
             attempt: 1,
         },
         issued_at: now,
-        expires_at: now + chrono::Duration::minutes(10),
+        expires_at: now + lean_ctx_time::Duration::minutes(10),
         signature: String::new(),
     };
     certificate.sign(&key);
@@ -51,8 +51,8 @@ pub fn fixture() -> (DeliveryDelegationV1, TaskAuthorityConfigV1, SigningKey) {
                 tenant_id: "account".into(),
                 project_id: "project".into(),
             }],
-            not_before: now - chrono::Duration::minutes(1),
-            expires_at: now + chrono::Duration::hours(1),
+            not_before: now - lean_ctx_time::Duration::minutes(1),
+            expires_at: now + lean_ctx_time::Duration::hours(1),
             revoked: false,
         }],
         grants: vec![TaskCapabilityGrantV1 {
@@ -62,8 +62,8 @@ pub fn fixture() -> (DeliveryDelegationV1, TaskAuthorityConfigV1, SigningKey) {
             action: DELIVERY_DELEGATE.into(),
             tenant_id: "account".into(),
             project_id: "project".into(),
-            not_before: now - chrono::Duration::minutes(1),
-            expires_at: now + chrono::Duration::hours(1),
+            not_before: now - lean_ctx_time::Duration::minutes(1),
+            expires_at: now + lean_ctx_time::Duration::hours(1),
             revoked: false,
         }],
     };

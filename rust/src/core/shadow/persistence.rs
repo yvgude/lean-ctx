@@ -1,6 +1,6 @@
 //! JSON persistence and retention for Shadow Mode reports.
 use super::{ShadowReport, runtime::load_shadow_config};
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use std::path::{Path, PathBuf};
 
 pub fn persist_report(report: &ShadowReport) -> std::io::Result<PathBuf> {
@@ -8,7 +8,7 @@ pub fn persist_report(report: &ShadowReport) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!(
         "shadow_report_{}.json",
-        Utc::now().format("%Y%m%d_%H%M%S")
+        UtcDateTime::now().format("%Y%m%d_%H%M%S")
     ));
     std::fs::write(
         &path,

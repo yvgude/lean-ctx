@@ -38,7 +38,7 @@ mod tests {
     use super::*;
     use crate::core::memory_boundary::FactPrivacy;
     use crate::core::memory_policy::MemoryPolicy;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn default_policy() -> MemoryPolicy {
         MemoryPolicy::default()
@@ -245,7 +245,11 @@ mod tests {
         );
         for query in ["Local-Read", "LOCAL-READ unavailable", "local_read/Docs"] {
             assert_eq!(k.recall(query).len(), 1, "{query}");
-            assert_eq!(k.recall_at_time(query, Utc::now()).len(), 1, "{query}");
+            assert_eq!(
+                k.recall_at_time(query, UtcDateTime::now()).len(),
+                1,
+                "{query}"
+            );
             assert_eq!(k.recall_for_output(query, 5).0.len(), 1, "{query}");
         }
         assert!(k.recall("-- / .").is_empty());
@@ -652,7 +656,7 @@ mod tests {
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.facts[0].confirmation_count = 3;
 
-        let before_change = Utc::now();
+        let before_change = UtcDateTime::now();
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         k.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
@@ -661,7 +665,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].value, "PostgreSQL");
 
-        let results_now = k.recall_at_time("db", Utc::now());
+        let results_now = k.recall_at_time("db", UtcDateTime::now());
         assert_eq!(results_now.len(), 1);
         assert_eq!(results_now[0].value, "MySQL");
     }
@@ -780,11 +784,11 @@ mod tests {
             value: "MySQL".into(),
             source_session: "import".into(),
             confidence: 0.8,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
+            created_at: UtcDateTime::now(),
+            last_confirmed: UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
-            valid_from: Some(Utc::now()),
+            valid_from: Some(UtcDateTime::now()),
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
@@ -824,11 +828,11 @@ mod tests {
             value: "MySQL".into(),
             source_session: "import".into(),
             confidence: 0.8,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
+            created_at: UtcDateTime::now(),
+            last_confirmed: UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
-            valid_from: Some(Utc::now()),
+            valid_from: Some(UtcDateTime::now()),
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
@@ -869,11 +873,11 @@ mod tests {
             value: "JWT".into(),
             source_session: "import".into(),
             confidence: 0.9,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
+            created_at: UtcDateTime::now(),
+            last_confirmed: UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
-            valid_from: Some(Utc::now()),
+            valid_from: Some(UtcDateTime::now()),
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
@@ -1089,7 +1093,7 @@ mod tests {
             key_a: "architecture/auth".into(),
             key_b: "decision/session-model".into(),
             verdict: "compatible".into(),
-            judged_at: Utc::now(),
+            judged_at: UtcDateTime::now(),
         });
 
         let similar = find_cross_key_similar(
@@ -1144,13 +1148,13 @@ mod tests {
             .iter_mut()
             .find(|f| f.category == "decision" && f.key == "session" && f.is_current())
         {
-            tf.valid_until = Some(Utc::now());
+            tf.valid_until = Some(UtcDateTime::now());
         }
         k.judged_pairs.push(JudgedPair {
             key_a: "architecture/auth".into(),
             key_b: "decision/session".into(),
             verdict: "supersedes".into(),
-            judged_at: Utc::now(),
+            judged_at: UtcDateTime::now(),
         });
 
         let cur: Vec<_> = k.facts.iter().filter(|f| f.is_current()).collect();

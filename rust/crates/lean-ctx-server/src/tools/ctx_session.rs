@@ -355,11 +355,11 @@ fn handle_save(session: &mut SessionState) -> String {
     if result.is_ok()
         && let Some(root) = session.project_root.as_deref()
     {
-        // Queue learnings for Hive, debounced per project (local only).
-        lean_ctx_hive::knowledge::draft::on_session_event(
+        // Queue learnings for Cloud, debounced per project (local only).
+        lean_ctx_cloud::knowledge::draft::on_session_event(
             root,
             &session.id,
-            lean_ctx_hive::knowledge::draft::Trigger::Save,
+            lean_ctx_cloud::knowledge::draft::Trigger::Save,
         );
     }
     result.unwrap_or_else(|error| format!("Save failed: {error}"))
@@ -410,7 +410,9 @@ fn handle_export(
 
         let mut written: Option<String> = None;
         if opts.write || opts.path.is_some() {
-            let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+            let ts = lean_ctx_time::UtcDateTime::now()
+                .format("%Y%m%dT%H%M%SZ")
+                .to_string();
             let candidate = if let Some(p) = opts.path.or(value) {
                 let p = std::path::PathBuf::from(p);
                 if p.is_absolute() {

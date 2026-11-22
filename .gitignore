@@ -99,7 +99,6 @@ markdownai/
 !/sdk/packages/jvm/src/**/*.kt
 # Reviewed product build inputs; per-installation suite.toml stays ignored.
 !/ee/governance/docker-compose.yml
-!/ee/services/cloud/docker-compose.yml
 !/ee/governance/admin/package-lock.json
 !/ee/governance/dashboard/package-lock.json
 !/ee/governance/portal/package-lock.json
@@ -132,3 +131,12 @@ __pycache__/
 # Patch leftovers (`git apply --reject`, merge tools) never belong in the tree
 *.rej
 *.orig
+
+# Generated registers: built by the scope-register CI job (ee/ci/scope-register.yml, kept
+# as a job artifact) and on demand, never committed, so open merge requests cannot conflict
+# on them.
+/ee/delivery/FEATURE_SCOPE_REGISTER.csv
+/ee/delivery/FEATURE_SCOPE_METRICS.csv
+
+# Decision drafts from `lean-ctx decisions suggest` stay local (contract 38)
+.leanctx/decisions-review/

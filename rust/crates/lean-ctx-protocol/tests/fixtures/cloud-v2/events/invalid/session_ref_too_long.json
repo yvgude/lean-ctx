@@ -1,0 +1,17 @@
+{
+  "case": "session_ref_too_long",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/session_ref",
+      "value": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/session_ref"
+  }
+}

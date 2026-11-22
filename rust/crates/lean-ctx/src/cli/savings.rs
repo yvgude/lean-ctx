@@ -59,15 +59,15 @@ fn build_report(
     events: Vec<savings_ledger::SavingsEvent>,
     tasks: Vec<ValueAssessment>,
 ) -> Report {
-    let cutoff = chrono::Utc::now() - chrono::Duration::days(days(period));
+    let cutoff = days(period).map(|d| lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(d));
     let events: Vec<_> = events
         .into_iter()
         .filter(|e| e.mechanism == savings_ledger::MECHANISM_COMPRESSION)
-        .filter(|e| in_period(&e.ts, cutoff, period))
+        .filter(|e| in_period(&e.ts, cutoff))
         .collect();
     let tasks: Vec<_> = tasks
         .into_iter()
-        .filter(|t| in_period(&t.timestamp, cutoff, period))
+        .filter(|t| in_period(&t.timestamp, cutoff))
         .collect();
     let raw = events.iter().map(|e| e.baseline_tokens).sum::<u64>();
     let actual = events.iter().map(|e| e.actual_tokens).sum::<u64>();
@@ -101,8 +101,10 @@ fn build_report(
     }
 }
 
-#[rustfmt::skip] fn days(period: &str) -> i64 { match period { "day" => 1, "week" => 7, "month" => 30, _ => i64::MAX / 2 } }
-#[rustfmt::skip] fn in_period(timestamp: &str, cutoff: chrono::DateTime<chrono::Utc>, period: &str) -> bool { period == "all" || chrono::DateTime::parse_from_rfc3339(timestamp).map(|t| t.with_timezone(&chrono::Utc) >= cutoff).unwrap_or(false) }
+/// Days covered by `period`; `None` for `all` (no cutoff).
+#[rustfmt::skip] fn days(period: &str) -> Option<i64> { match period { "day" => Some(1), "week" => Some(7), "month" => Some(30), _ => None } }
+#[rustfmt::skip] fn period_label(period: &str) -> String { days(period).map_or_else(|| "all time".into(), |d| format!("last {d} days")) }
+#[rustfmt::skip] fn in_period(timestamp: &str, cutoff: Option<lean_ctx_time::UtcDateTime>) -> bool { cutoff.is_none_or(|cutoff| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(timestamp).map(|t| t.to_utc() >= cutoff).unwrap_or(false)) }
 #[rustfmt::skip] fn pct(value: u64, total: u64) -> f64 { if total == 0 { 0.0 } else { value as f64 * 100.0 / total as f64 } }
 #[rustfmt::skip]
 fn top_sources(events: &[savings_ledger::SavingsEvent]) -> Vec<(String, u64)> {
@@ -148,8 +150,8 @@ fn table(r: &Report) -> String {
         return format!("LeanCTX Savings Report ({})\nNo compression savings recorded for this period.\n", r.period);
     }
     let mut out = format!(
-        "LeanCTX Savings Report (last {} days)\nTotal Tasks: {}\nAccepted Tasks: {} ({:.1}%)\nTokens Processed: {}\nTokens Saved (Compression): {} ({:.1}% reduction)\nEstimated Cost without LeanCTX: ${:.2}\nActual Cost with LeanCTX: ${:.2}\nTotal Savings: ${:.2} ({:.1}%)\nCPAO (Cost per Accepted Outcome): {}\nETPAO (Effective Tokens per Accepted Outcome): {}\nTop 5 Savings Sources:\n",
-        days(&r.period),
+        "LeanCTX Savings Report ({})\nTotal Tasks: {}\nAccepted Tasks: {} ({:.1}%)\nTokens Processed: {}\nTokens Saved (Compression): {} ({:.1}% reduction)\nEstimated Cost without LeanCTX: ${:.2}\nActual Cost with LeanCTX: ${:.2}\nTotal Savings: ${:.2} ({:.1}%)\nCPAO (Cost per Accepted Outcome): {}\nETPAO (Effective Tokens per Accepted Outcome): {}\nTop 5 Savings Sources:\n",
+        period_label(&r.period),
         r.total_tasks,
         r.accepted_tasks,
         pct(r.accepted_tasks as u64, r.total_tasks as u64),
@@ -178,8 +180,8 @@ fn print_markdown(r: &Report) {
         return;
     }
     println!(
-        "# LeanCTX Savings Report (last {} days)\n\n| Metric | Value |\n|---|---|\n| Total Tasks | {} |\n| Accepted Tasks | {} |\n| Tokens Processed | {} |\n| Tokens Saved (Compression) | {} ({:.1}%) |\n| Total Savings | ${:.2} |",
-        days(&r.period),
+        "# LeanCTX Savings Report ({})\n\n| Metric | Value |\n|---|---|\n| Total Tasks | {} |\n| Accepted Tasks | {} |\n| Tokens Processed | {} |\n| Tokens Saved (Compression) | {} ({:.1}%) |\n| Total Savings | ${:.2} |",
+        period_label(&r.period),
         r.total_tasks,
         r.accepted_tasks,
         r.tokens_processed,
@@ -201,17 +203,18 @@ fn print_markdown(r: &Report) {
         );
     }
     #[test] fn test_period_filter() {
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         assert!(in_period(
             &now.to_rfc3339(),
-            now - chrono::Duration::days(1),
-            "day"
+            Some(now - lean_ctx_time::Duration::days(1))
         ));
         assert!(!in_period(
             "2000-01-01T00:00:00Z",
-            now - chrono::Duration::days(30),
-            "month"
+            Some(now - lean_ctx_time::Duration::days(30))
         ));
+    }
+    #[test] fn test_period_all_has_no_cutoff() {
+        assert_eq!(build_report("all", vec![], vec![]).period, "all");
     }
     #[test] fn test_empty_data() {
         let r = build_report("week", vec![], vec![]);

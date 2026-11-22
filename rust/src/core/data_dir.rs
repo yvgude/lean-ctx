@@ -54,9 +54,10 @@ pub(crate) fn resolve_data_dir() -> Result<PathBuf, String> {
 /// Unit-test executables of the crates above the engine.
 #[cfg(all(not(test), feature = "test-support"))]
 const UNIT_TEST_HARNESSES: &[&str] = &[
+    "lean_ctx_apps-",
     "lean_ctx_cli-",
     "lean_ctx_hooks-",
-    "lean_ctx_hive-",
+    "lean_ctx_cloud-",
     "lean_ctx_proxy-",
     "lean_ctx_server-",
     "lean_ctx_shell_policy-",
@@ -213,7 +214,7 @@ pub fn all_data_dirs_with_stats() -> Vec<PathBuf> {
 #[cfg(unix)]
 pub(crate) fn ensure_dir_permissions(path: &std::path::Path) {
     if path.is_dir() {
-        let _ = crate::core::secure_fs::restrict_to_owner(path);
+        let _ = lean_ctx_fs::atomic_fs::restrict_to_owner(path);
     }
 }
 

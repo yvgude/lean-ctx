@@ -474,6 +474,26 @@ pub fn write_bytes_with_fallback(
     }
 }
 
+/// Sets `path` to mode 0700 on Unix, but only when its mode differs (GH #2227).
+///
+/// A `chmod` updates the inode's ctime and raises an inotify `IN_ATTRIB` event
+/// even when the mode stays the same, so an unconditional chmod on a path that
+/// runs per call floods watchers, backup and sync tools. Like `chmod`, this
+/// follows a symlink at `path`. A no-op on other platforms. The engine
+/// re-exports it as `core::secure_fs::restrict_to_owner`.
+pub fn restrict_to_owner(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if std::fs::metadata(path)?.permissions().mode() & 0o7777 != 0o700 {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

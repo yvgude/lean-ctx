@@ -395,7 +395,10 @@ pub(crate) fn apply_artifacts_to_stores_with_origins(
         // byte-identical (#498); additive provider ingests keep a unique id.
         let session_id = match &prune.fact_category {
             Some(category) => format!("fabric:{category}"),
-            None => format!("provider-ingest-{}", chrono::Utc::now().timestamp()),
+            None => format!(
+                "provider-ingest-{}",
+                lean_ctx_time::UtcDateTime::now().timestamp()
+            ),
         };
         let saved =
             crate::core::knowledge::ProjectKnowledge::mutate_locked(project_root, |knowledge| {

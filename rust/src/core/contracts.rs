@@ -102,8 +102,8 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Frozen,
         ),
-        // v2 = binding for 3.12 (LeanCTX | Hive): paid rights only through
-        // Hive, plan checks only in core/hive; v1 stays the record.
+        // v2 = binding for 3.12 (LeanCTX | Cloud): paid rights only through
+        // Cloud, plan checks only in core/cloud; v1 stays the record.
         doc(
             "local-free-invariant-v2",
             "local-free-invariant-v2.md",
@@ -445,6 +445,9 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             Experimental,
         ),
         doc("managed-config", "managed-config-v1.md", 1, Experimental),
+        doc("app-presence", "app-presence-v1.md", 1, Experimental),
+        doc("task-receipt", "task-receipt-v1.md", 1, Experimental),
+        doc("session-usage", "session-usage-v1.md", 1, Experimental),
     ]
 }
 

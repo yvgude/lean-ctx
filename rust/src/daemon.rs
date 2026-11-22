@@ -360,6 +360,17 @@ pub fn not_running_message() -> String {
 /// exactly this daemon's PID (5 Nov 2026: `systemctl --user stop` by unit
 /// name stopped the user's real daemon from a scratch data dir).
 pub fn stop_daemon() -> Result<DaemonStop> {
+    stop_daemon_reporting(true)
+}
+
+/// [`stop_daemon`] without the "daemon stopped" / stale-PID lines on stderr,
+/// for callers that report the outcome themselves (the quiet, scheduled
+/// update). A forced kill is still reported.
+pub fn stop_daemon_quietly() -> Result<DaemonStop> {
+    stop_daemon_reporting(false)
+}
+
+fn stop_daemon_reporting(announce: bool) -> Result<DaemonStop> {
     stop_legacy_daemon();
 
     // No record in this data dir: nothing is signalled, nothing is removed.
@@ -389,10 +400,14 @@ pub fn stop_daemon() -> Result<DaemonStop> {
         ipc::cleanup(&daemon_addr());
         remove_daemon_record();
         if stopped_via_endpoint {
-            eprintln!("lean-ctx daemon stopped (PID {pid}).");
+            if announce {
+                eprintln!("lean-ctx daemon stopped (PID {pid}).");
+            }
             return Ok(DaemonStop::Stopped(pid));
         }
-        eprintln!("{}", stale_pid_message(pid));
+        if announce {
+            eprintln!("{}", stale_pid_message(pid));
+        }
         return Ok(DaemonStop::NotRunning);
     };
 
@@ -437,7 +452,9 @@ pub fn stop_daemon() -> Result<DaemonStop> {
 
     remove_daemon_record();
     ipc::cleanup(&daemon_addr());
-    eprintln!("lean-ctx daemon stopped (PID {pid}).");
+    if announce {
+        eprintln!("lean-ctx daemon stopped (PID {pid}).");
+    }
 
     // #1292: stopping one daemon ends that daemon only. A machine-wide
     // name-based sweep here reached every other lean-ctx process — the real

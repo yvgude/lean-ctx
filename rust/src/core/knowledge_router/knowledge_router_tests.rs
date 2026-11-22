@@ -139,7 +139,7 @@ fn knowledge_router_exit_gate_resolves_jira_into_auditable_context_receipt() {
             .any(|source| source == "jira")
     );
     assert!(
-        chrono::DateTime::parse_from_rfc3339(&result.receipt.timestamp).is_ok(),
+        lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&result.receipt.timestamp).is_ok(),
         "context receipt must retain an auditable creation time"
     );
 }

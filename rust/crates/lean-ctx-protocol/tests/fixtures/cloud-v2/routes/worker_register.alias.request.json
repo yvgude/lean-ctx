@@ -1,0 +1,19 @@
+{
+  "alias_pubkey": "w_Yn7cb71homz6XEoocEil802s6tkHySmEIE_XWDhnc",
+  "card": {
+    "availability": "idle",
+    "budget": {},
+    "host_app": "codex",
+    "model": "unknown",
+    "model_source": "unknown",
+    "tools": []
+  },
+  "hlc_node": "2943c5c46c90c0eb",
+  "host_app": "codex",
+  "key_id": "47983724220c8521",
+  "name": "Codex · general",
+  "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+  "role": "general",
+  "signature": "a5bfaf52b56c2bcd56b6d32c2f03992ef81c11cd264d1fe491b46ee11fe46dbdd09e491993a01219e6f04d7d03ce6015ec9fd645c21bb6568557daf2cce4ca09",
+  "worker_id": "wkr_hzagnwpiaatupo6tzfhs"
+}

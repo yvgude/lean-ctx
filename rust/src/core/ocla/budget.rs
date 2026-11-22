@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::types::{OclaError, OclaResult};
 
@@ -152,7 +152,7 @@ impl BudgetLedger {
 }
 
 fn current_day() -> i64 {
-    Utc::now().timestamp().div_euclid(86_400)
+    UtcDateTime::now().timestamp().div_euclid(86_400)
 }
 
 #[cfg(test)]

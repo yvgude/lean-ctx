@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Reading an emspace export into pages, for the move of a space to Hive.
+//! Reading an emspace export into pages, for the move of a space to Cloud.
 //!
 //! The export is the JSON an emspace program writes (`Export`): pages with
 //! their sources and open notes, tasks and boards. [`plan`] turns it into
@@ -85,7 +85,7 @@ pub fn description_like(key: &str) -> bool {
 
 /// Unmapped page record keys known to hold no description: any other
 /// unmapped key makes an `--apply` refuse (it could hold one). Kept in step
-/// with the list in the internal emspace-to-hive migration notes; check it
+/// with the list in the internal emspace-to-cloud migration notes; check it
 /// against the first real export. A key beside `page` is reported as
 /// `record.<key>` and checked by its bare name ([`no_description_key`]).
 ///
@@ -244,7 +244,7 @@ pub struct Report {
     /// Done or dropped tasks, left behind (only open work moves).
     pub closed_tasks_skipped: usize,
     /// Slugs that are not C0 2.2 slugs ([`crate::model::valid_slug`]):
-    /// Hive refuses these pages, so they need a new slug first.
+    /// Cloud refuses these pages, so they need a new slug first.
     pub invalid_slugs: Vec<String>,
     /// `(page, target)` for links to a slug no migrated page has.
     pub dangling: Vec<(String, String)>,
@@ -1018,11 +1018,11 @@ mod tests {
 
     #[test]
     fn a_mapped_prefix_is_prepended() {
-        let dirs = BTreeMap::from([("hive".to_owned(), "services/hive".to_owned())]);
-        let s = source("dir:hive/crates/x.rs", "derived", false);
+        let dirs = BTreeMap::from([("cloud".to_owned(), "services/cloud".to_owned())]);
+        let s = source("dir:cloud/crates/x.rs", "derived", false);
         assert_eq!(
             to_anchor(&s, &dirs, &|_| false).map(|a| a.reference()),
-            Some("file:services/hive/crates/x.rs".to_owned())
+            Some("file:services/cloud/crates/x.rs".to_owned())
         );
         assert!(to_anchor(&source("dir:other/x", "derived", false), &dirs, &|_| false).is_none());
     }

@@ -191,7 +191,7 @@ fn handle_retrieve(args: &serde_json::Value) -> Result<String, String> {
     // pointer (no head/tail/search/json/range selector), counted by the
     // output class of the tool that produced it.
     {
-        use lean_ctx_hive::metrics_v2::signals;
+        use lean_ctx_cloud::metrics_v2::signals;
         if full_fetch(args)
             && signals::recording()
             && let Some(tool) = archive::tool_of(&archive_id)

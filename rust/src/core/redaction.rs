@@ -7,6 +7,8 @@ macro_rules! static_regex {
     }};
 }
 
+pub mod structured;
+
 pub fn redaction_enabled_for_active_role() -> bool {
     let role = crate::core::roles::active_role();
     if role.role.name == "admin" {
@@ -30,7 +32,7 @@ pub fn redact_text_if_enabled(input: &str) -> String {
     let hits = found.len();
     // Engine metrics K21: fingerprints only, and only while sharing is on.
     if hits > 0 {
-        crate::core::hive_signals::note_secrets(&found);
+        crate::core::cloud_signals::note_secrets(&found);
     }
     crate::core::security_events::note(
         crate::core::security_events::SecurityKind::SecretRedacted,
@@ -182,9 +184,10 @@ fn is_non_secret_literal(value: &str) -> bool {
     // Type expressions are never flat secret tokens: real keys/tokens are drawn
     // from `[A-Za-z0-9+/=_-]`, whereas type annotations carry angle brackets,
     // unions, arrays or call/object syntax. `password: Promise<string>` and
-    // `apiKey: Record<string, unknown>` must survive ctx_read verbatim (GH #430).
+    // `apiKey: Record<string, unknown>` must survive ctx_read verbatim (GH #430),
+    // but `password=Pa(ss)word1` only contains brackets and is a secret (#1302).
     if v.contains(['<', '>', '|', '(', ')', '[', ']', '{', '}']) {
-        return true;
+        return lean_ctx_protocol::credential_redaction::is_code_shaped(v);
     }
     matches!(
         v.to_ascii_lowercase().as_str(),
@@ -671,7 +674,14 @@ fn redaction_rules() -> Vec<Rule> {
         },
         Rule {
             label: "Stripe key",
-            re: static_regex!(r"([sr]k_live_)[0-9a-zA-Z]{10,}"),
+            // Secret and restricted keys, live and test mode. The value class
+            // excludes `_`, so placeholders like `sk_test_your_key` stay readable.
+            re: crate::core::secret_detection::stripe_key_re(),
+            guard_value: false,
+        },
+        Rule {
+            label: "Stripe webhook secret",
+            re: crate::core::secret_detection::stripe_webhook_secret_re(),
             guard_value: false,
         },
         Rule {
@@ -872,18 +882,18 @@ fn redact_found(input: &str, excludes: &[regex::Regex]) -> (String, Vec<&'static
             {
                 let quoted = is_quoted_at(&normalized, value.start());
                 // #2255: `private var token: Session? = null` declares a type.
-                // The line scan runs only for unquoted, type-shaped `?` values.
+                // The line scan runs only for unquoted, type-shaped `?` values,
+                // judged without a closing `)` (`fun f(token: Session?)`).
+                let canonical = canonical_secret_value(value.as_str());
                 if !quoted
-                    && lean_ctx_protocol::credential_redaction::is_nullable_type_name(
-                        value.as_str(),
-                    )
+                    && lean_ctx_protocol::credential_redaction::is_nullable_type_name(canonical)
                 {
                     let line_start = normalized[..value.start()]
                         .rfind('\n')
                         .map_or(0, |at| at + 1);
                     if lean_ctx_protocol::credential_redaction::is_nullable_type_annotation(
                         &normalized[line_start..value.start()],
-                        value.as_str(),
+                        canonical,
                     ) {
                         continue;
                     }

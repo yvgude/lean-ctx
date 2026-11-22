@@ -32,7 +32,7 @@ pub fn record(mut draft: Draft) {
     draft.project_root = project_root(&draft.project_root);
     if let Err(error) = store.append(
         draft,
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
         &crate::core::redaction::redact_text,
     ) {
         tracing::debug!(%error, "lean-ctx: activity event dropped");

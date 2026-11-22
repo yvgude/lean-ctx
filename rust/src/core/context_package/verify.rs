@@ -533,12 +533,13 @@ fn validate_freshness(value: Option<&serde_json::Value>, errors: &mut Vec<String
     let observed_raw = object
         .get("observed_at")
         .and_then(serde_json::Value::as_str);
-    let observed = observed_raw.and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
+    let observed =
+        observed_raw.and_then(|raw| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(raw).ok());
     let valid_until_raw = object
         .get("valid_until")
         .and_then(serde_json::Value::as_str);
     let valid_until =
-        valid_until_raw.and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
+        valid_until_raw.and_then(|raw| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(raw).ok());
     if observed_raw.is_none_or(|raw| !canonical_utc_timestamp(raw))
         || !object
             .get("status")
@@ -840,7 +841,7 @@ fn canonical_utc_timestamp(raw: &str) -> bool {
     (raw.len() == 20 || raw.len() == 27)
         && raw.ends_with('Z')
         && (raw.len() == 20 || raw.as_bytes().get(19) == Some(&b'.'))
-        && chrono::DateTime::parse_from_rfc3339(raw).is_ok()
+        && lean_ctx_time::OffsetDateTime::parse_from_rfc3339(raw).is_ok()
 }
 
 fn bounded_string(value: Option<&serde_json::Value>, cap: usize) -> Option<&str> {

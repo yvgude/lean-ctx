@@ -299,7 +299,7 @@ fn scenario_stale_workflow_auto_cleared_on_load() {
     let spec = test_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "coding".to_string();
-    run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(35);
+    run.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(35);
     save_active(&run).unwrap();
 
     let loaded = load_active().unwrap();
@@ -323,7 +323,7 @@ fn scenario_fresh_workflow_survives_load() {
     let spec = test_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "coding".to_string();
-    run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(5);
+    run.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(5);
     save_active(&run).unwrap();
 
     let loaded = load_active().unwrap();
@@ -363,14 +363,14 @@ fn scenario_staleness_detection() {
     let spec = test_spec();
 
     let mut fresh_run = WorkflowRun::new(spec.clone());
-    fresh_run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(10);
+    fresh_run.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(10);
     assert!(
         !lean_ctx_server::server::is_workflow_stale(&fresh_run),
         "10min old workflow should NOT be stale"
     );
 
     let mut stale_run = WorkflowRun::new(spec);
-    stale_run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(31);
+    stale_run.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(31);
     assert!(
         lean_ctx_server::server::is_workflow_stale(&stale_run),
         "31min old workflow SHOULD be stale"

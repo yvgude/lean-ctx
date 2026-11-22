@@ -116,8 +116,8 @@ pub(crate) fn verify(
     let root = std::path::Path::new(&config.root);
     let trust =
         super::trust_key(&config.trust_key_hex).map_err(|_| VerifierCallError::Unavailable)?;
-    let stamp = |at: chrono::DateTime<chrono::Utc>| {
-        TeamTimestampV1::new(at.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true))
+    let stamp = |at: lean_ctx_time::UtcDateTime| {
+        TeamTimestampV1::new(at.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Nanos, true))
             .map_err(|_| VerifierCallError::SnapshotInvalid)
     };
     // The Runtime gets what the caller has left, never more than its own
@@ -129,8 +129,8 @@ pub(crate) fn verify(
     if budget_ms == 0 {
         return Err(VerifierCallError::Deadline);
     }
-    let started = chrono::Utc::now();
-    let deadline = started + chrono::Duration::milliseconds(budget_ms);
+    let started = lean_ctx_time::UtcDateTime::now();
+    let deadline = started + lean_ctx_time::Duration::milliseconds(budget_ms);
     let (requested_at, answer_by) = (stamp(started)?, stamp(deadline)?);
     let deadline_unix_ms = u64::try_from(deadline.timestamp_millis())
         .map_err(|_| VerifierCallError::SnapshotInvalid)?;
@@ -189,7 +189,11 @@ pub(crate) fn verify(
         return Err(VerifierCallError::Channel);
     }
     let output = response.output.ok_or(VerifierCallError::Channel)?;
-    let accepted = accept(&pending, &output, &stamp(chrono::Utc::now())?)?;
+    let accepted = accept(
+        &pending,
+        &output,
+        &stamp(lean_ctx_time::UtcDateTime::now())?,
+    )?;
     if std::time::Instant::now() >= not_after {
         return Err(VerifierCallError::Deadline);
     }

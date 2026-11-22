@@ -5,7 +5,7 @@
 //!
 //! - Local only: the entry is stored like any `ctx_agent post` — admitted
 //!   (redaction, withholding) and bound before persistence — with privacy
-//!   `Private`, so the Hive relay never forwards it, whatever its recipient.
+//!   `Private`, so the Cloud relay never forwards it, whatever its recipient.
 //!   These are conversations between the machine's own agents.
 //! - Secrets are redacted on the FULL text before the size cap, so a cut can
 //!   never leave an unrecognisable secret prefix behind.
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(
             entries[0].privacy,
             PrivacyLevel::Private,
-            "mirrors never reach Hive"
+            "mirrors never reach LeanCTX Cloud"
         );
         assert_eq!(entries[0].message, "build green");
     }

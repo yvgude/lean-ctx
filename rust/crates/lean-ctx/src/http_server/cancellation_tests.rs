@@ -212,6 +212,7 @@ async fn outer_rest_timeout_preserves_mcp_execution() {
             server,
             local_ipc: false,
             project_servers: crate::http_server::ProjectServers::for_tests(),
+            oauth: None,
         });
     let request = Request::builder()
         .method("POST")

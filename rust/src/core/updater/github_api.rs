@@ -17,7 +17,7 @@ pub(super) fn github_token() -> Option<String> {
 /// GitHub sent one (`x-ratelimit-reset`, Unix seconds).
 pub(super) fn rate_limit_message(reset: Option<i64>, authenticated: bool, now: i64) -> String {
     let when = reset
-        .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
+        .and_then(|seconds| lean_ctx_time::UtcDateTime::from_timestamp(seconds, 0))
         .map(|at| {
             let minutes = ((at.timestamp() - now).max(0) + 59) / 60;
             format!(
@@ -74,7 +74,7 @@ pub(crate) fn github_api_json(url: &str) -> Result<serde_json::Value, String> {
     match status {
         200 => serde_json::from_str(&body).map_err(|e| e.to_string()),
         403 | 429 if remaining.as_deref() == Some("0") || body.contains("rate limit") => Err(
-            rate_limit_message(reset, token.is_some(), chrono::Utc::now().timestamp()),
+            rate_limit_message(reset, token.is_some(), lean_ctx_time::UtcDateTime::now().timestamp()),
         ),
         401 if token.is_some() => Err(
             "GitHub rejected the token from GITHUB_TOKEN/GH_TOKEN (401 Bad credentials); fix or unset it."

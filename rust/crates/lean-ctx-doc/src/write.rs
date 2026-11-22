@@ -280,7 +280,7 @@ pub fn retract(target: &str, reason: &str) -> EventSpec {
 }
 
 /// The events that turn `page` into `markdown` (storage form: links
-/// already `hive:`). Unchanged sections stay; a changed stretch becomes edits
+/// already `cloud:`). Unchanged sections stay; a changed stretch becomes edits
 /// of the sections it replaces, then inserts or retractions for the rest. A
 /// new `# ` title is a CAS `field.set title`. `links_want` are the page ids
 /// the new body links to; `links_now` the live `links_to` edges.

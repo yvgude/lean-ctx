@@ -2,10 +2,10 @@
 
 **Context Gateway for AI Systems**
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
 
 LeanCTX | OSS operates between sources/tools and the AI application that
-consumes their results. The LeanCTX SDK exposes supported Engine interfaces to
+consumes their results. The LeanCTX | SDK exposes supported LeanCTX | OSS interfaces to
 applications that own their model calls and workflow.
 
 ## Select → Control → Learn → Prove
@@ -35,7 +35,7 @@ the requests routed through it.
 | Select | Retrieval/ranking, Tree-sitter views, configured LSP backends, graph, task budgets, compression and reuse; `rust/src/tools/`, `rust/src/core/`, `rust/src/lsp/` |
 | Control | Configured PathJail/roles, shell policy, secret redaction and policy-driven content filters; `core/pathjail.rs`, `core/io_boundary.rs`, `core/policy/`, `core/input_filters/` |
 | Prove | Source references, operation receipts, local measurements, provider observations where visible and offline verification; `core/engine_interface.rs`, `core/execution_ledger/`, `core/gain/`, `rust/crates/lean-ctx-protocol/` |
-| Integrate | CLI, MCP, supported hooks/proxy and versioned Engine interfaces; standalone [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk) |
+| Integrate | CLI, MCP, supported hooks/proxy and versioned LeanCTX \| OSS interfaces; standalone [LeanCTX \| SDK](https://github.com/Thinkery-AG/leanctx-sdk) |
 
 The technical lifecycle **Select → Shape → Reuse → Recover** is implemented
 inside these responsibilities. Recovery is subject to source/archive lifetime
@@ -44,7 +44,7 @@ and authorization. Detector coverage and sandbox limits are documented in
 
 ## Distribution and ownership
 
-- **Community:** the Apache-2.0 public Engine and supported local interfaces.
+- **Community:** the Apache-2.0 LeanCTX | OSS and supported local interfaces.
 - **Enterprise:** separately licensed organization controls and deployment;
   private services consume documented boundaries. Customer agreement and
   release status determine the supported scope.

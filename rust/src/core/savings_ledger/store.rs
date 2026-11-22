@@ -291,17 +291,17 @@ pub fn daily_bounce_trend(path: &Path, days: u32) -> Vec<(String, u64, u64)> {
     let Ok(file) = fs::File::open(path) else {
         return Vec::new();
     };
-    let cutoff = chrono::Utc::now() - chrono::Duration::days(i64::from(days));
+    let cutoff = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(i64::from(days));
 
     let mut by_day: BTreeMap<String, (u64, u64)> = BTreeMap::new();
     for line in BufReader::new(file).lines().map_while(Result::ok) {
         let Ok(ev) = serde_json::from_str::<SavingsEvent>(&line) else {
             continue;
         };
-        let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&ev.ts) else {
+        let Ok(ts) = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&ev.ts) else {
             continue;
         };
-        if ts.with_timezone(&chrono::Utc) < cutoff {
+        if ts.to_utc() < cutoff {
             continue;
         }
         let day = ev.ts.get(..10).unwrap_or("").to_string();
@@ -497,7 +497,8 @@ pub fn bounce_tokens_since(path: &Path, days: Option<u32>) -> u64 {
     let Ok(file) = fs::File::open(path) else {
         return 0;
     };
-    let cutoff = days.map(|d| chrono::Utc::now() - chrono::Duration::days(i64::from(d)));
+    let cutoff = days
+        .map(|d| lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(i64::from(d)));
     let mut total = 0u64;
     for line in BufReader::new(file).lines().map_while(Result::ok) {
         let Ok(ev) = serde_json::from_str::<SavingsEvent>(&line) else {
@@ -507,8 +508,8 @@ pub fn bounce_tokens_since(path: &Path, days: Option<u32>) -> u64 {
             continue;
         }
         if let Some(cut) = cutoff {
-            match chrono::DateTime::parse_from_rfc3339(&ev.ts) {
-                Ok(t) if t.with_timezone(&chrono::Utc) < cut => continue,
+            match lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&ev.ts) {
+                Ok(t) if t.to_utc() < cut => continue,
                 _ => {}
             }
         }
@@ -724,7 +725,9 @@ mod tests {
     #[test]
     fn daily_bounce_trend_counts_bounces_against_reads_per_day() {
         let p = temp_path("trend");
-        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let today = lean_ctx_time::UtcDateTime::now()
+            .format("%Y-%m-%d")
+            .to_string();
 
         // Two reads + one bounce today; an old event outside the window.
         let mut read1 = sample(500);

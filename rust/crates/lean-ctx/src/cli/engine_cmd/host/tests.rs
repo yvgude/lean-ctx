@@ -38,13 +38,13 @@ impl Fixture {
                 "capability_bindings":[{"capability_id":CAPABILITY_ID,"version":CAPABILITY_VERSION}]
             }
         });
-        let current = chrono::Utc::now();
+        let current = lean_ctx_time::UtcDateTime::now();
         let settings = json!({
             "schema_version":1,"signing_key_hex":lean_ctx::core::agent_identity::hex_encode(&key.to_bytes()),
             "signer":{
                 "key_id":"host-receipts-key-1","public_key_digest":digest(key.verifying_key().as_bytes()).unwrap(),
-                "admitted_at":(current-chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
-                "expires_at":(current+chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
+                "admitted_at":(current-lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
+                "expires_at":(current+lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
                 "revoked_at":null
             },
             "ledger_path":directory.path().join("host-ledger.jsonl")

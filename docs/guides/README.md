@@ -2,10 +2,10 @@
 
 **Context Gateway for AI Systems**
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
 
 **Select → Control → Learn → Prove:** LeanCTX | OSS prepares context, applies
-supported controls, retains local knowledge and records observable evidence. The LeanCTX SDK embeds
+supported controls, retains local knowledge and records observable evidence. The LeanCTX | SDK embeds
 supported interfaces; it does not replace the agent or become an agent platform.
 
 ## Local setup

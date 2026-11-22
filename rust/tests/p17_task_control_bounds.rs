@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::SigningKey;
 use lean_ctx::core::a2a::task::{TASK_ACTION_GET, TaskAuthorityError, TaskControlDescriptorV1};
+use lean_ctx_time::{Duration, OffsetDateTime};
 
 fn control(lifetime: Duration) -> TaskControlDescriptorV1 {
-    let issued_at = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+    let issued_at = OffsetDateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
         .expect("fixed valid timestamp")
-        .with_timezone(&Utc);
+        .to_utc();
     let mut descriptor = TaskControlDescriptorV1::new(
         "agent-a",
         "server-b",

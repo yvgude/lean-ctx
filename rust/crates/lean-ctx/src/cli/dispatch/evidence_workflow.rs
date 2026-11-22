@@ -171,7 +171,7 @@ pub(crate) fn execute_workflow_evidence(args: &WorkflowArgs) -> Result<WorkflowR
         aggregate_treatment_tokens: agg_treatment,
         aggregate_savings_pct: agg_savings,
         cost_report,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         lean_ctx_version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }

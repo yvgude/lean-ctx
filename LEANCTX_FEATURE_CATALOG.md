@@ -2,10 +2,10 @@
 
 Status: Technical inventory; not a release or availability record.
 
-**LeanCTX — Context Gateway for AI Systems. Control what your AI can see.**
+**LeanCTX — Context Gateway for AI Systems. Less context. More intelligence.**
 
 The product story is **Select → Control → Learn → Prove**. LeanCTX | OSS implements
-the mechanisms; the LeanCTX SDK provides supported integration interfaces.
+the mechanisms; the LeanCTX | SDK provides supported integration interfaces.
 
 Use the [canonical positioning](docs/POSITIONING_CANONICAL.md),
 [Vision status map](VISION.md) and each released interface contract before making

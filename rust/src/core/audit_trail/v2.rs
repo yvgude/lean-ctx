@@ -29,7 +29,7 @@
 //! proof over the head (ent3-2) closes that.
 //!
 //! Input and output digests of v2 entries are HMAC-SHA256 under the
-//! engine-local key `<data_dir>/hive/receipts.hmac-key` (the key receipts v2
+//! engine-local key `<data_dir>/cloud/receipts.hmac-key` (the key receipts v2
 //! already use, created on first use, never uploaded), so a digest that
 //! leaves the machine cannot be tested against a guessed input.
 
@@ -44,8 +44,8 @@ pub const ENTRY_VERSION: u64 = 2;
 /// Domain of the `v2_hash` chain.
 const V2_DOMAIN: &str = "leanctx.audit.v2\n";
 /// Prefix of a keyed digest, the one receipts v2 carry.
-pub use lean_ctx_protocol::hive::receipts_v2::HMAC_PREFIX;
-/// The engine-local HMAC key file inside `<data_dir>/hive`.
+pub use lean_ctx_protocol::cloud::receipts_v2::HMAC_PREFIX;
+/// The engine-local HMAC key file inside `<data_dir>/cloud`.
 const KEY_FILE: &str = "receipts.hmac-key";
 
 /// What the gateway decided for the call an entry records.
@@ -79,7 +79,7 @@ impl AuditDecision {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionFacts {
     pub session_id: String,
-    /// The Hive instance id when this installation is attached.
+    /// The Cloud instance id when this installation is attached.
     pub instance_id: Option<String>,
     /// Digest of the policy that decided the call (ent2).
     pub policy_digest: Option<String>,
@@ -171,7 +171,7 @@ pub(super) fn next_seq(session_id: &str) -> u64 {
 }
 
 /// The engine-local HMAC key in `dir` (32 random bytes, hex), created on
-/// first use. Shared with Hive receipts v2.
+/// first use. Shared with Cloud receipts v2.
 pub fn load_or_create_hmac_key(dir: &Path) -> Option<[u8; 32]> {
     if let Some(key) = load_hmac_key(dir) {
         return Some(key);
@@ -203,7 +203,7 @@ pub fn hmac_hex(key: &[u8; 32], label: &str, data: &[u8]) -> String {
 pub fn keyed_digest(label: &str, data: &[u8]) -> Option<String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()
         .ok()?
-        .join("hive");
+        .join("cloud");
     let key = load_or_create_hmac_key(&dir)?;
     Some(format!("{HMAC_PREFIX}{}", hmac_hex(&key, label, data)))
 }

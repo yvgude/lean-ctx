@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -34,10 +34,10 @@ pub struct ArchiveEntry {
     pub command: String,
     pub size_chars: usize,
     pub size_tokens: usize,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub protected_until: Option<DateTime<Utc>>,
+    pub protected_until: Option<UtcDateTime>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<String>,
     /// The lineage of a recovery copy that is not derived from project files
@@ -327,7 +327,7 @@ fn store_admitted(
             #[cfg(unix)]
             set_private_file_perms(&c_path);
         }
-        let mut entry = new_entry(&id, tool, command, content, session_id, Utc::now());
+        let mut entry = new_entry(&id, tool, command, content, session_id, UtcDateTime::now());
         entry.authority = authority.cloned();
         if write_metadata(&entry).is_none() {
             let _ = std::fs::remove_file(c_path);
@@ -412,7 +412,7 @@ pub fn store_background(
             job_id,
             content,
             session_id,
-            Utc::now(),
+            UtcDateTime::now(),
             max_disk_bytes(),
         )
     })
@@ -425,7 +425,7 @@ fn store_background_with_limits(
     job_id: &str,
     content: &str,
     session_id: Option<&str>,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
     budget_bytes: u64,
 ) -> Option<ArchiveStoreResult> {
     // Command output has no complete source binding yet. Keep fresh checked
@@ -442,7 +442,7 @@ fn store_background_with_limits(
     let (content, mut result) = prepared_content(&content);
     result.id = unbound_id(&current_partition()?, content);
     let id = result.id.clone();
-    let protected_until = now + chrono::Duration::hours(BACKGROUND_RETENTION_HOURS);
+    let protected_until = now + lean_ctx_time::Duration::hours(BACKGROUND_RETENTION_HOURS);
     let (stored, evicted) = with_archive_lock(|| {
         let mut entry = read_entry(&id)
             .unwrap_or_else(|| new_entry(&id, tool, job_id, content, session_id, now));
@@ -520,7 +520,7 @@ fn new_entry(
     command: &str,
     content: &str,
     session_id: Option<&str>,
-    created_at: DateTime<Utc>,
+    created_at: UtcDateTime,
 ) -> ArchiveEntry {
     ArchiveEntry {
         authority: None,
@@ -938,7 +938,7 @@ pub fn resolve_alias(alias: &str) -> Option<String> {
 pub(crate) fn is_protected(id: &str) -> bool {
     read_entry(id)
         .and_then(|entry| entry.protected_until)
-        .is_some_and(|until| until > Utc::now())
+        .is_some_and(|until| until > UtcDateTime::now())
 }
 
 /// Remove only the on-disk content + metadata files for an archive id, leaving
@@ -959,8 +959,8 @@ fn remove_files_locked(id: &str) {
 
 struct ScannedArchive {
     id: String,
-    created_at: DateTime<Utc>,
-    protected_until: Option<DateTime<Utc>>,
+    created_at: UtcDateTime,
+    protected_until: Option<UtcDateTime>,
     bytes: u64,
 }
 
@@ -980,7 +980,7 @@ fn scanned_entries() -> Vec<ScannedArchive> {
         .collect()
 }
 
-fn protected_at(entry: &ScannedArchive, now: DateTime<Utc>) -> bool {
+fn protected_at(entry: &ScannedArchive, now: UtcDateTime) -> bool {
     entry.protected_until.is_some_and(|until| until > now)
 }
 
@@ -989,7 +989,7 @@ fn admit_locked(
     existing_bytes: u64,
     required_bytes: u64,
     budget_bytes: u64,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
 ) -> Option<Vec<String>> {
     if budget_bytes == 0 {
         return Some(Vec::new());
@@ -1035,15 +1035,15 @@ fn admit_locked(
 /// and `lean-ctx cache prune`; without an enforcer the archive grew unbounded on
 /// disk and starved the host of RAM via the page cache (#417).
 pub fn cleanup() -> u32 {
-    let now = Utc::now();
-    let cutoff = now - chrono::Duration::hours(max_age_hours() as i64);
+    let now = UtcDateTime::now();
+    let cutoff = now - lean_ctx_time::Duration::hours(max_age_hours() as i64);
     cleanup_with(cutoff, max_disk_bytes(), now)
 }
 
 /// Core of [`cleanup`], parameterized for testing: drop entries older than
 /// `cutoff`, then evict the oldest survivors until the total on-disk footprint is
 /// at or below `budget_bytes` (`0` = no size cap).
-fn cleanup_with(cutoff: DateTime<Utc>, budget_bytes: u64, now: DateTime<Utc>) -> u32 {
+fn cleanup_with(cutoff: UtcDateTime, budget_bytes: u64, now: UtcDateTime) -> u32 {
     let base = archive_base_dir();
     if !base.exists() {
         return 0;
@@ -1146,7 +1146,7 @@ mod tests {
         assert!(hint.contains("abc123"));
     }
 
-    fn write_test_entry(id: &str, created_at: DateTime<Utc>, content_bytes: usize) {
+    fn write_test_entry(id: &str, created_at: UtcDateTime, content_bytes: usize) {
         std::fs::create_dir_all(entry_dir(id)).unwrap();
         std::fs::write(content_path(id), "x".repeat(content_bytes)).unwrap();
         let entry = ArchiveEntry {
@@ -1173,12 +1173,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
 
-        let now = Utc::now();
-        write_test_entry("aa_old", now - chrono::Duration::hours(100), 100);
-        write_test_entry("bb_new", now - chrono::Duration::hours(1), 100);
+        let now = UtcDateTime::now();
+        write_test_entry("aa_old", now - lean_ctx_time::Duration::hours(100), 100);
+        write_test_entry("bb_new", now - lean_ctx_time::Duration::hours(1), 100);
 
         // Cutoff = 48h ago; budget effectively unlimited so only the TTL applies.
-        let removed = cleanup_with(now - chrono::Duration::hours(48), u64::MAX, now);
+        let removed = cleanup_with(now - lean_ctx_time::Duration::hours(48), u64::MAX, now);
         assert_eq!(removed, 1);
         assert!(!content_path("aa_old").exists());
         assert!(!meta_path("aa_old").exists());
@@ -1193,14 +1193,26 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
 
-        let now = Utc::now();
-        write_test_entry("c1_oldest", now - chrono::Duration::minutes(30), 10_000);
-        write_test_entry("c2_middle", now - chrono::Duration::minutes(20), 10_000);
-        write_test_entry("c3_newest", now - chrono::Duration::minutes(10), 10_000);
+        let now = UtcDateTime::now();
+        write_test_entry(
+            "c1_oldest",
+            now - lean_ctx_time::Duration::minutes(30),
+            10_000,
+        );
+        write_test_entry(
+            "c2_middle",
+            now - lean_ctx_time::Duration::minutes(20),
+            10_000,
+        );
+        write_test_entry(
+            "c3_newest",
+            now - lean_ctx_time::Duration::minutes(10),
+            10_000,
+        );
 
         // Nothing expired (cutoff far in the past). Budget 25 KB holds the two
         // newest (~20 KB content + meta); the single oldest entry is evicted.
-        let removed = cleanup_with(now - chrono::Duration::days(365), 25_000, now);
+        let removed = cleanup_with(now - lean_ctx_time::Duration::days(365), 25_000, now);
         assert_eq!(removed, 1, "only the oldest over-budget entry is evicted");
         assert!(!content_path("c1_oldest").exists());
         assert!(content_path("c2_middle").exists());
@@ -1232,17 +1244,20 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
 
-        let now = Utc::now();
-        write_test_entry("protected", now - chrono::Duration::hours(100), 100);
+        let now = UtcDateTime::now();
+        write_test_entry("protected", now - lean_ctx_time::Duration::hours(100), 100);
         let mut entry = read_entry("protected").unwrap();
-        entry.protected_until = Some(now + chrono::Duration::hours(1));
+        entry.protected_until = Some(now + lean_ctx_time::Duration::hours(1));
         write_metadata(&entry).unwrap();
 
-        assert_eq!(cleanup_with(now - chrono::Duration::hours(48), 1, now), 0);
+        assert_eq!(
+            cleanup_with(now - lean_ctx_time::Duration::hours(48), 1, now),
+            0
+        );
         remove_files("protected");
         assert!(content_path("protected").exists());
 
-        let later = now + chrono::Duration::hours(2);
+        let later = now + lean_ctx_time::Duration::hours(2);
         assert_eq!(cleanup_with(now, 1, later), 1);
         assert!(!content_path("protected").exists());
 
@@ -1264,7 +1279,7 @@ mod tests {
         let project = tmp.path().join("project");
         std::fs::create_dir_all(&project).unwrap();
         in_project(&project, || {
-            let now = Utc::now();
+            let now = UtcDateTime::now();
             let first = store_background_with_limits(
                 "ctx_shell",
                 "shell_first",
@@ -1321,7 +1336,7 @@ mod tests {
                         job_id,
                         "shared terminal output",
                         None,
-                        Utc::now(),
+                        UtcDateTime::now(),
                         0,
                     )
                 })

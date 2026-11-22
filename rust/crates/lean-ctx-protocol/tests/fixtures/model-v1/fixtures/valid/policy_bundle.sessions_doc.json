@@ -1,0 +1,51 @@
+{
+  "installed": {
+    "acked": true,
+    "acked_at": "2026-11-15T09:00:00Z",
+    "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
+    "enforcement": {
+      "acknowledged_at": "2026-11-15T09:00:00Z",
+      "applied_version": 3,
+      "reported_at": "2026-11-15T09:00:05Z",
+      "sessions": [
+        "s-01"
+      ]
+    },
+    "key_id": "552e43422b3589fa",
+    "last_pull_at": "2026-11-15T08:59:58Z",
+    "nudges": true,
+    "pulled_via": "nudge",
+    "signature": "verified",
+    "state": "in_force",
+    "vaults": [
+      {
+        "name": "payments",
+        "ns": "acme",
+        "policy": "vault",
+        "roots": [
+          "/home/dev/src/payments"
+        ],
+        "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+      },
+      {
+        "name": null,
+        "ns": null,
+        "policy": "default",
+        "roots": [],
+        "vault_id": "00000000000000000000000000000001"
+      }
+    ],
+    "version": 3
+  },
+  "sessions": [
+    {
+      "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
+      "last_at": "2026-11-15T09:20:00Z",
+      "receipts": 2,
+      "session_id": "s-01",
+      "signature": "verified",
+      "state": "in_force",
+      "version": 3
+    }
+  ]
+}

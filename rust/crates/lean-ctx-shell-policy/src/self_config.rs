@@ -153,7 +153,7 @@ fn is_leanctx_word(word: &str) -> bool {
     matches!(
         bare.rsplit(['/', '\\']).next(),
         Some("lean-ctx" | "lean-ctx.exe")
-    )
+    ) || super::tokenizer::exec_name(&bare) == "lean-ctx"
 }
 
 fn is_help(args: &[String]) -> bool {
@@ -204,6 +204,14 @@ fn classify(args: &[String]) -> Result<Verdict, String> {
             Verdict::Literal
         });
     }
+    // §37: releasing a plan update or team decision to agents is the
+    // person's confirmed "Send to agents" in LeanCTX Code, and the release
+    // ids are the app's read. An agent never releases, nor reads them;
+    // checked before `--help`, which would otherwise pass any words.
+    if sub == "cloud" && matches!(next, Some("plan" | "decision")) {
+        let shown: Vec<&str> = args.iter().take(3).map(String::as_str).collect();
+        return refused(format!("lean-ctx {}", shown.join(" ")));
+    }
     if is_help(rest) {
         return Ok(Verdict::Literal);
     }
@@ -236,9 +244,9 @@ fn classify(args: &[String]) -> Result<Verdict, String> {
             ) => true,
             // A dry run only; merging is the person's (or the Queen's) call.
             Some("dedupe") => !rest.iter().any(|a| a == "--apply"),
-            // Hive's reviewed knowledge reaches AGENTS.md only when a person
+            // Cloud's reviewed knowledge reaches AGENTS.md only when a person
             // exports it (owner decision 22.10.).
-            Some("export-agents-md") => !rest.iter().any(|a| a == "--include-hive"),
+            Some("export-agents-md") => !rest.iter().any(|a| a == "--include-cloud"),
             _ => false,
         },
         "session" => matches!(next, Some("status")),
@@ -252,9 +260,9 @@ fn classify(args: &[String]) -> Result<Verdict, String> {
                 | (Some("org"), Some("verify" | "status" | "show" | "list"))
         ),
         "agent" => matches!(next, Some("presence" | "list" | "status")),
-        // Hive: an agent may work (tasks, commons, bus), pause or stop itself;
+        // Cloud: an agent may work (tasks, commons, bus), pause or stop itself;
         // never connect, link, grant, consent or lift the person's pause.
-        "hive" => matches!(
+        "cloud" => matches!(
             (next, third),
             (
                 Some("status" | "replica" | "tasks" | "commons" | "bus" | "sync" | "review"),
@@ -374,8 +382,10 @@ pub(super) fn check_self_reconfiguration(
 }
 
 /// Commands that only read; anything else touching lean-ctx's own state is
-/// refused from an agent shell.
-const READ_ONLY_COMMANDS: &[&str] = &[
+/// refused from an agent shell. `rg` is not one (`--pre` runs a command on
+/// every file it searches; see `rg_reads_only`), nor is `xdg-open`, which
+/// opens or runs a file through the desktop's handler for it.
+pub(super) const READ_ONLY_COMMANDS: &[&str] = &[
     "cat",
     "less",
     "more",
@@ -386,7 +396,6 @@ const READ_ONLY_COMMANDS: &[&str] = &[
     "file",
     "wc",
     "grep",
-    "rg",
     "egrep",
     "fgrep",
     "du",
@@ -403,12 +412,64 @@ const READ_ONLY_COMMANDS: &[&str] = &[
     "eza",
     "exa",
     "lsd",
-    "xdg-open",
     "realpath",
     "readlink",
     "echo",
     "printf",
+    // Text filters that only print what they read.
+    "cut",
+    "tac",
+    "rev",
+    "nl",
+    "od",
+    "paste",
+    "comm",
+    "join",
+    "fold",
+    "expand",
+    "unexpand",
+    "column",
+    "cksum",
+    "sha1sum",
+    "sha512sum",
+    "b2sum",
 ];
+
+/// `sort` and `uniq` print what they read unless they are told to write a
+/// file: `sort -o FILE`, a temporary directory (`-T DIR`) or a compressor
+/// program it runs; `uniq INPUT OUTPUT`.
+fn filter_reads_only(tokens: &[String]) -> bool {
+    let args = &tokens[1..];
+    match tokens[0].as_str() {
+        "sort" => !args.iter().any(|a| {
+            if let Some(long) = a.strip_prefix("--") {
+                let name = long.split('=').next().unwrap_or(long);
+                name.len() >= 2
+                    && ["output", "temporary-directory", "compress-program"]
+                        .iter()
+                        .any(|o| o.starts_with(name))
+            } else {
+                a.strip_prefix('-')
+                    .is_some_and(|cluster| cluster.contains(['o', 'T']))
+            }
+        }),
+        "uniq" => {
+            let mut operands = 0;
+            let mut skip = false;
+            for a in args {
+                if skip {
+                    skip = false;
+                } else if matches!(a.as_str(), "-f" | "-s" | "-w") {
+                    skip = true;
+                } else if a == "-" || !a.starts_with('-') {
+                    operands += 1;
+                }
+            }
+            operands <= 1
+        }
+        _ => false,
+    }
+}
 
 /// lean-ctx subcommands that only read the paths they are given; every
 /// other lean-ctx call that names lean-ctx's state may write it
@@ -437,7 +498,7 @@ const MAX_PEEL: usize = 8;
 /// such a word (`sed -n '1w ~/.config/lean-ctx/x'`) names that state. For
 /// every other program only a whole word counts, so a commit message that
 /// mentions the config path names nothing.
-const SCRIPT_PROGRAMS: &[&str] = &[
+pub(super) const SCRIPT_PROGRAMS: &[&str] = &[
     "sed",
     "gsed",
     "awk",
@@ -461,7 +522,7 @@ const SCRIPT_PROGRAMS: &[&str] = &[
 /// directory ABOVE lean-ctx's state count (`cp -r x ~/.config/`,
 /// `rm -rf ~/.config`, `tar xf e.tar -C ~`); any other program is refused
 /// only for a path inside the state.
-const WRITE_PROGRAMS: &[&str] = &[
+pub(super) const WRITE_PROGRAMS: &[&str] = &[
     "cp", "mv", "rsync", "install", "ditto", "scp", "tar", "bsdtar", "gtar", "cpio", "pax", "7z",
     "7za", "unzip", "ln", "rm", "rmdir", "tee", "truncate", "touch", "chmod", "chown", "shred",
     "unlink", "mkdir", "dd", "curl", "wget",
@@ -637,6 +698,121 @@ fn opaque_values() -> Vec<String> {
 /// unknown-effect program (`gh issue view "$line"`) given a run-time value
 /// is not assumed to name lean-ctx's state. Never in a real command.
 const OPAQUE_MARK: char = '\u{1}';
+
+/// A `$` or backtick written inside single quotes, as [`literal_tokens`]
+/// spells it: text the shell never expands, so no variable or command
+/// substitution stands for it (#2261). Never in a real command.
+const LITERAL_DOLLAR: char = '\u{2}';
+const LITERAL_BACKTICK: char = '\u{3}';
+
+/// Programs that may run a word of their command line as shell code later
+/// (`trap 'rm $d' EXIT`, `watch`, `ssh`, a shell or a wrapper running one,
+/// `git -c alias.x='!…'`): there a single-quoted `$d` may still expand, so
+/// such a segment keeps every `$` live (fail closed).
+const CODE_RUNNERS: &[&str] = &[
+    "trap",
+    "eval",
+    "exec",
+    "source",
+    ".",
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ksh",
+    "fish",
+    "ash",
+    "mksh",
+    "busybox",
+    "su",
+    "sudo",
+    "doas",
+    "ssh",
+    "watch",
+    "script",
+    "xargs",
+    "parallel",
+    "rush",
+    "find",
+    "flock",
+    "env",
+    "timeout",
+    "nice",
+    "nohup",
+    "command",
+    "builtin",
+    "setsid",
+    "stdbuf",
+    "strace",
+    "unshare",
+    "nsenter",
+    "fakeroot",
+    "chrt",
+    "ionice",
+    "taskset",
+    "caffeinate",
+    "arch",
+    "time",
+    "coproc",
+    "git",
+    "make",
+    "lean-ctx",
+    "lean-ctx.exe",
+];
+
+/// The words of `segment` with every `$` and backtick that single quotes
+/// make literal spelled as [`LITERAL_DOLLAR`] / [`LITERAL_BACKTICK`], so the
+/// loop-variable and substitution passes leave them alone (#2261:
+/// `-f q='($c)'` is the text `($c)`, whatever `c` holds). The quote state
+/// follows `shell_tokenize` exactly, so the words split where it splits.
+/// `None` where that reading may differ from the shell's: a `$'…'` string
+/// (whose `\'` ends no quote), a here-document (whose body expands `'$d'`),
+/// or a program in [`CODE_RUNNERS`].
+fn literal_tokens(segment: &str) -> Option<Vec<String>> {
+    if segment.contains("$'") || segment.contains("<<") {
+        return None;
+    }
+    let mut marked = String::with_capacity(segment.len());
+    let mut chars = segment.chars();
+    let (mut in_single, mut in_double) = (false, false);
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '\\' if !in_single => {
+                // Outside single quotes the escaped character never opens or
+                // closes a quote the tokenizer tracks.
+                marked.push(c);
+                if let Some(next) = chars.next() {
+                    marked.push(next);
+                }
+                continue;
+            }
+            '$' if in_single => {
+                marked.push(LITERAL_DOLLAR);
+                continue;
+            }
+            '`' if in_single => {
+                marked.push(LITERAL_BACKTICK);
+                continue;
+            }
+            _ => {}
+        }
+        marked.push(c);
+    }
+    let words = crate::shell_tokenize(&marked);
+    let runs_code = words.iter().any(|w| {
+        let program = basename(w.trim_start_matches(['(', '{', ';']).trim_end_matches(';'));
+        CODE_RUNNERS.contains(&program.as_str())
+    });
+    (!runs_code).then_some(words)
+}
+
+/// `word` with the literal marks of [`literal_tokens`] spelled as written.
+fn unmark_literals(word: &str) -> String {
+    word.replace(LITERAL_DOLLAR, "$")
+        .replace(LITERAL_BACKTICK, "`")
+}
 
 /// A word that separates commands, as the tokenizer leaves it.
 fn ends_command(word: &str) -> bool {
@@ -1236,7 +1412,7 @@ fn bound_variants(tokens: &[String]) -> Option<Vec<(Vec<String>, bool)>> {
                     && !variant.iter().any(|t| below.iter().any(|b| t.contains(b)));
                 let words = variant
                     .into_iter()
-                    .map(|t| t.replace(OPAQUE_MARK, ""))
+                    .map(|t| unmark_literals(&t.replace(OPAQUE_MARK, "")))
                     .collect();
                 (words, opaque)
             })
@@ -1416,14 +1592,16 @@ fn follow_directory_change(tokens: &[String], homes: &[std::path::PathBuf]) {
     LINE_CWD.with(|c| *c.borrow_mut() = next);
 }
 
-/// lean-ctx's own config and data directories: the worker pause, held
-/// claims, verification nonces, opt-in caches and keys live there — as this
-/// process resolves them and at the real user's home, where the
-/// shell-security policy lives (`config::shell_policy`).
+/// lean-ctx's own config, data and state directories: the worker pause,
+/// held claims, verification nonces, opt-in caches and keys, the event log,
+/// ledgers and captured agent session ids live there — as this process
+/// resolves them and at the real user's home, where the shell-security
+/// policy lives (`config::shell_policy`).
 fn protected_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = [
         lean_ctx::core::paths::config_dir_read_only(),
         lean_ctx::core::paths::data_dir_read_only(),
+        lean_ctx::core::paths::state_dir_read_only(),
     ]
     .into_iter()
     .filter_map(Result::ok)
@@ -1431,6 +1609,7 @@ fn protected_dirs() -> Vec<std::path::PathBuf> {
     if let Some(home) = lean_ctx::core::config::shell_policy::real_user_home() {
         dirs.push(home.join(".config").join("lean-ctx"));
         dirs.push(home.join(".local").join("share").join("lean-ctx"));
+        dirs.push(home.join(".local").join("state").join("lean-ctx"));
         dirs.push(home.join(".lean-ctx"));
     }
     let mut out: Vec<std::path::PathBuf> = Vec::new();
@@ -1502,6 +1681,17 @@ fn variable_base(name: &str, home: &std::path::Path) -> Option<std::path::PathBu
         "XDG_STATE_HOME" => from_env(name).unwrap_or_else(|| home.join(".local").join("state")),
         "APPDATA" => from_env(name).unwrap_or_else(|| home.join("AppData").join("Roaming")),
         "LOCALAPPDATA" => from_env(name).unwrap_or_else(|| home.join("AppData").join("Local")),
+        // lean-ctx's own directory overrides; unset, they stand for the
+        // default directory they would move.
+        "LEAN_CTX_CONFIG_DIR" => {
+            from_env(name).unwrap_or_else(|| home.join(".config").join("lean-ctx"))
+        }
+        "LEAN_CTX_DATA_DIR" => {
+            from_env(name).unwrap_or_else(|| home.join(".local").join("share").join("lean-ctx"))
+        }
+        "LEAN_CTX_STATE_DIR" => {
+            from_env(name).unwrap_or_else(|| home.join(".local").join("state").join("lean-ctx"))
+        }
         _ => return None,
     })
 }
@@ -1604,6 +1794,23 @@ fn path_key(path: &std::path::Path) -> String {
     } else {
         text
     }
+}
+
+/// [`within`] for the agent records, whose names compare without case on
+/// every platform (a Linux volume can ignore case too).
+fn within_record(path: &std::path::Path, dir: &std::path::Path) -> bool {
+    let (path, dir) = (path_key(path).to_lowercase(), path_key(dir).to_lowercase());
+    let dir = dir.trim_end_matches('/');
+    if path == dir || path.starts_with(&format!("{dir}/")) {
+        return true;
+    }
+    // A copy beside the record (`….json.bak`) holds what it holds.
+    let (parent, name) = dir.rsplit_once('/').unwrap_or(("", dir));
+    path.strip_prefix(&format!("{parent}/"))
+        .is_some_and(|rest| {
+            let comp = rest.split('/').next().unwrap_or(rest);
+            comp != name && records_guard::names_record_or_copy(comp, name)
+        })
 }
 
 /// Whether `path` is `dir` or inside it.
@@ -1759,7 +1966,26 @@ fn sed_effect(args: &[String]) -> Option<bool> {
 }
 
 /// [`sed_effect`] of one script: `None` when every command only reads.
+///
+/// Read like [`super::exec_options::sed_script_files`]: once ending a regex
+/// at the first unescaped delimiter, once skipping bracket expressions
+/// (`/[/]/d`). A write either reading finds counts; a script one reading
+/// cannot follow is judged by the other, since sed refuses a script it
+/// cannot parse before it runs any of it.
 fn sed_script_effect(script: &str) -> Option<bool> {
+    let readings = [false, true].map(|brackets| sed_script_reading(script, brackets));
+    if readings.contains(&Some(true)) {
+        Some(true)
+    } else if readings.contains(&None) {
+        None
+    } else {
+        Some(false)
+    }
+}
+
+/// One reading of [`sed_script_effect`]; `brackets` skips a bracket
+/// expression inside a regex whole.
+fn sed_script_reading(script: &str, brackets: bool) -> Option<bool> {
     let b = script.as_bytes();
     let mut i = 0;
     let skip_to = |i: &mut usize, stops: &[u8]| {
@@ -1768,10 +1994,40 @@ fn sed_script_effect(script: &str) -> Option<bool> {
         }
     };
     // Past a `delim`-terminated part starting at `*i`; false if unterminated.
-    let delimited = |i: &mut usize, delim: u8| -> bool {
+    let delimited = |i: &mut usize, delim: u8, regex: bool| -> bool {
         while *i < b.len() {
             match b[*i] {
                 b'\\' => *i += 2,
+                b'[' if regex && brackets => {
+                    *i += 1;
+                    if b.get(*i) == Some(&b'^') {
+                        *i += 1;
+                    }
+                    if b.get(*i) == Some(&b']') {
+                        *i += 1;
+                    }
+                    loop {
+                        match b.get(*i) {
+                            None | Some(b'\n') => return false,
+                            Some(b']') => {
+                                *i += 1;
+                                break;
+                            }
+                            Some(b'[') if matches!(b.get(*i + 1), Some(b':' | b'.' | b'=')) => {
+                                let kind = b[*i + 1];
+                                *i += 2;
+                                while !(b.get(*i) == Some(&kind) && b.get(*i + 1) == Some(&b']')) {
+                                    if matches!(b.get(*i), None | Some(b'\n')) {
+                                        return false;
+                                    }
+                                    *i += 1;
+                                }
+                                *i += 2;
+                            }
+                            Some(_) => *i += 1,
+                        }
+                    }
+                }
                 c if c == delim => {
                     *i += 1;
                     return true;
@@ -1808,7 +2064,7 @@ fn sed_script_effect(script: &str) -> Option<bool> {
                 Some(b'$') => i += 1,
                 Some(b'/') => {
                     i += 1;
-                    if !delimited(&mut i, b'/') {
+                    if !delimited(&mut i, b'/', true) {
                         return unclear;
                     }
                     while matches!(b.get(i), Some(b'I' | b'M')) {
@@ -1820,7 +2076,7 @@ fn sed_script_effect(script: &str) -> Option<bool> {
                         return unclear;
                     };
                     i += 2;
-                    if !delimited(&mut i, delim) {
+                    if !delimited(&mut i, delim, true) {
                         return unclear;
                     }
                     while matches!(b.get(i), Some(b'I' | b'M')) {
@@ -1844,7 +2100,7 @@ fn sed_script_effect(script: &str) -> Option<bool> {
                     return unclear;
                 };
                 i += 1;
-                if !delimited(&mut i, delim) || !delimited(&mut i, delim) {
+                if !delimited(&mut i, delim, true) || !delimited(&mut i, delim, false) {
                     return unclear;
                 }
                 while let Some(&flag) = b.get(i) {
@@ -1861,7 +2117,7 @@ fn sed_script_effect(script: &str) -> Option<bool> {
                     return unclear;
                 };
                 i += 1;
-                if !delimited(&mut i, delim) || !delimited(&mut i, delim) {
+                if !delimited(&mut i, delim, false) || !delimited(&mut i, delim, false) {
                     return unclear;
                 }
             }
@@ -2280,7 +2536,7 @@ const DIRECTORY_CHANGERS: &[&str] = &["cd", "pushd"];
 
 /// Listing and launching programs that only read unless given one of the
 /// flags [`viewer_writes`] knows.
-const VIEWERS: &[&str] = &["tree", "fd", "code", "open", "bat"];
+pub(super) const VIEWERS: &[&str] = &["tree", "fd", "code", "open", "bat"];
 
 /// Whether `token` names a path inside lean-ctx's state (a glob: may match one).
 fn names_inside(
@@ -2288,7 +2544,7 @@ fn names_inside(
     protected: &[std::path::PathBuf],
     homes: &[std::path::PathBuf],
 ) -> bool {
-    if let Some(glob) = token.find(['*', '?', '[']) {
+    if let Some(glob) = glob_start(token) {
         // A glob may match lean-ctx's directories: compare its literal
         // prefix with them in both directions. A prefix without a directory
         // (`*`, `lean-c*`) lies in the working directory.
@@ -2440,9 +2696,11 @@ struct Peeled {
     header: Option<Vec<String>>,
 }
 
-/// The last path component of a program word.
+/// The last path component of a program word; a Windows executable name
+/// (`rm.exe`) by the program it runs (`rm`).
 fn basename(word: &str) -> String {
-    word.rsplit('/').next().unwrap_or(word).to_string()
+    super::tokenizer::windows_executable_stem(word)
+        .unwrap_or_else(|| word.rsplit('/').next().unwrap_or(word).to_string())
 }
 
 /// Peels reserved words (`do`, `then`, `!`, `time -p`, …), a `for`/`select`
@@ -2583,6 +2841,125 @@ fn touches_protected(
     touches_program(&peeled.program, protected, homes)
 }
 
+/// The `sed` command `tokens` runs: itself, or the one behind wrappers that
+/// run the command after their own words (`xargs -0 sed …`, `sudo sed …`).
+fn sed_command(tokens: &[String]) -> Option<Vec<String>> {
+    let mut words = tokens.to_vec();
+    for _ in 0..MAX_PEEL {
+        let base = basename(words.first()?);
+        if matches!(base.as_str(), "sed" | "gsed") {
+            words[0] = base;
+            return Some(words);
+        }
+        if super::enforcement::RUNNING_WRAPPERS.contains(&base.as_str()) {
+            // Any word that may be the wrapper's target (`firejail --profile
+            // p sed …`).
+            return super::enforcement::wrapper_target_candidates(&words)
+                .into_iter()
+                .find_map(|at| sed_command(&words[at..]));
+        }
+        if !super::enforcement::DELEGATION_COMMANDS.contains(&base.as_str()) {
+            return None;
+        }
+        words = super::enforcement::delegated_command_tokens(&base, &words[1..]);
+    }
+    None
+}
+
+/// `rg` without a preprocessor only reads what it searches. With `--pre` it
+/// runs that command on each file, which may write it.
+fn rg_reads_only(tokens: &[String]) -> bool {
+    tokens.first().is_some_and(|program| program == "rg")
+        && super::exec_options::exec_options(tokens).is_empty()
+}
+
+/// `tar` creating or listing an archive reads the paths it names and writes
+/// only the archive. `Some(archive)` for such a command (`-` when the
+/// archive goes to standard output); `None` for any other `tar`, or one
+/// with an option outside the small set read here, which stays judged as a
+/// writer of every path it names.
+fn tar_archive_only(tokens: &[String]) -> Option<String> {
+    const SHORT: &str = "ctfvzjJaChpP";
+    const LONG: &[&str] = &[
+        "--create",
+        "--list",
+        "--verbose",
+        "--gzip",
+        "--bzip2",
+        "--xz",
+        "--zstd",
+        "--auto-compress",
+        "--dereference",
+        "--preserve-permissions",
+        "--absolute-names",
+    ];
+    let program = tokens.first()?;
+    if !matches!(program.as_str(), "tar" | "bsdtar" | "gtar")
+        || !super::exec_options::exec_options(tokens).is_empty()
+    {
+        return None;
+    }
+    let args = &tokens[1..];
+    let mut archive: Option<String> = None;
+    let mut mode = false;
+    let mut moves = false;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        let traditional = i == 0 && !arg.starts_with('-');
+        if let Some(value) = arg.strip_prefix("--file=") {
+            archive.replace(value.to_string()).is_none().then_some(())?;
+        } else if arg == "--file" {
+            i += 1;
+            archive
+                .replace(args.get(i)?.clone())
+                .is_none()
+                .then_some(())?;
+        } else if arg.starts_with("--") {
+            mode |= matches!(arg, "--create" | "--list");
+            LONG.contains(&arg).then_some(())?;
+        } else if traditional || (arg.starts_with('-') && arg.len() > 1) {
+            let letters = if traditional { arg } else { &arg[1..] };
+            for (at, letter) in letters.char_indices() {
+                SHORT.contains(letter).then_some(())?;
+                mode |= matches!(letter, 'c' | 't');
+                if letter == 'C' {
+                    // `-C DIR` takes the next word (or the rest).
+                    if traditional {
+                        return None;
+                    }
+                    moves = true;
+                    if at + 1 == letters.len() {
+                        i += 1;
+                    }
+                    break;
+                }
+                if letter == 'f' {
+                    let value = if traditional || at + 1 == letters.len() {
+                        i += 1;
+                        args.get(i)?.clone()
+                    } else {
+                        letters[at + 1..].to_string()
+                    };
+                    archive.replace(value).is_none().then_some(())?;
+                    break;
+                }
+            }
+        }
+        i += 1;
+    }
+    // Whether a relative archive name is opened before or after `-C`
+    // differs between implementations.
+    if moves
+        && archive
+            .as_deref()
+            .is_some_and(|a| a != "-" && !a.starts_with(['/', '~', '$']))
+    {
+        return None;
+    }
+    mode.then(|| archive.unwrap_or_else(|| "-".to_string()))
+}
+
 /// The program words (`peel`) of a command when it moves the shell into a
 /// directory (`cd`, `pushd`, `popd`, also behind `builtin`/`command`).
 fn directory_change(tokens: &[String]) -> Option<Vec<String>> {
@@ -2638,8 +3015,15 @@ fn touches_program(
         let named = tokens[1..].iter().find(|t| inside(t))?;
         return Some(Tampering::new(shown(named), false));
     }
-    if READ_ONLY_COMMANDS.contains(&base) {
+    if READ_ONLY_COMMANDS.contains(&base) || rg_reads_only(tokens) || filter_reads_only(tokens) {
         return None;
+    }
+    if let Some(archive) = tar_archive_only(tokens) {
+        return if inside(&archive) {
+            writes(shown(&archive))
+        } else {
+            None
+        };
     }
     // lean-ctx itself, and `cargo run -- …` (lean-ctx run from its source).
     let leanctx_args = if base == "lean-ctx" || base == "lean-ctx.exe" {
@@ -2762,6 +3146,26 @@ fn touches_program(
     if let Some(verdict) = plain_copy_effect(tokens, &inside, &reaches, &target_hits, homes) {
         return verdict.err().and_then(|word| writes(shown(&word)));
     }
+    // sed's `w`/`W` commands and the `w` flag of `s` write the file they
+    // name, also relative to a directory the line moved into; `r`/`R` read
+    // theirs, which stays allowed like `cat`. A name the shell completes at
+    // run time (`w $OUT`) cannot be placed, so it counts as a write there.
+    // Behind a wrapper that is judged as written (`xargs sed …`), sed runs
+    // the same script.
+    if let Some(sed) = sed_command(tokens) {
+        let unplaced = |file: &str| {
+            file.contains(['`', OPAQUE_MARK])
+                || file.contains("$(")
+                || (file.contains('$')
+                    && !["$HOME/", "${HOME}/"].iter().any(|h| file.starts_with(h)))
+        };
+        if let Some(file) = super::exec_options::sed_written_files(&sed)
+            .into_iter()
+            .find(|file| inside(file) || unplaced(file))
+        {
+            return writes(shown(&file));
+        }
+    }
     // Scripts and `find` are judged by what they do: `sed -n` reads.
     if SCRIPT_PROGRAMS.contains(&base) || base == "find" {
         let named = tokens[1..].iter().find(|t| mentions(t) || reaches(t))?;
@@ -2818,7 +3222,7 @@ fn git_environment_reaching(
         .map(|(name, value)| format!("{name}={value}"))
 }
 
-/// Whether an absolute `path` lies in lean-ctx's own config or data
+/// Whether an absolute `path` lies in lean-ctx's own config, data or state
 /// directories (as this process resolves them and at the real user's home),
 /// also after resolving its existing ancestors through symlinks. The native
 /// write guard (`hook write-guard`) uses it to keep an agent's Write/Edit
@@ -2829,6 +3233,147 @@ pub fn is_leanctx_state_path(path: &std::path::Path) -> bool {
     [resolve_existing(path), path.to_path_buf()]
         .iter()
         .any(|p| protected.iter().any(|dir| within(p, dir)))
+}
+
+/// The file name of the release ids, matched in any word.
+const RELEASE_IDS_NAME: &str = "directive-release-ids";
+
+/// The word of `tokens` (one simple command as written) through which it
+/// reads the agent records in `records`, judged as written and once for
+/// every value of the line's variables and brace alternatives
+/// (`{lean-ctx,x}`, `d=…; cat $d/…`, `for f in …`). A run-time value used
+/// whole names nothing; a path below one is judged as written.
+fn reads_agent_records(
+    tokens: &[String],
+    records: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+) -> Option<String> {
+    if let Some(word) = records_word(tokens, records, homes) {
+        return Some(word);
+    }
+    record_variants(tokens)?
+        .iter()
+        .filter(|variant| variant.as_slice() != tokens)
+        .find_map(|variant| records_word(variant, records, homes))
+}
+
+/// [`expanded_variants`] for the agent records: a run-time value used as
+/// a whole word is left empty, one used as a directory (`"$d/x"`) stays
+/// the path below lean-ctx's state it stands for, and one inside a word
+/// (`lean"$d"`) reads as a glob.
+fn record_variants(tokens: &[String]) -> Option<Vec<Vec<String>>> {
+    let marked = opaque_values();
+    let word = |token: String| {
+        if marked.contains(&token) {
+            return String::new();
+        }
+        let mut token = token;
+        for value in &marked {
+            let mut from = 0;
+            while let Some(at) = token[from..].find(value.as_str()).map(|i| i + from) {
+                let end = at + value.len();
+                if at == 0 && token[end..].starts_with('/') {
+                    from = end;
+                } else {
+                    token.replace_range(at..end, "*");
+                    from = at + 1;
+                }
+            }
+        }
+        token.replace(OPAQUE_MARK, "")
+    };
+    Some(
+        expanded_variants(tokens)?
+            .into_iter()
+            .map(|variant| variant.into_iter().map(word).collect())
+            .collect(),
+    )
+}
+
+/// [`reads_agent_records`] for one variant: a path or glob inside the
+/// records, a longer word spelling them (a script), or the release ids'
+/// file name. Recursive readers, listers and output handed on to other
+/// commands are judged over the whole line ([`check_records_line`]).
+fn records_word(
+    tokens: &[String],
+    records: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+) -> Option<String> {
+    let spelled = |token: &str| {
+        let text = path_key(std::path::Path::new(token)).to_lowercase();
+        text.contains(RELEASE_IDS_NAME)
+            || records.iter().any(|dir| {
+                spellings(dir, homes)
+                    .iter()
+                    .any(|form| records_guard::holds_path(&text, &form.to_lowercase()))
+            })
+    };
+    tokens
+        .iter()
+        .find(|t| names_record(t, records, homes, false) || spelled(t))
+        .cloned()
+}
+
+/// Whether `token` names a path inside the agent records, or with
+/// `recursive` a directory above them. A glob counts where it can match
+/// them: its literal prefix lies inside them, or (with as many `/` left in
+/// the pattern as the records lie below the prefix, any number for `**` or
+/// `recursive`) above them. `[[`, `/*` or `*` in another directory do not.
+fn names_record(
+    token: &str,
+    records: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+    recursive: bool,
+) -> bool {
+    let Some(glob) = glob_start(token) else {
+        return word_paths(token, homes).iter().any(|p| {
+            records
+                .iter()
+                .any(|dir| within_record(p, dir) || (recursive && ancestor_of(p, dir)))
+        });
+    };
+    let (prefix, pattern) = token.split_at(glob);
+    let placed;
+    let prefix = if prefix.starts_with(['~', '$']) || prefix.contains(['/', '\\']) {
+        prefix
+    } else {
+        placed = format!("./{prefix}");
+        placed.as_str()
+    };
+    let depth = pattern.matches('/').count();
+    let any_depth = recursive || pattern.contains("**");
+    word_paths(prefix, homes).iter().any(|p| {
+        let key = path_key(p).to_lowercase();
+        records.iter().any(|dir| {
+            if within_record(p, dir) {
+                return true;
+            }
+            let dir = path_key(dir).to_lowercase();
+            dir.strip_prefix(key.as_str()).is_some_and(|rest| {
+                any_depth || rest.trim_start_matches('/').matches('/').count() <= depth
+            })
+        })
+    })
+}
+
+/// Where the pattern characters of `token` start, as pathname expansion
+/// reads them: `*`, `?`, or a `[` closed by a `]` in the same path
+/// component. A `[` without one, or with a `/` before it, is a plain
+/// character (`sed '/[/]/s/a/b/'` names no directory).
+fn glob_start(token: &str) -> Option<usize> {
+    token.char_indices().find_map(|(at, c)| match c {
+        '*' | '?' => Some(at),
+        '[' => {
+            let rest = &token[at + 1..];
+            // `[]…]` and `[!]…]`: a `]` right after the opening is a member.
+            let skip = usize::from(rest.starts_with('!') || rest.starts_with('^'));
+            let body = &rest[skip..];
+            let lead = usize::from(body.starts_with(']'));
+            let close = body[lead..].find([']', '/'])?;
+            (body.as_bytes()[lead + close] == b']').then_some(at)
+        }
+        _ => None,
+    })
 }
 
 /// Rejects a command that would change lean-ctx's own state from an agent
@@ -2845,7 +3390,8 @@ pub fn is_leanctx_state_path(path: &std::path::Path) -> bool {
 /// the loop variables it expands.
 pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<(), ShellError> {
     let homes = homes();
-    let mut raw = crate::shell_tokenize(crate::skip_env_assignments(segment.trim()));
+    let command = crate::skip_env_assignments(segment.trim());
+    let mut raw = literal_tokens(command).unwrap_or_else(|| crate::shell_tokenize(command));
     if raw.first().is_some_and(|t| t == "{") {
         raw.remove(0);
     }
@@ -2863,6 +3409,10 @@ pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<
     }
     let words: &[String] = if raw.is_empty() { tokens } else { &raw };
     let protected = protected_dirs();
+    // The agent records are not readable from an agent shell (§37.4).
+    if let Some(word) = reads_agent_records(words, &records_guard::record_dirs(), &homes) {
+        return Err(records_guard::records_refusal(&word));
+    }
     let mut verdict = match bound_variants(words) {
         // A run-time value counts only where the program writes through it.
         Some(variants) => variants.iter().find_map(|(variant, opaque)| {
@@ -2870,7 +3420,10 @@ pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<
                 .filter(|t| !opaque || t.writes || t.unplaced.is_some())
         }),
         None => Some(Tampering::new(
-            format!("{} (a loop over too many words)", words.join(" ")),
+            format!(
+                "{} (a loop over too many words)",
+                unmark_literals(&words.join(" "))
+            ),
             false,
         )),
     };
@@ -2878,7 +3431,8 @@ pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<
         verdict = git_environment_reaching(segment, &protected, &homes)
             .map(|word| Tampering::new(format!("git {word}"), true));
     }
-    if !subshell && let Some(program) = directory_change(words) {
+    let words: Vec<String> = words.iter().map(|w| unmark_literals(w)).collect();
+    if !subshell && let Some(program) = directory_change(&words) {
         follow_directory_change(&program, &homes);
     }
     match verdict {
@@ -2916,6 +3470,10 @@ pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<
         None => Ok(()),
     }
 }
+
+#[path = "records_guard.rs"]
+mod records_guard;
+pub(crate) use records_guard::check_records_line;
 
 #[cfg(test)]
 #[path = "self_config_tests.rs"]

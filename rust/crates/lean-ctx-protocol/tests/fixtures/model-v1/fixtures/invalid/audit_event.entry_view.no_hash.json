@@ -1,0 +1,27 @@
+{
+  "action": "policy.ack",
+  "actor": {
+    "agent": null,
+    "instance": {
+      "id": "9c8b7a6d-5e4f-4321-8fed-cba987654321",
+      "label": "dev-laptop"
+    },
+    "kind": "instance",
+    "user": null
+  },
+  "at": "2026-11-15T09:00:00Z",
+  "details": {
+    "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
+    "outdated": false,
+    "version": 3
+  },
+  "id": 2,
+  "ip": null,
+  "prev": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "target": {
+    "id": "9c8b7a6d-5e4f-4321-8fed-cba987654321",
+    "kind": "instance",
+    "label": "dev-laptop"
+  },
+  "user_agent": null
+}

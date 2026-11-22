@@ -259,7 +259,7 @@ async fn local_routes_answer_the_cli_document_on_the_socket_only() {
     assert_eq!(status, StatusCode::OK, "{posted}");
     let posted: Value = serde_json::from_str(&posted).expect("json");
     assert_eq!(posted["kind"], "agent.post");
-    assert_eq!(posted["from"], "hive-person");
+    assert_eq!(posted["from"], "cloud-person");
 
     let uri = format!(
         "/v1/local/messages?project_root={}&limit=5",
@@ -297,7 +297,7 @@ async fn local_routes_answer_the_cli_document_on_the_socket_only() {
         ),
         (
             "GET",
-            "/v1/local/hive/docs?project_root=%2F".to_owned(),
+            "/v1/local/cloud/docs?project_root=%2F".to_owned(),
             StatusCode::BAD_REQUEST,
             "no_project",
         ),
@@ -354,11 +354,11 @@ async fn local_routes_answer_the_cli_document_on_the_socket_only() {
     // are the project's local ones, not the vault's.
     // Every verb is listed with its transports (Contracts' builder): the
     // ones a route answers are `socket` too, the rest `cli` only.
-    let tasks = caps["commands"]["hive.tasks"].as_array().unwrap();
+    let tasks = caps["commands"]["cloud.tasks"].as_array().unwrap();
     assert_eq!(tasks[0], json!({"verb": "list", "via": ["cli", "socket"]}));
     assert_eq!(tasks[1], json!({"verb": "show", "via": ["cli", "socket"]}));
     assert!(tasks.contains(&json!({"verb": "claim", "via": ["cli"]})));
-    assert_eq!(caps["commands"]["hive"][0]["verb"], "status");
+    assert_eq!(caps["commands"]["cloud"][0]["verb"], "status");
     // Each route row of a command verb names it, for Contracts' builder.
     let row = caps["routes"]
         .as_array()
@@ -366,7 +366,7 @@ async fn local_routes_answer_the_cli_document_on_the_socket_only() {
         .iter()
         .find(|r| r["kind"] == "tasks.list")
         .expect("tasks.list row");
-    assert_eq!(row["command"], "hive.tasks");
+    assert_eq!(row["command"], "cloud.tasks");
     assert_eq!(row["verb"], "list");
     // The local tasks part brings its verbs, each on both transports.
     let tasks = caps["commands"]["tasks"].as_array().expect("tasks verbs");
@@ -382,7 +382,7 @@ async fn local_routes_answer_the_cli_document_on_the_socket_only() {
     assert!(!body.contains("\"kind\":\"capabilities\""), "TCP: {body}");
 }
 
-/// `hive.status` names a project only when it can: without `project_root`,
+/// `cloud.status` names a project only when it can: without `project_root`,
 /// or with one that is no project (`~`, `/`, a missing path), the socket
 /// answers the folder-less status (`project: null`, never the daemon's own
 /// working directory) instead of `no_project`. With a project the answer
@@ -418,7 +418,7 @@ async fn local_status_answers_without_a_project() {
         let (status, body) = local_request(&ipc, "GET", &uri, None).await;
         assert_eq!(status, StatusCode::OK, "{uri}: {body}");
         let doc: Value = serde_json::from_str(&body).expect("json");
-        assert_eq!(doc["kind"], "hive.status", "{uri}: {body}");
+        assert_eq!(doc["kind"], "cloud.status", "{uri}: {body}");
         assert_eq!(doc["project"], Value::Null, "{uri}: no invented project");
         assert!(
             !body.contains(&root),
@@ -471,7 +471,7 @@ async fn local_status_answers_without_a_project() {
             .cloned()
             .unwrap_or_else(|| panic!("{kind} row"))
     };
-    assert_eq!(row("hive.status")["project"], "optional");
+    assert_eq!(row("cloud.status")["project"], "optional");
     assert_eq!(row("tasks.list")["project"], true);
     assert_eq!(row("capabilities")["project"], false);
 }
@@ -676,6 +676,244 @@ async fn local_events_start_with_hello_and_report_new_messages() {
     );
 }
 
+/// A project for the view tests, its canonical root and the IPC router.
+fn view_fixture() -> (tempfile::TempDir, String, Router) {
+    let project = tempfile::tempdir().expect("project");
+    std::fs::create_dir(project.path().join(".git")).expect("git marker");
+    let root = project
+        .path()
+        .canonicalize()
+        .expect("root")
+        .display()
+        .to_string();
+    let cfg = HttpServerConfig {
+        project_root: project.path().to_path_buf(),
+        ..HttpServerConfig::default()
+    };
+    let ipc = build_ipc_router(&cfg, None);
+    (project, root, ipc)
+}
+
+/// Posts `text` to `root` (in `thread`), stamped `age_secs` in the past.
+fn post_aged(root: &str, text: &str, thread: Option<&str>, age_secs: i64) {
+    let (root, text, thread) = (root.to_owned(), text.to_owned(), thread.map(str::to_owned));
+    lean_ctx::core::agents::AgentRegistry::mutate_locked(move |registry| {
+        crate::cli::local_read::bus::post(registry, &[], &text, thread.as_deref(), Some(&root))
+            .expect("posted");
+        let entry = registry.scratchpad.last_mut().expect("the post");
+        entry.timestamp =
+            lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::seconds(age_secs);
+    })
+    .expect("registry");
+}
+
+/// Opens the event stream at `query` and reads until `until` is in the
+/// text (or 15 s passed); `between` runs once after `hello` arrived.
+async fn read_events(ipc: &Router, query: &str, until: &str, between: impl FnOnce()) -> String {
+    let request = Request::builder()
+        .uri(format!("/v1/local/events?{query}"))
+        .header("Host", "localhost")
+        .body(Body::empty())
+        .expect("request");
+    let response = ipc.clone().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK, "{query}");
+    let mut stream = response.into_body().into_data_stream();
+    let mut seen = String::new();
+    let mut between = Some(between);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while !seen.contains(until) && tokio::time::Instant::now() < deadline {
+        if seen.contains("event: snapshot")
+            && let Some(run) = between.take()
+        {
+            run();
+        }
+        if let Ok(Some(Ok(bytes))) =
+            tokio::time::timeout(Duration::from_secs(3), stream.next()).await
+        {
+            seen.push_str(&String::from_utf8_lossy(&bytes));
+        }
+    }
+    seen
+}
+
+/// The data documents of the events of type `kind`, in stream order.
+fn event_docs(seen: &str, kind: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    let mut current = None;
+    for line in seen.lines() {
+        if let Some(event) = line.strip_prefix("event: ") {
+            current = Some(event.to_owned());
+        } else if let Some(data) = line.strip_prefix("data: ")
+            && current.as_deref() == Some(kind)
+        {
+            out.push(serde_json::from_str(data).expect("one JSON document"));
+        }
+    }
+    out
+}
+
+fn row_texts(snapshot: &Value) -> Vec<String> {
+    snapshot["rows"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|r| r["message"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// t3c: the view parameters are refused without `view`, an unknown view, a
+/// limit past the bound, a foreign cursor and a view without a project are
+/// refused; the capabilities list the view.
+#[tokio::test]
+async fn local_events_view_query_is_bounded_and_listed() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let (_project, root, ipc) = view_fixture();
+    let p = urlencode(&root);
+    for (query, code) in [
+        (format!("project_root={p}&limit=5"), "invalid_argument"),
+        (format!("project_root={p}&cursor=m1.1"), "invalid_argument"),
+        (format!("project_root={p}&view=tasks"), "invalid_argument"),
+        (
+            format!("project_root={p}&view=messages&limit=0"),
+            "invalid_argument",
+        ),
+        (
+            format!("project_root={p}&view=messages&limit=201"),
+            "invalid_argument",
+        ),
+        (
+            format!("project_root={p}&view=messages&cursor=abc"),
+            "invalid_argument",
+        ),
+        ("view=messages".to_owned(), "no_project"),
+    ] {
+        let (status, body) =
+            local_request(&ipc, "GET", &format!("/v1/local/events?{query}"), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
+        assert!(
+            body.contains(&format!("\"code\":\"{code}\"")),
+            "{query}: {body}"
+        );
+    }
+    let (status, body) = local_request(&ipc, "GET", "/v1/local/capabilities", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let caps: Value = serde_json::from_str(&body).expect("capabilities");
+    assert_eq!(
+        caps["events"]["views"],
+        json!([{"name": "messages", "params": ["cursor", "from", "limit", "thread", "to"],
+                "default_limit": 100, "max_limit": 200}])
+    );
+    assert!(
+        caps["events"]["types"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("snapshot"))
+    );
+}
+
+/// t3c: a view stream opens with `hello` naming the view and a `full`
+/// snapshot of the newest `limit` rows (truncated past the bound); a
+/// reconnect with the snapshot's cursor gets a `delta` with only what is
+/// newer (not the rows before the cursor); a cursor with more newer rows
+/// than the view holds gets a `full` snapshot again.
+#[tokio::test]
+async fn local_events_view_resumes_from_its_cursor() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let (_project, root, ipc) = view_fixture();
+    let p = urlencode(&root);
+    post_aged(&root, "oldest", None, 300);
+    post_aged(&root, "older", None, 200);
+    post_aged(&root, "old", None, 100);
+
+    let seen = read_events(
+        &ipc,
+        &format!("project_root={p}&types=message&view=messages&limit=2"),
+        "event: snapshot",
+        || {},
+    )
+    .await;
+    let hello = &event_docs(&seen, "hello")[0];
+    assert_eq!(hello["view"]["name"], "messages");
+    assert_eq!(hello["view"]["limit"], 2);
+    let first = &event_docs(&seen, "snapshot")[0];
+    assert_eq!(first["kind"], "event.snapshot");
+    assert_eq!(first["mode"], "full", "{seen}");
+    assert_eq!(row_texts(first), ["older", "old"]);
+    assert_eq!(first["truncated"], true);
+    let cursor = first["cursor"].as_str().expect("a cursor").to_owned();
+
+    post_aged(&root, "while away", None, 30);
+    let seen = read_events(
+        &ipc,
+        &format!(
+            "project_root={p}&types=message&view=messages&limit=2&cursor={}",
+            urlencode(&cursor)
+        ),
+        "event: snapshot",
+        || {},
+    )
+    .await;
+    let resumed = &event_docs(&seen, "snapshot")[0];
+    assert_eq!(resumed["mode"], "delta", "{seen}");
+    // The cursor's own row repeats (the grace window; readers keep rows by
+    // id); the rows before it do not.
+    assert_eq!(row_texts(resumed), ["old", "while away"], "{seen}");
+    assert_eq!(resumed["truncated"], false);
+    assert_ne!(resumed["cursor"].as_str(), Some(cursor.as_str()));
+
+    // Now four rows are newer than the cursor and the view holds two.
+    post_aged(&root, "more 1", None, 20);
+    post_aged(&root, "more 2", None, 10);
+    let seen = read_events(
+        &ipc,
+        &format!(
+            "project_root={p}&types=message&view=messages&limit=2&cursor={}",
+            urlencode(&cursor)
+        ),
+        "event: snapshot",
+        || {},
+    )
+    .await;
+    let over = &event_docs(&seen, "snapshot")[0];
+    assert_eq!(over["mode"], "full", "more than the view holds: {seen}");
+    assert_eq!(row_texts(over), ["more 1", "more 2"]);
+}
+
+/// t3c: the view's filter applies on the server to the snapshot and to the
+/// live `message` events, which carry their cursor.
+#[tokio::test]
+async fn local_events_view_filters_on_the_server() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let (_project, root, ipc) = view_fixture();
+    let p = urlencode(&root);
+    post_aged(&root, "in thread a", Some("a"), 60);
+    post_aged(&root, "in thread b", Some("b"), 50);
+
+    let live_root = root.clone();
+    let seen = read_events(
+        &ipc,
+        &format!("project_root={p}&types=message&view=messages&thread=a"),
+        "live in a",
+        move || {
+            post_aged(&live_root, "live in b", Some("b"), 0);
+            post_aged(&live_root, "live in a", Some("a"), 0);
+        },
+    )
+    .await;
+    let snapshot = &event_docs(&seen, "snapshot")[0];
+    assert_eq!(row_texts(snapshot), ["in thread a"], "{seen}");
+    let messages = event_docs(&seen, "message");
+    assert_eq!(messages.len(), 1, "{seen}");
+    assert_eq!(messages[0]["message"], "live in a");
+    assert!(
+        messages[0]["cursor"]
+            .as_str()
+            .is_some_and(|c| c.starts_with("m1.")),
+        "{seen}"
+    );
+    assert!(!seen.contains("in thread b") && !seen.contains("live in b"));
+}
+
 /// AP10-R4: a failed tool call was logged with the error's text, and that
 /// text echoes what the caller sent (here the arguments) or what the release
 /// point withheld from the reply. The log line names the error kind only.
@@ -770,6 +1008,7 @@ async fn auth_token_blocks_requests_without_bearer_header() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -876,7 +1115,7 @@ async fn remote_a2a_delivery_is_authenticated_and_idempotent() {
     );
 
     let mut refreshed_retry = envelope.clone();
-    refreshed_retry.sent_at += chrono::Duration::seconds(1);
+    refreshed_retry.sent_at += lean_ctx_time::Duration::seconds(1);
     refreshed_retry
         .sign(b"signing-secret")
         .expect("refresh retry signature");
@@ -978,7 +1217,7 @@ async fn refreshed_dlq_retry_honors_pre_upgrade_signature_ledger_entry() {
         handlers::REMOTE_REPLAY_RETENTION_SECONDS,
     );
     let remote_replay::Reservation::Reserved(generation) = guard
-        .reserve(&legacy_id, chrono::Utc::now())
+        .reserve(&legacy_id, lean_ctx_time::UtcDateTime::now())
         .await
         .expect("reserve legacy")
     else {
@@ -996,7 +1235,7 @@ async fn refreshed_dlq_retry_honors_pre_upgrade_signature_ledger_entry() {
     retry
         .metadata
         .insert(LEGACY_DELIVERY_SENT_AT_METADATA.to_string(), legacy_sent_at);
-    retry.sent_at = chrono::Utc::now();
+    retry.sent_at = lean_ctx_time::UtcDateTime::now();
     retry.sign(b"signing-secret").expect("sign refreshed retry");
     let request = Request::builder()
         .method("POST")
@@ -1024,7 +1263,6 @@ async fn refreshed_dlq_retry_honors_pre_upgrade_signature_ledger_entry() {
 
 #[tokio::test]
 async fn signed_remote_task_is_authorized_persisted_and_truthfully_replayed() {
-    use chrono::{Duration as ChronoDuration, Utc};
     use ed25519_dalek::SigningKey;
     use lean_ctx::core::a2a::task::{
         TASK_ACTION_SEND, TASK_AUTHORITY_CONFIG_VERSION, TaskAuthorityConfigV1,
@@ -1033,10 +1271,11 @@ async fn signed_remote_task_is_authorized_persisted_and_truthfully_replayed() {
     use lean_ctx::core::a2a_transport::{
         AgentIdentityV1, TransportContentType, TransportEnvelopeV1,
     };
+    use lean_ctx_time::UtcDateTime;
 
     let dir = tempfile::tempdir().expect("tempdir");
     let key = SigningKey::from_bytes(&[17; 32]);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let policy = TaskAuthorityConfigV1 {
         schema_version: TASK_AUTHORITY_CONFIG_VERSION,
         peers: vec![TaskPeerTrustV1 {
@@ -1050,8 +1289,8 @@ async fn signed_remote_task_is_authorized_persisted_and_truthfully_replayed() {
                 tenant_id: "tenant-a".to_string(),
                 project_id: "project-a".to_string(),
             }],
-            not_before: now - ChronoDuration::hours(1),
-            expires_at: now + ChronoDuration::hours(1),
+            not_before: now - lean_ctx_time::Duration::hours(1),
+            expires_at: now + lean_ctx_time::Duration::hours(1),
             revoked: false,
         }],
         grants: vec![TaskCapabilityGrantV1 {
@@ -1061,8 +1300,8 @@ async fn signed_remote_task_is_authorized_persisted_and_truthfully_replayed() {
             action: TASK_ACTION_SEND.to_string(),
             tenant_id: "tenant-a".to_string(),
             project_id: "project-a".to_string(),
-            not_before: now - ChronoDuration::hours(1),
-            expires_at: now + ChronoDuration::hours(1),
+            not_before: now - lean_ctx_time::Duration::hours(1),
+            expires_at: now + lean_ctx_time::Duration::hours(1),
             revoked: false,
         }],
     };
@@ -1087,7 +1326,7 @@ async fn signed_remote_task_is_authorized_persisted_and_truthfully_replayed() {
             "project-a",
             TASK_ACTION_SEND,
             now,
-            now + ChronoDuration::minutes(30),
+            now + lean_ctx_time::Duration::minutes(30),
             "idem-a",
             description,
             Vec::new(),
@@ -1276,7 +1515,7 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
     let mut bundle = EvidenceBundle::new("task-relayed".into());
     bundle.finalize();
     let payload = serde_json::to_string(&bundle).unwrap();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let delivery_id = format!("two-server-{}", uuid::Uuid::new_v4());
     let mut record = RelayRecordV1::new_signed(
         &delivery_id,
@@ -1286,7 +1525,7 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
         "project-a",
         TransportContentType::EvidenceBundle,
         DataClassification::Internal,
-        now + chrono::Duration::minutes(1),
+        now + lean_ctx_time::Duration::minutes(1),
         4,
         now,
         &test_origin_key("origin"),
@@ -1455,7 +1694,7 @@ async fn relay_http_replay_separates_origins_and_rejects_changed_content() {
         ..HttpServerConfig::default()
     };
     cfg.validate().unwrap();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let message = |origin: &str, task: &str| {
         let mut bundle = EvidenceBundle::new(task.into());
         bundle.finalize();
@@ -1469,7 +1708,7 @@ async fn relay_http_replay_separates_origins_and_rejects_changed_content() {
             "project-a",
             TransportContentType::EvidenceBundle,
             DataClassification::Internal,
-            now + chrono::Duration::minutes(5),
+            now + lean_ctx_time::Duration::minutes(5),
             4,
             now,
             &test_origin_key(origin),
@@ -1628,6 +1867,7 @@ async fn relay_http_quota_returns_retry_after_without_charging_failed_auth() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
     let app = Router::new()
         .route("/a2a/deliver", axum::routing::post(a2a_deliver))
@@ -1639,7 +1879,7 @@ async fn relay_http_quota_returns_retry_after_without_charging_failed_auth() {
     let mut bundle = EvidenceBundle::new("quota-task".into());
     bundle.finalize();
     let payload = serde_json::to_string(&bundle).unwrap();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let record = RelayRecordV1::new_signed(
         "quota-delivery",
         "origin",
@@ -1648,7 +1888,7 @@ async fn relay_http_quota_returns_retry_after_without_charging_failed_auth() {
         "project",
         TransportContentType::EvidenceBundle,
         DataClassification::Internal,
-        now + chrono::Duration::minutes(5),
+        now + lean_ctx_time::Duration::minutes(5),
         4,
         now,
         &test_origin_key("origin"),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Evidence for a local reader (Hive Desktop, L7): `audit verify --json`
+//! Evidence for a local reader (Cloud Desktop, L7): `audit verify --json`
 //! (the audit trail's hash chain, full pass), `savings verify --json` /
 //! `ledger verify --json` (the savings ledger's chain) and
 //! `evidence-export --json` (the evidence package with each file's digest
@@ -109,7 +109,7 @@ pub(crate) fn fresh_dir(data_dir: &Path) -> Result<std::path::PathBuf, Failure> 
     let internal = |message: String| Failure::new(Code::Internal, message);
     let parent = data_dir.join("evidence");
     std::fs::create_dir_all(&parent).map_err(|e| internal(format!("evidence dir: {e}")))?;
-    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.6fZ");
+    let stamp = lean_ctx_time::UtcDateTime::now().format("%Y%m%dT%H%M%S%.6fZ");
     for attempt in 0..16u32 {
         let dir = parent.join(format!("export-{stamp}-{}-{attempt}", std::process::id()));
         match std::fs::create_dir(&dir) {

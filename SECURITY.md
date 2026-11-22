@@ -17,9 +17,9 @@ If you discover a security vulnerability in lean-ctx, please report it privately
 
 ## What lean-ctx Does (and Doesn't Do)
 
-LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can see.**
+LeanCTX is the **Context Gateway for AI Systems**. **Less context. More intelligence.**
 This policy covers open-source **LeanCTX | OSS** and its local CLI, MCP,
-HTTP, hook, and supported proxy paths. **LeanCTX SDK** and commercial Enterprise
+HTTP, hook, and supported proxy paths. **LeanCTX | SDK** and commercial Enterprise
 deployments have separate integration and operating contracts.
 
 The Engine runs locally, but enabled providers, upstream model traffic, updates,

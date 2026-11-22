@@ -132,7 +132,8 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "completions",
     "gotchas",
     "learn",
-    "hive",
+    "cloud",
+    "run",
     "telemetry",
     "wrap",
     "unwrap",
@@ -145,11 +146,11 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
 /// shared [`lean_ctx::core::levenshtein`] helper (#712), so CLI commands, config
 /// keys and MCP tool names all suggest with identical semantics.
 pub(super) fn closest_command(input: &str) -> Option<&'static str> {
-    // `hive` is not suggested until the release switch is on (3.12.1).
+    // `cloud` is not suggested until the release switch is on (3.12.1).
     let visible = KNOWN_COMMANDS
         .iter()
         .copied()
-        .filter(|cmd| lean_ctx_hive::HIVE_AVAILABLE || *cmd != "hive");
+        .filter(|cmd| lean_ctx_cloud::CLOUD_AVAILABLE || *cmd != "cloud");
     lean_ctx::core::levenshtein::closest(input, visible)
 }
 
@@ -166,9 +167,9 @@ mod tests {
     }
 
     #[test]
-    fn hive_is_suggested_only_when_available() {
-        let hive = closest_command("hiv") == Some("hive");
-        assert_eq!(hive, lean_ctx_hive::HIVE_AVAILABLE);
+    fn cloud_is_suggested_only_when_available() {
+        let cloud = closest_command("clou") == Some("cloud");
+        assert_eq!(cloud, lean_ctx_cloud::CLOUD_AVAILABLE);
     }
 
     #[test]

@@ -286,10 +286,19 @@ mod tests {
         );
     }
 
-    async fn spawn_streaming_upstream() -> (String, tokio::sync::oneshot::Receiver<String>) {
+    /// An SSE upstream that sends its headers and a first event, then keeps the
+    /// stream open until the test drops (or fires) the returned release
+    /// sender. A handler that waited for the end of the body cannot return
+    /// while the stream is held open, so no wall-clock bound is needed.
+    async fn spawn_streaming_upstream() -> (
+        String,
+        tokio::sync::oneshot::Receiver<String>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
+        let (release, held) = tokio::sync::oneshot::channel::<()>();
         tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut buf = Vec::new();
@@ -318,9 +327,10 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            // Hold the stream open until the test releases it.
+            let _ = held.await;
         });
-        (format!("http://{addr}"), rx)
+        (format!("http://{addr}"), rx, release)
     }
 
     /// The backend rail passes headers through, not unexamined content: a
@@ -395,7 +405,7 @@ mod tests {
     async fn backend_api_streams_mcp_sse_and_preserves_session_headers() {
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
-        let (upstream, seen_request) = spawn_streaming_upstream().await;
+        let (upstream, seen_request, release_stream) = spawn_streaming_upstream().await;
         let state = proxy_state(upstream);
         let req = Request::builder()
             .method("POST")
@@ -412,13 +422,18 @@ mod tests {
             .body(Body::empty())
             .unwrap();
 
+        // The upstream keeps the stream open until `release_stream` goes, so
+        // the handler can only return here by passing the stream through after
+        // the headers. The timeout is a hang guard, not the assertion: a
+        // buffering handler would wait for the end of the body and hit it.
         let response = tokio::time::timeout(
-            Duration::from_millis(500),
+            Duration::from_secs(30),
             backend_api_handler(State(state), req),
         )
         .await
-        .expect("SSE passthrough must return after upstream headers")
+        .expect("SSE passthrough must return after upstream headers, while the stream is open")
         .expect("backend request should succeed");
+        drop(release_stream);
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(

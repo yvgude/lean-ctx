@@ -1,0 +1,87 @@
+{
+  "ctxpkg_commit": "sha256:2bd96746bce1c1d87ee26e23de90ae83d306cddc1cf176171d3b6083f33c9d0f",
+  "ctxpkg_tree": "sha256:92f637fdef33302a93f96a6353a523168c2f6d51dac3ac998d4b6ca1818778f2",
+  "document": {
+    "facts": [
+      {
+        "appliesTo": [
+          "rust/src/core/cloud"
+        ],
+        "from_contributions": [
+          "p11"
+        ],
+        "id": "cloud.never-blocks",
+        "kind": "decision",
+        "statement": "Cloud never blocks a tool call; outbound items go through a durable outbox."
+      },
+      {
+        "appliesTo": [
+          "rust/src/core/cloud"
+        ],
+        "id": "cloud.screening-first",
+        "kind": "decision",
+        "statement": "Every outbound item passes instance screening before it is queued."
+      },
+      {
+        "anchors": [
+          {
+            "digest": "sha256:6869c3fea0619de5444550d1f7a0f31b01f79ea56eafcb78fbe15102fd4975be",
+            "lang": "rust",
+            "path": "rust/src/core/cloud/outbox.rs",
+            "symbol": "cloud::outbox::enqueue"
+          }
+        ],
+        "appliesTo": [
+          "rust/src/core/cloud"
+        ],
+        "id": "cloud.outbox-order",
+        "kind": "gotcha",
+        "statement": "The outbox keeps upload order per project; reordering breaks expected_revision."
+      }
+    ],
+    "format": "ctxpkg.research-context.v1",
+    "open_gaps": [
+      "How are drafts rebased after a merge?"
+    ],
+    "pages": [
+      {
+        "id": "cloud.outbound",
+        "items": [
+          {
+            "kind": "prose",
+            "text": "Everything an instance sends to Cloud takes one path."
+          },
+          {
+            "id": "cloud.screening-first",
+            "kind": "fact"
+          },
+          {
+            "id": "cloud.never-blocks",
+            "kind": "fact"
+          },
+          {
+            "id": "cloud.outbox-order",
+            "kind": "fact"
+          }
+        ],
+        "title": "Outbound path"
+      }
+    ],
+    "relations": [
+      {
+        "from": "cloud.screening-first",
+        "to": "cloud.never-blocks",
+        "type": "supports"
+      },
+      {
+        "from": "cloud.outbox-order",
+        "to": "cloud.never-blocks",
+        "type": "explains"
+      }
+    ]
+  },
+  "revision": 4,
+  "schema": "leanctx.cloud.knowledge-revision/v1",
+  "updated_at": "2026-10-20T12:00:00Z",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

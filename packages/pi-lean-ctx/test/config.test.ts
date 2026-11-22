@@ -205,3 +205,29 @@ describe("loadPiConfig tool-profile mapping", () => {
     expect(cfg.forwardedEnv.LEAN_CTX_TOOL_PROFILE).toBeUndefined();
   });
 });
+
+describe("loadPiConfig guidance switch", () => {
+  afterEach(() => {
+    delete process.env.LEAN_CTX_PI_GUIDANCE;
+  });
+
+  it("defaults on, honors config.json false, and lets the env var win", () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "pi-lean-ctx-guidance-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    try {
+      expect(loadPiConfig().guidance).toBe(true);
+
+      mkdirSync(join(agentDir, "extensions", "pi-lean-ctx"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "extensions", "pi-lean-ctx", "config.json"),
+        JSON.stringify({ guidance: false }),
+      );
+      expect(loadPiConfig().guidance).toBe(false);
+
+      process.env.LEAN_CTX_PI_GUIDANCE = "1";
+      expect(loadPiConfig().guidance).toBe(true);
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Completion spec: Packs, policy, team, provider, Hive and telemetry commands.
+//! Completion spec: Packs, policy, team, provider, Cloud and telemetry commands.
 
 use super::spec::{CommandNode, FlagSpec, pack_flag, pack_leaf};
 
@@ -120,10 +120,10 @@ pub(super) const INTERNAL_COMPLETE: CommandNode = CommandNode {
     hidden: true,
 };
 
-pub(super) const HIVE: CommandNode = CommandNode {
-    name: "hive",
-    aliases: &["hive"],
-    description: "Connect this machine to LeanCTX | Hive",
+pub(super) const CLOUD: CommandNode = CommandNode {
+    name: "cloud",
+    aliases: &["cloud"],
+    description: "Connect this machine to LeanCTX Cloud",
     subcommands: &[
         CommandNode {
             name: "connect",
@@ -134,14 +134,14 @@ pub(super) const HIVE: CommandNode = CommandNode {
                 FlagSpec {
                     long: "--url",
                     short: None,
-                    description: "Hive origin (self-hosted)",
+                    description: "LeanCTX Cloud origin (self-hosted)",
                     takes_value: true,
                     value_kind: None,
                 },
                 FlagSpec {
                     long: "--label",
                     short: None,
-                    description: "Instance name shown in Hive",
+                    description: "Instance name shown in LeanCTX Cloud",
                     takes_value: true,
                     value_kind: None,
                 },
@@ -149,6 +149,13 @@ pub(super) const HIVE: CommandNode = CommandNode {
                     long: "--no-browser",
                     short: None,
                     description: "Print the approval link only",
+                    takes_value: false,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--enrollment-token-stdin",
+                    short: None,
+                    description: "Enroll unattended with a team enrollment token read from stdin",
                     takes_value: false,
                     value_kind: None,
                 },
@@ -215,13 +222,13 @@ pub(super) const HIVE: CommandNode = CommandNode {
     flags: &[],
     positional: None,
     // Completed only once the release switch is on (3.12.1).
-    hidden: !lean_ctx_hive::HIVE_AVAILABLE,
+    hidden: !lean_ctx_cloud::CLOUD_AVAILABLE,
 };
 
 pub(super) const TELEMETRY: CommandNode = CommandNode {
     name: "telemetry",
     aliases: &[],
-    description: "Manage anonymous usage telemetry",
+    description: "Manage pseudonymous usage telemetry",
     subcommands: &[
         CommandNode {
             name: "status",
@@ -286,7 +293,7 @@ pub(super) const TELEMETRY: CommandNode = CommandNode {
 pub(super) const MODELS: CommandNode = CommandNode {
     name: "models",
     aliases: &[],
-    description: "List the models your Hive plan includes",
+    description: "List the models your LeanCTX Cloud plan includes",
     subcommands: &[],
     flags: &[],
     positional: None,
@@ -301,4 +308,21 @@ pub(super) const DAEMON: CommandNode = CommandNode {
     flags: &[],
     positional: None,
     hidden: true,
+};
+
+pub(super) const RUN: CommandNode = CommandNode {
+    name: "run",
+    aliases: &[],
+    description: "A coding agent on a task in a fresh worktree, here or on your LeanCTX computer",
+    subcommands: &[
+        pack_leaf("list", "Your runs"),
+        pack_leaf("status", "One run"),
+        pack_leaf("events", "The events of a run"),
+        pack_leaf("logs", "The agent's output"),
+        pack_leaf("stop", "Stop a run's agent"),
+        pack_leaf("fetch", "Fetch a computer run's branch"),
+    ],
+    flags: &[],
+    positional: None,
+    hidden: false,
 };

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::SigningKey;
+use lean_ctx_time::{Duration, OffsetDateTime, UtcDateTime};
 
 const SENDER: &str = "agent-a";
 const RECIPIENT: &str = "server-b";
@@ -28,7 +28,7 @@ fn scope() -> TaskScopeV1 {
 }
 
 fn policy(key: &SigningKey) -> TaskAuthorityConfigV1 {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     TaskAuthorityConfigV1 {
         schema_version: TASK_AUTHORITY_CONFIG_VERSION,
         peers: vec![TaskPeerTrustV1 {
@@ -68,7 +68,7 @@ fn artifact() -> AgentArtifactRefV1 {
 }
 
 fn descriptor_with(key: &SigningKey, idempotency_key: &str, body: &str) -> TaskDescriptorV1 {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let mut descriptor = TaskDescriptorV1::new(
         SENDER,
         RECIPIENT,
@@ -91,7 +91,7 @@ fn descriptor(key: &SigningKey) -> TaskDescriptorV1 {
     descriptor_with(key, "idem-1", "ship it")
 }
 
-fn expectation<'a>(now: DateTime<Utc>) -> TaskAuthorityExpectationV1<'a> {
+fn expectation<'a>(now: UtcDateTime) -> TaskAuthorityExpectationV1<'a> {
     TaskAuthorityExpectationV1 {
         sender: SENDER,
         recipient: RECIPIENT,
@@ -105,7 +105,7 @@ fn verify(
     descriptor: &TaskDescriptorV1,
     policy: &TaskAuthorityConfigV1,
 ) -> Result<(), TaskAuthorityError> {
-    descriptor.verify_authority(policy, &expectation(Utc::now()))
+    descriptor.verify_authority(policy, &expectation(UtcDateTime::now()))
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn forged_sender_is_rejected_even_with_a_valid_signature() {
         recipient: RECIPIENT,
         tenant_id: TENANT,
         project_id: PROJECT,
-        now: Utc::now(),
+        now: UtcDateTime::now(),
     };
     assert_eq!(
         forged.verify_authority(&policy(&key), &claimed),
@@ -285,7 +285,7 @@ fn signature_mutation_of_any_bound_field_is_rejected() {
 fn wrong_recipient_tenant_or_project_is_rejected() {
     let key = signing_key(7);
     let policy = policy(&key);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
 
     let mut wrong_recipient = descriptor(&key);
     wrong_recipient.recipient = "server-c".to_string();
@@ -324,7 +324,7 @@ fn wrong_recipient_tenant_or_project_is_rejected() {
 #[test]
 fn grant_window_revocation_and_binding_are_enforced() {
     let key = signing_key(7);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
 
     let mut revoked = policy(&key);
     revoked.grants[0].revoked = true;
@@ -373,7 +373,7 @@ fn grant_window_revocation_and_binding_are_enforced() {
 #[test]
 fn key_validity_window_is_enforced() {
     let key = signing_key(7);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
 
     let mut expired = policy(&key);
     expired.peers[0].not_before = now - Duration::hours(4);
@@ -407,7 +407,7 @@ fn key_validity_window_is_enforced() {
 fn descriptor_time_bounds_are_enforced() {
     let key = signing_key(7);
     let policy = policy(&key);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
 
     let mut expired = descriptor(&key);
     expired.issued_at = now - Duration::hours(2);
@@ -687,7 +687,7 @@ fn idempotency_ledger_is_bounded_by_a_retention_window() {
 
     TaskStore::mutate_locked(&path, |store| {
         store.idempotency[0].created_at =
-            Utc::now() - Duration::seconds(IDEMPOTENCY_RETENTION_SECONDS + 60);
+            UtcDateTime::now() - Duration::seconds(IDEMPOTENCY_RETENTION_SECONDS + 60);
         Ok::<(), std::io::Error>(())
     })
     .expect("age the ledger entry");
@@ -724,7 +724,7 @@ const NONCE: &str = "nonce-1";
 /// The send-only policy widened to the closed three-action set, with one
 /// grant per control action.
 fn control_policy(key: &SigningKey) -> TaskAuthorityConfigV1 {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let mut policy = policy(key);
     policy.peers[0].allowed_actions = vec![
         TASK_ACTION_SEND.to_string(),
@@ -755,8 +755,8 @@ fn control_at(
     action: &str,
     grant_id: &str,
     reason: Option<&str>,
-    issued_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    issued_at: UtcDateTime,
+    expires_at: UtcDateTime,
 ) -> TaskControlDescriptorV1 {
     let mut control = TaskControlDescriptorV1::new(
         SENDER,
@@ -783,7 +783,7 @@ fn control_with(
     grant_id: &str,
     reason: Option<&str>,
 ) -> TaskControlDescriptorV1 {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     control_at(
         key,
         action,
@@ -811,7 +811,7 @@ fn verify_control(
     control: &TaskControlDescriptorV1,
     policy: &TaskAuthorityConfigV1,
 ) -> Result<(), TaskAuthorityError> {
-    control.verify_authority(policy, &expectation(Utc::now()))
+    control.verify_authority(policy, &expectation(UtcDateTime::now()))
 }
 
 #[test]
@@ -937,7 +937,7 @@ fn control_action_set_is_closed() {
 fn control_time_bounds_and_grant_lifetime_are_enforced() {
     let key = signing_key(7);
     let policy = control_policy(&key);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
 
     let expired = control_at(
         &key,
@@ -1051,7 +1051,7 @@ fn control_sender_recipient_and_scope_bindings_are_enforced() {
 #[test]
 fn control_key_and_grant_revocation_windows_are_enforced() {
     let key = signing_key(7);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
 
     let mut revoked_key = control_policy(&key);
     revoked_key.peers[0].revoked = true;
@@ -1282,9 +1282,9 @@ fn send_signing_transcript_is_unchanged_by_the_control_contract() {
         b"leanctx.a2a.task.descriptor.sig.v1\0"
     );
     let key = signing_key(7);
-    let issued_at = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+    let issued_at = OffsetDateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
         .expect("issued_at")
-        .with_timezone(&Utc);
+        .to_utc();
     let mut descriptor = TaskDescriptorV1::new(
         SENDER,
         RECIPIENT,

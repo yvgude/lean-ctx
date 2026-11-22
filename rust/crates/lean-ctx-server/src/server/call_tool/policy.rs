@@ -396,7 +396,15 @@ impl LeanCtxServer {
         // (#1783).
         let mut session = current.write().await;
         let old_root = session.project_root.clone();
-        tracing::info!("session: switching project root from {old_root:?} to {new_root}");
+        // Paths stay out of the log; the local audit trail names an adopted root.
+        tracing::info!(
+            "session: switching project root (from {})",
+            if old_root.is_some() {
+                "a project"
+            } else {
+                "no project"
+            }
+        );
         if let Some(old_root) = old_root.as_deref() {
             self.session.remember_own(old_root, &session.id);
         }
@@ -525,7 +533,8 @@ mod workflow_gate_tests {
             .expect("load")
             .expect("a withheld workflow is still a workflow");
         assert!(is_withheld_sentinel(&closed));
-        closed.updated_at = chrono::Utc::now() - chrono::Duration::minutes(45);
+        closed.updated_at =
+            lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(45);
         *server.workflow.write().await = Some(closed);
 
         for tool in ["ctx_read", "ctx_session", "ctx_ledger"] {
@@ -558,7 +567,7 @@ mod workflow_gate_tests {
         assert!(server.guard_workflow("ctx_read").await.is_none());
         assert!(server.guard_workflow("ctx_session").await.is_none());
         assert!(server.guard_workflow("ctx_shell").await.is_some());
-        real.updated_at = chrono::Utc::now() - chrono::Duration::minutes(31);
+        real.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(31);
         *server.workflow.write().await = Some(real);
         assert!(server.guard_workflow("ctx_shell").await.is_none());
         assert!(

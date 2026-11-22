@@ -39,9 +39,9 @@ pub use lean_ctx::core::claude_host::is_governor_installed as is_installed;
 use lean_ctx::core::claude_host::rules_block;
 
 /// PostToolUse matcher: the governed results plus the edit tools that bump
-/// the edit epoch (they never get output).
-pub(crate) const GOVERN_POST_MATCHER: &str =
-    "Read|Bash|Edit|Write|MultiEdit|NotebookEdit|mcp__lean-ctx__ctx_read|mcp__lean_ctx__ctx_read";
+/// the edit epoch (they never get output), and Code Mode's `REPL` result
+/// with `Poll`, which delivers an async eval's settled result.
+pub(crate) const GOVERN_POST_MATCHER: &str = "Read|Bash|Edit|Write|MultiEdit|NotebookEdit|REPL|Poll|mcp__lean-ctx__ctx_read|mcp__lean_ctx__ctx_read";
 
 /// Marks an MCP entry this profile wrote, so a revert removes only its own keys.
 const ARM_MARKER_ENV: &str = "LEAN_CTX_GOVERNOR_ARM";
@@ -320,6 +320,8 @@ fn apply_hooks(root: &mut serde_json::Value, binary: &str) {
             super::governor_hosts::CLAUDE_WRITE_MATCHER,
             &crate::hooks::hook_shell_command(binary, "write-guard"),
         );
+        // write-guard stays fail-closed: it is a guard, not a rewrite.
+        super::claude::fail_open_pre_hooks(arr);
     }
     if let Some(arr) = event_array(hooks, "PostToolUse") {
         timed_hook(arr, GOVERN_POST_MATCHER, &govern, timeout);

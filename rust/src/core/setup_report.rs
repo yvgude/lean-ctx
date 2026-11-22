@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetupReport {
     pub schema_version: u32,
-    pub started_at: DateTime<Utc>,
-    pub finished_at: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub finished_at: UtcDateTime,
     pub success: bool,
     pub platform: PlatformInfo,
     pub steps: Vec<SetupStepReport>,

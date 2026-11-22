@@ -20,14 +20,15 @@ impl McpTool for CtxGraphTool {
              action=symbol path=\"file.rs::fnName\" returns the DEFINITION (not usages — \
              use ctx_search for references). neighbors=imports±direction, \
              impact=reverse-dep blast radius, path from→to=dependency chain, \
-             diff since=HEAD~1=git change impact, diagram kind=deps|calls (Mermaid).\n\
+             diff since=HEAD~1=git change impact, landing since=base head=ref \
+             [other=ref]=changed units, callers, affected tests, overlap, diagram kind=deps|calls (Mermaid).\n\
              For understanding code use ctx_compose FIRST.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "build|related|symbol|impact|status|enrich|context|diagram|neighbors|path|explain|diff"
+                        "description": "build|related|symbol|impact|status|enrich|context|diagram|neighbors|path|explain|diff|landing"
                     },
                     "path": {
                         "type": "string",
@@ -38,6 +39,8 @@ impl McpTool for CtxGraphTool {
                     "kind": { "type": "string", "description": "diagram: deps|calls" },
                     "format": { "type": "string", "description": "text|json" },
                     "since": { "type": "string", "description": "Git ref (default HEAD~1)" },
+                    "head": { "type": "string", "description": "landing: head ref (default HEAD)" },
+                    "other": { "type": "string", "description": "landing: second head for overlap" },
                     "project_root": { "type": "string" }
                 },
                 "required": ["action"],
@@ -95,6 +98,17 @@ impl McpTool for CtxGraphTool {
         } else {
             None
         };
+
+        if action == "landing" {
+            return Ok(ToolOutput::simple(crate::tools::ctx_graph_landing::handle(
+                since.as_deref(),
+                get_str(args, "head").as_deref(),
+                get_str(args, "other").as_deref(),
+                depth,
+                &root,
+                format.as_deref(),
+            )));
+        }
 
         let cache = ctx
             .cache

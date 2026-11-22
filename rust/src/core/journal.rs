@@ -1,7 +1,7 @@
 use crate::core::policy::diagnostics;
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use chrono::{Local, Utc};
+use lean_ctx_time::{LocalDateTime, UtcDateTime};
 
 /// The activity journal is diagnostic state, never an unbounded hot-path
 /// workload. Archives preserve history while the active file stays cheap to
@@ -22,7 +22,10 @@ fn rotate_active_journal_if_needed(path: &std::path::Path) {
     if !active_journal_needs_rotation(path) {
         return;
     }
-    let archive_name = format!("journal-{}.md", Utc::now().format("%Y%m%dT%H%M%S%6fZ"));
+    let archive_name = format!(
+        "journal-{}.md",
+        UtcDateTime::now().format("%Y%m%dT%H%M%S%6fZ")
+    );
     let archive = path.with_file_name(archive_name);
     if std::fs::rename(path, archive).is_ok() {
         let _ = std::fs::remove_file(path.with_extension("day"));
@@ -103,7 +106,7 @@ fn log_inner(category: &str, message: &str, tool: Option<&str>) {
         };
         let path = &target.path;
         rotate_active_journal_if_needed(path);
-        let timestamp = Local::now().format("%Y-%m-%d %H:%M");
+        let timestamp = LocalDateTime::now().format("%Y-%m-%d %H:%M");
         let entry = format!("- **{timestamp}** [{category}] {message}\n");
         let Some(serde_json::Value::String(entry)) =
             target.inspect(tool, &serde_json::Value::String(entry))
@@ -115,7 +118,7 @@ fn log_inner(category: &str, message: &str, tool: Option<&str>) {
 
         if let Ok(mut f) = file {
             if needs_header {
-                let date = Local::now().format("%Y-%m-%d").to_string();
+                let date = LocalDateTime::now().format("%Y-%m-%d").to_string();
                 let _ = writeln!(f, "# lean-ctx Activity Journal\n\n## {date}\n");
                 write_day_marker(path, &date);
             }
@@ -138,7 +141,7 @@ pub fn maybe_day_separator() {
             return;
         }
 
-        let today = Local::now().format("%Y-%m-%d").to_string();
+        let today = LocalDateTime::now().format("%Y-%m-%d").to_string();
         if crate::core::policy::files::read(&path.with_extension("day"), false)
             .ok()
             .flatten()
@@ -260,7 +263,7 @@ pub mod tests {
     fn day_separator_uses_small_tail_and_persists_marker() {
         let iso = crate::core::data_dir::isolated_data_dir();
         crate::test_env::set_var("LEAN_CTX_JOURNAL", "1");
-        let today = Local::now().format("%Y-%m-%d").to_string();
+        let today = LocalDateTime::now().format("%Y-%m-%d").to_string();
         let journal = iso.path().join("journal.md");
         std::fs::write(&journal, format!("{}\n## {today}\n", "x".repeat(16 * 1024)))
             .expect("write journal");

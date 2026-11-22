@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, FixedOffset};
+use lean_ctx_time::OffsetDateTime;
 
 use crate::core::audit_trail::{AuditEntry, AuditEventType};
 
@@ -67,6 +67,7 @@ pub fn event_label(ev: &AuditEventType) -> &str {
         AuditEventType::AgentDecommissioned => "agent_decommissioned",
         AuditEventType::AgentDriftDetected => "agent_drift_detected",
         AuditEventType::AgentDriftAcknowledged => "agent_drift_acknowledged",
+        AuditEventType::ProjectAdopted => crate::core::audit_trail::PROJECT_ADOPTED_EVENT,
         AuditEventType::Unknown(label) => label,
     }
 }
@@ -75,10 +76,7 @@ pub fn event_label(ev: &AuditEventType) -> &str {
 ///
 /// A missing trail file yields an empty aggregation (no audit activity yet),
 /// not an error — a fresh install can still produce a (zero-violation) report.
-pub fn aggregate(
-    from: DateTime<FixedOffset>,
-    to: DateTime<FixedOffset>,
-) -> Result<Aggregation, String> {
+pub fn aggregate(from: OffsetDateTime, to: OffsetDateTime) -> Result<Aggregation, String> {
     let trail_path = crate::core::data_dir::lean_ctx_data_dir()
         .map_err(|e| format!("data dir: {e}"))?
         .join("audit")
@@ -95,8 +93,8 @@ pub fn aggregate(
 /// Pure aggregation over raw JSONL — testable without touching the data dir.
 pub fn aggregate_str(
     raw: &str,
-    from: DateTime<FixedOffset>,
-    to: DateTime<FixedOffset>,
+    from: OffsetDateTime,
+    to: OffsetDateTime,
 ) -> Result<Aggregation, String> {
     let mut agg = empty();
     let mut events: BTreeMap<String, usize> = BTreeMap::new();
@@ -112,7 +110,7 @@ pub fn aggregate_str(
             let Ok(entry) = serde_json::from_value::<AuditEntry>(value) else {
                 continue;
             };
-            let Ok(ts) = DateTime::parse_from_rfc3339(&entry.timestamp) else {
+            let Ok(ts) = OffsetDateTime::parse_from_rfc3339(&entry.timestamp) else {
                 continue;
             };
             if ts < from || ts > to {
@@ -139,6 +137,8 @@ pub fn aggregate_str(
                     *tools.entry(entry.tool.clone()).or_default() += 1;
                 }
                 AuditEventType::SecretDetected => agg.redacted += 1,
+                // A project adoption is no refusal and no security finding.
+                AuditEventType::ProjectAdopted => {}
                 _ => agg.other_security += 1,
             }
         }
@@ -177,8 +177,8 @@ fn top_rows(map: BTreeMap<String, usize>, limit: usize) -> Vec<(String, usize)> 
 mod tests {
     use super::*;
 
-    fn ts(s: &str) -> DateTime<FixedOffset> {
-        DateTime::parse_from_rfc3339(s).unwrap()
+    fn ts(s: &str) -> OffsetDateTime {
+        OffsetDateTime::parse_from_rfc3339(s).unwrap()
     }
 
     /// One audit line with a fixed (already-broken-out) shape. Hashes are

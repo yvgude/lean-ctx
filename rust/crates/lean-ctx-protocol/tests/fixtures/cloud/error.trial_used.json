@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "trial_used",
+    "message": "This email address has already used its LeanCTX trial, so no new trial starts. Choose a plan to connect this device.",
+    "next_step": "subscribe",
+    "plan_needed": "personal",
+    "plans_url": "/o/bob/billing/?plan=personal",
+    "reason": "trial_used"
+  }
+}

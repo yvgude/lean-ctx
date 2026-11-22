@@ -165,13 +165,14 @@ impl OrgPolicyTrace {
         }
         match (self.state, self.valid_until.as_deref()) {
             (OrgPolicyState::Unpinned, None) => true,
-            (OrgPolicyState::Required, Some(until)) => chrono::DateTime::parse_from_rfc3339(until)
-                .is_ok_and(|parsed| {
+            (OrgPolicyState::Required, Some(until)) => {
+                lean_ctx_time::OffsetDateTime::parse_from_rfc3339(until).is_ok_and(|parsed| {
                     parsed
-                        .with_timezone(&chrono::Utc)
-                        .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+                        .to_utc()
+                        .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Nanos, true)
                         == until
-                }),
+                })
+            }
             _ => false,
         }
     }
@@ -190,7 +191,7 @@ impl OrgPolicyTrace {
             policy_version: observation.policy_version(),
             valid_until: observation
                 .valid_until()
-                .map(|until| until.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)),
+                .map(|until| until.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Nanos, true)),
         })
         .filter(Self::well_formed)
     }

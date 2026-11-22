@@ -81,12 +81,12 @@ fn detectors_document() -> serde_json::Value {
             "sources": lean_ctx::core::input_filters::pii::SOURCE_DETECTOR_NAMES,
             "policy_filters": lean_ctx::core::input_filters::pii::DETECTOR_NAMES,
         },
-        "filter_packs": hive_filter_labels(),
+        "filter_packs": cloud_filter_labels(),
     })
 }
 
-fn hive_filter_labels() -> Vec<String> {
-    let rules = lean_ctx_hive::policy::installed_filter_rules();
+fn cloud_filter_labels() -> Vec<String> {
+    let rules = lean_ctx_cloud::policy::installed_filter_rules();
     rules
         .redaction
         .into_iter()
@@ -152,7 +152,7 @@ fn control_document(project: &str, receipts: &[receipt_store::StoredReceipt]) ->
         "project_pack": pack_present,
         "effective": effective,
         // What content is screened for: the built-in PII classes and the
-        // rules of the installed Hive filter packs, by label.
+        // rules of the installed Cloud filter packs, by label.
         "detectors": detectors_document(),
         "receipts_read": receipts.len(),
         "dispositions": dispositions,

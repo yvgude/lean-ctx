@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::{CheckpointId, DecisionId, ProvenanceId};
@@ -7,8 +7,8 @@ fn default_schema_version() -> u32 {
     1
 }
 
-fn default_observed_at() -> DateTime<Utc> {
-    Utc::now()
+fn default_observed_at() -> UtcDateTime {
+    UtcDateTime::now()
 }
 
 /// How directly an edit observation was established.
@@ -54,7 +54,7 @@ pub struct ProvenanceRecord {
     #[serde(default)]
     pub tool: String,
     #[serde(default = "default_observed_at")]
-    pub observed_at: DateTime<Utc>,
+    pub observed_at: UtcDateTime,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before_sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -113,7 +113,7 @@ pub struct CheckpointRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub provenance_ids: Vec<ProvenanceId>,
     #[serde(default = "default_observed_at")]
-    pub observed_at: DateTime<Utc>,
+    pub observed_at: UtcDateTime,
     #[serde(default)]
     pub files_touched: u64,
     #[serde(default)]

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `/v1/local/queens`: the Queen sessions LeanCTX | Hive Desktop started,
+//! `/v1/local/queens`: the Queen sessions LeanCTX | Cloud Desktop started,
 //! registered by the app over the 0600 local socket (socket only, no CLI
 //! verb). A registered session may set task priority and labels through
-//! `ctx_tasks` (`lean_ctx_hive::queens`).
+//! `ctx_tasks` (`lean_ctx_cloud::queens`).
 
 use serde::Serialize;
 
-use lean_ctx_hive::queens::{self, QueenSession};
+use lean_ctx_cloud::queens::{self, QueenSession};
 
 use super::{Answer, Code, Failure};
 
@@ -19,10 +19,10 @@ fn session_id(args: &[String]) -> Result<&str, Failure> {
     super::flag(args, "--session-id")?.ok_or_else(|| Failure::invalid("session_id is required"))
 }
 
-fn local(error: lean_ctx_hive::HiveError) -> Failure {
+fn local(error: lean_ctx_cloud::CloudError) -> Failure {
     match error {
-        lean_ctx_hive::HiveError::Config(message) => Failure::invalid(message),
-        lean_ctx_hive::HiveError::Refused(message) => Failure::new(Code::Forbidden, message),
+        lean_ctx_cloud::CloudError::Config(message) => Failure::invalid(message),
+        lean_ctx_cloud::CloudError::Refused(message) => Failure::new(Code::Forbidden, message),
         other => Failure::new(Code::Unavailable, other.to_string()),
     }
 }
@@ -33,7 +33,8 @@ fn build(args: &[String]) -> Result<QueensList, Failure> {
     let queens = match action {
         "list" => queens::list_in(&dir),
         "register" => {
-            let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let now = lean_ctx_time::UtcDateTime::now()
+                .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true);
             queens::register_in(&dir, session_id(args)?, super::flag(args, "--name")?, &now)
                 .map_err(local)?
         }
@@ -83,8 +84,8 @@ mod tests {
         );
         assert_eq!(added["queens"][0]["session_id"], "sess-0f3a9c2e");
         assert_eq!(added["queens"][0]["name"], "LeanCTX core");
-        let dir = lean_ctx_hive::queens::data_dir().expect("ok");
-        assert!(lean_ctx_hive::queens::is_queen_in(&dir, "sess-0f3a9c2e"));
+        let dir = lean_ctx_cloud::queens::data_dir().expect("ok");
+        assert!(lean_ctx_cloud::queens::is_queen_in(&dir, "sess-0f3a9c2e"));
         let bad = call("POST", "/v1/local/queens", &[("session_id", json!("x y"))]);
         assert_eq!(bad["error"]["code"], "invalid_argument");
         let gone = call(

@@ -1066,7 +1066,7 @@ fn disk_status_for_code_graph(project_root: &str) -> DiskStatus {
 
 fn format_time(t: SystemTime) -> String {
     let secs = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let dt = chrono::DateTime::from_timestamp(secs as i64, 0);
+    let dt = lean_ctx_time::UtcDateTime::from_timestamp(secs as i64, 0);
     dt.map_or_else(
         || format!("{secs}"),
         |d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string(),

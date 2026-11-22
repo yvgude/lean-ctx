@@ -254,7 +254,6 @@ fn lock_package_migration(
 
 #[cfg(test)]
 mod tests {
-    use chrono::{TimeZone, Utc};
 
     use super::*;
     use crate::core::context_package::content::PackageContent;
@@ -284,7 +283,7 @@ mod tests {
             description: "v3 package migration fixture".to_string(),
             author: None,
             scope: None,
-            created_at: Utc.timestamp_opt(1_700_000_000, 0).single().unwrap(),
+            created_at: lean_ctx_time::UtcDateTime::from_timestamp(1_700_000_000, 0).unwrap(),
             updated_at: None,
             layers: vec![PackageLayer::Knowledge],
             dependencies: vec![],

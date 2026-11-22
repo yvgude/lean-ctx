@@ -58,9 +58,10 @@ fn admitted_envelope_created_at_binds_retention_plan_identity() {
     let (_root, project_root) = seeded_project("fixed envelope retention fixture");
     ProjectKnowledge::mutate_locked(&project_root, |knowledge| {
         assert_eq!(knowledge.facts.len(), 1);
-        knowledge.facts[0].created_at = DateTime::parse_from_rfc3339("2026-09-13T00:00:00Z")
-            .expect("fixed knowledge creation time")
-            .to_utc();
+        knowledge.facts[0].created_at =
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-09-13T00:00:00Z")
+                .expect("fixed knowledge creation time")
+                .to_utc();
     })
     .expect("persist fixed knowledge creation time");
     let policy = crate::core::context_kernel::policy::ContextPolicy {

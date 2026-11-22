@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use chrono::{Duration, Utc};
+use lean_ctx_time::{Duration, UtcDateTime};
 
 use super::{
     ARTIFACT_REF_VERSION, AgentArtifactRefV1, TASK_ACTION_SEND, Task, TaskDescriptorV1, TaskPart,
@@ -183,7 +183,7 @@ fn key_shaped_new_text_is_stored_masked() {
 }
 
 fn remote_descriptor(body: &str) -> TaskDescriptorV1 {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let mut descriptor = TaskDescriptorV1::new(
         "agent-a",
         "server-b",

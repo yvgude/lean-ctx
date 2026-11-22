@@ -29,12 +29,20 @@ fn parse_version_number(s: &str) -> Option<usize> {
 
 impl<'a> RulesFile<'a> {
     /// Parse `content`, scanning for `START_MARK` and version comment.
+    ///
+    /// Markers count only as whole lines (GL #1158), the form the writers
+    /// emit: a prose mention of `<!-- lean-ctx-rules -->` is user text. The
+    /// end marker is the first marker line after the start marker.
     pub fn parse(content: &'a str) -> Self {
-        let start = content.find(START_MARK);
+        let start_line = crate::marked_block::marker_line_span(content, START_MARK);
+        let start = start_line.map(|(s, _)| s);
         let version = start
             .and_then(|s| parse_version_number(&content[s + START_MARK.len()..]))
             .unwrap_or(0);
-        let end = content.find(END_MARK);
+        let end = start_line.and_then(|(_, after)| {
+            crate::marked_block::marker_line_span(&content[after..], END_MARK)
+                .map(|(e, _)| after + e)
+        });
         RulesFile {
             content,
             start,
@@ -53,6 +61,13 @@ impl<'a> RulesFile<'a> {
         self.version
     }
 
+    /// A start marker without an end marker after it. Merging such a file
+    /// cannot tell the old block from the user text after it, so writers
+    /// refuse it instead of guessing.
+    pub fn is_unterminated(&self) -> bool {
+        self.start.is_some() && self.end.is_none()
+    }
+
     /// Whether the file's version is at least `RULES_VERSION`.
     pub fn is_current(&self) -> bool {
         self.version >= RULES_VERSION
@@ -63,10 +78,14 @@ impl<'a> RulesFile<'a> {
         self.start.map_or("", |s| self.content[..s].trim())
     }
 
-    /// Content after the last `END_MARK`.
+    /// Content after the block's `END_MARK`. Without an end marker this is
+    /// everything after the start marker, so no caller can drop user text.
     pub fn suffix(&self) -> &'a str {
-        self.end
-            .map_or("", |e| self.content[e + END_MARK.len()..].trim())
+        match (self.start, self.end) {
+            (_, Some(e)) => self.content[e + END_MARK.len()..].trim(),
+            (Some(s), None) => self.content[s + START_MARK.len()..].trim(),
+            (None, None) => "",
+        }
     }
 
     /// The lean-ctx block on disk, when both markers are present.
@@ -85,10 +104,13 @@ impl<'a> RulesFile<'a> {
         level: CompressionLevel,
         tool_profile: &super::tool_profiles::ToolProfile,
     ) -> bool {
-        match self.block() {
-            Some(block) => block.trim() == render(shadow, wrapper, level, tool_profile).trim(),
-            None => false,
-        }
+        self.block_matches(&render(shadow, wrapper, level, tool_profile))
+    }
+
+    /// Whether the on-disk block equals `fresh`, an already rendered block.
+    pub fn block_matches(&self, fresh: &str) -> bool {
+        self.block()
+            .is_some_and(|block| block.replace("\r\n", "\n").trim() == fresh.trim())
     }
 
     /// Merge freshly-rendered rules into this file.
@@ -99,7 +121,16 @@ impl<'a> RulesFile<'a> {
         level: CompressionLevel,
         tool_profile: &super::tool_profiles::ToolProfile,
     ) -> String {
-        let fresh = render(shadow, wrapper, level, tool_profile);
+        self.merged_with(&render(shadow, wrapper, level, tool_profile))
+    }
+
+    /// Merge `fresh`, an already rendered block, into this file, in the
+    /// file's line endings.
+    pub fn merged_with(&self, fresh: &str) -> String {
+        crate::marked_block::with_line_endings_of(self.content, self.merged_lf(fresh))
+    }
+
+    fn merged_lf(&self, fresh: &str) -> String {
         if self.start.is_some() {
             let before = self.prefix();
             let after = self.suffix();
@@ -109,7 +140,7 @@ impl<'a> RulesFile<'a> {
                 out.push('\n');
                 out.push('\n');
             }
-            out.push_str(&fresh);
+            out.push_str(fresh);
             if !after.is_empty() {
                 out.push('\n');
                 out.push('\n');
@@ -126,7 +157,7 @@ impl<'a> RulesFile<'a> {
                 out.push('\n');
                 out.push('\n');
             }
-            out.push_str(&fresh);
+            out.push_str(fresh);
             out
         }
     }
@@ -141,8 +172,13 @@ impl<'a> RulesFile<'a> {
         render(shadow, wrapper, level, tool_profile)
     }
 
-    /// Strip the lean-ctx section, keeping user content before/after.
+    /// Strip the lean-ctx section, keeping user content before/after (in the
+    /// file's line endings).
     pub fn without_section(&self) -> String {
+        crate::marked_block::with_line_endings_of(self.content, self.without_section_lf())
+    }
+
+    fn without_section_lf(&self) -> String {
         if let Some(start_pos) = self.start {
             let before = self.content[..start_pos].trim();
             let after = self.suffix();

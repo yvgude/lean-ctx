@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusReport {
     pub schema_version: u32,
-    pub generated_at: DateTime<Utc>,
+    pub generated_at: UtcDateTime,
     pub version: String,
     pub setup_report: Option<lean_ctx::core::setup_report::SetupReport>,
     pub doctor_compact_passed: u32,
@@ -72,7 +72,7 @@ pub(crate) fn save_report<T: Serialize>(report: &T, path: &std::path::Path) -> R
 }
 
 fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
-    let generated_at = Utc::now();
+    let generated_at = UtcDateTime::now();
     let version = env!("CARGO_PKG_VERSION").to_string();
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
@@ -182,6 +182,10 @@ fn print_human(report: &StatusReport, saved_to: Option<&std::path::Path>) {
         "  doctor: {}/{}",
         report.doctor_compact_passed, report.doctor_compact_total
     );
+    println!(
+        "  usage: {}",
+        lean_ctx::core::stats::display_calls_saved_line()
+    );
 
     if let Some(setup) = &report.setup_report {
         println!(
@@ -210,6 +214,9 @@ fn print_human(report: &StatusReport, saved_to: Option<&std::path::Path>) {
         .filter(|t| t.detected && t.state == "up_to_date")
         .count();
     println!("  rules: {rules_up_to_date}/{rules_detected} up-to-date (detected tools)");
+    for line in crate::doctor::empty_session_lines() {
+        println!("  clients: {line}");
+    }
 
     if !report.warnings.is_empty() {
         println!("  warnings: {}", report.warnings.len());

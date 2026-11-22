@@ -32,13 +32,46 @@ const ALIAS_END: &str = "# <<< lean-ctx agent aliases <<<";
 const DROPIN_ZSH: &str = "00-lean-ctx.zsh";
 const DROPIN_SH: &str = "00-lean-ctx.sh";
 
-const KNOWN_AGENT_ENV_VARS: &[&str] = &[
+/// Variables an agent host sets in its agent's shell; the shell hook
+/// redirects through lean-ctx when one is set.
+pub const KNOWN_AGENT_ENV_VARS: &[&str] = &[
     "LEAN_CTX_AGENT",
     "CLAUDECODE",
     "CODEBUDDY",
     "CODEX_CLI_SESSION",
     "GEMINI_SESSION",
 ];
+
+/// Further variables only an agent's process carries, beyond
+/// [`KNOWN_AGENT_ENV_VARS`]. Together they are the one list of agent
+/// markers ([`agent_env_marker`]) for commands an agent must not run.
+pub const MORE_AGENT_ENV_VARS: &[&str] = &[
+    "CURSOR_AGENT",
+    "CURSOR_TASK_ID",
+    "CODEX_SANDBOX",
+    "CODEX_THREAD_ID",
+    "LEAN_CTX_AGENT_ID",
+    "LCTX_AGENT_ID",
+    "AI_AGENT",
+];
+
+/// Every agent marker: [`KNOWN_AGENT_ENV_VARS`], then [`MORE_AGENT_ENV_VARS`].
+pub fn agent_env_markers() -> impl Iterator<Item = &'static str> {
+    KNOWN_AGENT_ENV_VARS
+        .iter()
+        .chain(MORE_AGENT_ENV_VARS)
+        .copied()
+}
+
+/// The first agent marker `is_set` reports.
+pub fn agent_env_marker(is_set: impl Fn(&str) -> bool) -> Option<&'static str> {
+    agent_env_markers().find(|name| is_set(name))
+}
+
+/// The first agent marker set (non-empty) in this process's environment.
+pub fn env_agent_marker() -> Option<&'static str> {
+    agent_env_marker(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()))
+}
 
 const AGENT_ALIASES: &[(&str, &str)] = &[
     ("claude", "claude"),
@@ -227,13 +260,13 @@ impl BackupStamp {
     /// Capture the current UTC time. Call this **once** at the top of
     /// an install run.
     fn now() -> Self {
-        Self::at(chrono::Utc::now())
+        Self::at(lean_ctx_time::UtcDateTime::now())
     }
 
     /// Inject a specific moment in time. Used by tests; can also be
     /// used in future to align migration backups with a user-supplied
     /// release marker.
-    fn at(stamp: chrono::DateTime<chrono::Utc>) -> Self {
+    fn at(stamp: lean_ctx_time::UtcDateTime) -> Self {
         Self(stamp.format("%Y%m%dT%H%M%SZ").to_string())
     }
 
@@ -639,9 +672,9 @@ mod tests {
     /// (e.g. the no-clobber regression) construct their own.
     fn test_stamp() -> BackupStamp {
         BackupStamp::at(
-            chrono::DateTime::parse_from_rfc3339("2026-05-11T20:38:45Z")
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-05-11T20:38:45Z")
                 .unwrap()
-                .with_timezone(&chrono::Utc),
+                .to_utc(),
         )
     }
 
@@ -926,14 +959,14 @@ mod tests {
         // not silently overwrite each other. We pin two different
         // stamps directly instead of sleeping past a second boundary.
         let stamp_first = BackupStamp::at(
-            chrono::DateTime::parse_from_rfc3339("2026-05-11T20:38:45Z")
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-05-11T20:38:45Z")
                 .unwrap()
-                .with_timezone(&chrono::Utc),
+                .to_utc(),
         );
         let stamp_later = BackupStamp::at(
-            chrono::DateTime::parse_from_rfc3339("2026-05-12T09:00:00Z")
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-05-12T09:00:00Z")
                 .unwrap()
-                .with_timezone(&chrono::Utc),
+                .to_utc(),
         );
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join(".zshenv.d")).unwrap();

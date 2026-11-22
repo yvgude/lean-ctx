@@ -1,6 +1,6 @@
 //! Cross-Agent Knowledge Bridge — controlled sharing of high-confidence facts between agents.
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -27,7 +27,7 @@ pub struct BridgeEntry {
     pub fact_category: String,
     pub fact_value: String,
     pub source_agent: String,
-    pub published_at: DateTime<Utc>,
+    pub published_at: UtcDateTime,
     pub archetype: KnowledgeArchetype,
     pub confidence: f32,
     pub provenance: String,
@@ -37,7 +37,7 @@ pub struct BridgeEntry {
 pub struct KnowledgeBridge {
     pub project_hash: String,
     pub shared_facts: Vec<BridgeEntry>,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
 }
 
 impl KnowledgeBridge {
@@ -45,7 +45,7 @@ impl KnowledgeBridge {
         Self {
             project_hash: project_hash.to_string(),
             shared_facts: Vec::new(),
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
         }
     }
 
@@ -67,7 +67,7 @@ impl KnowledgeBridge {
     }
 
     pub fn save(&mut self) -> Result<(), String> {
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         let path = Self::path(&self.project_hash)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -127,7 +127,7 @@ impl KnowledgeBridge {
                 fact_category: fact.category.clone(),
                 fact_value: fact.value.clone(),
                 source_agent: agent_id.to_string(),
-                published_at: Utc::now(),
+                published_at: UtcDateTime::now(),
                 archetype: fact.archetype.clone(),
                 confidence: fact.confidence,
                 provenance: fact.source_session.clone(),
@@ -149,7 +149,7 @@ impl KnowledgeBridge {
     /// Convert a [`BridgeEntry`] into a [`KnowledgeFact`] for import.
     /// Applies a 10% trust penalty to imported confidence.
     pub fn entry_to_fact(entry: &BridgeEntry) -> KnowledgeFact {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         KnowledgeFact {
             anchors: Vec::new(),
             review: None,
@@ -184,7 +184,7 @@ impl KnowledgeBridge {
 
     /// Remove entries older than `max_age_days` or below `min_confidence`.
     pub fn cleanup(&mut self, max_age_days: i64, min_confidence: f32) -> usize {
-        let cutoff = Utc::now() - chrono::Duration::days(max_age_days);
+        let cutoff = UtcDateTime::now() - lean_ctx_time::Duration::days(max_age_days);
         let before = self.shared_facts.len();
         self.shared_facts
             .retain(|e| e.published_at >= cutoff && e.confidence >= min_confidence);
@@ -257,8 +257,8 @@ pub mod tests {
             value: val.into(),
             source_session: "test-session".into(),
             confidence,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
+            created_at: UtcDateTime::now(),
+            last_confirmed: UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
             valid_from: None,
@@ -338,7 +338,7 @@ pub mod tests {
             fact_category: "arch".into(),
             fact_value: "PostgreSQL".into(),
             source_agent: "agent-1".into(),
-            published_at: Utc::now(),
+            published_at: UtcDateTime::now(),
             archetype: KnowledgeArchetype::Architecture,
             confidence: 0.9,
             provenance: "session-abc".into(),
@@ -415,7 +415,7 @@ pub mod tests {
             fact_category: "arch".into(),
             fact_value: "ancient".into(),
             source_agent: "agent-1".into(),
-            published_at: Utc::now() - chrono::Duration::days(60),
+            published_at: UtcDateTime::now() - lean_ctx_time::Duration::days(60),
             archetype: KnowledgeArchetype::Architecture,
             confidence: 0.9,
             provenance: "old-session".into(),
@@ -426,7 +426,7 @@ pub mod tests {
             fact_category: "arch".into(),
             fact_value: "new".into(),
             source_agent: "agent-1".into(),
-            published_at: Utc::now(),
+            published_at: UtcDateTime::now(),
             archetype: KnowledgeArchetype::Architecture,
             confidence: 0.9,
             provenance: "new-session".into(),
@@ -489,7 +489,7 @@ pub mod tests {
             fact_category: "arch".into(),
             fact_value: "uncertain".into(),
             source_agent: "agent-1".into(),
-            published_at: Utc::now(),
+            published_at: UtcDateTime::now(),
             archetype: KnowledgeArchetype::Architecture,
             confidence: 0.3,
             provenance: "session".into(),
@@ -500,7 +500,7 @@ pub mod tests {
             fact_category: "arch".into(),
             fact_value: "certain".into(),
             source_agent: "agent-1".into(),
-            published_at: Utc::now(),
+            published_at: UtcDateTime::now(),
             archetype: KnowledgeArchetype::Architecture,
             confidence: 0.9,
             provenance: "session".into(),
@@ -518,7 +518,7 @@ pub mod tests {
             fact_category: "c".into(),
             fact_value: "v".into(),
             source_agent: "src".into(),
-            published_at: Utc::now(),
+            published_at: UtcDateTime::now(),
             archetype: KnowledgeArchetype::Decision,
             confidence: 1.0,
             provenance: "s".into(),
@@ -537,7 +537,7 @@ pub mod tests {
             0.95,
             KnowledgeArchetype::Architecture,
         );
-        fact.valid_until = Some(Utc::now() - chrono::Duration::days(1));
+        fact.valid_until = Some(UtcDateTime::now() - lean_ctx_time::Duration::days(1));
         let count = bridge.publish("agent-1", &[fact]);
         assert_eq!(count, 0);
     }

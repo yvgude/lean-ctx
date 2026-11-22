@@ -65,7 +65,7 @@ impl HeatMap {
         saved_tokens: usize,
         agent_id: Option<&str>,
     ) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = lean_ctx_time::UtcDateTime::now().to_rfc3339();
         let entry = self
             .entries
             .entry(file_path.to_string())

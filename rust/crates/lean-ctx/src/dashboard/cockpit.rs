@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use lean_ctx::core::app_presence::AppPresence;
 pub(crate) use lean_ctx::core::intelligence_runtime::cockpit::CockpitUnavailable;
 use lean_ctx::core::intelligence_runtime::cockpit::{CockpitLaunch, cockpit_endpoint};
 
@@ -297,22 +298,53 @@ pub(crate) async fn forward(
     reframe_response(&raw)
 }
 
-/// What `/` shows while the Cockpit is not installed or not running:
-/// what the Cockpit is, why it is not shown (`reason`), how to install it
-/// (not on a source build, which cannot) and the terminal alternative.
+/// What `/` shows while the Cockpit is not installed or not running, for
+/// this machine (managed by LeanCTX Code or not).
 pub(crate) fn unavailable_page(reason: CockpitUnavailable) -> String {
-    let install = if reason == CockpitUnavailable::SourceBuild {
+    render_unavailable_page(reason, lean_ctx::core::app_presence::detect().as_ref())
+}
+
+/// "Managed in LeanCTX Code" with the link that opens the app, when it gave
+/// one. The link passed `app_presence::valid_open_url`, so it needs no
+/// escaping.
+fn managed_section(presence: &AppPresence) -> String {
+    let open = presence.open_url.as_deref().map_or_else(
+        || "<p>Open LeanCTX Code from your applications.</p>".to_string(),
+        |url| format!("<p><a href=\"{url}\">Open LeanCTX Code</a></p>"),
+    );
+    format!(
+        "<section class=\"managed\" data-managed=\"leanctx-code\">\n<h2>Managed in LeanCTX Code</h2>\n<p>LeanCTX Code manages LeanCTX on this machine. The Cockpit, settings and updates are there.</p>\n{open}\n</section>\n"
+    )
+}
+
+/// The page itself: what the Cockpit is, why it is not shown (`reason`),
+/// and either the calm "Managed in LeanCTX Code" state (`managed`) or how to
+/// install it (not on a source build, which cannot), plus the terminal
+/// alternative.
+pub(crate) fn render_unavailable_page(
+    reason: CockpitUnavailable,
+    managed: Option<&AppPresence>,
+) -> String {
+    let install = if let Some(presence) = managed {
+        managed_section(presence)
+    } else if reason == CockpitUnavailable::SourceBuild {
         String::new()
     } else {
         format!(
             "<h2>Install the Cockpit</h2>\n<pre><code>{INSTALL_COMMAND}</code></pre>\n<p class=\"tag\">Status: <code>lean-ctx setup runtime status --kind cockpit</code></p>\n"
         )
     };
-    let status = reason
-        .message()
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;");
+    // A managed machine reads calmly: the reason stays in `data-reason`,
+    // its fix (an install command) is the app's business.
+    let status = if managed.is_some() {
+        "The Cockpit opens in LeanCTX Code on this machine.".to_string()
+    } else {
+        reason
+            .message()
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -330,6 +362,8 @@ h1 {{ font-size: 1.6rem; margin: 0 0 .25rem; }}
 h2 {{ font-size: 1rem; margin: 1.75rem 0 .5rem; }}
 pre {{ background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .75rem 1rem; overflow-x: auto; }}
 code {{ font: .95rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }}
+.managed {{ background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .25rem 1rem .5rem; margin-top: 1.5rem; }}
+a {{ color: inherit; }}
 </style>
 </head>
 <body>
@@ -441,5 +475,41 @@ mod tests {
         assert!(reframe_response(raw).is_none());
         let broken = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n";
         assert!(reframe_response(broken).is_none());
+    }
+
+    #[test]
+    fn a_machine_managed_in_leanctx_code_shows_that_calmly_without_install_controls() {
+        use lean_ctx::core::app_presence::AppPresence;
+        let presence = AppPresence {
+            open_url: Some("leanctx://cockpit".into()),
+        };
+        let page = render_unavailable_page(CockpitUnavailable::NotInstalled, Some(&presence));
+        assert!(page.contains("Managed in LeanCTX Code"), "{page}");
+        assert!(page.contains(r#"<a href="leanctx://cockpit">Open LeanCTX Code</a>"#));
+        assert!(
+            !page.contains(INSTALL_COMMAND),
+            "no duplicate install control"
+        );
+        assert!(
+            page.contains("data-reason="),
+            "the reason stays machine-readable"
+        );
+        assert!(!page.contains("Cloud"));
+
+        let without_link = render_unavailable_page(
+            CockpitUnavailable::StartFailed,
+            Some(&AppPresence { open_url: None }),
+        );
+        assert!(without_link.contains("Managed in LeanCTX Code"));
+        assert!(!without_link.contains("href="));
+        assert!(!without_link.contains(INSTALL_COMMAND));
+
+        let unmanaged = render_unavailable_page(CockpitUnavailable::NotInstalled, None);
+        assert!(unmanaged.contains(INSTALL_COMMAND));
+        assert!(!unmanaged.contains("Managed in"));
+        assert_eq!(
+            unmanaged,
+            render_unavailable_page(CockpitUnavailable::NotInstalled, None)
+        );
     }
 }

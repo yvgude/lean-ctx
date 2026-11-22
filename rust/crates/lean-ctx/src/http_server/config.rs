@@ -48,6 +48,12 @@ pub struct HttpServerConfig {
     pub max_rps: u32,
     pub rate_burst: u32,
     pub request_timeout_ms: u64,
+    /// Serve OAuth 2.1 for remote MCP clients (`--oauth`, ux16).
+    pub oauth: bool,
+    /// The public origin clients reach this instance at (`--oauth-issuer`).
+    pub oauth_issuer: Option<String>,
+    /// Where OAuth clients and token hashes are kept (default: data dir).
+    pub oauth_state_dir: Option<PathBuf>,
 }
 
 impl Default for HttpServerConfig {
@@ -74,6 +80,9 @@ impl Default for HttpServerConfig {
             max_rps: 50,
             rate_burst: 100,
             request_timeout_ms: 30_000,
+            oauth: false,
+            oauth_issuer: None,
+            oauth_state_dir: None,
         }
     }
 }
@@ -101,13 +110,88 @@ impl HttpServerConfig {
         .map_err(|error| anyhow!(error))
     }
 
+    /// OAuth is on when `--oauth` or `--oauth-issuer` was given.
+    pub(super) fn oauth_enabled(&self) -> bool {
+        self.oauth || self.oauth_issuer.is_some()
+    }
+
+    /// The OAuth issuer: `--oauth-issuer` as a canonical origin, else the
+    /// loopback bind address. A non-loopback bind must name its public
+    /// https origin, since the owner types the instance token into its
+    /// consent page.
+    pub(super) fn oauth_issuer_url(&self) -> Result<Option<String>> {
+        if !self.oauth_enabled() {
+            return Ok(None);
+        }
+        if let Some(raw) = self.oauth_issuer.as_deref() {
+            return super::oauth::canonical_issuer(raw)
+                .map(Some)
+                .map_err(|error| anyhow!(error));
+        }
+        let host = self.host.trim().to_lowercase();
+        match host.as_str() {
+            "127.0.0.1" | "localhost" => Ok(Some(format!("http://{host}:{}", self.port))),
+            "::1" => Ok(Some(format!("http://[::1]:{}", self.port))),
+            _ => Err(anyhow!(
+                "--oauth on host='{host}' needs --oauth-issuer https://<public host>"
+            )),
+        }
+    }
+
+    /// What `serve` warns about when OAuth is reachable from other
+    /// machines: `serve` itself speaks plain HTTP, and a public consent
+    /// page needs an explicit instance token, not one generated per start.
+    pub(super) fn oauth_exposure_warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        if !self.oauth_enabled() {
+            return warnings;
+        }
+        let host = self.host.trim().to_lowercase();
+        let loopback_bind = matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1");
+        if !loopback_bind {
+            warnings.push(format!(
+                "OAuth is served on host='{host}' over plain HTTP: `serve` has no TLS. \
+                 Put a TLS-terminating reverse proxy at the --oauth-issuer origin in front of it \
+                 and keep port {} unreachable from other machines, or the instance token typed \
+                 on the consent page and every OAuth token cross the network unencrypted.",
+                self.port
+            ));
+        }
+        let public_issuer = self
+            .oauth_issuer_url()
+            .ok()
+            .flatten()
+            .and_then(|issuer| reqwest::Url::parse(&issuer).ok())
+            .is_some_and(|url| {
+                !matches!(
+                    url.host_str().map(|h| h.trim_matches(['[', ']'])),
+                    Some("127.0.0.1" | "localhost" | "::1")
+                )
+            });
+        if public_issuer && self.auth_token.as_deref().is_none_or(str::is_empty) {
+            warnings.push(
+                "OAuth is published at a public --oauth-issuer, but no --auth-token is set: \
+                 the consent page is guarded only by the token generated for this start, and \
+                 grants are not bound to it. Set --auth-token (or LEAN_CTX_HTTP_TOKEN_FILE)."
+                    .to_string(),
+            );
+        }
+        warnings
+    }
+
     pub fn validate(&self) -> Result<()> {
         self.relay_quota_state()?;
+        self.oauth_issuer_url()?;
         let host = self.host.trim().to_lowercase();
         let is_loopback = host == "127.0.0.1" || host == "localhost" || host == "::1";
         if !is_loopback && self.auth_token.as_deref().unwrap_or("").is_empty() {
+            let oauth_note = if self.oauth_enabled() {
+                " --oauth does not replace it: the owner approves every OAuth client with that token."
+            } else {
+                ""
+            };
             return Err(anyhow!(
-                "Refusing to bind to host='{host}' without auth. Provide --auth-token (or bind to 127.0.0.1)."
+                "Refusing to bind to host='{host}' without auth. Provide --auth-token (or bind to 127.0.0.1).{oauth_note}"
             ));
         }
         if self.a2a_signing_key.as_ref().is_some_and(String::is_empty) {

@@ -4,7 +4,7 @@ use super::*;
 use crate::core::knowledge::KnowledgeFact;
 
 fn fact(category: &str, key: &str, value: &str) -> KnowledgeFact {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     KnowledgeFact {
         origin: Default::default(),
         category: category.into(),
@@ -51,7 +51,7 @@ fn an_export_imports_back_to_the_same_facts() {
     let mut confidential = fact("convention", "c3", "Confidential rule that never leaves.");
     confidential.sensitivity = SensitivityLevel::Confidential;
     let mut superseded = fact("decision", "d2", "An old decision that was replaced.");
-    superseded.valid_until = Some(chrono::Utc::now());
+    superseded.valid_until = Some(lean_ctx_time::UtcDateTime::now());
     let source = knowledge(vec![
         fact("convention", "c1", "Use snake_case for every module name."),
         fact("conventions", "c2", "Keep every file below 1500 lines."),
@@ -64,7 +64,7 @@ fn an_export_imports_back_to_the_same_facts() {
         fact(
             "architecture",
             "a1",
-            "The engine is local-first; Hive is optional.",
+            "The engine is local-first; LeanCTX Cloud is optional.",
         ),
         fact("gotcha", "g1", "Never run lean-ctx stop before a build."),
         fact("dead_end", "x1", "Sled as the store was tried and dropped."),
@@ -95,7 +95,7 @@ fn an_export_imports_back_to_the_same_facts() {
     let mut expected: Vec<(String, String)> = [
         (
             "architecture",
-            "The engine is local-first; Hive is optional.",
+            "The engine is local-first; LeanCTX Cloud is optional.",
         ),
         ("convention", "Keep every file below 1500 lines."),
         ("convention", "Use snake_case for every module name."),

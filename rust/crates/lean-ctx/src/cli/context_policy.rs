@@ -327,7 +327,7 @@ fn find(scope: &mut SourceScope<'_>, args: &[String]) -> Result<(String, usize, 
         }
         let entry = entry.map_err(|_| ())?;
         if entry.file_type().is_none_or(|kind| kind.is_symlink())
-            || (!allow_secret_paths && io_boundary::is_secret_like(entry.path()).is_some())
+            || io_boundary::withheld_secret(entry.path(), allow_secret_paths).is_some()
         {
             continue;
         }

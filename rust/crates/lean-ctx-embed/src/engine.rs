@@ -139,9 +139,9 @@ impl EngineBuilder {
         let project_root = project_root.to_string_lossy().into_owned();
 
         configure_process_env(self.data_dir.as_deref());
-        // The Hive connector's hooks, as the CLI registers them at start-up
+        // The Cloud connector's hooks, as the CLI registers them at start-up
         // (idempotent: the first registration wins).
-        lean_ctx_hive::register_hooks();
+        lean_ctx_cloud::register_hooks();
 
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(self.worker_threads)

@@ -567,7 +567,9 @@ pub fn extract_command_tokens_from_segment(segment: &str) -> Vec<String> {
 /// `git`, interpreters, wrappers, unconditionally blocked programs): its
 /// last path component — on macOS and Windows, whose file systems ignore
 /// case by default, lower-cased (and without `.exe` on Windows), so
-/// `/usr/bin/ENV` is `env` there.
+/// `/usr/bin/ENV` is `env` there. A Windows executable name (`sh.exe`,
+/// `C:\Tools\BASH.EXE`) is its stem on every host
+/// ([`windows_executable_stem`]).
 pub fn exec_name(token: &str) -> String {
     exec_name_for(
         token,
@@ -577,6 +579,9 @@ pub fn exec_name(token: &str) -> String {
 }
 
 pub fn exec_name_for(token: &str, fold_case: bool, windows: bool) -> String {
+    if let Some(stem) = windows_executable_stem(token) {
+        return stem;
+    }
     let base = if windows {
         token.rsplit(['/', '\\']).next()
     } else {
@@ -586,11 +591,35 @@ pub fn exec_name_for(token: &str, fold_case: bool, windows: bool) -> String {
     if !fold_case {
         return base.to_owned();
     }
-    let lower = base.to_ascii_lowercase();
-    match lower.strip_suffix(".exe") {
-        Some(stem) if windows => stem.to_owned(),
-        _ => lower,
-    }
+    base.to_ascii_lowercase()
+}
+
+/// File suffixes Windows runs as the program itself: `sh.exe` is what the
+/// word `sh` starts there. `.com` is stripped on every host like `.exe`:
+/// WSL and Git Bash start a Windows `.com` program (`chcp.com`, `more.com`)
+/// by its full name too, so `git.com` names `git` wherever a Windows
+/// program can run. `.bat`/`.cmd` name scripts `cmd.exe` interprets,
+/// another program than the stem, so they keep their name; the gate judges
+/// them like cmd.
+const WINDOWS_EXECUTABLE_SUFFIXES: &[&str] = &[".exe", ".com"];
+
+/// The program a Windows executable name (`sh.exe`, `BASH.EXE`,
+/// `C:\Tools\git.exe`, `/mnt/c/…/python3.exe`) runs: its last path component
+/// (`/` or `\`) without the suffix, lower-cased, since Windows file names
+/// ignore case. This holds on every host: Windows finds `sh.exe` for `sh`,
+/// and WSL starts a Windows executable from a Linux shell by its full name.
+/// Windows drops trailing dots and spaces from a file name, so `sh.exe.`,
+/// `sh.exe ` and `sh.` name the same file as `sh.exe` and `sh`.
+/// `None` for any other word.
+pub fn windows_executable_stem(token: &str) -> Option<String> {
+    let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
+    let trimmed = base.trim_end_matches(['.', ' ']);
+    let lower = trimmed.to_ascii_lowercase();
+    let stem = WINDOWS_EXECUTABLE_SUFFIXES
+        .iter()
+        .find_map(|suffix| lower.strip_suffix(suffix))
+        .or((trimmed.len() < base.len()).then_some(lower.as_str()))?;
+    (!stem.is_empty()).then(|| stem.to_owned())
 }
 
 /// Extract the base command name from a single segment (no operators).

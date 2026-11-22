@@ -18,7 +18,7 @@
 //!   stay clean.
 
 use super::{DailyCostRow, csv_field};
-use chrono::{Datelike, Duration, NaiveDate};
+use lean_ctx_time::{Date, Duration};
 
 /// The 21 FOCUS 1.2 Mandatory columns (spec order: alphabetical), the v1.0
 /// required/nullable compatibility set, then the `x_` custom dimensions.
@@ -83,19 +83,17 @@ const SERVICE_NAME: &str = "LeanCTX Context Engine";
 
 /// Month boundaries for the billing period: first of the charge month and
 /// first of the following month, ISO 8601 UTC.
-fn billing_period(date: &NaiveDate) -> (String, String) {
-    let start = date.with_day(1).expect("day 1 always valid");
-    let end = if start.month() == 12 {
-        NaiveDate::from_ymd_opt(start.year() + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd_opt(start.year(), start.month() + 1, 1)
-    }
-    .expect("first of next month always valid");
+fn billing_period(date: &Date) -> (String, String) {
+    let start = date.first_of_month();
+    let end = start
+        .last_of_month()
+        .tomorrow()
+        .expect("first of next month always valid");
     (iso(&start), iso(&end))
 }
 
-fn iso(d: &NaiveDate) -> String {
-    format!("{}T00:00:00Z", d.format("%Y-%m-%d"))
+fn iso(d: &Date) -> String {
+    format!("{}T00:00:00Z", d.strftime("%Y-%m-%d"))
 }
 
 fn push_row(out: &mut String, fields: &[String]) {
@@ -121,7 +119,7 @@ pub fn to_csv(rows: &[DailyCostRow]) -> String {
     );
 
     for row in rows {
-        let Ok(date) = NaiveDate::parse_from_str(&row.date, "%Y-%m-%d") else {
+        let Ok(date) = lean_ctx_time::parse_date(&row.date, "%Y-%m-%d") else {
             continue;
         };
         let charge_start = iso(&date);
@@ -268,7 +266,7 @@ mod tests {
 
     #[test]
     fn billing_period_handles_december() {
-        let d = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
+        let d = Date::new(2026, 12, 15).unwrap();
         let (start, end) = billing_period(&d);
         assert_eq!(start, "2026-12-01T00:00:00Z");
         assert_eq!(end, "2027-01-01T00:00:00Z");

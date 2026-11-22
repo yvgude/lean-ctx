@@ -34,7 +34,7 @@ const TOKENS: Param = value("tokens", "--tokens");
 const LOCAL: Param = switch("local", "--local");
 
 /// The kinds only this part prints (`tasks.list` and `tasks.task` are the
-/// core kinds of `hive tasks`, which print the same documents).
+/// core kinds of `cloud tasks`, which print the same documents).
 pub(crate) const KINDS: &[&str] = &["tasks.ack"];
 
 /// Command path → CLI verbs, as `capabilities::COMMANDS`.
@@ -254,7 +254,7 @@ const LABELS: Param = Param {
 
 /// The released document of `lean-ctx tasks <verb> … --json` for `via`
 /// (`kind` is one of the routes' kinds; the verb is in `args`). On the
-/// socket the reader is a person (Hive Desktop): an agent acts only when
+/// socket the reader is a person (Cloud Desktop): an agent acts only when
 /// the body names it (`agent`), as `--agent` does on the CLI.
 pub(crate) fn answer(_kind: &str, args: &[String], via: Via) -> Answer {
     use crate::cli::tasks_cmd::{Caller, caller, json_answer};

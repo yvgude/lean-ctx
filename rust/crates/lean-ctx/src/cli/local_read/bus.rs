@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx agent messages|post --json`: the local agent bus for a reader
-//! that is a person (Hive Desktop), so it never writes the registry file
+//! that is a person (Cloud Desktop), so it never writes the registry file
 //! itself. A post goes through the registry's own lock and admission.
 
 use serde::{Deserialize, Serialize};
@@ -8,15 +8,15 @@ use serde::{Deserialize, Serialize};
 use lean_ctx::core::a2a::message::{MessagePriority, PrivacyLevel};
 use lean_ctx::core::agents::{AgentRegistry, ScratchpadEntry};
 
-use lean_ctx_hive::bus::queen_kinds::{self, KIND_KEY, QueenKind};
+use lean_ctx_cloud::bus::queen_kinds::{self, KIND_KEY, QueenKind};
 
 use super::{Code, Failure, rfc3339};
 use crate::cli::common::{CliToolRun, Records};
 
 /// The sender of every message a person posts here (as Desktop did).
-pub(crate) const PERSON: &str = lean_ctx_hive::bus::relay_v2::PERSON_SENDER;
+pub(crate) const PERSON: &str = lean_ctx_cloud::bus::relay_v2::PERSON_SENDER;
 /// Metadata key of the conversation a message belongs to.
-pub(crate) use lean_ctx_hive::bus::queen_kinds::THREAD_KEY;
+pub(crate) use lean_ctx_cloud::bus::queen_kinds::THREAD_KEY;
 /// Lifetime of a posted message.
 const TTL_HOURS: u64 = 12;
 const DEFAULT_LIMIT: usize = 200;
@@ -64,7 +64,7 @@ pub(crate) struct MessageRow {
     /// The Queen-network kind (`hello` … `stop`); `null` for an ordinary
     /// message (QN0, additive within agent-bus/1).
     pub kind: Option<String>,
-    /// The Hive bus address a relay-delivered message came from.
+    /// The Cloud bus address a relay-delivered message came from.
     pub remote_address: Option<String>,
     pub category: String,
     pub priority: String,
@@ -79,7 +79,7 @@ pub(crate) struct MessageRow {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct Posted {
     pub ids: Vec<String>,
-    /// `hive-person`, or the local agent the post was made as (`--as`).
+    /// `cloud-person`, or the local agent the post was made as (`--as`).
     pub from: String,
     pub to: Vec<String>,
     pub thread: Option<String>,
@@ -99,7 +99,7 @@ pub(crate) struct Selection {
     /// The reader's project: messages of other projects are left out
     /// (messages without a project are everyone's).
     pub project_root: Option<String>,
-    pub since: Option<chrono::DateTime<chrono::Utc>>,
+    pub since: Option<lean_ctx_time::UtcDateTime>,
     pub to: Option<String>,
     /// Only messages of this sender (`bus list --from`).
     pub from: Option<String>,
@@ -123,7 +123,7 @@ pub(crate) fn row(e: &ScratchpadEntry, reader_project: Option<&str>) -> MessageR
             .get(KIND_KEY)
             .filter(|k| QueenKind::parse(k).is_some())
             .cloned(),
-        remote_address: e.hive_inbound_address().map(str::to_owned),
+        remote_address: e.cloud_inbound_address().map(str::to_owned),
         category: e.category.clone(),
         priority: e.priority.to_string(),
         privacy: format!("{:?}", e.privacy).to_lowercase(),
@@ -140,7 +140,7 @@ pub(crate) fn row(e: &ScratchpadEntry, reader_project: Option<&str>) -> MessageR
 pub(crate) fn select(
     pad: &[ScratchpadEntry],
     selection: &Selection,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> Vec<MessageRow> {
     let reader = selection.project_root.as_deref();
     live(pad, selection, now)
@@ -164,7 +164,7 @@ pub(crate) fn select(
 fn live<'p>(
     pad: &'p [ScratchpadEntry],
     selection: &Selection,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> Vec<&'p ScratchpadEntry> {
     let reader = selection.project_root.as_deref();
     let mut live: Vec<&ScratchpadEntry> = pad
@@ -208,9 +208,12 @@ fn live<'p>(
 /// `--all` (the person's console): every project's messages released as
 /// that project's own reader is — served and released under the project's
 /// root, its policy view and pack — message by message ([`RECORDS`]): one the
-/// release would withhold is left out on its own and counted. A message of
-/// no project, or of a project that is no longer a directory here, is
-/// released under the reader's root. The rows keep `entries`' order.
+/// release would withhold is left out on its own and counted. Where each
+/// message is released is [`super::row_release_root`], as for every
+/// cross-project listing: a message without a project under the reader's
+/// root, one of a project that is no longer a directory here withheld and
+/// counted. The rows keep `entries`' order. (Its rows are served inside the
+/// project's own scope, so it keeps its own loop over the shared rule.)
 ///
 /// Runs BEFORE the reader's own run: a run binds its project for everything
 /// inside it, so another project's release cannot run there. The reader's
@@ -226,20 +229,18 @@ fn released_per_project(
     struct Released {
         messages: Vec<MessageRow>,
     }
-    let mut groups: std::collections::BTreeMap<&str, Vec<&ScratchpadEntry>> =
+    let mut groups: std::collections::BTreeMap<String, Vec<&ScratchpadEntry>> =
         std::collections::BTreeMap::new();
     for e in entries {
-        let root = e
-            .project_root
-            .as_deref()
-            .filter(|p| !p.is_empty() && std::path::Path::new(p).is_dir())
-            .unwrap_or(reader_root);
-        groups.entry(root).or_default().push(e);
+        let row_root = e.project_root.as_deref().unwrap_or("");
+        if let Some(root) = super::row_release_root(row_root, reader_root) {
+            groups.entry(root).or_default().push(e);
+        }
     }
     let mut released: std::collections::HashMap<String, MessageRow> =
         std::collections::HashMap::new();
     for (root, group) in groups {
-        let run = CliToolRun::new(tool, root, None).per_record(RECORDS);
+        let run = CliToolRun::new(tool, &root, None).per_record(RECORDS);
         // Served and released inside the project's own request scope.
         let (released_document, _) = run.acquire(|| {
             let rows: Vec<MessageRow> = group
@@ -272,7 +273,11 @@ fn released_per_project(
 fn console_rows(args: &[String], reader_root: &str) -> Option<(Vec<MessageRow>, usize)> {
     let selection = selection_of(args, reader_root).ok().filter(|s| s.all)?;
     let registry = AgentRegistry::load().unwrap_or_default();
-    let entries = live(&registry.scratchpad, &selection, chrono::Utc::now());
+    let entries = live(
+        &registry.scratchpad,
+        &selection,
+        lean_ctx_time::UtcDateTime::now(),
+    );
     Some(released_per_project("ctx_agent", reader_root, &entries))
 }
 
@@ -335,8 +340,9 @@ impl Default for PostOptions<'_> {
 /// Whether `options.sender` may post as `options` say: a named sender is an
 /// active agent of this Instance whose app session is the caller's own (no
 /// one posts as another agent, the Queen least of all), a Queen kind comes
-/// from a registered Queen, and the sender's budget for the minute is not
-/// spent.
+/// from a registered Queen while the team policy leaves the Orchestrator
+/// network on ([`check_network`]), and the sender's budget for the minute is
+/// not spent.
 fn check_sender(registry: &AgentRegistry, options: &PostOptions<'_>) -> Result<(), PostError> {
     let sender = options.sender;
     if sender != PERSON {
@@ -356,13 +362,34 @@ fn check_sender(registry: &AgentRegistry, options: &PostOptions<'_>) -> Result<(
             )));
         }
     }
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = lean_ctx_time::UtcDateTime::now().timestamp_millis();
     queen_kinds::check_sender(registry, sender, options.kind, now).map_err(
         |refused| match refused {
             queen_kinds::SenderRefusal::NotQueen(why) => PostError::Sender(why),
             queen_kinds::SenderRefusal::RateLimited(why) => PostError::RateLimited(why),
         },
+    )?;
+    check_network(
+        options,
+        lean_ctx::core::policy::cloud_orchestrator::network_refusal,
     )
+}
+
+/// QN2 `orchestrator.network`: a post carrying an Orchestrator kind is
+/// refused while the policy for its project (the linked vault's, else every
+/// policy of the floor) turns the network off, or while the floor is damaged.
+/// A plain message is never affected.
+fn check_network(
+    options: &PostOptions<'_>,
+    refusal: impl Fn(Option<&std::path::Path>) -> Option<String>,
+) -> Result<(), PostError> {
+    if options.kind.is_none() {
+        return Ok(());
+    }
+    match refusal(options.project_root.map(std::path::Path::new)) {
+        Some(why) => Err(PostError::Sender(why)),
+        None => Ok(()),
+    }
 }
 
 /// Post `message` as the person to each of `to` (one entry each), or once
@@ -376,7 +403,7 @@ pub(crate) fn post(
     message: &str,
     thread: Option<&str>,
     project_root: Option<&str>,
-) -> Result<(Vec<String>, chrono::DateTime<chrono::Utc>), PostError> {
+) -> Result<(Vec<String>, lean_ctx_time::UtcDateTime), PostError> {
     let options = PostOptions {
         thread,
         project_root,
@@ -391,7 +418,7 @@ pub(crate) fn post_with(
     to: &[String],
     message: &str,
     options: &PostOptions<'_>,
-) -> Result<(Vec<String>, chrono::DateTime<chrono::Utc>), PostError> {
+) -> Result<(Vec<String>, lean_ctx_time::UtcDateTime), PostError> {
     let thread = options.thread;
     let project_root = options.project_root;
     // `queen` reaches the registered Queen, never an agent that only took
@@ -460,7 +487,10 @@ pub(crate) fn post_with(
         }
         ids.push(id);
     }
-    Ok((ids, stored_at.unwrap_or_else(chrono::Utc::now)))
+    Ok((
+        ids,
+        stored_at.unwrap_or_else(lean_ctx_time::UtcDateTime::now),
+    ))
 }
 
 /// The version of the agent bus surface every `bus.*` document names.
@@ -475,8 +505,8 @@ const MAX_TTL_HOURS: u64 = 168;
 fn selection_of(args: &[String], root: &str) -> Result<Selection, Failure> {
     let since = super::flag(args, "--since")?
         .map(|s| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .map(|t| t.with_timezone(&chrono::Utc))
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339(s)
+                .map(lean_ctx_time::OffsetDateTime::to_utc)
                 .map_err(|_| Failure::invalid("--since is an RFC 3339 timestamp"))
         })
         .transpose()?;
@@ -543,7 +573,11 @@ fn rows_of(
     }
     let registry = AgentRegistry::load().unwrap_or_default();
     Ok((
-        select(&registry.scratchpad, &selection, chrono::Utc::now()),
+        select(
+            &registry.scratchpad,
+            &selection,
+            lean_ctx_time::UtcDateTime::now(),
+        ),
         0,
     ))
 }
@@ -632,7 +666,7 @@ fn post_locked(
     to: &[String],
     message: &str,
     options: &PostOptions<'_>,
-) -> Result<(Vec<String>, chrono::DateTime<chrono::Utc>), Failure> {
+) -> Result<(Vec<String>, lean_ctx_time::UtcDateTime), Failure> {
     let (_, posted) =
         AgentRegistry::mutate_locked(|registry| post_with(registry, to, message, options))
             .map_err(|e| Failure::new(Code::Internal, e))?;
@@ -732,9 +766,10 @@ impl<'a> PostFlags<'a> {
         }
     }
 
-    fn expires_at(&self, stored_at: chrono::DateTime<chrono::Utc>) -> String {
+    fn expires_at(&self, stored_at: lean_ctx_time::UtcDateTime) -> String {
         rfc3339(
-            stored_at + chrono::Duration::hours(i64::try_from(self.ttl_hours).unwrap_or(i64::MAX)),
+            stored_at
+                + lean_ctx_time::Duration::hours(i64::try_from(self.ttl_hours).unwrap_or(i64::MAX)),
         )
     }
 }
@@ -763,7 +798,7 @@ pub(crate) fn build_post(args: &[String]) -> Result<Posted, Failure> {
 pub(crate) struct BusPosted {
     pub bus: &'static str,
     pub ids: Vec<String>,
-    /// `hive-person`, or the local agent the post was made as (`--as`).
+    /// `cloud-person`, or the local agent the post was made as (`--as`).
     pub from: String,
     pub to: Vec<String>,
     pub thread: Option<String>,
@@ -786,7 +821,7 @@ pub(crate) struct SenderRow {
     /// `person` | `agent`.
     pub kind: &'static str,
     pub id: String,
-    /// The agent's display name; `null` for the person: the Hive names the
+    /// The agent's display name; `null` for the person: the Cloud names the
     /// person (the account that owns this Instance) on delivery.
     pub display_name: Option<String>,
 }
@@ -797,7 +832,7 @@ pub(crate) struct CloudRow {
     /// `local_only` (stays on this machine) | `withheld` (kept here by the
     /// contract).
     pub state: &'static str,
-    /// Why it is not simply queued: `awaiting_hive` (queued; the Hive does
+    /// Why it is not simply queued: `awaiting_cloud` (queued; the Cloud does
     /// not accept a person's publish yet), `not_vault_address`,
     /// `not_enrolled`, `unknown_vault`, `vault_denied`, `type_unsupported`,
     /// `screened`; else `null`.
@@ -807,11 +842,11 @@ pub(crate) struct CloudRow {
 /// What this Instance knows of a vault a post is addressed to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VaultState {
-    /// Followed, and Hive lets this Instance post there.
+    /// Followed, and Cloud lets this Instance post there.
     Open,
     /// Not a vault this Instance follows.
     Unknown,
-    /// Hive denied this Instance the vault's bus (`place.denied`).
+    /// Cloud denied this Instance the vault's bus (`place.denied`).
     Denied,
 }
 
@@ -821,7 +856,7 @@ pub(crate) struct CloudFacts<'a> {
     pub vault: &'a dyn Fn(&str, &str) -> VaultState,
     /// The relay's screen blocks the text (it would keep the post here).
     pub screened: bool,
-    /// The Hive accepted a person's publish on the last connection.
+    /// The Cloud accepted a person's publish on the last connection.
     pub person_publish: bool,
     /// A bus-wide hold (or a pending rebuild) keeps every post here for now.
     pub held: bool,
@@ -830,7 +865,7 @@ pub(crate) struct CloudFacts<'a> {
 /// Who a post is from, as the relay tells senders apart (HN0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CloudSender {
-    /// The person (`hive-person`).
+    /// The person (`cloud-person`).
     Person,
     /// The Queen session the app registered: relayed as her worker.
     Queen,
@@ -841,7 +876,7 @@ pub(crate) enum CloudSender {
 /// Where a post by `sender` to `to` with `category` goes, decided as the
 /// relay decides it (`relay_v2::outgoing`): a worker's post stays here
 /// (`not_queen`, HN0); otherwise enrollment, the vault's state, the message
-/// type, the screen, and (for a person) whether the Hive accepts a person's
+/// type, the screen, and (for a person) whether the Cloud accepts a person's
 /// publish.
 pub(crate) fn cloud_as(
     sender: CloudSender,
@@ -849,7 +884,7 @@ pub(crate) fn cloud_as(
     category: &str,
     facts: &CloudFacts<'_>,
 ) -> CloudRow {
-    use lean_ctx_hive::bus::address::Address;
+    use lean_ctx_cloud::bus::address::Address;
     let local = |reason| CloudRow {
         state: "local_only",
         reason: Some(reason),
@@ -903,26 +938,27 @@ pub(crate) fn cloud_as(
     }
     CloudRow {
         state: "queued",
-        reason: (sender == CloudSender::Person && !facts.person_publish).then_some("awaiting_hive"),
+        reason: (sender == CloudSender::Person && !facts.person_publish)
+            .then_some("awaiting_cloud"),
     }
 }
 
-/// [`cloud_as`] from this machine's Hive state.
+/// [`cloud_as`] from this machine's Cloud state.
 fn cloud_here(to: &[String], category: &str, message: &str, sender: CloudSender) -> CloudRow {
-    let store = lean_ctx_hive::HiveStore::open().ok();
+    let store = lean_ctx_cloud::CloudStore::open().ok();
     let enrolled = store
         .as_ref()
         .is_some_and(|s| matches!(s.instance(), Ok(Some(_))));
     let data = store.as_ref().map(|s| s.data_dir().to_path_buf());
     let map = data
         .as_deref()
-        .map(lean_ctx_hive::vault::VaultMap::load)
+        .map(lean_ctx_cloud::vault::VaultMap::load)
         .unwrap_or_default();
     // Read only, never `load` (which rewrites a damaged file): a file
     // that cannot be read is a pending rebuild, so posts are held.
     let state = data.as_deref().map_or_else(Default::default, |dir| {
-        lean_ctx_hive::bus::relay_v2::StateV2::read(dir).unwrap_or_else(|since| {
-            lean_ctx_hive::bus::relay_v2::StateV2 {
+        lean_ctx_cloud::bus::relay_v2::StateV2::read(dir).unwrap_or_else(|since| {
+            lean_ctx_cloud::bus::relay_v2::StateV2 {
                 rebuild_pending: Some(since),
                 ..Default::default()
             }
@@ -937,7 +973,7 @@ fn cloud_here(to: &[String], category: &str, message: &str, sender: CloudSender)
             Some(_) => VaultState::Open,
         };
     let screened = enrolled
-        && lean_ctx_hive::knowledge::screening::Screen::for_installation()
+        && lean_ctx_cloud::knowledge::screening::Screen::for_installation()
             .check(message)
             .is_err();
     cloud_as(
@@ -1011,7 +1047,7 @@ fn sender_of(id: &str) -> (SenderRow, CloudSender) {
         );
     }
     let registry = AgentRegistry::load().unwrap_or_default();
-    let speaker = lean_ctx_hive::bus::person_rules::Speaker::of_registry(&registry, Some(id));
+    let speaker = lean_ctx_cloud::bus::person_rules::Speaker::of_registry(&registry, Some(id));
     (
         SenderRow {
             kind: "agent",
@@ -1084,15 +1120,23 @@ pub(crate) fn bus_answer(action: &str, args: &[String], via: super::Via) -> supe
         // Writes and lease reads carry agent text and project paths: released
         // like the reads, under the project the request names.
         "leases" => {
-            let root = super::kinds::release_root(args, via);
+            let root = match super::kinds::release_root(args, via) {
+                Ok(root) => root,
+                Err(failure) => return super::Answer::failure(&failure),
+            };
             super::answer_released("ctx_agent", &root, "bus.leases", via, || {
                 super::leases::build_leases(args).and_then(to_value)
             })
         }
         // Writes: the release point sees the request before anything is
-        // written (G08); a withheld write writes nothing.
+        // written (G08); a withheld write writes nothing. The release root
+        // is the write root (`kinds::release_root`, one parser with
+        // `project_root`): the policy checked is the folder written.
         "post" | "claim" | "release" => {
-            let root = super::kinds::release_root(args, via);
+            let root = match super::kinds::release_root(args, via) {
+                Ok(root) => root,
+                Err(failure) => return super::Answer::failure(&failure),
+            };
             let kind = format!("bus.{action}");
             let fields: &[&str] = match action {
                 "post" => &[
@@ -1122,8 +1166,9 @@ pub(crate) fn bus_answer(action: &str, args: &[String], via: super::Via) -> supe
                 },
             )
         }
+        "revision" => super::kinds::answer("bus.revision", args, via),
         other => super::Answer::failure(&Failure::invalid(format!(
-            "unknown bus action {other:?}: list|read|post|leases|claim|release"
+            "unknown bus action {other:?}: list|read|post|leases|claim|release|revision"
         ))),
     }
 }
@@ -1133,7 +1178,7 @@ pub(crate) fn run_bus(args: &[String]) {
     let action = args.first().map_or("", String::as_str);
     if matches!(action, "" | "--help" | "-h" | "help") {
         println!(
-            "Usage: lean-ctx bus list|read|post|leases|claim|release --json [flags]\n\n\
+            "Usage: lean-ctx bus list|read|post|leases|claim|release|revision --json [flags]\n\n\
              The local agent bus (Local Read v1, agent-bus/1): messages, unread\n\
              reads, posts as the person, and cooperative leases.\n\
              Contract: docs/contracts/local-read-v1.md"
@@ -1143,8 +1188,41 @@ pub(crate) fn run_bus(args: &[String]) {
     let rest = args.get(1..).unwrap_or(&[]);
     if !super::wants_json(rest) {
         super::fail(&Failure::invalid(
-            "lean-ctx bus list|read|post|leases|claim|release needs --json",
+            "lean-ctx bus list|read|post|leases|claim|release|revision needs --json",
         ));
     }
     super::print(&bus_answer(action, rest, super::Via::Cli));
+}
+
+#[cfg(test)]
+mod network_tests {
+    use super::*;
+
+    /// QN2: network off refuses Orchestrator kinds for the post's project
+    /// only, plain messages pass, and the project reaches the policy check.
+    #[test]
+    fn network_off_refuses_orchestrator_kinds_only() {
+        let off = |_: Option<&std::path::Path>| Some("orchestrator_network_off: off".to_string());
+        let plain = PostOptions::default();
+        assert!(check_network(&plain, off).is_ok());
+        let queen = PostOptions {
+            kind: Some(QueenKind::Hello),
+            project_root: Some("/work/checkout"),
+            ..PostOptions::default()
+        };
+        assert!(matches!(
+            check_network(&queen, off),
+            Err(PostError::Sender(why)) if why.starts_with("orchestrator_network_off")
+        ));
+        let seen = std::cell::RefCell::new(None);
+        let on = |project: Option<&std::path::Path>| {
+            *seen.borrow_mut() = project.map(std::path::Path::to_path_buf);
+            None
+        };
+        assert!(check_network(&queen, on).is_ok());
+        assert_eq!(
+            seen.into_inner().as_deref(),
+            Some(std::path::Path::new("/work/checkout"))
+        );
+    }
 }

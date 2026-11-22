@@ -1,0 +1,634 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The effective policy against the C0 2.x policy fixtures.
+
+use super::*;
+use serde_json::json;
+
+fn fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/cloud-v2/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    serde_json::from_slice(&std::fs::read(&path).expect(&path)).expect(&path)
+}
+
+/// ent2 members this engine enforces (ent2-2, ent2-3, ent2-4, N1).
+const ENT2_ENFORCED: &[&str] = &[
+    "agents.allowed",
+    "security.allowed_providers",
+    "security.never_send",
+    "security.readable_roots",
+    "security.require_proxy",
+];
+
+fn bundle_raw() -> Value {
+    fixture("routes/policy_bundle.v2.response.json")["effective_policy"].clone()
+}
+
+fn bundle() -> EffectivePolicyBundleV1 {
+    serde_json::from_value(bundle_raw()).unwrap()
+}
+
+#[test]
+fn the_signed_bundle_validates_and_its_digest_is_the_policy_digest() {
+    let raw = bundle_raw();
+    let bundle = bundle();
+    bundle.validate().unwrap();
+    assert_eq!(policy_digest(&raw["policy"]).unwrap(), bundle.digest);
+    assert_eq!(bundle.version, 3);
+    assert_eq!(bundle.policy.vaults.len(), 1);
+}
+
+#[test]
+fn the_signature_verifies_with_the_policy_key_over_the_raw_bundle() {
+    use ed25519_dalek::{Signature, VerifyingKey};
+    let keys = fixture("vectors/signing.vectors.json");
+    let key = &keys["keys"]["cloud_policy"];
+    assert_eq!(key["key_id"], bundle_raw()["key_id"]);
+    let mut public = [0u8; 32];
+    for (i, byte) in public.iter_mut().enumerate() {
+        let hex = &key["public_key_hex"].as_str().unwrap()[i * 2..i * 2 + 2];
+        *byte = u8::from_str_radix(hex, 16).unwrap();
+    }
+    let key = VerifyingKey::from_bytes(&public).unwrap();
+    let mut sig = [0u8; 64];
+    let text = bundle_raw()["signature"].as_str().unwrap().to_string();
+    for (i, byte) in sig.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).unwrap();
+    }
+    let signature = Signature::from_bytes(&sig);
+    let input = signing_input_raw(&bundle_raw()).unwrap();
+    assert!(input.starts_with(EFFECTIVE_POLICY_SIGNATURE_DOMAIN.as_bytes()));
+    key.verify_strict(&input, &signature).unwrap();
+    // Any changed member breaks it.
+    let mut tampered = bundle_raw();
+    tampered["policy"]["effective"]["context"]["max_context_tokens"] = json!(640_000);
+    let input = signing_input_raw(&tampered).unwrap();
+    assert!(key.verify_strict(&input, &signature).is_err());
+}
+
+#[test]
+fn the_ack_reports_exactly_the_members_this_engine_does_not_enforce() {
+    let request: PolicyAckRequestV1 =
+        serde_json::from_value(fixture("routes/policy_ack.request.json")).unwrap();
+    let ack = bundle().ack();
+    assert_eq!(ack.version, request.version);
+    assert_eq!(ack.digest, request.digest);
+    // The C0 request is an engine's example ack: it names what that engine
+    // cannot enforce (C0 c/follow-final: `context.max_context_tokens`).
+    // This engine enforces that member, and Cloud enforces the
+    // `x-enforcement: server` ones (POLICY-B3, lead decision 26.10.), so it
+    // reports only what is enforced nowhere.
+    let mut want: Vec<String> = request
+        .unenforced
+        .iter()
+        .filter(|m| !is_server_member(m) && !is_engine_member(m))
+        .cloned()
+        .collect();
+    want.sort();
+    assert_eq!(ack.unenforced, want, "same members, sorted bytewise");
+    let mut with_advisory = bundle_raw();
+    with_advisory["policy"]["effective"]["context"]["ranking_profile"] = json!("recent");
+    with_advisory["policy"]["effective"]["security"]["quarantine_uploads"] = json!(true);
+    let ack2 = serde_json::from_value::<EffectivePolicyBundleV1>(with_advisory)
+        .unwrap()
+        .ack();
+    assert_eq!(
+        ack2.unenforced,
+        ["context.ranking_profile", "security.quarantine_uploads"],
+        "advisory and unknown members, sorted bytewise"
+    );
+    // The engine sends it sorted, so its bytes are deterministic.
+    assert_eq!(
+        serde_json::to_value(&ack2).unwrap()["unenforced"],
+        json!(ack2.unenforced)
+    );
+    let response: PolicyAckResponseV1 =
+        serde_json::from_value(fixture("routes/policy_ack.response.json")).unwrap();
+    response.validate_for(&ack).unwrap();
+    assert_eq!(response.state, PolicyAckStateV1::Acked);
+    let other = PolicyAckRequestV1 {
+        version: 4,
+        ..ack.clone()
+    };
+    assert!(response.validate_for(&other).is_err());
+    // A mismatch is an error body the engine reads by its code.
+    let error = fixture("routes/policy_ack.error.policy_mismatch.json");
+    assert!(serde_json::from_value::<crate::cloud::CloudErrorBody>(error.clone()).is_ok());
+    assert_eq!(error["error"]["code"], POLICY_MISMATCH);
+}
+
+#[test]
+fn every_member_of_the_schema_is_classified_once_as_its_x_enforcement_says() {
+    let schema = fixture("schemas/policy.schema.json");
+    let mut seen = BTreeSet::new();
+    for section in ["security", "context", "sharing", "agents", "orchestrator"] {
+        for def in [section.to_string(), format!("{section}_effective")] {
+            // Every section, `agents` (ent2) and `orchestrator` (QN2)
+            // included, is in the synced schema.
+            let props = schema["$defs"][&def]["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{def} is not in the schema"));
+            for (name, prop) in props {
+                let member = format!("{section}.{name}");
+                match prop["x-enforcement"].as_str().unwrap() {
+                    "instance" => {
+                        let mapped = ENGINE_MEMBERS
+                            .iter()
+                            .chain(PLANNED_ENGINE_MEMBERS)
+                            .find(|(m, _)| *m == member);
+                        if PLANNED_ENGINE_MEMBERS.iter().any(|(m, _)| *m == member) {
+                            assert!(!is_engine_member(&member), "{member}: listed twice");
+                        }
+                        assert_eq!(
+                            mapped.map(|(_, e)| *e),
+                            prop["x-instance"].as_str(),
+                            "{member}"
+                        );
+                        assert!(!ADVISORY_MEMBERS.contains(&member.as_str()), "{member}");
+                        assert!(!is_server_member(&member), "{member}");
+                    }
+                    "server" => {
+                        // Cloud enforces it at its `x-server` point; this
+                        // engine does not, so the ack reports it.
+                        assert!(is_server_member(&member), "{member}");
+                        assert!(!is_engine_member(&member), "{member}");
+                        assert!(!ADVISORY_MEMBERS.contains(&member.as_str()), "{member}");
+                        assert!(
+                            prop["x-server"].as_str().is_some_and(|s| !s.is_empty()),
+                            "{member} names its server point"
+                        );
+                        assert!(prop.get("x-instance").is_none(), "{member}");
+                    }
+                    "advisory" => {
+                        assert!(ADVISORY_MEMBERS.contains(&member.as_str()), "{member}");
+                        assert!(!is_engine_member(&member), "{member}");
+                        assert!(!is_server_member(&member), "{member}");
+                    }
+                    other => panic!("{member}: {other}"),
+                }
+                seen.insert(member);
+            }
+        }
+    }
+    // Every classified member is in the contract. The one exception,
+    // `agents.require_approvals` (ent2, advisory), is not in the synced C0
+    // schema yet; once it is, drop it from here.
+    const NOT_IN_SCHEMA_YET: &[&str] = &["agents.require_approvals"];
+    for member in NOT_IN_SCHEMA_YET {
+        assert!(!seen.contains(*member), "{member} is in the schema now");
+    }
+    for member in ENGINE_MEMBERS
+        .iter()
+        .chain(PLANNED_ENGINE_MEMBERS)
+        .map(|(m, _)| *m)
+        .chain(SERVER_MEMBERS.iter().copied())
+        .chain(ADVISORY_MEMBERS.iter().copied())
+    {
+        assert!(
+            seen.contains(member) || NOT_IN_SCHEMA_YET.contains(&member),
+            "{member} is not in the schema"
+        );
+    }
+}
+
+/// ent2-1: the agent/model rule members validate in normal form, stay in
+/// the typed view, and are acked as unenforced while this engine does not
+/// enforce them; an unknown section is kept and reported the same way.
+#[test]
+fn the_ent2_members_validate_and_are_acked_unenforced_until_enforced() {
+    let mut raw = bundle_raw();
+    let effective = &mut raw["policy"]["effective"];
+    effective["agents"] =
+        json!({"allowed": ["acp:kiro", "claude-code", "codex"], "require_approvals": true});
+    effective["security"]["allowed_providers"] = json!(["anthropic", "azure-openai", "local"]);
+    effective["security"]["require_proxy"] = json!(true);
+    effective["security"]["readable_roots"] = json!(["{project}", "~/src/**"]);
+    effective["security"]["never_send"] = json!(["*.pem", ".env*", "secrets/"]);
+    effective["audit"] = json!({"retention_days": 30});
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw.clone()).unwrap();
+    bundle.validate().unwrap();
+    let policy = bundle.policy.for_vault(None);
+    assert_eq!(
+        policy.agents.as_ref().unwrap().allowed.as_deref(),
+        Some(&["acp:kiro".to_string(), "claude-code".into(), "codex".into()][..])
+    );
+    assert_eq!(policy.security.require_proxy, Some(true));
+    // Nothing is dropped: the typed view serializes back to the signed bytes.
+    assert_eq!(
+        serde_json::to_value(&bundle.policy).unwrap(),
+        raw["policy"],
+        "typed view keeps every member"
+    );
+    let unenforced = bundle.ack().unenforced;
+    for member in ["agents.require_approvals", "audit.retention_days"] {
+        assert!(unenforced.contains(&member.to_string()), "{member}");
+    }
+    // ent2-2/3/4 and N1: allowed agents and require-proxy (MCP server),
+    // readable roots and never-send (io_boundary) and allowed providers
+    // (proxy) are enforced.
+    for member in ENT2_ENFORCED {
+        assert!(is_engine_member(member), "{member}");
+        assert!(!unenforced.contains(&(*member).to_string()), "{member}");
+    }
+    // A policy without them keeps its normal form (and digest).
+    let plain = bundle_raw();
+    let typed: EffectivePolicyBundleV1 = serde_json::from_value(plain.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&typed.policy).unwrap(),
+        plain["policy"]
+    );
+    assert!(typed.policy.effective.agents.is_none());
+}
+
+#[test]
+fn the_ack_never_reports_server_members() {
+    // Cloud enforces a server member at its `x-server` point whatever the
+    // engine does: it is not "enforced nowhere", so no ack lists it.
+    let bundle = bundle();
+    let server = server_members(&bundle.policy);
+    assert!(!server.is_empty(), "the fixture bundle sets server members");
+    assert!(server.iter().all(|m| is_server_member(m)));
+    let ack = bundle.ack();
+    assert!(ack.unenforced.iter().all(|m| !is_server_member(m)));
+    assert!(ack.unenforced.iter().all(|m| !is_engine_member(m)));
+    let mut sorted = SERVER_MEMBERS.to_vec();
+    sorted.sort_unstable();
+    assert_eq!(sorted, SERVER_MEMBERS, "kept sorted bytewise");
+}
+
+/// SERVER-B4: a refused bundle is reported with the one the engine keeps;
+/// the C0 request and answer round-trip and pair up.
+#[test]
+fn a_refusal_report_matches_the_contract() {
+    let raw = fixture("routes/policy_ack.refused.request.json");
+    let request: PolicyAckRequestV1 = serde_json::from_value(raw.clone()).unwrap();
+    let refused = request.refused.clone().unwrap();
+    assert_eq!(refused.reason_code, PolicyRefusalReasonV1::KeyUnavailable);
+    assert!(request.unenforced.is_empty());
+    assert_eq!(serde_json::to_value(&request).unwrap(), raw, "round trip");
+    let built = PolicyAckRequestV1::refusal(
+        3,
+        request.digest.clone(),
+        PolicyAckRefusalV1 {
+            reason_code: PolicyRefusalReasonV1::KeyUnavailable,
+            detail: refusal_detail("effective policy: no valid policy key for this key_id"),
+            applied_version: Some(2),
+            applied_digest: Some(format!("sha256:{}", "2".repeat(64))),
+        },
+    );
+    assert_eq!(built, request);
+    let answer: PolicyAckRefusedResponseV1 =
+        serde_json::from_value(fixture("routes/policy_ack.refused.response.json")).unwrap();
+    answer.validate_for(&request).unwrap();
+    let mut other = request.clone();
+    other.refused.as_mut().unwrap().reason_code = PolicyRefusalReasonV1::Downgrade;
+    assert!(answer.validate_for(&other).is_err());
+    // No bundle kept: both applied members are null on the wire.
+    let none = PolicyAckRefusalV1 {
+        reason_code: PolicyRefusalReasonV1::InvalidBundle,
+        detail: None,
+        applied_version: None,
+        applied_digest: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&none).unwrap(),
+        json!({"reason_code": "invalid_bundle", "applied_version": null, "applied_digest": null})
+    );
+    // Every reason of the schema is known, and detail is bounded and clean.
+    let schema = fixture("schemas/policy.schema.json");
+    for code in schema["$defs"]["refusal_reason"]["enum"]
+        .as_array()
+        .unwrap()
+    {
+        assert!(
+            serde_json::from_value::<PolicyRefusalReasonV1>(code.clone()).is_ok(),
+            "{code}"
+        );
+    }
+    assert_eq!(refusal_detail("a\u{1b}[31mb\n").as_deref(), Some("a [31mb"));
+    assert_eq!(
+        refusal_detail(&"x".repeat(400)).unwrap().len(),
+        MAX_REFUSAL_DETAIL
+    );
+    assert_eq!(refusal_detail(" \n "), None);
+}
+
+#[test]
+fn a_path_with_spaces_is_scrubbed_as_one_run() {
+    assert_eq!(
+        refusal_detail(
+            "install the effective policy: write effective.json in /Users/John Smith/.local/share/lean-ctx: Permission denied"
+        )
+        .as_deref(),
+        Some("install the effective policy: write effective.json in <path>: Permission denied")
+    );
+    assert_eq!(
+        refusal_detail(r"open C:\Users\Jane Doe\cloud failed").as_deref(),
+        Some("open <path>")
+    );
+    assert_eq!(
+        refusal_detail("no valid policy key for this key_id").as_deref(),
+        Some("no valid policy key for this key_id")
+    );
+}
+
+/// A merge vector Cloud refuses, held against this engine's own validation.
+/// Cloud merges, so a refusal of the merge itself (members that disagree,
+/// levels out of order) has nothing here to check: `None`. A one-level
+/// `invalid_policy` vector is that level's document as the effective policy
+/// it would merge to: a value outside the contract of a member, or schema,
+/// this engine knows is refused naming the vector's field (`Some(true)`);
+/// an unknown member is accepted, as every unknown member is (module doc),
+/// and reported as enforced nowhere (`Some(false)`), never applied.
+fn refusal_by_this_engine(name: &str, case: &Value) -> Option<bool> {
+    let error = &case["error"];
+    let code = error["code"].as_str().expect(name);
+    let field = error["field"].as_str().expect(name);
+    let levels = case["levels"].as_array().expect(name);
+    if code != "invalid_policy" || levels.len() != 1 || field.is_empty() {
+        assert!(matches!(code, "non_mergeable" | "invalid_policy"), "{name}");
+        return None;
+    }
+    let mut document = levels[0]["document"].clone();
+    for section in ["security", "context", "sharing"] {
+        document
+            .as_object_mut()
+            .expect(name)
+            .entry(section)
+            .or_insert_with(|| json!({}));
+    }
+    let candidate: EffectivePolicyV1 = serde_json::from_value(document).expect(name);
+    let known = field == "schema"
+        || is_engine_member(field)
+        || is_server_member(field)
+        || ADVISORY_MEMBERS.contains(&field)
+        || PLANNED_ENGINE_MEMBERS.iter().any(|(m, _)| *m == field);
+    if known {
+        let refusal = candidate.validate().expect_err(name).to_string();
+        assert!(refusal.contains(field), "{name}: {refusal}");
+        return Some(true);
+    }
+    candidate.validate().expect(name);
+    assert!(candidate.members().contains(field), "{name}: kept");
+    assert!(
+        !is_engine_member(field) && !is_server_member(field),
+        "{name}: acked as unenforced"
+    );
+    Some(false)
+}
+
+#[test]
+fn every_merge_vector_result_is_a_valid_effective_policy_with_its_digest() {
+    let vectors = fixture("vectors/policy_merge.vectors.json");
+    let mut results = 0;
+    let mut refused = BTreeSet::new();
+    let mut kept_unenforced = BTreeSet::new();
+    for case in vectors["cases"].as_array().unwrap() {
+        let name = case["case"].as_str().unwrap();
+        let Some(raw) = case.get("effective") else {
+            match refusal_by_this_engine(name, case) {
+                Some(true) => refused.insert(name),
+                Some(false) => kept_unenforced.insert(name),
+                None => false,
+            };
+            continue;
+        };
+        let effective: EffectivePolicyV1 = serde_json::from_value(raw.clone()).expect(name);
+        effective.validate().expect(name);
+        assert_eq!(
+            policy_digest(raw).unwrap(),
+            case["effective_digest"].as_str().unwrap(),
+            "{name}"
+        );
+        // The engine's typed view keeps every member: nothing is dropped
+        // on the way to the floor.
+        assert_eq!(&serde_json::to_value(&effective).unwrap(), raw, "{name}");
+        results += 1;
+    }
+    assert!(results >= 10);
+    // This engine refuses the out-of-range Orchestrator cap itself; an
+    // unknown Orchestrator member it keeps and acks as enforced nowhere.
+    for name in [
+        "orchestrator_session_cap_out_of_range_refused",
+        "limit_out_of_range_refused",
+        "repeated_value_refused",
+        "unknown_schema_refused",
+    ] {
+        assert!(refused.contains(name), "{name}: {refused:?}");
+    }
+    for name in [
+        "orchestrator_unknown_member_refused",
+        "unknown_member_refused",
+    ] {
+        assert!(
+            kept_unenforced.contains(name),
+            "{name}: {kept_unenforced:?}"
+        );
+    }
+    // bundle_chain is the input of the signed bundle's vault entry.
+    let chain = vectors["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["case"] == "bundle_chain")
+        .unwrap();
+    assert_eq!(
+        chain["effective"],
+        bundle_raw()["policy"]["vaults"][0]["effective"]
+    );
+}
+
+/// A workspace linked to an organisation gets the organisation's own
+/// org-level document as source `{level: org, scope: orgn_…}` (C0
+/// `$defs/source`, web `policies-effective.json`): accepted at level `org`
+/// only (it refused every such bundle: "a policy source is malformed").
+#[test]
+fn an_organisation_source_is_accepted_at_the_org_level_only() {
+    let web = fixture("web/policies-effective.json");
+    let sources = web["response"]["body"]["sources"].clone();
+    assert!(
+        sources
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["level"] == "org" && s["scope"].as_str().unwrap().starts_with("orgn_")),
+        "the contract fixture carries an organisation source"
+    );
+    let mut raw = bundle_raw();
+    raw["sources"] = sources;
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw.clone()).unwrap();
+    bundle.validate().unwrap();
+    // The same scope at another level is not the contract's.
+    let mut other = raw;
+    for source in other["sources"].as_array_mut().unwrap() {
+        if source["scope"].as_str().unwrap().starts_with("orgn_") {
+            source["level"] = json!("workspace");
+        }
+    }
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(other).unwrap();
+    assert!(bundle.validate().is_err());
+    for scope in [
+        "orgn_9E8D7C6B5A4F30211F2E3D4C5B6A7980",
+        "orgn_9e8d",
+        "orgx_9e8d7c6b5a4f30211f2e3d4c5b6a7980",
+    ] {
+        let mut raw = bundle_raw();
+        raw["sources"] = json!([{"level": "org", "scope": scope, "version": 1,
+            "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"}]);
+        let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw).unwrap();
+        assert!(bundle.validate().is_err(), "{scope}");
+    }
+}
+
+#[test]
+fn a_known_member_outside_the_contract_refuses_the_bundle() {
+    let cases = [
+        ("/policy/effective/context/max_context_tokens", json!(0)),
+        ("/policy/effective/security/pii", json!("quarantine")),
+        ("/policy/effective/context/denied_tools", json!(["b", "a"])),
+        ("/policy/effective/context/denied_tools", json!(["a", "a"])),
+        ("/policy/effective/context/read_mode", json!("everything")),
+        ("/policy/effective/schema", json!("leanctx.cloud.policy/v2")),
+        ("/version", json!(0)),
+        ("/org_id", json!("org_acme")),
+        ("/signature", json!("AB")),
+        ("/not_after", json!("2026-10-25T12:00:00Z")),
+        // ent2 members
+        (
+            "/policy/effective/agents/allowed",
+            json!(["codex", "claude-code"]),
+        ),
+        ("/policy/effective/agents/allowed", json!(["Claude Code"])),
+        ("/policy/effective/agents/require_approvals", json!("yes")),
+        (
+            "/policy/effective/security/allowed_providers",
+            json!(["OpenAI"]),
+        ),
+        ("/policy/effective/security/require_proxy", json!(1)),
+        ("/policy/effective/security/readable_roots", json!([""])),
+        (
+            "/policy/effective/security/never_send",
+            json!([".env", ".env"]),
+        ),
+        ("/policy/effective/security/never_send", json!(["a\u{7}"])),
+        // QN2 members
+        ("/policy/effective/orchestrator/network", json!("off")),
+        ("/policy/effective/orchestrator/cross_team_review", json!(0)),
+        (
+            "/policy/effective/orchestrator/max_sessions_per_vault",
+            json!(1001),
+        ),
+        (
+            "/policy/effective/orchestrator/max_sessions_per_vault",
+            json!(-1),
+        ),
+        ("/policy/effective/orchestrator/Network", json!(true)),
+        // an unknown section must be an object of member names
+        ("/policy/effective/audit", json!(["retention_days"])),
+        ("/policy/effective/Audit", json!({})),
+    ];
+    for (path, value) in cases {
+        let mut raw = bundle_raw();
+        raw["policy"]["effective"]["agents"] = json!({});
+        raw["policy"]["effective"]["orchestrator"] = json!({});
+        let (parent, key) = path.rsplit_once('/').unwrap();
+        raw.pointer_mut(parent).unwrap()[key] = value;
+        let refused = serde_json::from_value::<EffectivePolicyBundleV1>(raw)
+            .map_err(|e| e.to_string())
+            .and_then(|b| b.validate().map_err(|e| e.to_string()));
+        assert!(refused.is_err(), "{path} must be refused");
+    }
+}
+
+#[test]
+fn an_unknown_member_is_kept_and_reported_as_unenforced() {
+    let mut raw = bundle_raw();
+    raw["policy"]["effective"]["security"]["quarantine_uploads"] = json!(true);
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw).unwrap();
+    bundle.validate().unwrap();
+    assert!(
+        bundle
+            .ack()
+            .unenforced
+            .contains(&"security.quarantine_uploads".to_string())
+    );
+    let vault = bundle
+        .policy
+        .for_vault(Some("3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"));
+    assert_eq!(vault.security.pii, Some(PolicyActionV1::Block));
+    assert_eq!(
+        bundle.policy.for_vault(None).security.pii,
+        Some(PolicyActionV1::Redact)
+    );
+    assert_eq!(
+        bundle
+            .policy
+            .for_vault(Some("00000000000000000000000000000000")),
+        &bundle.policy.effective
+    );
+}
+
+/// QN2: the Orchestrator members validate, stay in the typed view, and the
+/// ack reports exactly the ones this engine cannot enforce.
+#[test]
+fn the_orchestrator_members_validate_and_only_network_is_enforced() {
+    let mut raw = bundle_raw();
+    raw["policy"]["effective"]["orchestrator"] =
+        json!({"network": false, "cross_team_review": false, "max_sessions_per_vault": 0});
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw.clone()).unwrap();
+    bundle.validate().unwrap();
+    let orchestrator = bundle.policy.for_vault(None).orchestrator.clone().unwrap();
+    assert_eq!(orchestrator.network, Some(false));
+    assert_eq!(orchestrator.cross_team_review, Some(false));
+    assert_eq!(orchestrator.max_sessions_per_vault, Some(0));
+    assert_eq!(
+        serde_json::to_value(&bundle.policy).unwrap(),
+        raw["policy"],
+        "typed view keeps every member"
+    );
+    let unenforced = bundle.ack().unenforced;
+    assert!(is_engine_member("orchestrator.network"));
+    assert!(!unenforced.contains(&"orchestrator.network".to_string()));
+    for member in [
+        "orchestrator.cross_team_review",
+        "orchestrator.max_sessions_per_vault",
+    ] {
+        assert!(!is_engine_member(member), "{member}");
+        assert!(unenforced.contains(&member.to_string()), "{member}");
+    }
+    let mut upper = raw;
+    upper["policy"]["effective"]["orchestrator"]["max_sessions_per_vault"] =
+        json!(MAX_ORCHESTRATOR_SESSIONS);
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(upper).unwrap();
+    bundle.validate().unwrap();
+}
+
+/// A Host whose parser predates a section (like `orchestrator` before QN2)
+/// keeps it under the signature and acks every member unenforced; a
+/// member of a typed section this engine does not know is kept the same way.
+#[test]
+fn an_unknown_section_or_member_is_kept_and_acked_unenforced() {
+    let mut raw = bundle_raw();
+    let effective = &mut raw["policy"]["effective"];
+    effective["fleet"] =
+        json!({"network": false, "cross_team_review": false, "max_sessions_per_vault": 2});
+    effective["orchestrator"] = json!({"network": true, "relay_everything": true});
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw.clone()).unwrap();
+    bundle.validate().unwrap();
+    assert_eq!(
+        serde_json::to_value(&bundle.policy).unwrap(),
+        raw["policy"],
+        "typed view keeps every member"
+    );
+    let unenforced = bundle.ack().unenforced;
+    for member in [
+        "fleet.network",
+        "fleet.cross_team_review",
+        "fleet.max_sessions_per_vault",
+        "orchestrator.relay_everything",
+    ] {
+        assert!(unenforced.contains(&member.to_string()), "{member}");
+    }
+    assert!(!unenforced.contains(&"orchestrator.network".to_string()));
+}

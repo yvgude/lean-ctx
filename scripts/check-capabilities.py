@@ -111,7 +111,7 @@ LEGACY_SCHEMA = 2
 
 def tier_of(capability: dict, price_classes: dict):
     """The tier a capability's price class projects to: fixed per class, by
-    `hive_plan` for the `hive` class, None for a retired class."""
+    `cloud_plan` for the `cloud` class, None for a retired class."""
     entry = price_classes.get(capability["price_class"], {})
     if entry.get("retired"):
         return None
@@ -121,18 +121,18 @@ def tier_of(capability: dict, price_classes: dict):
 
 
 def check_classes(capabilities: list, price_classes: dict, errors: list) -> None:
-    """Schema-3 rules: no legacy class, `hive_plan` exactly on hive records,
+    """Schema-3 rules: no legacy class, `cloud_plan` exactly on cloud records,
     every free capability accountless."""
     for capability in capabilities:
         identifier, price = capability["id"], capability["price_class"]
         entry = price_classes.get(price, {})
         if entry.get("legacy"):
             errors.append(f"{identifier}: legacy price class {price} is not valid in schema {REGISTRY_SCHEMA}")
-        planned = "hive_plan" in capability
+        planned = "cloud_plan" in capability
         if planned != ("tier_from" in entry):
-            errors.append(f"{identifier}: hive_plan must be set exactly on hive capabilities")
+            errors.append(f"{identifier}: cloud_plan must be set exactly on cloud capabilities")
         elif planned and tier_of(capability, price_classes) is None:
-            errors.append(f"{identifier}: unknown hive_plan {capability['hive_plan']}")
+            errors.append(f"{identifier}: unknown cloud_plan {capability['cloud_plan']}")
         if price == "free" and capability["account_required"]:
             errors.append(f"{identifier}: a free capability must not require an account")
 
@@ -454,12 +454,17 @@ def verify(root: Path, profile: str = "product") -> dict:
         for name in names:
             if name in by_id or name in aliases:
                 errors.append(f"{name}: listed as {label} but present in the registry")
-    retired_gate = tree.read(tier_map["retired"]["enforced_by"]["path"])
-    if retired_gate is not None:
-        tree.needle(tier_map["retired"]["enforced_by"], "retired ids")
-        for name in retired:
-            if f'"{name}"' not in retired_gate:
-                errors.append(f"{name}: retired id is not refused in {tier_map['retired']['enforced_by']['path']}")
+    retired_entry = tier_map["retired"]
+    if "enforced_by" in retired_entry:
+        retired_gate = tree.read(retired_entry["enforced_by"]["path"])
+        if retired_gate is not None:
+            tree.needle(retired_entry["enforced_by"], "retired ids")
+            for name in retired:
+                if f'"{name}"' not in retired_gate:
+                    errors.append(f"{name}: retired id is not refused in {retired_entry['enforced_by']['path']}")
+    elif not str(retired_entry.get("enforced_outside", "")).strip():
+        # With the refusing code outside this tree, the map must name where it lives.
+        errors.append(f"{MAP_PATH}: retired ids need enforced_by or enforced_outside")
 
     scan = tier_map["id_scan"]
     found = tree.literals(scan["roots"], scan["prefixes"])
@@ -473,10 +478,14 @@ def verify(root: Path, profile: str = "product") -> dict:
     team_ids = {c["id"] for c in legacy_capabilities
                 if price_classes.get(c["price_class"], {}).get("tier") == "team"
                 and c["account_required"] and c["managed_cloud_available"]}
+    # A retired Team service (its source removed) is stated, not silently absent.
+    team_retired = str(legacy.get("team_service_retired", "")).strip()
     if "team_service" in tier_map:
-        if legacy_capabilities:
+        if team_retired:
+            errors.append(f"{MAP_PATH}: team_service is listed although legacy_hosted.team_service_retired says it is gone")
+        elif legacy_capabilities:
             check_team_service(tree, tier_map["team_service"], team_ids, found)
-    elif team_ids:
+    elif team_ids and not team_retired:
         errors.append(f"{MAP_PATH}: team_service is missing, so nothing says which Team capabilities are served")
 
     gate_dir = runtime["engine_gate_dir"] + "/"

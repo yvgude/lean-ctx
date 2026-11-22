@@ -399,7 +399,8 @@ impl CanonicalSession {
                 },
             )?;
             next.set_updated_at(UtcTimestamp::new(
-                chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                lean_ctx_time::UtcDateTime::now()
+                    .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
             )?);
             // Changed plaintext is not the old protected/carrier projection.
             next.clear_protected_metadata();

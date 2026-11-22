@@ -481,7 +481,7 @@ mod tests {
                 vec![],
             ),
             // Card numbers and tokens with digit runs are inspected as
-            // (IBANs are a Hive filter pack since detector set 2.0.0, not OSS)
+            // (IBANs are a Cloud filter pack since detector set 2.0.0, not OSS)
             // they are, under any name, in the path, the query or a header.
             (
                 "OpenAI",

@@ -7,7 +7,7 @@ use crate::core::config::{Config, IntelligenceRuntimeConfig};
 
 use super::{InstallError, Result, health};
 
-pub const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX | Hive or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
+pub const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX Cloud or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
 
 /// Verified setup snapshot: discovery never starts proprietary code or grants consent.
 pub struct SetupRuntime {

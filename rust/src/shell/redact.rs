@@ -18,7 +18,9 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let command = command.as_ref();
     let output = output.as_ref();
     let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");
-    std::fs::create_dir_all(&tee_dir).ok()?;
+    // Owner-only (0700 on Unix): log names reveal which commands ran. An
+    // existing, wider directory is tightened on the next write.
+    crate::core::secure_fs::private_dir(&tee_dir).ok()?;
 
     // #950: cleanup is an O(N) read_dir + per-file metadata() scan of the
     // whole tee directory. Running it on every save_tee (i.e. every
@@ -176,5 +178,25 @@ mod tests {
         for p in [first, other] {
             let _ = std::fs::remove_file(p);
         }
+    }
+
+    /// The tee directory is created owner-only, and an existing wider one is
+    /// tightened on the next write; the log itself stays 0600.
+    #[cfg(unix)]
+    #[test]
+    fn tee_dir_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+
+        let log = std::path::PathBuf::from(save_tee("echo tee-perms", "out").expect("tee saved"));
+        let dir = log.parent().unwrap().to_path_buf();
+        assert_eq!(mode(&dir), 0o700, "new tee dir must be owner-only");
+        assert_eq!(mode(&log), 0o600, "tee log must be owner-only");
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        save_tee("echo tee-perms", "out 2").expect("tee saved");
+        assert_eq!(mode(&dir), 0o700, "existing wide tee dir must be tightened");
     }
 }

@@ -273,7 +273,9 @@ fn file_has_canonical_rules(path: &Path) -> bool {
 ///
 /// Carrier per client (kept in sync with `rules_inject::targets`):
 ///   * Cursor → `~/.cursor/rules/lean-ctx.mdc` (canonical rules block)
-///   * Codex → `$CODEX_HOME/instructions.md` (canonical rules block)
+///   * Antigravity → `~/.gemini/AGENTS.md` (shared), `~/.gemini/GEMINI.md`, or
+///     `~/.gemini/config/rules/lean-ctx.md` (dedicated)
+///   * Pi → `<pi agent dir>/AGENTS.md` (shared mode only)
 ///   * OpenCode → `~/.config/opencode/rules/lean-ctx.md` (dedicated) or
 ///     `~/.config/opencode/AGENTS.md` (shared)
 ///
@@ -309,15 +311,26 @@ pub fn client_autoloads_rules(client_name: &str, home: &Path) -> bool {
                     home,
                 ));
         }
+        // Antigravity loads `~/.gemini/AGENTS.md` and `~/.gemini/GEMINI.md`
+        // as always-on global rules, plus the dedicated modular rule.
+        "antigravity" => {
+            return file_has_canonical_rules(&home.join(".gemini/AGENTS.md"))
+                || file_has_canonical_rules(&home.join(".gemini/GEMINI.md"))
+                || file_has_canonical_rules(
+                    &crate::rules_inject::antigravity_dedicated_rules_path(home),
+                );
+        }
+        "pi" => {
+            return file_has_canonical_rules(&crate::core::editor_registry::pi_agents_path(home));
+        }
         _ => {}
     }
     if lower.contains("cursor") {
         return file_has_canonical_rules(&home.join(".cursor/rules/lean-ctx.mdc"));
     }
-    if lower.contains("codex") {
-        return codex_present(home)
-            && file_has_canonical_rules(&codex_dir(home).join("instructions.md"));
-    }
+    // Codex has no canonical-rules carrier: it reads `$CODEX_HOME/AGENTS.md`
+    // (pointer block only) and never the legacy `instructions.md`, so the MCP
+    // instructions stay its rules channel.
     if lower.contains("opencode") {
         // OpenCode loads rules from either:
         // - ~/.config/opencode/AGENTS.md (shared mode)
@@ -493,14 +506,15 @@ pub mod tests {
         std::fs::write(home.join(".cursor/rules/lean-ctx.mdc"), "user notes\n").unwrap();
         assert!(!client_autoloads_rules("cursor", home));
 
-        // Codex covered via $CODEX_HOME/instructions.md.
+        // Codex never reads the legacy $CODEX_HOME/instructions.md: a leftover
+        // canonical block there must not collapse its MCP instructions.
         std::fs::create_dir_all(home.join(".codex")).unwrap();
         std::fs::write(
             home.join(".codex/instructions.md"),
             format!("{FULL_HEADER}\nbody\n"),
         )
         .unwrap();
-        assert!(client_autoloads_rules("codex", home));
+        assert!(!client_autoloads_rules("codex", home));
         crate::test_env::remove_var("CODEX_HOME");
     }
 

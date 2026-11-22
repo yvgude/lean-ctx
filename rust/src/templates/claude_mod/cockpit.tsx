@@ -1551,7 +1551,7 @@ export function registerCockpit(
             ? pill(ui, `${SPINNER[tick % SPINNER.length]} LIVE`, FOREGROUND, mix(BLUE_FIELD, SIGNATURE, pulse * 0.5), true)
             : pill(ui, '○ IDLE', SECONDARY, PANEL)}
         </Box>
-        <Text color={hex(HAIRLINE)}>Control what your AI can see.</Text>
+        <Text color={hex(HAIRLINE)}>Less context. More intelligence.</Text>
         <Box marginTop={1}>{handoff(ui, 'pane-handoff', W, b, tick, now)}</Box>
 
         {panel(ui, W, 'CLAUDE SAW', 'this conversation', saw)}

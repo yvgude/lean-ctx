@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx tasks …`: the project's tasks. A project linked to a Hive
-//! vault uses Hive exactly as `lean-ctx hive tasks` does; every other
+//! `lean-ctx tasks …`: the project's tasks. A project linked to a Cloud
+//! vault uses Cloud exactly as `lean-ctx cloud tasks` does; every other
 //! project keeps its tasks on this machine (lean-ctx-tasks), and each
 //! transition is announced on the local bus.
 //!
@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use lean_ctx_hive::tasks::local::{self, LocalFilter};
-use lean_ctx_hive::tasks::{self as hive_tasks, EvidenceInput, TaskView};
-use lean_ctx_protocol::hive::tasks::{TaskOutcome, TaskState, TaskVerdict, UsageV1};
+use lean_ctx_cloud::tasks::local::{self, LocalFilter};
+use lean_ctx_cloud::tasks::{self as cloud_tasks, EvidenceInput, TaskView};
+use lean_ctx_protocol::cloud::tasks::{TaskOutcome, TaskState, TaskVerdict, UsageV1};
 use lean_ctx_tasks::{Actor, Amendment, Change, LocalTask, Proposal, Submission, TaskError};
 
 use super::local_read::tasks::{TaskDetail, TaskRow, detail};
@@ -23,7 +23,7 @@ use super::local_read::{self, Code, Failure, flag, flags, positionals};
 pub(crate) const HELP: &str = "\
 lean-ctx tasks — the current project's tasks
 
-A project linked to a Hive vault uses its Hive tasks (as `lean-ctx hive tasks`);
+A project linked to a LeanCTX Cloud vault uses its LeanCTX Cloud tasks (as `lean-ctx cloud tasks`);
 any other project keeps its tasks on this machine. A linked project's local
 tasks that were not brought into the vault (left local on purpose, or the link
 came in through git) stay reachable with --local until they are settled.
@@ -53,7 +53,7 @@ a result never verifies it, and a reject names its --findings; only a
 person stops a task, with a --reason. Only the agent that submitted a result
 amends it (no claim needed): while submitted, --evidence (the whole new list)
 and --summary replace the old ones. A done task takes only --merge <sha>, once,
-from its submitter, a person or a Queen session, never the reviewer whose
+from its submitter, a person or a coordinator session, never the reviewer whose
 accept made it done (not_merger). The history keeps
 old and new.
 Lists show high priority first, then by number. Priority is high or normal;
@@ -95,7 +95,7 @@ pub(crate) struct VerificationRow {
     pub reason: Option<String>,
 }
 
-/// A local task in full: the Hive task fields plus who moved it when.
+/// A local task in full: the Cloud task fields plus who moved it when.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct LocalDetail {
     #[serde(flatten)]
@@ -134,7 +134,7 @@ pub(crate) struct Ack {
     pub vault: Option<String>,
     /// `null` when the write changed no state (a claim renewed).
     pub change: Option<ChangeRow>,
-    /// The task after the write; `null` for a Hive vault (read it with show).
+    /// The task after the write; `null` for a Cloud vault (read it with show).
     pub task: Option<LocalDetail>,
 }
 
@@ -145,7 +145,7 @@ fn wire<T: Serialize>(value: &T) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-fn by_row(actor: &lean_ctx_protocol::hive::tasks::TaskActorV1) -> ByRow {
+fn by_row(actor: &lean_ctx_protocol::cloud::tasks::TaskActorV1) -> ByRow {
     ByRow {
         kind: wire(&actor.kind),
         label: actor.label.clone(),
@@ -193,7 +193,7 @@ pub(crate) fn local_detail(local: &LocalTask, agent: Option<&str>) -> LocalDetai
     }
 }
 
-/// A local listing row: unlike a Hive listing it carries goal, acceptance
+/// A local listing row: unlike a Cloud listing it carries goal, acceptance
 /// and the claim holder.
 pub(crate) fn local_row(local: &LocalTask, agent: Option<&str>) -> TaskRow {
     local_detail(local, agent).detail.row
@@ -253,7 +253,7 @@ fn required<'a>(args: &'a [String], name: &str) -> Result<&'a str, Failure> {
 /// Who runs this process, from its environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Caller {
-    /// A person's process (Hive Desktop, a shell): no agent marker.
+    /// A person's process (Cloud Desktop, a shell): no agent marker.
     Person,
     /// An agent that named itself (`LEAN_CTX_AGENT_ID` / `LCTX_AGENT_ID`).
     Agent(String),
@@ -417,7 +417,7 @@ fn local_write(
     agent: Option<&str>,
     write: impl FnOnce(
         &mut lean_ctx_tasks::Board,
-        chrono::DateTime<chrono::Utc>,
+        lean_ctx_time::UtcDateTime,
     ) -> Result<Option<Change>, TaskError>,
 ) -> Result<(Option<Change>, Option<LocalDetail>), Failure> {
     let mut after = None;
@@ -516,7 +516,7 @@ fn local_action(
                 summary: flag(args, "--summary")?.map(str::to_owned),
                 evidence: local::evidence(root, evidence_inputs(args)?)?,
                 merge_commit: flag(args, "--merge")?.map(str::to_owned),
-                queen: lean_ctx_hive::queens::this_session_is_queen(),
+                queen: lean_ctx_cloud::queens::this_session_is_queen(),
                 reason: reason.map(str::to_owned),
             };
             local_write(root, agent, |b, now| {
@@ -565,8 +565,22 @@ fn person_only(args: &[String], caller: &Caller) -> Result<(), Failure> {
     Ok(())
 }
 
-/// A write on a linked project: the same Hive calls as `hive tasks`.
-fn hive_action(
+/// A decision or stop on a linked vault's task: LeanCTX Cloud acts as the
+/// person this machine is linked to, so an agent's process, or a write
+/// naming an `--agent`, is refused `forbidden`.
+fn vault_person(args: &[String], caller: &Caller) -> Result<(), Failure> {
+    if !matches!(caller, Caller::Person) || flag(args, "--agent")?.is_some() {
+        return Err(Failure::new(
+            Code::Forbidden,
+            "on a LeanCTX Cloud vault the person this machine is linked to decides and stops tasks, never an agent",
+        ));
+    }
+    Ok(())
+}
+
+/// A write on a linked project: the same Cloud calls as `cloud tasks`; a
+/// person's decision and stop go to LeanCTX Cloud's engine routes.
+fn cloud_action(
     action: &str,
     args: &[String],
     root: &Path,
@@ -576,9 +590,11 @@ fn hive_action(
         actor(args, caller)?
             .agent_id()
             .map(str::to_owned)
-            .ok_or_else(|| Failure::invalid("--agent <bus agent id> is required for a Hive task"))
+            .ok_or_else(|| {
+                Failure::invalid("--agent <bus agent id> is required for a LeanCTX Cloud task")
+            })
     };
-    let ack = |ack: lean_ctx_protocol::hive::tasks::TaskAckV1, event: &'static str| ChangeRow {
+    let ack = |ack: lean_ctx_protocol::cloud::tasks::TaskAckV1, event: &'static str| ChangeRow {
         number: ack.number,
         event,
         state: wire(&ack.state),
@@ -590,7 +606,7 @@ fn hive_action(
             let minutes = flag(args, "--minutes")?
                 .map(|m| m.parse().map_err(|_| Failure::invalid("--minutes is 5-15")))
                 .transpose()?;
-            let granted = hive_tasks::claim(root, number(args)?, &agent()?, "cli", minutes)?;
+            let granted = cloud_tasks::claim(root, number(args)?, &agent()?, "cli", minutes)?;
             Ok(ChangeRow {
                 number: granted.number,
                 event: "claimed",
@@ -599,7 +615,7 @@ fn hive_action(
             })
         }
         "update" => Ok(ack(
-            hive_tasks::update(
+            cloud_tasks::update(
                 root,
                 number(args)?,
                 &agent()?,
@@ -615,7 +631,7 @@ fn hive_action(
             } else {
                 TaskOutcome::Completed
             };
-            let done = hive_tasks::submit(
+            let done = cloud_tasks::submit(
                 root,
                 number(args)?,
                 &agent()?,
@@ -632,25 +648,25 @@ fn hive_action(
             Ok(ack(done, event))
         }
         "release" => Ok(ack(
-            hive_tasks::release(root, number(args)?, &agent()?, reason)?,
+            cloud_tasks::release(root, number(args)?, &agent()?, reason)?,
             "released",
         )),
         "amend" => {
-            let input = hive_tasks::AmendInput {
+            let input = cloud_tasks::AmendInput {
                 summary: flag(args, "--summary")?.map(str::to_owned),
                 evidence: evidence_inputs(args)?,
                 merge_commit: flag(args, "--merge")?.map(str::to_owned),
-                queen: lean_ctx_hive::queens::this_session_is_queen(),
+                queen: lean_ctx_cloud::queens::this_session_is_queen(),
                 reason: reason.map(str::to_owned),
             };
             Ok(ack(
-                hive_tasks::amend(root, number(args)?, &agent()?, input)?,
+                cloud_tasks::amend(root, number(args)?, &agent()?, input)?,
                 "amended",
             ))
         }
         "verify" => {
             let (verdict, findings) = verdict_findings(args)?;
-            let done = hive_tasks::verify(root, number(args)?, &agent()?, verdict, findings)?;
+            let done = cloud_tasks::verify(root, number(args)?, &agent()?, verdict, findings)?;
             let event = if done.state == TaskState::Done {
                 "verified"
             } else {
@@ -662,14 +678,23 @@ fn hive_action(
             person_only(args, caller)?;
             let (n, change) = local_read::tasks::fields_change(args)?;
             Ok(ack(
-                lean_ctx_hive::tasks::fields::set_fields(root, n, &change)?,
+                lean_ctx_cloud::tasks::fields::set_fields(root, n, &change)?,
                 "fields",
             ))
         }
-        "decide" | "stop" | "propose" => Err(Failure::new(
+        "decide" => {
+            vault_person(args, caller)?;
+            let (n, accept) = (number(args)?, decision(args)?);
+            super::tasks_vault::decide(root, n, accept, reason)
+        }
+        "stop" => {
+            vault_person(args, caller)?;
+            super::tasks_vault::stop(root, number(args)?, reason)
+        }
+        "propose" => Err(Failure::new(
             Code::Forbidden,
             format!(
-                "{action} on a task of a linked vault happens in Hive (`lean-ctx hive tasks propose` queues a proposal)"
+                "{action} on a task of a linked vault happens in LeanCTX Cloud (`lean-ctx cloud tasks propose` queues a proposal)"
             ),
         )),
         other => Err(Failure::invalid(format!(
@@ -679,13 +704,13 @@ fn hive_action(
 }
 
 fn vault_of(root: &str) -> Option<String> {
-    let store = lean_ctx_hive::HiveStore::open().ok()?;
-    lean_ctx_hive::vault::VaultMap::load(store.data_dir())
+    let store = lean_ctx_cloud::CloudStore::open().ok()?;
+    lean_ctx_cloud::vault::VaultMap::load(store.data_dir())
         .for_root(root)
         .map(|r| format!("{}/{}", r.ns, r.name))
 }
 
-/// `tasks.list` of an unlinked project (also `hive tasks list --json`).
+/// `tasks.list` of an unlinked project (also `cloud tasks list --json`).
 pub(crate) fn local_list(args: &[String], root: &str) -> Result<LocalList, Failure> {
     let agent = reader(args, &caller())?;
     let agent = agent.as_deref();
@@ -705,7 +730,7 @@ pub(crate) fn local_list(args: &[String], root: &str) -> Result<LocalList, Failu
     })
 }
 
-/// `tasks.task` of an unlinked project (also `hive tasks show --json`).
+/// `tasks.task` of an unlinked project (also `cloud tasks show --json`).
 pub(crate) fn local_show(args: &[String], root: &str) -> Result<LocalTaskDoc, Failure> {
     let (n, agent) = (number(args)?, reader(args, &caller())?);
     let board = local::board(Path::new(root))?;
@@ -792,14 +817,14 @@ fn wants_local(args: &[String]) -> bool {
 /// reachable after a link that left them local (or came in through git)
 /// until they are settled; never one that was brought into the vault.
 fn local_in_linked(path: &Path, action: &str, args: &[String]) -> Result<(), Failure> {
-    lean_ctx_hive::bring_local::local_action_in_linked(path, action, number(args).ok())
+    lean_ctx_cloud::bring_local::local_action_in_linked(path, action, number(args).ok())
         .map_err(|why| Failure::new(Code::Forbidden, why))
 }
 
 /// The `--json` document of `tasks <action> …` for `via`: the CLI prints
 /// it, the local service sends it. Never ends the process — the socket
-/// builds it inside the daemon. A linked project answers from Hive (its
-/// list and show as `hive tasks`), any other from its local tasks.
+/// builds it inside the daemon. A linked project answers from Cloud (its
+/// list and show as `cloud tasks`), any other from its local tasks.
 pub(crate) fn json_answer(
     args: &[String],
     caller: &Caller,
@@ -836,7 +861,7 @@ pub(crate) fn json_answer(
             via,
             &preview(),
             || {
-                let change = hive_action(&action, &args, &path, caller)?;
+                let change = cloud_action(&action, &args, &path, caller)?;
                 Ok(Ack {
                     project_root: root.clone(),
                     vault: vault_of(&root),
@@ -875,7 +900,7 @@ pub(crate) fn json_answer(
 }
 
 /// A write's request as the release point sees it before anything is
-/// written or sent to Hive (G08), for `--json`, the socket and plain text
+/// written or sent to Cloud (G08), for `--json`, the socket and plain text
 /// alike: a withheld write writes nothing.
 fn write_preview(action: &str, args: &[String]) -> serde_json::Value {
     let mut preview = local_read::request_preview(args, WRITE_FIELDS);
@@ -892,7 +917,7 @@ fn write_preview(action: &str, args: &[String]) -> serde_json::Value {
 
 /// The plain-text command's release check before a write (G08), the same
 /// decision on the same preview as [`json_answer`]'s: `Err` when withheld,
-/// and then nothing is written, locally or to Hive.
+/// and then nothing is written, locally or to Cloud.
 pub(crate) fn release_text_write(action: &str, args: &[String], root: &str) -> Result<(), Failure> {
     if matches!(action, "list" | "show") {
         return Ok(());
@@ -954,31 +979,31 @@ fn text_answer(
     }
 }
 
-/// A linked project's plain-text command: Hive, exactly as `lean-ctx hive
+/// A linked project's plain-text command: Cloud, exactly as `lean-ctx cloud
 /// tasks` (the `--json` documents are [`json_answer`]'s); `list` first
 /// names the local tasks that are not shared.
 fn linked_text(action: &str, args: &[String], root: &str, caller: &Caller) {
-    let ordered = hive_text_args(action, args, caller).unwrap_or_else(|f| exit_text(&f));
+    let ordered = cloud_text_args(action, args, caller).unwrap_or_else(|f| exit_text(&f));
     if action == "list"
-        && let Ok(left) = lean_ctx_hive::bring_local::local_not_shared(Path::new(root))
-        && let Some(note) = lean_ctx_hive::bring_local::not_shared_note(&left)
+        && let Ok(left) = lean_ctx_cloud::bring_local::local_not_shared(Path::new(root))
+        && let Some(note) = lean_ctx_cloud::bring_local::not_shared_note(&left)
     {
         println!("{note}");
     }
-    if let Err(error) = super::hive_tasks_cmd::run(&ordered) {
+    if let Err(error) = super::cloud_tasks_cmd::run(&ordered) {
         eprintln!("lean-ctx tasks: {error}");
         std::process::exit(1);
     }
 }
 
-/// The arguments `hive tasks` reads for a linked project's plain-text
+/// The arguments `cloud tasks` reads for a linked project's plain-text
 /// command: positionals first (it reads the number and summary by
 /// position), then the flags; a write carries the caller's agent as
 /// `--agent`, exactly as the `--json` path resolves it.
-fn hive_text_args(action: &str, args: &[String], caller: &Caller) -> Result<Vec<String>, Failure> {
+fn cloud_text_args(action: &str, args: &[String], caller: &Caller) -> Result<Vec<String>, Failure> {
     let (positional, flags) = local_read::split_positionals(args);
     let mut ordered: Vec<String> = positional.iter().map(|a| (*a).to_owned()).collect();
-    // Priority and labels are a person's (no `--agent`; `hive tasks` checks).
+    // Priority and labels are a person's (no `--agent`; `cloud tasks` checks).
     let writes = !matches!(action, "list" | "show" | "propose" | "priority" | "labels");
     let agent = if writes {
         Some(
@@ -986,7 +1011,7 @@ fn hive_text_args(action: &str, args: &[String], caller: &Caller) -> Result<Vec<
                 .agent_id()
                 .map(str::to_owned)
                 .ok_or_else(|| {
-                    Failure::invalid("--agent <bus agent id> is required for a Hive task")
+                    Failure::invalid("--agent <bus agent id> is required for a LeanCTX Cloud task")
                 })?,
         )
     } else {
@@ -1023,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn local_tasks_print_local_read_shapes_post_on_the_bus_and_a_linked_root_goes_to_hive() {
+    fn local_tasks_print_local_read_shapes_post_on_the_bus_and_a_linked_root_goes_to_cloud() {
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("project");
         let (root, rs) = (dir.path(), dir.path().to_str().expect("utf-8 path"));
@@ -1122,12 +1147,12 @@ mod tests {
         assert!(keys.contains(&"task:1:proposed:1:0"), "{keys:?}");
         assert!(keys.contains(&"task:1:verified:5:0"), "{keys:?}");
 
-        // A checkout linked to a vault keeps Hive's tasks.
-        let store = lean_ctx_hive::HiveStore::open().expect("hive store");
-        let mut map = lean_ctx_hive::vault::VaultMap::default();
+        // A checkout linked to a vault keeps Cloud's tasks.
+        let store = lean_ctx_cloud::CloudStore::open().expect("cloud store");
+        let mut map = lean_ctx_cloud::vault::VaultMap::default();
         map.vaults.insert(
             "stable".into(),
-            lean_ctx_hive::vault::VaultRecord {
+            lean_ctx_cloud::vault::VaultRecord {
                 vault_id: "v_1".into(),
                 ns: "acme".into(),
                 name: "app".into(),
@@ -1135,20 +1160,37 @@ mod tests {
                 roots: vec![rs.to_owned()],
             },
         );
-        std::fs::create_dir_all(store.data_dir()).expect("hive dir");
+        std::fs::create_dir_all(store.data_dir()).expect("cloud dir");
         map.save(store.data_dir()).expect("vault map");
         assert_eq!(local::linked(root), Ok(true));
-        let refused = hive_action(
+        let refused = cloud_action(
             "decide",
             &args(&["decide", "1", "--accept"]),
             root,
             &Caller::Person,
         )
-        .expect_err("decided in Hive");
-        assert_eq!(refused.code, Code::Forbidden);
+        .expect_err("sent to LeanCTX Cloud, but no instance is connected");
+        assert_eq!(refused.code, Code::NotConnected, "{}", refused.message);
+        let agent = cloud_action(
+            "decide",
+            &args(&["decide", "1", "--accept", "--agent", "w1"]),
+            root,
+            &Caller::Person,
+        )
+        .expect_err("an agent never decides as the linked person");
+        assert_eq!(agent.code, Code::Forbidden);
+        // A stop without a reason is refused before the connection matters.
+        let unreasoned = cloud_action("stop", &args(&["stop", "1"]), root, &Caller::Person)
+            .expect_err("a stop needs a reason");
+        assert_eq!(
+            unreasoned.code,
+            Code::InvalidArgument,
+            "{}",
+            unreasoned.message
+        );
     }
 
-    /// The socket builds `hive tasks list|show` inside the daemon: a link
+    /// The socket builds `cloud tasks list|show` inside the daemon: a link
     /// state that cannot be read is an `unavailable` error document, never
     /// an exit of the process.
     #[test]
@@ -1156,8 +1198,8 @@ mod tests {
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("project");
         let root = dir.path().to_str().expect("utf-8").to_owned();
-        let store = lean_ctx_hive::HiveStore::open().expect("hive store");
-        std::fs::create_dir_all(store.data_dir()).expect("hive dir");
+        let store = lean_ctx_cloud::CloudStore::open().expect("cloud store");
+        std::fs::create_dir_all(store.data_dir()).expect("cloud dir");
         std::fs::write(
             store
                 .data_dir()
@@ -1353,7 +1395,7 @@ mod tests {
     #[test]
     fn a_linked_plain_text_write_carries_the_callers_agent() {
         let worker = &Caller::Agent("w1".to_owned());
-        let ordered = hive_text_args(
+        let ordered = cloud_text_args(
             "submit",
             &args(&[
                 "--failed",
@@ -1379,9 +1421,9 @@ mod tests {
                 "w1"
             ])
         );
-        let spoofed = hive_text_args("verify", &args(&["verify", "3", "--agent", "w2"]), worker);
+        let spoofed = cloud_text_args("verify", &args(&["verify", "3", "--agent", "w2"]), worker);
         assert_eq!(spoofed.expect_err("another agent").code, Code::Forbidden);
-        assert!(hive_text_args("list", &args(&["list"]), &Caller::UnnamedAgent).is_ok());
+        assert!(cloud_text_args("list", &args(&["list"]), &Caller::UnnamedAgent).is_ok());
     }
 
     #[test]

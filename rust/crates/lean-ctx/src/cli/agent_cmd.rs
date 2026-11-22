@@ -118,7 +118,7 @@ pub(crate) fn cmd_agent(args: &[String]) {
             let since = flag("--since").map(|text| {
                 let span = friction::parse_duration(&text)
                     .unwrap_or_else(|| exit_usage("agent friction [--since <30m|12h|7d|seconds>]"));
-                chrono::Utc::now() - span
+                lean_ctx_time::UtcDateTime::now() - span
             });
             println!("{}", friction::render(&friction::summary(since)));
         }
@@ -250,7 +250,7 @@ USAGE:\n\
   lean-ctx agent read --id <bus id>          read bus messages once, without waiting (paged)\n\
   lean-ctx agent messages --json [--since <rfc3339>] [--to <id>] [--limit N]  the bus as JSON (local-read/1)\n\
   lean-ctx agent post --json (--to <id>… | --broadcast) --message <text> [--thread <t>] [--project-root <p>]\n\
-                                             post as the person (hive-person)\n\
+                                             post as the person (cloud-person)\n\
   lean-ctx agent friction [--since <30m|12h|7d>]  local friction summary\n\
   lean-ctx agent show <agent-id> [--trust-domain org.example]\n\
   lean-ctx agent heartbeat <agent-id>        liveness + attestation drift check (exit 3 = unacknowledged drift)\n\
@@ -274,7 +274,7 @@ struct LocalPresenceRow {
     role: Option<String>,
     state: &'static str,
     alive: bool,
-    last_active: chrono::DateTime<chrono::Utc>,
+    last_active: lean_ctx_time::UtcDateTime,
     age_seconds: i64,
     pid: u32,
     project_root: String,
@@ -288,7 +288,7 @@ pub(crate) const ACTIVE_WINDOW_SECONDS: i64 = 60;
 /// `finished`) at `now`.
 pub(crate) fn agent_liveness(
     agent: &lean_ctx::core::agents::AgentEntry,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
     compatibility_identities: &lean_ctx::core::agents::ProcessIdentityIndex,
 ) -> (bool, &'static str) {
     let alive = agent
@@ -309,7 +309,7 @@ pub(crate) fn agent_liveness(
 
 fn local_presence_snapshot(
     registry: &lean_ctx::core::agents::AgentRegistry,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
     include_finished: bool,
     compatibility_identities: &lean_ctx::core::agents::ProcessIdentityIndex,
 ) -> Vec<LocalPresenceRow> {
@@ -354,7 +354,7 @@ fn print_local_presence(as_json: bool, include_finished: bool) {
     let compatibility_identities = lean_ctx::core::agents::ProcessIdentityIndex::load();
     let rows = local_presence_snapshot(
         &registry,
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
         include_finished,
         &compatibility_identities,
     );
@@ -476,7 +476,7 @@ fn exit_err(message: &str) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, Utc};
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     use super::{heartbeat_report, local_presence_snapshot};
     use lean_ctx::core::agent_registry::{DriftMark, HeartbeatOutcome};
@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn presence_snapshot_classifies_and_hides_finished_agents() {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let pid = std::process::id();
         let process_identity = lean_ctx::ipc::process::identity(pid)
             .expect("current process must have immutable identity");
@@ -554,6 +554,7 @@ mod tests {
                     durable_identity_id: None,
                     status: AgentStatus::Active,
                     status_message: None,
+                    agent_status_message: None,
                     transport: None,
                     role_source: None,
                     parent: None,
@@ -572,6 +573,7 @@ mod tests {
                     durable_identity_id: None,
                     status: AgentStatus::Active,
                     status_message: None,
+                    agent_status_message: None,
                     transport: None,
                     role_source: None,
                     parent: None,
@@ -590,6 +592,7 @@ mod tests {
                     durable_identity_id: None,
                     status: AgentStatus::Finished,
                     status_message: None,
+                    agent_status_message: None,
                     transport: None,
                     role_source: None,
                     parent: None,

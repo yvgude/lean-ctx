@@ -54,7 +54,7 @@ pub(super) async fn a2a_deliver(
         )
             .into_response();
     }
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     if !valid_remote_authority(
         &envelope,
         secret.as_bytes(),
@@ -191,9 +191,9 @@ fn verified_legacy_delivery_id(
     if id.len() != 64 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(());
     }
-    let original_sent_at = chrono::DateTime::parse_from_rfc3339(sent_at)
+    let original_sent_at = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(sent_at)
         .map_err(|_| ())?
-        .with_timezone(&chrono::Utc);
+        .to_utc();
     let mut original = envelope.clone();
     original
         .metadata
@@ -215,7 +215,7 @@ fn valid_remote_authority(
     expected_recipient: Option<&str>,
     expected_tenant: Option<&str>,
     expected_project: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> bool {
     let age = now.signed_duration_since(envelope.sent_at);
     envelope.verify_signature(secret)
@@ -353,7 +353,7 @@ async fn relay_a2a_deliver(
         || !origin_peer.allows(&record, envelope.payload_json.len())
         || record
             .validate_at(
-                chrono::Utc::now(),
+                lean_ctx_time::UtcDateTime::now(),
                 &record.current_peer,
                 Some(local_recipient),
                 peer.max_hops,
@@ -386,7 +386,7 @@ async fn relay_a2a_deliver(
     if let Err(response) = check_relay_quota(&state, &record).await {
         return *response;
     }
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let replay_id = relay_storage_id(&record);
     // Bind immutable signed content, independent of the hop or signature encoding.
     let Ok(fingerprint) = record.origin_fingerprint() else {
@@ -477,7 +477,7 @@ async fn relay_a2a_deliver(
             .forward_from(
                 local_recipient,
                 &next.peer_id,
-                chrono::Utc::now(),
+                lean_ctx_time::UtcDateTime::now(),
                 &next.channel_key,
             )
             .is_err()
@@ -866,7 +866,7 @@ fn accept_remote_task(
         recipient,
         tenant_id,
         project_id,
-        now: chrono::Utc::now(),
+        now: lean_ctx_time::UtcDateTime::now(),
     };
     if let Ok(request) = serde_json::from_str::<lean_ctx::core::a2a::task::TaskControlDescriptorV1>(
         &envelope.payload_json,
@@ -1153,7 +1153,11 @@ fn a2a_handoff_inner(
             let root = std::path::Path::new(&state.project_root);
             let rel_dir = std::path::Path::new(".lean-ctx/handoffs/packages");
             let name = delivery_id.map_or_else(
-                || chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string(),
+                || {
+                    lean_ctx_time::UtcDateTime::now()
+                        .format("%Y%m%d_%H%M%S")
+                        .to_string()
+                },
                 str::to_string,
             );
             let rel = rel_dir.join(format!(
@@ -1265,7 +1269,11 @@ fn a2a_handoff_inner(
             let root = std::path::Path::new(&state.project_root);
             let rel_dir = std::path::Path::new(".lean-ctx/handoffs");
             let name = delivery_id.map_or_else(
-                || chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string(),
+                || {
+                    lean_ctx_time::UtcDateTime::now()
+                        .format("%Y%m%d_%H%M%S")
+                        .to_string()
+                },
                 str::to_string,
             );
             let rel = rel_dir.join(format!("received-{name}.json"));

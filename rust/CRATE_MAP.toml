@@ -63,8 +63,8 @@ may_depend_on = ["lean-ctx-patterns"]
 name = "lean-ctx-doc"
 path = "crates/lean-ctx-doc"
 may_depend_on = []
-# New (not extracted): the doc model of docs in Hive (C0 2.2). The engine's
-# adapter is lean-ctx-hive's docs.rs (replica events in, signed writes out).
+# New (not extracted): the doc model of docs in Cloud (C0 2.2). The engine's
+# adapter is lean-ctx-cloud's docs.rs (replica events in, signed writes out).
 facade = []
 
 [[crate]]
@@ -80,8 +80,8 @@ facade = []
 name = "lean-ctx-tasks"
 path = "crates/lean-ctx-tasks"
 may_depend_on = ["lean-ctx-fs"]
-# New (not extracted): local project tasks on Hive's task model and state
-# machine, for projects linked to no vault. The adapter is lean-ctx-hive's
+# New (not extracted): local project tasks on Cloud's task model and state
+# machine, for projects linked to no vault. The adapter is lean-ctx-cloud's
 # tasks/local.rs (store directory, linked check, bus notices).
 facade = []
 

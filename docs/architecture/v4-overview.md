@@ -24,9 +24,9 @@ it does not start, schedule, assign or retry agent work.
 | Tier | Product boundary | Required invariant | Current evidence class |
 |---|---|---|---|
 | LeanCTX OSS | The complete local engine: Context Toolkit, context ranking, Context Autopilot planner, memory and consolidation, local coordination context (Local Agent Bus, presence, leases, bounded local Work Graph), local Cockpit | Free and complete; useful local-first operation without account, licence or hosted dependency; no paid-better variant of a local behaviour | Production and preview primitives exist; full V4 gate open |
-| LeanCTX Hive Personal | Control and proof for one person: filter packs, personal protection rules, code-security hints, semantic detectors | Adds governance on top of OSS; removing it leaves OSS behaviour unchanged | Runtime slices tested; complete paid lifecycle not proven |
-| LeanCTX Hive Team | Authorized shared context + team coordination context (workspace bus, presence, leases, shared Work Graph), Cockpit across engines | Cross-user/device scope; a shared artifact is released only against the receiver's own checkout of its source; provenance, authority and conflict handling | Team journeys pass against a real Hub; release gate open |
-| LeanCTX Hive Enterprise | Governed context and governed coordination for agents | Identity, owner, org policy, audit, deployment and compliance controls | Governance slices exist; complete surface and integration open |
+| LeanCTX Cloud Personal | Control and proof for one person: filter packs, personal protection rules, code-security hints, semantic detectors | Adds governance on top of OSS; removing it leaves OSS behaviour unchanged | Runtime slices tested; complete paid lifecycle not proven |
+| LeanCTX Cloud Team | Authorized shared context + team coordination context (workspace bus, presence, leases, shared Work Graph), Cockpit across engines | Cross-user/device scope; a shared artifact is released only against the receiver's own checkout of its source; provenance, authority and conflict handling | Team journeys pass against a real Hub; release gate open |
+| LeanCTX Cloud Enterprise | Governed context and governed coordination for agents | Identity, owner, org policy, audit, deployment and compliance controls | Governance slices exist; complete surface and integration open |
 | SDK/OEM | Stable commercial integration channel | Public contracts and trust boundary remain interoperable | Requires final licensing/package/release evidence |
 
 An implementation file, schema, test or dashboard does not by itself promote a
@@ -78,7 +78,7 @@ and how LeanCTX binds and controls a host-launched child is in
 ### Coordination context
 
 LeanCTX OSS owns the live single-user Local Agent Bus and bounded local Work
-Graph. LeanCTX Hive Team extends these across users, devices and machines with explicit parent/child
+Graph. LeanCTX Cloud Team extends these across users, devices and machines with explicit parent/child
 lineage, leases, presence, handoff and accepted-path attribution. A message
 leaves a machine only through the egress admission; what a member wrote is
 foreign content to its readers. LeanCTX records and serves the coordination
@@ -113,7 +113,7 @@ Telemetry defaults and migration must be explicit, privacy-bounded and
 inspectable. Content, paths and secrets never enter telemetry. Explicit opt-out
 must survive upgrades; deletion needs a real remote or documented admin path.
 
-Plans and their rights live in LeanCTX Hive; the telemetry
+Plans and their rights live in LeanCTX Cloud; the telemetry
 contract is in [`telemetry.md`](telemetry.md), with per-field definitions in
 [`../privacy/TELEMETRY-DATA-DICTIONARY.md`](../privacy/TELEMETRY-DATA-DICTIONARY.md).
 

@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "fixture": "bus/control.hold.json",
+      "key_id": "fac2346807329f09",
+      "signature": "8036c6df2cdd3edc19d3805ecd127dda936a9f001fb33bee446a8324d95f082df3866b025ffca26b8c5a97377f295053c4a78d59fefd95dc8760cf7367a2b50a",
+      "signing_input": "leanctx.cloud.control.v1\n{\"action\":\"hold\",\"created_at\":1792800020000,\"id\":\"ctl_hhhhhhhhhhhhhhhhhhhhhhhhha\",\"issued_by\":{\"kind\":\"person\",\"label\":\"yves\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"key_id\":\"fac2346807329f09\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reason\":\"Pausing the reviewer while the ledger migration runs.\",\"target\":\"worker\",\"worker_id\":\"wkr_gawyravj36igdp3irdfo\"}"
+    },
+    {
+      "fixture": "bus/control.veto.json",
+      "key_id": "fac2346807329f09",
+      "signature": "e6d3faf82f00e564a33e8c8d40538db38fa9c01d10c48915cd67bc369c85440c70859c391c58dec5e5339c99dc7fbf40167b3596e585386eb1ab876feb16210d",
+      "signing_input": "leanctx.cloud.control.v1\n{\"action\":\"veto\",\"created_at\":1792800021000,\"id\":\"ctl_vvvvvvvvvvvvvvvvvvvvvvvvva\",\"issued_by\":{\"kind\":\"person\",\"label\":\"yves\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"key_id\":\"fac2346807329f09\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reason\":\"The migration needs a maintainer, not a reviewer.\",\"ref\":{\"id\":\"msg_00000000000000a4\",\"kind\":\"handoff\"},\"target\":\"bus\"}"
+    },
+    {
+      "fixture": "bus/control.veto.lifted.json",
+      "key_id": "fac2346807329f09",
+      "signature": "725ecab0859b93145e5bfe13355a60e99dc89730e796d6456f0782b0f6214a8f29e8b177abed9cc8302483729bf39e6ae1daf3bed34cdda5a2971d23390a1603",
+      "signing_input": "leanctx.cloud.control.v1\n{\"action\":\"veto\",\"created_at\":1792800021000,\"id\":\"ctl_vvvvvvvvvvvvvvvvvvvvvvvvva\",\"issued_by\":{\"kind\":\"person\",\"label\":\"yves\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"key_id\":\"fac2346807329f09\",\"lifted_at\":1792800030000,\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reason\":\"The migration needs a maintainer, not a reviewer.\",\"ref\":{\"id\":\"msg_00000000000000a4\",\"kind\":\"handoff\"},\"target\":\"bus\"}"
+    }
+  ],
+  "rules": {
+    "domain": "leanctx.cloud.control.v1\n",
+    "receiver": "instances ignore a Control whose signature fails and count it sig_invalid",
+    "signer": "Cloud key of purpose control (signing.vectors.json cloud_control)",
+    "signing_input": "domain ‖ canonical_json(Control without signature)"
+  }
+}

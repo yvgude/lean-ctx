@@ -100,8 +100,8 @@ fn collect_entries(
 
         let depth = entry.depth();
         let admitted = if protected {
-            if !allow_secret_paths
-                && lean_ctx::core::io_boundary::is_secret_like(entry.path()).is_some()
+            if lean_ctx::core::io_boundary::withheld_secret(entry.path(), allow_secret_paths)
+                .is_some()
             {
                 continue;
             }
@@ -157,8 +157,8 @@ fn render_compact_tree(root: &Path, entries: &[Entry]) -> String {
         }
     }
 
-    let (hive_summaries, hive_skipped) = detect_hive_partitions(entries, &dir_file_counts);
-    if let Some(summary) = hive_summaries.get(root) {
+    let (cloud_summaries, cloud_skipped) = detect_cloud_partitions(entries, &dir_file_counts);
+    if let Some(summary) = cloud_summaries.get(root) {
         let root_name = root.file_name().map_or_else(
             || root.display().to_string(),
             |name| name.to_string_lossy().to_string(),
@@ -167,12 +167,12 @@ fn render_compact_tree(root: &Path, entries: &[Entry]) -> String {
     }
 
     for entry in entries {
-        if hive_skipped.contains(&entry.path) {
+        if cloud_skipped.contains(&entry.path) {
             continue;
         }
         let indent = "  ".repeat(entry.depth.saturating_sub(1));
         if entry.is_dir {
-            if let Some(summary) = hive_summaries.get(&entry.path) {
+            if let Some(summary) = cloud_summaries.get(&entry.path) {
                 lines.push(format!("{indent}{}/ ({summary})", entry.name));
             } else {
                 let count = dir_file_counts
@@ -189,8 +189,8 @@ fn render_compact_tree(root: &Path, entries: &[Entry]) -> String {
     lines.join("\n")
 }
 
-/// Detects Hive-partitioned directories and returns summaries plus paths to omit.
-fn detect_hive_partitions(
+/// Detects Cloud-partitioned directories and returns summaries plus paths to omit.
+fn detect_cloud_partitions(
     entries: &[Entry],
     dir_file_counts: &HashMap<&Path, usize>,
 ) -> (HashMap<PathBuf, String>, HashSet<PathBuf>) {
@@ -206,14 +206,14 @@ fn detect_hive_partitions(
     for (parent, children) in children_by_parent {
         let Some(key) = children
             .first()
-            .and_then(|entry| hive_partition_key(&entry.name))
+            .and_then(|entry| cloud_partition_key(&entry.name))
         else {
             continue;
         };
         if children.len() < 3
             || children
                 .iter()
-                .any(|entry| hive_partition_key(&entry.name) != Some(key))
+                .any(|entry| cloud_partition_key(&entry.name) != Some(key))
         {
             continue;
         }
@@ -230,7 +230,7 @@ fn detect_hive_partitions(
         summaries.insert(
             parent.to_path_buf(),
             format!(
-                "hive: {key}=* — {} partitions, {file_count} files",
+                "cloud: {key}=* — {} partitions, {file_count} files",
                 children.len()
             ),
         );
@@ -247,7 +247,7 @@ fn detect_hive_partitions(
     (summaries, skipped)
 }
 
-fn hive_partition_key(name: &str) -> Option<&str> {
+fn cloud_partition_key(name: &str) -> Option<&str> {
     let (key, value) = name.split_once('=')?;
     if value.is_empty() {
         return None;
@@ -378,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn hive_partition_detection() {
+    fn cloud_partition_detection() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         for year in 2020..=2024 {
@@ -388,7 +388,10 @@ mod tests {
         }
 
         let (output, _) = handle(&root.display().to_string(), 3, false, false);
-        assert!(output.contains("hive:"), "expected Hive summary: {output}");
+        assert!(
+            output.contains("cloud:"),
+            "expected Cloud summary: {output}"
+        );
         assert!(
             output.contains("5 partitions"),
             "expected partition count: {output}"

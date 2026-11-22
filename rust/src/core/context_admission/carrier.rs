@@ -217,7 +217,7 @@ fn record(policy: &AdmissionPolicy, admission: &super::Admission) {
     let decision = &admission.decision;
     if decision.disposition == ContextDispositionV1::Deny {
         // K12: a withheld object counts under the rules its reasons name.
-        crate::core::hive_signals::admission_refused(
+        crate::core::cloud_signals::admission_refused(
             decision.reason_codes.iter().map(ReasonCodeV1::as_str),
         );
     }

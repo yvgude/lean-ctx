@@ -22,7 +22,10 @@ const USAGE: &str = "Usage: lean-ctx decisions <command>
                                  violations a change introduces (default: working tree
                                  against HEAD, untracked files included); exit 1 on a
                                  violation, 2 on invalid records or errors
-  new <slug> [--title T]         scaffold .leanctx/decisions/dec-<slug>.toml";
+  new <slug> [--title T]         scaffold .leanctx/decisions/dec-<slug>.toml
+  suggest [--since REF] [--json] draft decisions from the git history (review file only)
+  confirm <draft-id> [--id SLUG] [--decided-by owner|team|review]
+                                 record a suggested draft with its verbatim evidence";
 
 /// Largest file `check` reads from git or disk; larger ones are skipped.
 const MAX_FILE_BYTES: usize = 1_000_000;
@@ -131,7 +134,9 @@ fn new(cwd: &Path, rest: &[String]) -> i32 {
     let root = project_root(cwd);
     let dir = root.join(DECISIONS_DIR);
     let file = dir.join(format!("{id}.toml"));
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = lean_ctx_time::LocalDateTime::now()
+        .format("%Y-%m-%d")
+        .to_string();
     let written = std::fs::create_dir_all(&dir).and_then(|()| {
         use std::io::Write;
         std::fs::OpenOptions::new()
@@ -183,6 +188,9 @@ fn parse_mode(rest: &[String]) -> Result<Mode, String> {
             return Err(format!("--rev `{range}` names no base"));
         }
         let b = if b.is_empty() { "HEAD" } else { b };
+        for side in [a, b] {
+            check_rev_syntax(side).map_err(|e| format!("--rev `{range}`: {e}"))?;
+        }
         return Ok(Mode::Rev(a.to_string(), b.to_string()));
     }
     if let Some(file) = flag(rest, "--diff") {
@@ -195,6 +203,45 @@ fn parse_mode(rest: &[String]) -> Result<Mode, String> {
         Some(other) => Err(format!("unknown argument `{other}`")),
         None => Ok(Mode::Worktree),
     }
+}
+
+/// Refuses a revision git could read as an option (`-x`, `--output=…`) or
+/// that carries whitespace or control characters. `resolve_commit` then pins
+/// it to a commit id before any other git command sees it.
+fn check_rev_syntax(rev: &str) -> Result<(), String> {
+    if rev.is_empty() {
+        return Err("empty revision".to_string());
+    }
+    if rev.starts_with('-') {
+        return Err(format!("revision `{rev}` starts with `-`"));
+    }
+    if rev.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("revision contains whitespace or control characters".to_string());
+    }
+    Ok(())
+}
+
+/// The commit id `rev` names, resolved with `--end-of-options` so git never
+/// reads it as an option.
+fn resolve_commit(root: &Path, rev: &str) -> Result<String, String> {
+    check_rev_syntax(rev)?;
+    let spec = format!("{rev}^{{commit}}");
+    let sha = git(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &spec,
+        ],
+    )
+    .map_err(|_| format!("`{rev}` is not a commit"))?;
+    let sha = sha.trim();
+    if sha.is_empty() || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("`{rev}` is not a commit"));
+    }
+    Ok(sha.to_string())
 }
 
 /// One changed file.
@@ -222,6 +269,24 @@ fn check(root: &Path, mode: &Mode) -> Report {
         stdout: String::new(),
         stderr: String::new(),
         code: 0,
+    };
+    // Pin both revisions to commit ids: git sees only hex ids from here on.
+    let resolved;
+    let mode = match mode {
+        Mode::Rev(a, b) => {
+            match resolve_commit(root, a).and_then(|a| resolve_commit(root, b).map(|b| (a, b))) {
+                Ok((a, b)) => {
+                    resolved = Mode::Rev(a, b);
+                    &resolved
+                }
+                Err(e) => {
+                    report.stderr = format!("lean-ctx decisions check: {e}\n");
+                    report.code = 2;
+                    return report;
+                }
+            }
+        }
+        other => other,
     };
     let set = match mode {
         Mode::Rev(a, _) => base_set(root, a),
@@ -466,7 +531,19 @@ fn git_changes(root: &Path, mode: &Mode) -> Result<(Vec<Change>, usize), String>
         ),
         Mode::Rev(a, b) => (
             a.clone(),
-            parse_name_status(&git(root, &["diff", "--name-status", "-z", "-M", a, b])?),
+            parse_name_status(&git(
+                root,
+                &[
+                    "diff",
+                    "--name-status",
+                    "-z",
+                    "-M",
+                    "--end-of-options",
+                    a,
+                    b,
+                    "--",
+                ],
+            )?),
         ),
         Mode::Diff(_) => return Ok((Vec::new(), 0)),
     };
@@ -707,5 +784,68 @@ mod tests {
         // The working tree has no decisions any more: nothing to check.
         let clean = check(root, &Mode::Worktree);
         assert_eq!(clean.code, 0, "{}{}", clean.stdout, clean.stderr);
+    }
+
+    #[test]
+    fn rev_refuses_option_like_revisions() {
+        let s = |v: &[&str]| v.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
+        for range in [
+            "HEAD..--output=/tmp/x",
+            "--output=/tmp/x..HEAD",
+            "--output=x..HEAD",
+            "-x",
+            "HEAD..-x",
+            "HEAD.. --output=x",
+            "HEAD..a\nb",
+        ] {
+            assert!(
+                parse_mode(&s(&["--rev", range])).is_err(),
+                "accepted --rev {range:?}"
+            );
+            assert!(
+                parse_mode(&s(&[&format!("--rev={range}")])).is_err(),
+                "accepted --rev={range:?}"
+            );
+        }
+        // `--rev` followed by an option: the option is the (refused) range.
+        assert!(parse_mode(&s(&["--rev", "--output=x"])).is_err());
+    }
+
+    #[test]
+    fn rev_check_with_option_like_revisions_writes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_ok(root, &["init", "-q", "-b", "main"]);
+        let dir = root.join(DECISIONS_DIR);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("dec-x.toml"),
+            "id = \"dec-x\"\ntitle = \"X\"\nstatement = \"S.\"\nstatus = \"active\"\n\
+             decided_by = \"team\"\ndecided_at = \"2026-11-12\"\n[scope]\npaths = [\"**\"]\n\
+             [[check]]\nkind = \"forbid_regex\"\npattern = \"never-matches-here\"\nmessage = \"m\"\n",
+        )
+        .unwrap();
+        git_ok(root, &["add", "-A"]);
+        git_ok(root, &["commit", "-q", "-m", "base"]);
+        let target = root.join("overwritten");
+        let out = format!("--output={}", target.display());
+        // `check` itself refuses even if a caller skips `parse_mode`.
+        for (a, b) in [
+            ("HEAD", out.as_str()),
+            (out.as_str(), "HEAD"),
+            ("-x", "HEAD"),
+            ("HEAD", ""),
+        ] {
+            let report = check(root, &Mode::Rev(a.to_string(), b.to_string()));
+            assert_eq!(
+                report.code, 2,
+                "{a}..{b}: {}{}",
+                report.stdout, report.stderr
+            );
+            assert!(!target.exists(), "{a}..{b} wrote {}", target.display());
+        }
+        // A real range still resolves.
+        let ok = check(root, &Mode::Rev("HEAD".into(), "HEAD".into()));
+        assert_eq!(ok.code, 0, "{}{}", ok.stdout, ok.stderr);
     }
 }

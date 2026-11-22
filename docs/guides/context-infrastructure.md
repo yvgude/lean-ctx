@@ -1,10 +1,10 @@
 # Integrating the LeanCTX Context Gateway
 
-> **Context Gateway for AI Systems. Control what your AI can see.**
+> **Context Gateway for AI Systems. Less context. More intelligence.**
 
 LeanCTX sits between AI and the systems it reads: **SELECT → CONTROL → LEARN → PROVE**.
 LeanCTX | OSS implements context selection, supported controls, local task and
-knowledge continuity, and bounded evidence. LeanCTX SDK connects applications to
+knowledge continuity, and bounded evidence. LeanCTX | SDK connects applications to
 that runtime. Learn means context continuity, not model training.
 Within the Engine, the technical context lifecycle is:
 
@@ -32,7 +32,7 @@ outside that visibility.
 | --- | --- | --- |
 | Attach | Available | Operate around a supported coding agent through local CLI, MCP, hooks, or proxy paths. |
 | Wrap | Preview | Use the declared Python SDK v1 reference-wrapper scope. |
-| Embed with the standalone LeanCTX SDK | Available stable contract | Use the released context lifecycle and Agent Tools interfaces; the host retains ownership of its agent loop. Preview namespace operations remain Preview. |
+| Embed with the standalone LeanCTX \| SDK | Available stable contract | Use the released context lifecycle and Agent Tools interfaces; the host retains ownership of its agent loop. Preview namespace operations remain Preview. |
 
 ## Research: shared project context
 

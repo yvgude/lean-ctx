@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tool categories, the public-surface name lists (local collaboration,
-//! internal host hooks, Hive) and the dynamic per-category tool state.
+//! internal host hooks, Cloud) and the dynamic per-category tool state.
 //! Pure name logic: it needs no tool registry, so engine code outside the MCP
 //! server reads it here. The call-resolving helpers (`ctx_call` spellings)
 //! stay in `server::dynamic_tools`, which re-exports this module.
@@ -240,25 +240,25 @@ pub fn is_local_collaboration_compatibility_tool(name: &str) -> bool {
 /// tokens on a tool the model must not use.
 pub const INTERNAL_HOST_TOOLS: &[&str] = &["ctx_shape"];
 
-/// Hive MCP tools, gated with the connector (see [`crate::core::hive_gate::HIVE_TOOLS`]).
-pub use crate::core::hive_gate::HIVE_TOOLS;
+/// Cloud MCP tools, gated with the connector (see [`crate::core::cloud_gate::CLOUD_TOOLS`]).
+pub use crate::core::cloud_gate::CLOUD_TOOLS;
 
-/// Whether `name` is a Hive tool withheld by the release switch.
+/// Whether `name` is a Cloud tool withheld by the release switch.
 #[must_use]
-pub fn is_withheld_hive_tool(name: &str) -> bool {
-    HIVE_TOOLS.contains(&name) && !crate::core::hive_gate::available_locally()
+pub fn is_withheld_cloud_tool(name: &str) -> bool {
+    CLOUD_TOOLS.contains(&name) && !crate::core::cloud_gate::available_locally()
 }
 
 /// Whether a registered tool belongs on a public MCP tool surface.
 ///
 /// Local collaboration substrate and internal host hooks remain directly
 /// callable, including through `ctx_call`; this gate only controls discovery.
-/// Withheld Hive tools are neither advertised nor callable.
+/// Withheld Cloud tools are neither advertised nor callable.
 #[must_use]
 pub fn is_publicly_advertised_tool(name: &str) -> bool {
     !is_local_collaboration_compatibility_tool(name)
         && !INTERNAL_HOST_TOOLS.contains(&name)
-        && !is_withheld_hive_tool(name)
+        && !is_withheld_cloud_tool(name)
 }
 
 /// The error text for a call to a removed tool. Stable per name (no

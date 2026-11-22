@@ -1,0 +1,63 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env LEAN_CTX_GOVERNOR_R5=on lean-ctx hook rewrite-enforce"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env LEAN_CTX_GOVERNOR_R5=on lean-ctx hook govern",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env LEAN_CTX_GOVERNOR_R5=on lean-ctx hook govern",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env LEAN_CTX_GOVERNOR_R5=on lean-ctx hook govern",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env LEAN_CTX_GOVERNOR_R5=on lean-ctx hook govern",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

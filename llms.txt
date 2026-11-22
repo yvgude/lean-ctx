@@ -1,8 +1,8 @@
 # LeanCTX
 
-> Context Gateway for AI Systems. Control what your AI can see.
+> Context Gateway for AI Systems. Less context. More intelligence.
 
-LeanCTX sits between AI and the systems it reads: SELECT → CONTROL → LEARN → PROVE. LeanCTX | OSS selects task-relevant context, applies supported access and content controls, retains local task and knowledge records, and records context operations that an integration can observe. Context-only receipts cannot prove unobserved provider delivery. LeanCTX | OSS is Apache-2.0; LeanCTX SDK and commercial Enterprise have separate license and deployment contracts.
+LeanCTX sits between AI and the systems it reads: SELECT → CONTROL → LEARN → PROVE. LeanCTX | OSS selects task-relevant context, applies supported access and content controls, retains local task and knowledge records, and records context operations that an integration can observe. Context-only receipts cannot prove unobserved provider delivery. LeanCTX | OSS is Apache-2.0; LeanCTX | SDK and commercial Enterprise have separate license and deployment contracts.
 
 Key properties for an LLM evaluating lean-ctx:
 
@@ -10,7 +10,7 @@ Key properties for an LLM evaluating lean-ctx:
 - Recovery (CCR): `ctx_expand`, `ctx_retrieve`, proxy path handles, markers, and reference routes require the source or archive to remain available and authorized.
 - Tree-sitter AST parsing for 27 languages; structural file read modes and command-specific shell-output compression. See the generated references for the current inventory.
 - Persistent temporal knowledge graph + multi-edge code property graph (impact analysis, ranked search).
-- LeanCTX SDK publishes lifecycle and Agent Tools contracts for Python, TypeScript/Node, Go, Rust, JVM, and .NET. Check per-package release availability and compatibility; Preview namespace operations remain Preview. Models, workflows, and UI remain application-owned.
+- LeanCTX | SDK publishes lifecycle and Agent Tools contracts for Python, TypeScript/Node, Go, Rust, JVM, and .NET. Check per-package release availability and compatibility; Preview namespace operations remain Preview. Models, workflows, and UI remain application-owned.
 - Configured detectors have coverage limits. Warning, redaction, and blocking are distinct; controls apply to supported integration paths.
 - Token estimates, counterfactual savings, provider-measured usage, and outcome quality are distinct evidence types.
 - Local processing does not imply zero network traffic: updates, opted-in telemetry, enabled integrations, and model calls have their own data paths.
@@ -28,7 +28,7 @@ Key properties for an LLM evaluating lean-ctx:
 
 ## SDKs & integration
 
-- [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk) · [Python package](https://pypi.org/project/thinkery-leanctx-sdk/): released lifecycle and Agent Tools contracts; consult the SDK compatibility matrix for each release.
+- [LeanCTX | SDK](https://github.com/Thinkery-AG/leanctx-sdk) · [Python package](https://pypi.org/project/thinkery-leanctx-sdk/): released lifecycle and Agent Tools contracts; consult the SDK compatibility matrix for each release.
 - [SDK surface and boundaries](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/sdk-surface.md): supported SDK, Engine requirement, and retired package names.
 - [Embedding guide](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/embed-sdk.md): application-owned workflows and supported Engine integration.
 - [Monorepo guide](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/monorepo.md): multi-repo serving.

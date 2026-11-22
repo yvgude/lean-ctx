@@ -697,8 +697,10 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         .map(|dir| dir.join("gateway"))
         .filter(|dir| dir.is_dir());
     if let Some(dir) = gateway_dir {
-        use lean_ctx::core::context_admission::receipt_store::{retention, store_usage};
-        let megabytes = cfg.gateway_store_max_mb_effective();
+        use lean_ctx::core::context_admission::receipt_store::{capacity, retention, store_usage};
+        // The ceiling the store's writers and maintenance passes judge by
+        // (noted when `cfg` was loaded), not a second derivation of it.
+        let megabytes = capacity::ceiling_bytes().map_or(0, |bytes| bytes / 1_048_576);
         let maintained = match retention::last_pass(&dir).and_then(|at| at.elapsed().ok()) {
             Some(age) => format!("last maintained {} min ago", age.as_secs() / 60),
             None => "not maintained yet".to_owned(),
@@ -710,7 +712,10 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         );
         match store_usage(megabytes) {
             Some(Ok(usage)) => {
-                let full = retention::proven_full(&dir);
+                // Full only as the write path refuses: measured without room
+                // under THIS ceiling, and proven full against the same one —
+                // a stamp from a pass under another ceiling does not count.
+                let full = retention::refuses_entries(&dir, &usage);
                 let (color, label, size) = match usage.limit_bytes.filter(|limit| *limit > 0) {
                     Some(limit) => {
                         let pct = (usage.bytes as f64 / limit as f64 * 100.0) as u32;

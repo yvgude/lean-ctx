@@ -2,7 +2,7 @@
 //! `lean-ctx agents --json`: the coding agents on this machine that LeanCTX
 //! knows — installed binary and version, signed-in state, LeanCTX attachment,
 //! how to start each as an ACP server and how to resume a session in its own
-//! terminal. A local reader (Hive Desktop) builds its agent picker from it.
+//! terminal. A local reader (Cloud Desktop) builds its agent picker from it.
 //!
 //! Never reads a credential: sign-in is judged from whether the agent's own
 //! credential file EXISTS and from the NAMES of its API-key variables that are

@@ -489,7 +489,7 @@ fn resolve_entry_handles_windows_separators() {
         mode: "full".to_string(),
         original_tokens: 100,
         sent_tokens: 100,
-        timestamp: chrono::Utc::now().timestamp(),
+        timestamp: lean_ctx_time::UtcDateTime::now().timestamp(),
         id: None,
         kind: None,
         source_hash: None,

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `ctx_agent` lease actions (`lease_acquire`, `lease_release`, `lease_renew`)
-//! and what Hive's later answer to a lease request does.
+//! and what Cloud's later answer to a lease request does.
 
 use super::lease_resource;
 use lean_ctx::core::agents::AgentRegistry;
 
-/// What Hive's later answer to a lease request does: the line for the
+/// What Cloud's later answer to a lease request does: the line for the
 /// agent's next call, and on a refusal the release of the local lease.
 pub(super) struct LeaseSettle {
     pub(super) kind: lean_ctx::core::agent_lease::AgentLeaseResourceKindV1,
@@ -24,12 +24,12 @@ impl LeaseSettle {
         );
     }
 
-    pub(super) fn acquired(&self, outcome: lean_ctx_hive::bus::leases::Outcome) -> Option<String> {
-        use lean_ctx_hive::bus::leases::{Outcome, scope_line};
+    pub(super) fn acquired(&self, outcome: lean_ctx_cloud::bus::leases::Outcome) -> Option<String> {
+        use lean_ctx_cloud::bus::leases::{Outcome, scope_line};
         let (lease, resource) = (&self.lease_ref, &self.resource_ref);
         Some(match outcome {
             Outcome::Granted { expires_at, .. } => format!(
-                "Lease {lease} granted by Hive: resource={resource} scope=hive hive_expires_at={expires_at}"
+                "Lease {lease} granted by LeanCTX Cloud: resource={resource} scope=cloud cloud_expires_at={expires_at}"
             ),
             Outcome::Held {
                 agent_id: holder,
@@ -38,7 +38,7 @@ impl LeaseSettle {
             } => {
                 self.release_local();
                 format!(
-                    "Lease HELD (hive): resource={resource} owner={holder} instance={instance_id} \
+                    "Lease HELD (cloud): resource={resource} owner={holder} instance={instance_id} \
                      expires={expires_at}; your local lease {lease} was released"
                 )
             }
@@ -51,14 +51,14 @@ impl LeaseSettle {
             }
             Outcome::Superseded => format!(
                 "Lease {lease}: {}",
-                scope_line(&Outcome::Local("Hive lost the lease".into()))
+                scope_line(&Outcome::Local("LeanCTX Cloud lost the lease".into()))
             ),
             other => format!("Lease {lease}: {}", scope_line(&other)),
         })
     }
 
-    fn renewed(&self, outcome: lean_ctx_hive::bus::leases::Outcome) -> Option<String> {
-        use lean_ctx_hive::bus::leases::{Outcome, scope_line};
+    fn renewed(&self, outcome: lean_ctx_cloud::bus::leases::Outcome) -> Option<String> {
+        use lean_ctx_cloud::bus::leases::{Outcome, scope_line};
         let lease = &self.lease_ref;
         Some(match outcome {
             Outcome::Vetoed => {
@@ -71,13 +71,13 @@ impl LeaseSettle {
             Outcome::Superseded => {
                 self.release_local();
                 format!(
-                    "Lease renewal of {lease} rejected: Hive no longer holds it for you \
+                    "Lease renewal of {lease} rejected: LeanCTX Cloud no longer holds it for you \
                      (expired on the service clock or superseded); the local lease was \
                      released, acquire it again"
                 )
             }
             Outcome::Granted { expires_at, .. } => {
-                format!("Lease {lease} renewed at Hive: hive_expires_at={expires_at}")
+                format!("Lease {lease} renewed at LeanCTX Cloud: cloud_expires_at={expires_at}")
             }
             other => format!("Lease {lease} renewal: {}", scope_line(&other)),
         })
@@ -106,9 +106,9 @@ pub(super) fn acquire(
         Ok(resource) => resource,
         Err(error) => return format!("Lease rejected: {error}"),
     };
-    // Hive bus control (C5b): a vetoed resource pauses the Hive side
+    // Cloud bus control (C5b): a vetoed resource pauses the Cloud side
     // only; the local lease is local work and never refused.
-    let paused = lean_ctx_hive::bus::control::veto_refusal(&[&resource_ref]);
+    let paused = lean_ctx_cloud::bus::control::veto_refusal(&[&resource_ref]);
     let duration_ms = match ttl_hours.unwrap_or(0) {
         0 => 10 * 60 * 1_000,
         1 => 60 * 60 * 1_000,
@@ -127,10 +127,10 @@ pub(super) fn acquire(
     };
     match lean_ctx::core::agent_lease::acquire_shared(request) {
         Ok(lean_ctx::core::agent_lease::AgentLeaseAcquireV1::Granted(lease)) => {
-            // C5c: across machines through Hive, asked off this call
-            // (see bus::leases); Hive's answer comes with the next one.
-            use lean_ctx_hive::bus::leases::{self, Outcome};
-            let hive = if let Some(why) = paused {
+            // C5c: across machines through Cloud, asked off this call
+            // (see bus::leases); Cloud's answer comes with the next one.
+            use lean_ctx_cloud::bus::leases::{self, Outcome};
+            let cloud = if let Some(why) = paused {
                 Outcome::Local(why)
             } else {
                 let settle = LeaseSettle {
@@ -154,7 +154,7 @@ pub(super) fn acquire(
                 resource_ref,
                 agent_id,
                 lease.expires_at_epoch_ms,
-                leases::scope_line(&hive)
+                leases::scope_line(&cloud)
             )
         }
         Ok(lean_ctx::core::agent_lease::AgentLeaseAcquireV1::HeldBy {
@@ -188,9 +188,9 @@ pub(super) fn release(
         Ok(resource) => resource,
         Err(error) => return format!("Release failed: {error}"),
     };
-    // C5c: the Hive side is released by the relay (queued, no network
+    // C5c: the Cloud side is released by the relay (queued, no network
     // here), behind a still pending acquire.
-    lean_ctx_hive::bus::leases::release(agent_id, lease_ref);
+    lean_ctx_cloud::bus::leases::release(agent_id, lease_ref);
     match lean_ctx::core::agent_lease::release_shared(
         resource_kind,
         &resource_ref,
@@ -231,8 +231,8 @@ pub(super) fn renew(
         Ok(resource) => resource,
         Err(error) => return format!("Lease renewal rejected: {error}"),
     };
-    // A veto pauses the Hive side only (C5b); the local renewal stands.
-    let paused = lean_ctx_hive::bus::control::veto_refusal(&[lease_ref, &resource_ref]);
+    // A veto pauses the Cloud side only (C5b); the local renewal stands.
+    let paused = lean_ctx_cloud::bus::control::veto_refusal(&[lease_ref, &resource_ref]);
     let duration_ms = match ttl_hours.unwrap_or(0) {
         0 => 10 * 60 * 1_000,
         1 => 60 * 60 * 1_000,
@@ -246,10 +246,10 @@ pub(super) fn renew(
         duration_ms,
     ) {
         Ok(lease) => {
-            use lean_ctx_hive::bus::leases::{self, Outcome};
+            use lean_ctx_cloud::bus::leases::{self, Outcome};
             // Asked off this call, behind a pending acquire (it needs
-            // Hive's lease id); the answer comes with the next call.
-            let hive = if let Some(why) = paused {
+            // Cloud's lease id); the answer comes with the next call.
+            let cloud = if let Some(why) = paused {
                 Outcome::Local(why)
             } else {
                 let settle = LeaseSettle {
@@ -272,7 +272,7 @@ pub(super) fn renew(
                 resource_ref,
                 agent_id,
                 lease.expires_at_epoch_ms,
-                leases::scope_line(&hive)
+                leases::scope_line(&cloud)
             )
         }
         Err(e) => format!("Lease renewal rejected: {e}"),

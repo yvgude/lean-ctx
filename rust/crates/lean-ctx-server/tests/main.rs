@@ -6,9 +6,13 @@
 //! `<old file stem>::<test>`. Add new integration tests as modules here, not
 //! as new tests/*.rs files (`autotests = false`).
 //!
-//! Kept as its own binary (see `[[test]]` in Cargo.toml): quality_loop_golden,
-//! which sets `LEAN_CTX_DATA_DIR` before the process first touches the
-//! edit-quality store's `OnceLock`.
+//! quality_loop_golden sets `LEAN_CTX_DATA_DIR` before the process first
+//! touches the edit-quality store's `OnceLock`, so its test runs in a process
+//! of its own (see rust/tests/fresh_process.rs).
+//!
+//! Kept as its own binary (see `[[test]]` in Cargo.toml): input_check, the
+//! pz21 locked acceptance target (`cargo test -p lean-ctx-server --test
+//! input_check`).
 
 mod libtest_serial {
     //! These modules mutate the process environment or other process-global
@@ -44,6 +48,8 @@ mod bazsi_reported_scenarios;
 mod ciso_great_filter_e2e;
 mod ctx_compose_scenarios;
 mod dual_process_rehydrate;
+#[path = "../../../tests/fresh_process.rs"]
+mod fresh_process;
 mod intensive_benchmarks;
 mod issue_244_ledger_reset;
 mod local_free_invariant;
@@ -56,6 +62,7 @@ mod p4_ctx_handoff_eval;
 mod p4_ctx_prefetch_eval;
 mod power_user_worksession;
 mod product_capability_classification;
+mod quality_loop_golden;
 mod read_only_roots_e2e;
 mod savings_verification;
 mod subagent_contract_roundtrip;

@@ -17,8 +17,8 @@ pub use persist::{load_universal_gotchas, save_universal_gotchas};
 pub use reflector::{ReflectionInsight, fold_into_playbook, format_ledger, reflect};
 pub use runtime::record_shell_outcome;
 
-use chrono::{DateTime, Utc};
 use detect::command_base;
+use lean_ctx_time::UtcDateTime;
 use model::{DECAY_ARCHIVE_THRESHOLD, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
 
 impl GotchaStore {
@@ -48,7 +48,7 @@ impl GotchaStore {
             command: command.to_string(),
             exit_code,
             files_at_error: files_touched.to_vec(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             raw_snippet: snippet,
             session_id: session_id.to_string(),
         });
@@ -111,7 +111,7 @@ impl GotchaStore {
             &changed_files,
         );
         self.stats.total_fixes_correlated += 1;
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
 
         Some(gotcha)
     }
@@ -144,7 +144,7 @@ impl GotchaStore {
             session_id,
         );
         self.add_or_merge(gotcha);
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         self.gotchas.iter().find(|g| g.id == id)
     }
 
@@ -173,7 +173,7 @@ impl GotchaStore {
         log.errors.push(ErrorEntry {
             signature: signature.to_string(),
             command: command.to_string(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
     }
 
@@ -183,7 +183,7 @@ impl GotchaStore {
             error_signature: error_sig.to_string(),
             resolution: resolution.to_string(),
             files_changed: files.to_vec(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
     }
 
@@ -191,7 +191,7 @@ impl GotchaStore {
         if !self.error_log.iter().any(|l| l.session_id == session_id) {
             self.error_log.push(SessionErrorLog {
                 session_id: session_id.to_string(),
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
                 errors: Vec::new(),
                 fixes: Vec::new(),
             });
@@ -242,7 +242,7 @@ impl GotchaStore {
     // -- Decay --------------------------------------------------------------
 
     pub fn apply_decay(&mut self) {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let mut decayed = 0u64;
 
         for gotcha in &mut self.gotchas {
@@ -450,7 +450,7 @@ pub fn relevance_score(gotcha: &Gotcha, files_touched: &[String]) -> f32 {
 
     score += (gotcha.occurrences as f32 * gotcha.confidence).min(10.0);
 
-    let hours_ago = (Utc::now() - gotcha.last_seen).num_hours().max(0) as f32;
+    let hours_ago = (UtcDateTime::now() - gotcha.last_seen).num_hours().max(0) as f32;
     score += 5.0 * (-hours_ago / 168.0).exp();
 
     let overlap = gotcha
@@ -481,8 +481,8 @@ pub fn relevance_score(gotcha: &Gotcha, files_touched: &[String]) -> f32 {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn format_age(dt: DateTime<Utc>) -> String {
-    let diff = Utc::now() - dt;
+fn format_age(dt: UtcDateTime) -> String {
+    let diff = UtcDateTime::now() - dt;
     let hours = diff.num_hours();
     if hours < 1 {
         format!("{}m ago", diff.num_minutes().max(1))
@@ -657,7 +657,7 @@ mod tests {
             },
             "s1",
         );
-        g.last_seen = Utc::now() - chrono::Duration::days(30);
+        g.last_seen = UtcDateTime::now() - lean_ctx_time::Duration::days(30);
         g.confidence = 0.5;
         store.gotchas.push(g);
 
@@ -679,7 +679,7 @@ mod tests {
             },
             "s1",
         );
-        g.last_seen = Utc::now() - chrono::Duration::days(90);
+        g.last_seen = UtcDateTime::now() - lean_ctx_time::Duration::days(90);
         g.confidence = 0.16;
         store.gotchas.push(g);
 
@@ -703,13 +703,13 @@ mod tests {
                 },
                 "s1",
             );
-            g.last_seen = Utc::now() - chrono::Duration::days(14);
+            g.last_seen = UtcDateTime::now() - lean_ctx_time::Duration::days(14);
             g.confidence = 0.5;
             g
         };
         let mut store = GotchaStore::new("testhash");
         let mut expired = gotcha("expired");
-        expired.expires_at = Some(Utc::now() - chrono::Duration::minutes(1));
+        expired.expires_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::minutes(1));
         let mut frozen = gotcha("frozen");
         frozen.decay_rate_override = Some(0.0);
         store.gotchas.extend([expired, frozen, gotcha("default")]);
@@ -763,7 +763,7 @@ mod tests {
             "s1",
         );
         let mut old = recent.clone();
-        old.last_seen = Utc::now() - chrono::Duration::days(14);
+        old.last_seen = UtcDateTime::now() - lean_ctx_time::Duration::days(14);
 
         let score_recent = relevance_score(&recent, &[]);
         let score_old = relevance_score(&old, &[]);
@@ -809,21 +809,21 @@ mod tests {
 
         store.error_log.push(SessionErrorLog {
             session_id: "s2".into(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             errors: vec![ErrorEntry {
                 signature: "recurring error".into(),
                 command: "cargo build".into(),
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
             }],
             fixes: vec![],
         });
         store.error_log.push(SessionErrorLog {
             session_id: "s3".into(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             errors: vec![ErrorEntry {
                 signature: "recurring error".into(),
                 command: "cargo build".into(),
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
             }],
             fixes: vec![],
         });

@@ -62,3 +62,17 @@ pub use read::ReadMode;
 
 /// The SDK semantic version, surfaced so an embedder can assert compatibility.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+// The integration tests in tests/*.rs, compiled into this crate's unit-test
+// binary instead of a test binary each (each one linked the whole Engine
+// again). A test is `<file stem>::<test>`; `extern crate self` keeps their
+// `lean_ctx_embed::` paths. Add new ones here (`autotests = false`).
+// They compile against this crate's cfg(test) build and could reach private
+// items, so they use only the public API (no `crate::`, guarded by
+// scripts/tests/test_mr_quick.py). A test that must exercise the production
+// build or the public API only stays a separate test target.
+#[cfg(test)]
+extern crate self as lean_ctx_embed;
+#[cfg(test)]
+#[path = "../tests/engine_read.rs"]
+mod engine_read;

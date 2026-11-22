@@ -1,9 +1,9 @@
 //! Curated built-in policy packs (GL #489), embedded at compile time.
 //!
-//! LeanCTX | OSS ships the deterministic floor only: `baseline`,
+//! The open engine ships the deterministic floor only: `baseline`,
 //! `strict-redaction` and `open-source`. Domain packs (health, finance, legal,
 //! company-specific) and compliance-framework packs are commercial and are
-//! delivered by LeanCTX | Hive / Enterprise, never from this source tree
+//! delivered with LeanCTX Cloud Personal / Enterprise, never from this source tree
 //! (`scripts/check-private-paths.py` enforces the list).
 
 use std::sync::OnceLock;
@@ -25,11 +25,11 @@ const BUILTIN_SOURCES: &[(&str, &str)] = &[
 /// with that tier. Naming one yields a pointer instead of "unknown pack", so
 /// an existing `extends = "healthcare"` fails with an actionable message.
 const PAID_PACKS: &[(&str, &str)] = &[
-    ("healthcare", "Hive"),
-    ("finance-eu", "Hive"),
-    ("eu-ai-act-deployer", "Enterprise"),
-    ("iso42001-aligned", "Enterprise"),
-    ("soc2-context", "Enterprise"),
+    ("healthcare", "LeanCTX Cloud Personal"),
+    ("finance-eu", "LeanCTX Cloud Personal"),
+    ("eu-ai-act-deployer", "LeanCTX Cloud Enterprise"),
+    ("iso42001-aligned", "LeanCTX Cloud Enterprise"),
+    ("soc2-context", "LeanCTX Cloud Enterprise"),
 ];
 
 /// The paid tier a former built-in now belongs to, if any.
@@ -44,8 +44,8 @@ pub fn paid_tier(name: &str) -> Option<&'static str> {
 pub fn unknown_pack_hint(name: &str) -> String {
     match paid_tier(name) {
         Some(tier) => format!(
-            "'{name}': this pack is part of LeanCTX | {tier} and no longer ships with \
-             LeanCTX | OSS (docs/guides/policy-packs.md)"
+            "'{name}': this pack requires {tier} and no longer ships with \
+             the open LeanCTX engine (docs/guides/policy-packs.md)"
         ),
         None => format!("no pack named '{name}' (built-ins: {})", names().join(", ")),
     }
@@ -113,7 +113,8 @@ mod tests {
         assert_eq!(names(), vec!["baseline", "strict-redaction", "open-source"]);
         for (pack, tier) in PAID_PACKS {
             assert!(get(pack).is_none(), "'{pack}' must not be bundled");
-            assert!(unknown_pack_hint(pack).contains(&format!("LeanCTX | {tier}")));
+            assert!(unknown_pack_hint(pack).contains(&format!("requires {tier} ")));
+            assert!(tier.starts_with("LeanCTX Cloud "), "{tier}");
         }
         assert!(unknown_pack_hint("no-such-pack").contains("built-ins: baseline"));
     }

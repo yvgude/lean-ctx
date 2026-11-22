@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::core::knowledge::{ConsolidatedInsight, KnowledgeFact, ProjectPattern};
@@ -204,14 +204,14 @@ pub struct KnowledgeLayer {
     pub facts: Vec<KnowledgeFact>,
     pub patterns: Vec<ProjectPattern>,
     pub insights: Vec<ConsolidatedInsight>,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphLayer {
     pub nodes: Vec<GraphNodeExport>,
     pub edges: Vec<GraphEdgeExport>,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,7 +245,7 @@ pub struct SessionLayer {
     pub decisions: Vec<SessionDecision>,
     pub next_steps: Vec<String>,
     pub files_touched: Vec<String>,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,13 +267,13 @@ pub struct SessionDecision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatternsLayer {
     pub patterns: Vec<ProjectPattern>,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotchasLayer {
     pub gotchas: Vec<GotchaExport>,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

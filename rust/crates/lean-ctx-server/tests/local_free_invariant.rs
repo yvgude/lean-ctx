@@ -3,7 +3,7 @@
 //! CI gate for the Local-Free Invariant v2
 //! (`docs/contracts/local-free-invariant-v2.md`): everything the Engine does on
 //! one machine works without an account, licence or plan. Paid rights are
-//! LeanCTX | Hive plans and only ever add capabilities. This test fails the
+//! LeanCTX | Cloud plans and only ever add capabilities. This test fails the
 //! build if the default plane is not personal, an always-on Community feature
 //! is off, a local capability reacts to a licence, plan or account variable or
 //! to a forged entitlement cache, or a free capability needs an account.
@@ -139,11 +139,11 @@ fn local_capabilities_ignore_licence_plan_account_and_a_forged_entitlement_cache
 }
 
 #[test]
-fn paid_rights_are_hive_plans_and_never_free_capabilities() {
+fn paid_rights_are_cloud_plans_and_never_free_capabilities() {
     for entry in registry().entries() {
         match entry.price_class {
-            UserPriceClass::Hive => {
-                assert!(entry.hive_plan.is_some(), "{}", entry.id);
+            UserPriceClass::Cloud => {
+                assert!(entry.cloud_plan.is_some(), "{}", entry.id);
                 assert!(entry.account_required, "{}", entry.id);
                 assert!(
                     !entitlement_allows(Plan::Community, &entry.id),

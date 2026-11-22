@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -31,8 +31,8 @@ pub struct TransitionSpec {
 pub struct WorkflowRun {
     pub spec: WorkflowSpec,
     pub current: String,
-    pub started_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub updated_at: UtcDateTime,
     #[serde(default)]
     pub transitions: Vec<TransitionRecord>,
     #[serde(default)]
@@ -44,14 +44,14 @@ pub struct TransitionRecord {
     pub from: String,
     pub to: String,
     pub note: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvidenceItem {
     pub key: String,
     pub value: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 impl WorkflowSpec {
@@ -158,7 +158,7 @@ impl WorkflowSpec {
 
 impl WorkflowRun {
     pub fn new(spec: WorkflowSpec) -> Self {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let current = spec.initial.clone();
         Self {
             spec,
@@ -174,8 +174,8 @@ impl WorkflowRun {
         self.evidence.push(EvidenceItem {
             key: key.to_string(),
             value: value.map(std::string::ToString::to_string),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 }

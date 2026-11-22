@@ -14,6 +14,7 @@ mod usage;
 pub mod auto_routing;
 mod capability;
 pub mod circuit_breaker;
+pub mod cloud;
 mod common;
 pub mod context_checkpoint;
 pub mod context_checkpoint_unicode;
@@ -41,11 +42,11 @@ mod engine_provider_execution;
 mod entitlement;
 mod execution;
 pub mod fleet_control;
-pub mod hive;
 mod identity;
 pub mod knowledge;
 #[doc(hidden)]
 pub mod knowledge_routing;
+pub mod landing_receipt;
 pub mod org_policy_verifier;
 pub mod outcome;
 pub mod outcome_engine;
@@ -145,3 +146,17 @@ pub use triage::{TaskProfileV1, TaskScope, TriageBackend, TriageResultV1};
 pub use usage::{MeasuredUnitV1, UsageBreakdownV1};
 pub use value_share::*;
 pub use via_receipt::*;
+
+// The contract tests (tests/main.rs and its modules), compiled into this
+// crate's unit-test binary instead of a test binary of their own. A test is
+// `protocol::<file stem>::<test>`; `extern crate self` keeps their
+// `lean_ctx_protocol::` paths.
+// They compile against this crate's cfg(test) build and could reach private
+// items, so they use only the public API (no `crate::`, guarded by
+// scripts/tests/test_mr_quick.py). A test that must exercise the production
+// build or the public API only stays a separate test target.
+#[cfg(test)]
+extern crate self as lean_ctx_protocol;
+#[cfg(test)]
+#[path = "../tests/main.rs"]
+mod protocol;

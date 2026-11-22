@@ -93,10 +93,10 @@ pub(crate) struct Observation {
 impl Observation {
     /// The response headers that label display data.
     pub(crate) fn headers(&self) -> String {
-        let observed: chrono::DateTime<chrono::Utc> = self.observed_at.into();
+        let observed: lean_ctx_time::UtcDateTime = self.observed_at.into();
         format!(
             "X-LeanCTX-Observed-At: {}\r\nX-LeanCTX-Snapshot: {}\r\nX-LeanCTX-Refreshing: {}\r\n",
-            observed.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            observed.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Millis, true),
             if self.cached { "cached" } else { "fresh" },
             if self.refreshing { "1" } else { "0" },
         )

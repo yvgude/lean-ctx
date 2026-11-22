@@ -159,9 +159,9 @@ pub fn generate_with(
     spec: &BundleSpec,
     framework: Option<(&str, AssessFrameworks)>,
 ) -> Result<BundleResult, String> {
-    let from = chrono::DateTime::parse_from_rfc3339(&spec.from)
+    let from = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&spec.from)
         .map_err(|e| format!("--from is not RFC 3339: {e}"))?;
-    let to = chrono::DateTime::parse_from_rfc3339(&spec.to)
+    let to = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&spec.to)
         .map_err(|e| format!("--to is not RFC 3339: {e}"))?;
     if from > to {
         return Err("--from must not be after --to".to_string());
@@ -213,7 +213,7 @@ pub fn generate_with(
                     return Err(format!("malformed audit entry at line {}: {e}", lineno + 1));
                 }
             };
-            let ts = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+            let ts = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&entry.timestamp)
                 .map_err(|e| format!("corrupt trail timestamp at line {}: {e}", lineno + 1))?;
             if ts < from || ts > to {
                 continue;

@@ -11,17 +11,20 @@ use lean_ctx::core::memory_policy::MemoryPolicy;
 /// store is never touched.
 fn isolate_data_dir() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+    // SAFETY: this test runs in a process of its own (fresh_process), so no
 
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
     dir
 }
 
-// A single `#[test]` keeps the process-global `LEAN_CTX_DATA_DIR` override
-// race-free (cargo runs test fns in this binary on parallel threads).
+// One `#[test]` in a process of its own (fresh_process) keeps the
+// process-global `LEAN_CTX_DATA_DIR` override race-free.
 #[test]
 fn parallel_writes_are_lossless_atomic_and_clean() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     let _data = isolate_data_dir();
     parallel_remember_preserves_every_fact_and_valid_json();
     save_is_atomic_and_leaves_no_temp_files();
@@ -154,6 +157,9 @@ fn cli(shared: &std::path::Path, project: &std::path::Path) -> std::process::Com
 /// the other project's value, nor a hint that it exists.
 #[test]
 fn independent_processes_of_two_projects_keep_the_same_keys_apart() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     const KEYS: [&str; 3] = ["db", "queue", "auth"];
     let shared = tempfile::tempdir().unwrap();
     let shared = shared.path().canonicalize().unwrap();

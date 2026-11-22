@@ -3,7 +3,7 @@
 //! Distinct from commercial Verified Attribution (Section 8)
 //! which provides billing CPAO credit with chain integrity.
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -41,7 +41,7 @@ impl AgentIdentityV1 {
 #[serde(deny_unknown_fields)]
 pub struct TransportEnvelopeV1 {
     pub format_version: u32,
-    pub sent_at: DateTime<Utc>,
+    pub sent_at: UtcDateTime,
     pub sender: AgentIdentityV1,
     pub recipient: Option<String>,
     pub content_type: TransportContentType,
@@ -69,7 +69,7 @@ impl TransportEnvelopeV1 {
     ) -> Self {
         Self {
             format_version: 1,
-            sent_at: Utc::now(),
+            sent_at: UtcDateTime::now(),
             sender,
             recipient: recipient.map(std::string::ToString::to_string),
             content_type,
@@ -129,7 +129,7 @@ impl TransportEnvelopeV1 {
         }
 
         let mut stable = self.clone();
-        stable.sent_at = DateTime::<Utc>::UNIX_EPOCH;
+        stable.sent_at = UtcDateTime::UNIX_EPOCH;
         stable.signature = None;
         stable.metadata.remove(LEGACY_DELIVERY_ID_METADATA);
         stable.metadata.remove(LEGACY_DELIVERY_SENT_AT_METADATA);
@@ -340,10 +340,10 @@ mod tests {
         }
     }
 
-    fn fixed_time() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+    fn fixed_time() -> UtcDateTime {
+        lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
             .expect("literal is valid rfc3339")
-            .with_timezone(&Utc)
+            .to_utc()
     }
 
     /// Envelope with a pinned `sent_at` so two builds differ only where the
@@ -598,7 +598,7 @@ mod tests {
         assert!(!content_type.verify_signature(SECRET));
 
         let mut sent_at = signed();
-        sent_at.sent_at = fixed_time() + chrono::Duration::seconds(1);
+        sent_at.sent_at = fixed_time() + lean_ctx_time::Duration::seconds(1);
         assert!(!sent_at.verify_signature(SECRET));
 
         let mut version = signed();
@@ -683,7 +683,7 @@ mod tests {
             LEGACY_DELIVERY_SENT_AT_METADATA.to_string(),
             first.sent_at.to_rfc3339(),
         );
-        retry.sent_at += chrono::Duration::seconds(1);
+        retry.sent_at += lean_ctx_time::Duration::seconds(1);
         retry.sign(SECRET).expect("refresh retry signature");
         assert_ne!(retry.signature, first.signature);
         assert_eq!(retry.stable_delivery_id().expect("retry id"), first_id);

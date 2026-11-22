@@ -2,7 +2,7 @@
 
 Inspect **LeanCTX** activity in the project you have open. The extension
 is part of LeanCTX, the **Context Gateway for AI Systems**.
-**Control what your AI can see.** Its status item reports recorded activity:
+**Less context. More intelligence.** Its status item reports recorded activity:
 
 ```
 ◆ −1.2M tok ⛨ 3

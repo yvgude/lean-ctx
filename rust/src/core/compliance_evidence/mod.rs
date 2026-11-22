@@ -50,9 +50,9 @@ pub fn build(
     spec: &ReportSpec,
     assess: impl FnOnce(&ComplianceFactsV1) -> Result<FrameworksAnswer, String>,
 ) -> Result<ComplianceReportV1, String> {
-    let from = chrono::DateTime::parse_from_rfc3339(&spec.from)
+    let from = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&spec.from)
         .map_err(|e| format!("--from is not RFC 3339: {e}"))?;
-    let to = chrono::DateTime::parse_from_rfc3339(&spec.to)
+    let to = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&spec.to)
         .map_err(|e| format!("--to is not RFC 3339: {e}"))?;
     if from > to {
         return Err("--from must not be after --to".to_string());
@@ -71,7 +71,7 @@ pub fn build(
     Ok(ComplianceReportV1 {
         schema_version: SCHEMA_VERSION,
         kind: KIND.to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         lean_ctx_version: env!("CARGO_PKG_VERSION").to_string(),
         agent_id: crate::core::agent_identity::current_agent_id().to_string(),
         project,
@@ -172,7 +172,7 @@ fn build_owasp() -> OwaspSection {
 }
 
 /// Retention posture: the pack's declared intent vs. the plan window. The
-/// engine verifies no plan of its own (accounts live in LeanCTX | Hive), so
+/// engine verifies no plan of its own (accounts live in LeanCTX | Cloud), so
 /// the plan window is reported as unverified. An unverified window cannot
 /// answer whether it covers the pack's intent, so `plan_covers_policy` stays
 /// unset instead of claiming `false` for every pack (F11); the local trail
@@ -196,7 +196,7 @@ pub(crate) const UNVERIFIED_PLAN: &str = "unverified";
 pub fn default_artifact_path() -> Result<PathBuf, String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()?.join("compliance");
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir compliance: {e}"))?;
-    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let stamp = lean_ctx_time::UtcDateTime::now().format("%Y%m%dT%H%M%SZ");
     Ok(dir.join(format!("report-v1_{stamp}.json")))
 }
 

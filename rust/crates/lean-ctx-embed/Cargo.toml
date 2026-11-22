@@ -10,6 +10,9 @@ keywords = ["mcp", "llm", "tokens", "context", "embedding"]
 categories = ["development-tools", "api-bindings"]
 readme = "README.md"
 publish = false
+# tests/*.rs compile into the unit-test binary (end of src/lib.rs), not into a
+# binary each: every extra test binary links the whole Engine again.
+autotests = false
 
 [lib]
 name = "lean_ctx_embed"
@@ -30,9 +33,9 @@ lean-ctx-engine = { path = "../..", default-features = false, features = [
   "http-server",
   "secure-update",
 ] }
-# The Hive connector: the engine builder registers its hooks
-# (`lean_ctx_hive::register_hooks`), as every entry point does.
-lean-ctx-hive = { path = "../lean-ctx-hive", default-features = false, features = ["http-server"] }
+# The Cloud connector: the engine builder registers its hooks
+# (`lean_ctx_cloud::register_hooks`), as every entry point does.
+lean-ctx-cloud = { path = "../lean-ctx-cloud", default-features = false, features = ["http-server"] }
 # The engine's in-process tool façade (`lean_ctx_server::engine`), split upward
 # out of the Engine; same feature set.
 lean-ctx-server = { path = "../lean-ctx-server", default-features = false, features = [

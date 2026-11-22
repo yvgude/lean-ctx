@@ -93,7 +93,7 @@ pub struct RecordIrInput<'a> {
 
 impl ContextIrV1 {
     pub fn new() -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = lean_ctx_time::UtcDateTime::now().to_rfc3339();
         Self {
             schema_version: crate::core::contracts::CONTEXT_IR_V1_SCHEMA_VERSION,
             created_at: now.clone(),
@@ -105,7 +105,7 @@ impl ContextIrV1 {
     }
 
     pub fn record(&mut self, input: RecordIrInput<'_>) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = lean_ctx_time::UtcDateTime::now().to_rfc3339();
 
         let (content_excerpt, truncated) = bound_and_redact_excerpt(input.content_excerpt);
         let command = input.command.map(crate::core::redaction::redact_text);
@@ -219,7 +219,7 @@ pub fn write_project_context_ir(
     ir: &ContextIrV1,
     filename: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
+    let ts = lean_ctx_time::UtcDateTime::now().format("%Y-%m-%d_%H%M%S");
     let name = filename.map_or_else(
         || format!("context-ir-v1_{ts}.json"),
         std::string::ToString::to_string,

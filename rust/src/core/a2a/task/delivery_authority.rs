@@ -4,8 +4,8 @@
 //! Verification does not consume a nonce or authorize access to a private record;
 //! the receiving transport must enforce replay protection and record ownership.
 
-use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -100,8 +100,8 @@ impl DeliverySigningProfileV1 {
         );
         let key = crate::core::agent_identity::get_stored_signing_key(&self.agent_id)
             .map_err(anyhow::Error::msg)?;
-        let now = Utc::now();
-        let mut expires_at = now + chrono::Duration::minutes(1);
+        let now = UtcDateTime::now();
+        let mut expires_at = now + lean_ctx_time::Duration::minutes(1);
         if let Some(certificate) = &self.delegation {
             anyhow::ensure!(
                 certificate.schema_version == 1
@@ -238,8 +238,8 @@ pub struct DeliveryAuthorityV1 {
     pub project_id: String,
     pub action: String,
     pub request_digest: String,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub nonce: String,
     pub grant_ref: CapabilityGrantRefV1,
     pub key_id: String,
@@ -275,7 +275,7 @@ impl DeliveryAuthorityV1 {
         }
         if self.schema_version != 1
             || self.expires_at <= self.issued_at
-            || self.expires_at - self.issued_at > chrono::Duration::minutes(5)
+            || self.expires_at - self.issued_at > lean_ctx_time::Duration::minutes(5)
             || self.signature.len() != 128
             || !self.signature.bytes().all(|byte| byte.is_ascii_hexdigit())
             || self.request_digest != request_digest
@@ -374,7 +374,7 @@ mod tests {
         certificate.child_key_id = profile.key_id.clone();
         certificate.child_public_key =
             crate::core::agent_identity::hex_encode(key.verifying_key().as_bytes());
-        certificate.expires_at = Utc::now() + chrono::Duration::seconds(30);
+        certificate.expires_at = UtcDateTime::now() + lean_ctx_time::Duration::seconds(30);
         certificate.sign(&host_key);
         let child_policy = certificate
             .verify_for_execution(
@@ -384,7 +384,7 @@ mod tests {
                     recipient: "daemon",
                     tenant_id: "account",
                     project_id: "project",
-                    now: Utc::now(),
+                    now: UtcDateTime::now(),
                 },
                 &certificate.execution,
                 &profile.agent_id,
@@ -413,7 +413,7 @@ mod tests {
                     recipient: "daemon",
                     tenant_id: "account",
                     project_id: "project",
-                    now: Utc::now(),
+                    now: UtcDateTime::now(),
                 },
                 DELIVERY_CHECK,
                 &signed.bound_request_digest(),
@@ -477,7 +477,7 @@ mod tests {
             ),
             (
                 "issued_at",
-                serde_json::json!(Utc::now() + chrono::Duration::hours(1)),
+                serde_json::json!(UtcDateTime::now() + lean_ctx_time::Duration::hours(1)),
             ),
         ] {
             let mut value = serde_json::to_value(&certificate).expect("certificate");
@@ -485,7 +485,7 @@ mod tests {
             delegated.delegation = Some(Box::new(serde_json::from_value(value).expect("modified")));
             assert!(delegated.sign_request(check(&path)).is_err(), "{field}");
         }
-        certificate.expires_at = Utc::now() - chrono::Duration::seconds(1);
+        certificate.expires_at = UtcDateTime::now() - lean_ctx_time::Duration::seconds(1);
         delegated.delegation = Some(Box::new(certificate));
         assert!(delegated.sign_request(check(&path)).is_err());
         assert!(profile.sign_request(check(outside.path())).is_err());
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn delivery_requires_exact_signed_request_and_live_scoped_grant() {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let key = SigningKey::from_bytes(&[42; 32]);
         let mut descriptor = DeliveryAuthorityV1 {
             schema_version: 1,
@@ -516,7 +516,7 @@ mod tests {
             action: DELIVERY_CHECK.into(),
             request_digest: format!("sha256:{}", "a".repeat(64)),
             issued_at: now,
-            expires_at: now + chrono::Duration::minutes(1),
+            expires_at: now + lean_ctx_time::Duration::minutes(1),
             nonce: "request-1".into(),
             grant_ref: CapabilityGrantRefV1 {
                 schema_version: 1,
@@ -539,8 +539,8 @@ mod tests {
                     tenant_id: "account".into(),
                     project_id: "project".into(),
                 }],
-                not_before: now - chrono::Duration::minutes(1),
-                expires_at: now + chrono::Duration::hours(1),
+                not_before: now - lean_ctx_time::Duration::minutes(1),
+                expires_at: now + lean_ctx_time::Duration::hours(1),
                 revoked: false,
             }],
             grants: vec![TaskCapabilityGrantV1 {
@@ -550,8 +550,8 @@ mod tests {
                 action: DELIVERY_CHECK.into(),
                 tenant_id: "account".into(),
                 project_id: "project".into(),
-                not_before: now - chrono::Duration::minutes(1),
-                expires_at: now + chrono::Duration::hours(1),
+                not_before: now - lean_ctx_time::Duration::minutes(1),
+                expires_at: now + lean_ctx_time::Duration::hours(1),
                 revoked: false,
             }],
         };

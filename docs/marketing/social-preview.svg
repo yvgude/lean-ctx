@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
   <title>LeanCTX — the Context Gateway for AI Systems</title>
-  <desc>Select, Control, Learn, Prove. Control what your AI can see.</desc>
+  <desc>Select, Control, Learn, Prove. Less context. More intelligence.</desc>
   <defs>
     <radialGradient id="glow" cx="90%" cy="25%" r="85%">
       <stop stop-color="#243252"/><stop offset="1" stop-color="#101526"/>
@@ -26,7 +26,7 @@
     <text x="1216" y="90" text-anchor="end" fill="#9bafff" font-size="17" letter-spacing="2">OPEN-SOURCE ENGINE</text>
     <text x="60" y="248" fill="#f2f3ff" font-size="72" font-weight="700">The Context Gateway</text>
     <text x="60" y="332" fill="#f2f3ff" font-size="72" font-weight="700">for AI Systems.</text>
-    <text x="64" y="398" fill="#b2bad1" font-size="30">Control what your AI can see.</text>
+    <text x="64" y="398" fill="#b2bad1" font-size="30">Less context. More intelligence.</text>
     <path d="M64 451H1216" stroke="#394562"/>
     <g fill="#f2f3ff" font-size="29">
       <text x="64" y="512">Select</text>

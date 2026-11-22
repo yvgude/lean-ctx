@@ -38,6 +38,22 @@ const BLOCKED_ENV: &[&str] = &[
     "GIT_EXEC_PATH",
     "GIT_TEMPLATE_DIR",
     "GIT_PROXY_COMMAND",
+    // Options a tool reads from the environment or a file the variable
+    // names, among them ones that run a command (`TAR_OPTIONS=-ICMD`, a
+    // ripgrep config with `--pre=CMD`). The command line never shows them.
+    "TAR_OPTIONS",
+    "RIPGREP_CONFIG_PATH",
+    // Editor startup commands and where vim reads its startup files from.
+    "VIMINIT",
+    "EXINIT",
+    "GVIMINIT",
+    "VIMRUNTIME",
+    "MYVIMRC",
+    "MYGVIMRC",
+    "NVIM_APPNAME",
+    "VIM",
+    "EMACSLOADPATH",
+    "EMACSDIR",
 ];
 
 /// Variable families: exported bash functions, git config injected through
@@ -194,11 +210,21 @@ fn is_blocked_assignment(entry: &str) -> bool {
         Some((name, value)) => (name.strip_suffix('+').unwrap_or(name), Some(value)),
         None => (entry, None),
     };
+    // Emptying an options variable (`RIPGREP_CONFIG_PATH= rg …`) adds none;
+    // appending (`+=`) keeps whatever it held.
+    let emptied = OPTIONS_ENV.contains(&name)
+        && !entry.contains("+=")
+        && value.is_some_and(|v| matches!(v, "" | "''" | "\"\""));
     is_dynamic_name(name)
         || (is_blocked_env(name)
+            && !emptied
             && !(COMMAND_VALUED_ENV.contains(&name)
                 && value.is_some_and(|v| HARMLESS_COMMAND_VALUES.contains(&v.trim()))))
 }
+
+/// Variables a tool reads extra options or startup commands from (see
+/// [`BLOCKED_ENV`]); the executor removes them from every command it runs.
+const OPTIONS_ENV: &[&str] = lean_ctx::shell::platform::HIDDEN_OPTION_ENV;
 
 /// The name a command word runs (see [`super::tokenizer::exec_name`]).
 fn program_name(token: &str) -> String {
@@ -212,7 +238,7 @@ fn program_name(token: &str) -> String {
 /// its name, whatever path runs it (`/usr/bin/env X=… cmd`); wrappers in
 /// front of it (`command`, `nice`, `timeout`, …) are unwrapped by the
 /// delegation walk, which checks each target like a segment of its own.
-fn assigned_names(segment: &str) -> Vec<String> {
+pub(super) fn assigned_names(segment: &str) -> Vec<String> {
     let tokens = shell_tokenize(segment.trim());
     let mut names = Vec::new();
     for (i, token) in tokens.iter().enumerate() {
@@ -370,7 +396,7 @@ fn is_leanctx_program(token: &str) -> bool {
     matches!(
         token.rsplit(['/', '\\']).next(),
         Some("lean-ctx" | "lean-ctx.exe")
-    )
+    ) || program_name(token) == "lean-ctx"
 }
 
 /// `HOME=…` or `XDG_*_HOME=…` anywhere in a line that also starts lean-ctx
@@ -409,6 +435,20 @@ pub(super) fn check_location_with_leanctx(segments: &[String]) -> Result<(), She
     Ok(())
 }
 
+/// `RIPGREP_CONFIG_PATH=… rg --no-config …`: the segment's own program is
+/// `rg`, which with `--no-config` reads no config file. Only as the first
+/// argument, where it cannot be another option's value (`rg -g --no-config`).
+fn rg_ignores_config(segment: &str, entry: &str) -> bool {
+    if entry.split_once('=').map_or(entry, |(name, _)| name) != "RIPGREP_CONFIG_PATH" {
+        return false;
+    }
+    let tokens = crate::extract_command_tokens_from_segment(segment);
+    tokens
+        .first()
+        .is_some_and(|program| program_name(program) == "rg")
+        && tokens.get(1).is_some_and(|t| t == "--no-config")
+}
+
 /// Block assignments to [`BLOCKED_ENV`] anywhere in the assignment prefix of
 /// `segment` or through a variable-setting builtin.
 pub(super) fn check_env_assignments(segment: &str) -> Result<(), ShellError> {
@@ -423,12 +463,7 @@ pub(super) fn check_env_assignments(segment: &str) -> Result<(), ShellError> {
             t.as_str(),
             "export" | "readonly" | "declare" | "typeset" | "local"
         )
-    }) || tokens.iter().any(|t| {
-        matches!(
-            t.rsplit(['/', '\\']).next(),
-            Some("lean-ctx" | "lean-ctx.exe")
-        )
-    });
+    }) || tokens.iter().any(|t| is_leanctx_program(t));
     if declares_nameref(&tokens) {
         return Err(
             "[BLOCKED — DO NOT RETRY] `declare -n` / `typeset -n` makes a name refer \
@@ -462,7 +497,7 @@ pub(super) fn check_env_assignments(segment: &str) -> Result<(), ShellError> {
             .into_iter()
             .chain(defaults)
             .find(|entry| {
-                is_blocked_assignment(entry)
+                (is_blocked_assignment(entry) && !rg_ignores_config(segment, entry))
                     || (moves_leanctx
                         && LEAN_CTX_LOCATION_ENV
                             .contains(&entry.split_once('=').map_or(entry.as_str(), |(n, _)| n)))
@@ -535,11 +570,17 @@ pub(super) fn check_builtin_options(tokens: &[String]) -> Result<(), ShellError>
         "enable" => &['f'],
         "jobs" => &['x'],
         "compgen" | "complete" => &['C', 'F'],
+        // `mapfile -C CMD` / `readarray -C CMD` run CMD per chunk read.
+        "mapfile" | "readarray" => &['C'],
         _ => return Ok(()),
     };
-    // `compgen`/`complete` options may follow a word-list value, so every
-    // option-shaped word counts there.
-    let anywhere = matches!(base.as_str(), "compgen" | "complete");
+    // `compgen`/`complete` options may follow a word-list value and
+    // `mapfile` options a `-c`/`-n`/… value, so every option-shaped word
+    // counts there.
+    let anywhere = matches!(
+        base.as_str(),
+        "compgen" | "complete" | "mapfile" | "readarray"
+    );
     let used = options
         .iter()
         .take_while(|t| anywhere || (t.starts_with('-') && t.as_str() != "--"))

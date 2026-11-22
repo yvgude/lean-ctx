@@ -54,6 +54,7 @@ impl AddTurn for ModelUsage {
         self.cache_read_tokens += u.cache_read_tokens;
         self.cache_write_tokens += u.cache_write_tokens;
         self.reasoning_tokens += u.reasoning_tokens;
+        self.saved_tokens += u.wire.as_deref().map_or(0, |w| w.saved_tokens);
         if let Some(cost) = u.provider_cost_usd {
             self.measured.merge(&MeasuredSlice {
                 requests: 1,
@@ -152,11 +153,18 @@ fn cohort_store() -> &'static Mutex<HashMap<String, CohortUsage>> {
 }
 
 /// App sessions kept apart; the least recently seen one gives way.
-const MAX_TRACKED_SESSIONS: usize = 256;
+pub const MAX_TRACKED_SESSIONS: usize = 256;
 
 fn session_store() -> &'static Mutex<HashMap<String, SessionUsage>> {
     static STORE: OnceLock<Mutex<HashMap<String, SessionUsage>>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Turns without a (valid) app session header: the ledger's unattributed
+/// bucket, so the sessions plus this bucket add up to every metered turn.
+fn unattributed_store() -> &'static Mutex<SessionUsage> {
+    static STORE: OnceLock<Mutex<SessionUsage>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(SessionUsage::default()))
 }
 
 /// Book `u` (model bucket `key`) on app session `session` at `now`; when
@@ -219,6 +227,13 @@ pub fn resume_from_disk() {
         merge_models(&mut entry.models, usage.models);
     }
     drop(sessions);
+    {
+        let mut unattributed = unattributed_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        unattributed.last_seen = unattributed.last_seen.max(persisted.unattributed.last_seen);
+        merge_models(&mut unattributed.models, persisted.unattributed.models);
+    }
     let mut cohorts = cohort_store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -236,6 +251,7 @@ fn merge_models(map: &mut HashMap<String, ModelUsage>, models: HashMap<String, M
         acc.cache_read_tokens += usage.cache_read_tokens;
         acc.cache_write_tokens += usage.cache_write_tokens;
         acc.reasoning_tokens += usage.reasoning_tokens;
+        acc.saved_tokens += usage.saved_tokens;
         acc.counterfactual_requests += usage.counterfactual_requests;
         acc.counterfactual_input_tokens += usage.counterfactual_input_tokens;
         acc.counterfactual_billed_tokens += usage.counterfactual_billed_tokens;
@@ -374,15 +390,21 @@ pub fn record(u: &super::usage::RealUsage) {
                     .add(u);
             }
         }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         if let Some(session) = u.wire.as_deref().and_then(|w| w.app_session.as_deref()) {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
             let mut sessions = session_store()
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             add_session_turn(&mut sessions, session, &key, u, now);
+        } else {
+            let mut unattributed = unattributed_store()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            unattributed.last_seen = unattributed.last_seen.max(now);
+            unattributed.models.entry(key.clone()).or_default().add(u);
         }
     }
     if u.cohort.output.is_some() || u.cohort.compression.is_some() {
@@ -558,6 +580,10 @@ fn persist() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
+    let unattributed = unattributed_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     let payload = PersistedUsage {
         ts: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -568,6 +594,7 @@ fn persist() {
         last_model,
         projects,
         sessions,
+        unattributed,
     };
     let Ok(json) = serde_json::to_string(&payload) else {
         return;

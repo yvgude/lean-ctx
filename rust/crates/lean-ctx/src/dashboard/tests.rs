@@ -1026,7 +1026,7 @@ async fn a_named_project_is_honoured_or_refused_never_ignored() {
     assert!(head.starts_with("HTTP/1.1 200"), "{head}");
 
     // A route that cannot answer for the project refuses it.
-    let (head, body) = send("GET", "/api/hive/explained", alpha.clone(), "").await;
+    let (head, body) = send("GET", "/api/cloud/explained", alpha.clone(), "").await;
     assert!(head.starts_with("HTTP/1.1 400"), "{head}");
     assert!(body.contains("named project"), "{body}");
 

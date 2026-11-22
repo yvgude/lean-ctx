@@ -4,7 +4,7 @@
 //! and repeated failures must make the (ext × mode) pair risky so *other*
 //! files of the same type stop being compressed with the failing mode.
 //!
-//! Single test in its own binary: it sets `LEAN_CTX_DATA_DIR` process-wide
+//! Runs in a process of its own (fresh_process): it sets `LEAN_CTX_DATA_DIR` process-wide
 //! before the edit-quality store's `OnceLock` is first touched.
 
 use lean_ctx::core::auto_mode_resolver::{AutoModeContext, resolve};
@@ -31,8 +31,11 @@ fn params_for(path: &str, old_string: &str) -> EditParams {
 
 #[test]
 fn edit_fail_after_map_read_escalates_and_penalizes() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     let tmp = tempfile::tempdir().unwrap();
-    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+    // SAFETY: this test runs in a process of its own (fresh_process), so no
 
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };

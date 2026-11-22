@@ -310,7 +310,7 @@ fn keyed_digests_use_the_local_hmac_key() {
 
     let dir = crate::core::data_dir::lean_ctx_data_dir()
         .expect("data dir")
-        .join("hive");
+        .join("cloud");
     let key = load_or_create_hmac_key(&dir).expect("key");
     assert_eq!(
         digest,
@@ -710,7 +710,8 @@ fn resumed_pass_reads_only_the_suffix_and_the_full_pass_bounds_it() {
     assert!(resumed.valid, "a resumed pass verifies only the suffix");
     assert_eq!(resumed.total_entries, 1_011);
 
-    let a_day_later = chrono::Utc::now().timestamp() + checkpoint::FULL_REVERIFY_SECS + 1;
+    let a_day_later =
+        lean_ctx_time::UtcDateTime::now().timestamp() + checkpoint::FULL_REVERIFY_SECS + 1;
     let (stale, _) = verify_chain_mode_at(&path, None, false, a_day_later);
     assert_eq!(stale.first_invalid_at, Some(broken));
     assert_eq!(verify_chain_full().first_invalid_at, Some(broken));
@@ -903,7 +904,7 @@ fn for_each_entry_at_streams_the_trail_and_skips_what_cannot_match() {
             },
             facts: None,
         },
-        chrono::Utc::now() + chrono::Duration::days(1),
+        lean_ctx_time::UtcDateTime::now() + lean_ctx_time::Duration::days(1),
     )
     .expect("append");
 
@@ -918,7 +919,7 @@ fn for_each_entry_at_streams_the_trail_and_skips_what_cannot_match() {
     let all = load_all_at(&path);
     assert_eq!(collect(None, None), hashes(&all));
 
-    let later = chrono::Utc::now() + chrono::Duration::hours(1);
+    let later = lean_ctx_time::UtcDateTime::now() + lean_ctx_time::Duration::hours(1);
     let active = load_all_at(&path)
         .into_iter()
         .skip(load_all_at(&segments::sealed(&path)[0].1).len())
@@ -934,7 +935,7 @@ fn for_each_entry_at_streams_the_trail_and_skips_what_cannot_match() {
 
 /// One plain entry, appended as if at `days` days from now.
 fn append_on_day(path: &Path, days: i64) -> AuditEntry {
-    let now = chrono::Utc::now() + chrono::Duration::days(days);
+    let now = lean_ctx_time::UtcDateTime::now() + lean_ctx_time::Duration::days(days);
     let record = Record {
         data: drift_data_unsigned(),
         facts: None,
@@ -997,7 +998,7 @@ fn a_new_day_seals_the_verified_trail_and_the_chain_runs_through_its_segments() 
         );
     }
     assert_eq!(trail_files_since(&path, None).len(), 2);
-    let later = chrono::Utc::now() + chrono::Duration::hours(1);
+    let later = lean_ctx_time::UtcDateTime::now() + lean_ctx_time::Duration::hours(1);
     assert_eq!(trail_files_since(&path, Some(later)), vec![path.clone()]);
     let text = read_trail_since(&path, None).expect("read").expect("trail");
     assert_eq!(text.lines().count(), 104);
@@ -1006,7 +1007,7 @@ fn a_new_day_seals_the_verified_trail_and_the_chain_runs_through_its_segments() 
     // also a week on, when every checkpoint of the active file expired.
     append_on_day(&path, 2);
     assert_eq!(segments::sealed(&path).len(), 2);
-    let week = chrono::Utc::now().timestamp() + 7 * 24 * 60 * 60;
+    let week = lean_ctx_time::UtcDateTime::now().timestamp() + 7 * 24 * 60 * 60;
     let (late, _) = verify_chain_mode_at(&path, None, false, week);
     assert!(late.valid);
     assert_eq!(late.total_entries, 106);
@@ -1060,9 +1061,9 @@ fn a_writer_never_appends_to_a_sealed_segment() {
 /// Size and day rule of the seal.
 #[test]
 fn a_trail_is_due_at_its_size_cap_or_on_a_new_day() {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let today = now.to_rfc3339();
-    let yesterday = (now - chrono::Duration::days(1)).to_rfc3339();
+    let yesterday = (now - lean_ctx_time::Duration::days(1)).to_rfc3339();
     assert!(!segments::due(0, Some(&yesterday), now));
     assert!(!segments::due(10, Some(&today), now));
     assert!(segments::due(10, Some(&yesterday), now));

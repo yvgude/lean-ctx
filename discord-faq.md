@@ -1,6 +1,6 @@
 # lean-ctx FAQ
 
-**LeanCTX — Context Gateway for AI Systems. Control what your AI can see.**
+**LeanCTX — Context Gateway for AI Systems. Less context. More intelligence.**
 See the [current product definition](docs/POSITIONING_CANONICAL.md).
 
 > **Latest version: 3.12.0** — complete MCP tool set · 16 read modes · 85+ shell patterns
@@ -55,7 +55,10 @@ for local observations and Shadow Mode for a comparable baseline.
 
 Both can reduce repeated context on supported integration paths; measure the effect on your own workload.
 
-**Q: What are the 16 read modes?**
+**Q: What are the read modes?**
+10 core modes, `auto` through `lines:N-M`; `anchored`, `full-compact`, `raw`
+and `density:X` are variants, and `cognitive` and `mdl` are accepted as aliases of `map`.
+
 | Mode | Use when... |
 |------|-------------|
 | `auto` | You don't know — lean-ctx picks the best mode |
@@ -71,8 +74,6 @@ Both can reduce repeated context on supported integration paths; measure the eff
 | `anchored` | Full content with per-line anchors for `ctx_patch` edits |
 | `full-compact` | Full content without header, trailing whitespace stripped |
 | `raw` | Exact bytes, no framing |
-| `cognitive` | 7±2 semantic chunks of a long file |
-| `mdl` | Minimal structural description |
 | `density:X` | Highest-entropy lines until ~X of the tokens remain |
 
 **Q: Does lean-ctx send my code anywhere?**

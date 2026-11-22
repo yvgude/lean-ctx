@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `<data_dir>/hive/projects.json`: the vaults Hive resolved for this machine's repositories
+//! `<data_dir>/cloud/projects.json`: the vaults Cloud resolved for this machine's repositories
 //! and the local checkouts seen for each. Written when a checkout is resolved; read wherever a
 //! checkout's vault matters (bus, sync, and the per-vault policy floor).
 
@@ -8,13 +8,13 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use lean_ctx_protocol::hive::vault::VaultV1;
+use lean_ctx_protocol::cloud::vault::VaultV1;
 
 /// The file keeps its pre-VA name, like the field names in it: an older
 /// engine (downgrade, or a teammate's machine) still reads it.
 pub const VAULTS_FILE: &str = "projects.json";
 
-/// A vault as Hive resolved it, plus the local checkouts seen for it.
+/// A vault as Cloud resolved it, plus the local checkouts seen for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VaultRecord {
     /// On disk as `project_id` (pre-VA name) for downgrades and mixed-version teams.
@@ -29,7 +29,7 @@ pub struct VaultRecord {
     pub roots: Vec<String>,
 }
 
-/// `<data_dir>/hive/projects.json`: stable identity → resolved vault.
+/// `<data_dir>/cloud/projects.json`: stable identity → resolved vault.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VaultMap {
     /// On disk as `projects` (pre-VA name) for downgrades and mixed-version teams.

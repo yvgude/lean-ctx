@@ -79,7 +79,7 @@ pub fn record(store: &str, item: &str, partition: &str, adopted: bool) -> Result
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
     let line = JournalLine {
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         store: store.to_string(),
         item: item.to_string(),
         project: partition.to_string(),

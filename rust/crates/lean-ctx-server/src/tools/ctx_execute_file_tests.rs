@@ -133,7 +133,7 @@ async fn file_handler_publishes_only_a_successful_verified_binding() {
 /// batched (the shell allowlist side is tested in `core::shell_allowlist`).
 #[test]
 fn ctx_execute_refuses_a_marker_in_every_language() {
-    let code = "print('postgres://[REDACTED:Database credentials]@db/hive')";
+    let code = "print('postgres://[REDACTED:Database credentials]@db/cloud')";
     let (text, outcome) = super::handle_in("python", code, None, None, None);
     assert!(matches!(outcome, ShellOutcome::Blocked), "{text}");
     let batch = [("python".to_string(), code.to_string())];

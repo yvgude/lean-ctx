@@ -154,7 +154,7 @@ async fn relay_https_validates_certificate_and_production_configuration() {
     let mut bundle = EvidenceBundle::new("tls-task".into());
     bundle.finalize();
     let payload = serde_json::to_string(&bundle).unwrap();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let record = RelayRecordV1::new_signed(
         "tls-delivery",
         "origin",
@@ -163,7 +163,7 @@ async fn relay_https_validates_certificate_and_production_configuration() {
         "project",
         TransportContentType::EvidenceBundle,
         DataClassification::Internal,
-        now + chrono::Duration::minutes(1),
+        now + lean_ctx_time::Duration::minutes(1),
         4,
         now,
         &test_origin_key("origin"),

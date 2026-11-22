@@ -1,0 +1,444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/knowledge_node.schema.json",
+  "title": "Knowledge node: a fact, decision, finding or page of a vault, and the reviewed document they form",
+  "description": "C0 2.x knowledge is an event log of signed nodes and edges (event); C0 1.x engines read the folded, reviewed document of a vault (revision). Both views name the same nodes.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "C0 2.x: node_id; C0 1.x: fact id within (vault_id, revision)",
+    "views": {
+      "event": "one signed C0 2.x event (node.add, field.set, edge.add, retract, purge, ...)",
+      "fact": "a fact of the reviewed document",
+      "page": "a wiki page of the reviewed document",
+      "relation": "an edge between two facts",
+      "document": "the reviewed document",
+      "revision": "GET /v1/projects/{vault_id}/knowledge answer",
+      "fact_state": "a fact the engines flagged (to verify, contradicted)"
+    }
+  },
+  "$defs": {
+    "event": {
+      "description": "C0 2.x event envelope; node types fact, decision, gotcha, procedure, finding, episode, reference, page, section, note",
+      "x-producers": [
+        "p37 crates/cloud-server/src/place/c0.rs EVENT_SCHEMA",
+        "p5 rust/crates/lean-ctx-cloud/src/events/build.rs EVENT_SCHEMA"
+      ],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/event.schema.json"
+    },
+    "fact": {
+      "type": "object",
+      "required": [
+        "id",
+        "statement",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.id",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.id"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.statement",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.statement"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.kind",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.kind"
+          ]
+        },
+        "appliesTo": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.applies_to",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.applies_to"
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.sources",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.sources"
+          ]
+        },
+        "from_contributions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.from_contributions",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.from_contributions"
+          ]
+        },
+        "anchors": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "common.schema.json#/$defs/code_anchor"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Fact.anchors",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs FactV1.anchors"
+          ]
+        }
+      }
+    },
+    "page_item": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "fact",
+              "x-producers": [
+                "p37 crates/cloud-wire/src/knowledge.rs PageItem",
+                "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageItemV1"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "x-producers": [
+                "p37 crates/cloud-wire/src/knowledge.rs PageItem",
+                "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageItemV1"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "prose",
+              "x-producers": [
+                "p37 crates/cloud-wire/src/knowledge.rs PageItem",
+                "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageItemV1"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 4000,
+              "x-producers": [
+                "p37 crates/cloud-wire/src/knowledge.rs PageItem",
+                "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageItemV1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "page": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Page.id",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageV1.id"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Page.title",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageV1.title"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/page_item"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Page.items",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs PageV1.items"
+          ]
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Relation.from",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs RelationV1.from"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Relation.to",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs RelationV1.to"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Relation.kind",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs RelationV1.kind"
+          ]
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "required": [
+        "format",
+        "facts",
+        "relations"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Document.format",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs ResearchContextDocumentV1.format"
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Document.facts",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs ResearchContextDocumentV1.facts"
+          ]
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Document.relations",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs ResearchContextDocumentV1.relations"
+          ]
+        },
+        "open_gaps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Document.open_gaps",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs ResearchContextDocumentV1.open_gaps"
+          ]
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/page"
+          },
+          "x-producers": [
+            "p37 crates/cloud-wire/src/knowledge.rs Document.pages",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs ResearchContextDocumentV1.pages"
+          ]
+        }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "required": [
+        "schema",
+        "vault_id",
+        "revision",
+        "document",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.knowledge-revision/v1",
+          "x-producers": [
+            "p37 crates/cloud-server/src/routes/projects.rs KNOWLEDGE_REVISION_SCHEMA",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.schema"
+          ]
+        },
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/vault_id",
+          "x-producers": [
+            "p37 crates/cloud-server/src/routes/projects.rs KNOWLEDGE_REVISION_SCHEMA",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.vault_id"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": [
+            "p37 crates/cloud-server/src/routes/projects.rs KNOWLEDGE_REVISION_SCHEMA",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.revision"
+          ]
+        },
+        "document": {
+          "$ref": "#/$defs/document",
+          "x-producers": [
+            "p37 crates/cloud-server/src/routes/projects.rs KNOWLEDGE_REVISION_SCHEMA",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.document"
+          ]
+        },
+        "updated_at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": [
+            "p37 crates/cloud-server/src/routes/projects.rs KNOWLEDGE_REVISION_SCHEMA",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.updated_at"
+          ]
+        },
+        "state": {
+          "description": "absent = released",
+          "enum": [
+            "released",
+            "quarantined",
+            "rolled_back"
+          ],
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.state"
+          ]
+        },
+        "quarantined_after": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.quarantined_after"
+          ]
+        },
+        "fact_states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact_state"
+          },
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.fact_states"
+          ]
+        },
+        "ctxpkg_tree": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.ctxpkg_tree"
+          ]
+        },
+        "ctxpkg_commit": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/knowledge.rs KnowledgeRevisionV1.ctxpkg_commit"
+          ]
+        }
+      }
+    },
+    "fact_state": {
+      "description": "a fact whose state is not current (C0 1.9)",
+      "type": "object",
+      "required": [
+        "fact",
+        "state",
+        "reasons",
+        "since"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fact": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/facts.rs FactStateV1.fact"
+          ]
+        },
+        "state": {
+          "enum": [
+            "current",
+            "to_verify",
+            "contradicted"
+          ],
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/facts.rs FactStateV1.state"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "anchor_changed",
+              "anchor_moved",
+              "anchor_missing",
+              "contradiction"
+            ]
+          },
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/facts.rs FactStateV1.reasons"
+          ]
+        },
+        "moved_to": {
+          "$ref": "common.schema.json#/$defs/code_anchor",
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/facts.rs FactStateV1.moved_to"
+          ]
+        },
+        "contradicted_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/facts.rs FactStateV1.contradicted_by"
+          ]
+        },
+        "since": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": [
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/facts.rs FactStateV1.since"
+          ]
+        }
+      }
+    }
+  }
+}

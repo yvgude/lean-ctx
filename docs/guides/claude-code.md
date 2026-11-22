@@ -142,7 +142,7 @@ lean-ctx maintains a marker-delimited block in `~/.claude/CLAUDE.md`:
 ## LeanCTX (lean-ctx) — Context Gateway for AI Systems
 
 When the `ctx_*` MCP tools are listed in this session, prefer them over native equivalents:
-- `ctx_read` instead of `Read` / `cat` for exploration (cached, 10 modes incl. map/signatures)
+- `ctx_read` instead of `Read` / `cat` for exploration (cached, 16 read modes incl. map/signatures)
 - `ctx_shell` instead of `bash` / `Shell` (pattern-based output compression)
 - `ctx_search` instead of `Grep` / `rg` (compact results)
 - `ctx_tree` instead of `ls` / `find` (compact directory maps)

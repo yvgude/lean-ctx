@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The built-in `leanctx` provider: the Hive subscription models (mz6,
+//! The built-in `leanctx` provider: the Cloud subscription models (mz6,
 //! `docs/model-access-subscription.md` §4).
 //!
 //! `/providers/leanctx/v1/chat/completions` (or `/v1/responses`) forwards,
-//! OpenAI-shaped, to the Hive models gateway. The credential is the
-//! instance's short-lived `hive_i_` token from the registered
-//! [`HiveTokenSource`]; every caller credential header is dropped, so the
+//! OpenAI-shaped, to the Cloud models gateway. The credential is the
+//! instance's short-lived `cloud_i_` token from the registered
+//! [`CloudTokenSource`]; every caller credential header is dropped, so the
 //! caller's lean-ctx token or a provider key never reaches the gateway, and
-//! the token only ever goes to the origin the source pinned to the Hive host.
+//! the token only ever goes to the origin the source pinned to the Cloud host.
 //!
 //! The gateway's refusals hold the route in the throttle style: a `402`,
 //! `403` or `429 quota_exceeded` is recorded by the source, and until it
@@ -25,14 +25,14 @@ use axum::{
     response::Response,
 };
 
-use lean_ctx::core::hive_models::{
-    HiveTokenSource, ModelsAdmission, ModelsRefusal, PROVIDER_ID, TOKEN_UNAVAILABLE_CODE,
-    UNAVAILABLE_CODE, hive_token_source,
+use lean_ctx::core::cloud_models::{
+    CloudTokenSource, ModelsAdmission, ModelsRefusal, PROVIDER_ID, TOKEN_UNAVAILABLE_CODE,
+    UNAVAILABLE_CODE, cloud_token_source,
 };
 
 use super::{ProxyState, forward, providers::RegistryProviderId};
 
-/// The longest wait for an admission (a token mint is one Hive call).
+/// The longest wait for an admission (a token mint is one Cloud call).
 const ADMIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The most of a refusal body that is read to record its hold.
 const REFUSAL_BODY_LIMIT: usize = 64 * 1024;
@@ -61,7 +61,7 @@ fn json_answer(status: StatusCode, body: &serde_json::Value, retry_after: Option
     response
 }
 
-/// The local answer to a refused admission. The body follows the Hive
+/// The local answer to a refused admission. The body follows the Cloud
 /// error envelope, so a client reads it like the gateway's own answer.
 pub(super) fn refusal_response(refusal: &ModelsRefusal) -> Response {
     let error = |code: &str, message: &str| serde_json::json!({"error": {"code": code, "message": message}});
@@ -71,17 +71,17 @@ pub(super) fn refusal_response(refusal: &ModelsRefusal) -> Response {
             &error(
                 UNAVAILABLE_CODE,
                 "the subscription models are not available to this instance \
-                 (connect it to Hive on a plan that includes them)",
+                 (connect it to LeanCTX Cloud on a plan that includes them)",
             ),
             None,
         ),
         ModelsRefusal::OriginRefused(why) => {
-            tracing::warn!("lean-ctx proxy: [hive] models_url refused: {why}");
+            tracing::warn!("lean-ctx proxy: [cloud] models_url refused: {why}");
             json_answer(
                 StatusCode::FORBIDDEN,
                 &error(
                     UNAVAILABLE_CODE,
-                    "[hive] models_url is not on the Hive host; the instance token is not sent",
+                    "[cloud] models_url is not on the LeanCTX Cloud host; the instance token is not sent",
                 ),
                 None,
             )
@@ -104,7 +104,7 @@ pub(super) fn refusal_response(refusal: &ModelsRefusal) -> Response {
             StatusCode::SERVICE_UNAVAILABLE,
             &error(
                 TOKEN_UNAVAILABLE_CODE,
-                "no Hive instance token could be had; try again shortly",
+                "no LeanCTX Cloud instance token could be had; try again shortly",
             ),
             Some(30),
         ),
@@ -126,7 +126,7 @@ pub(super) fn inject_instance_token(
     Ok(())
 }
 
-async fn admit_route(source: Arc<dyn HiveTokenSource>) -> Result<ModelsAdmission, ModelsRefusal> {
+async fn admit_route(source: Arc<dyn CloudTokenSource>) -> Result<ModelsAdmission, ModelsRefusal> {
     let fresh = FRESH_TOKEN.swap(false, Ordering::AcqRel);
     let call = tokio::task::spawn_blocking(move || source.admit_route(fresh));
     match tokio::time::timeout(ADMIT_TIMEOUT, call).await {
@@ -137,7 +137,7 @@ async fn admit_route(source: Arc<dyn HiveTokenSource>) -> Result<ModelsAdmission
 
 /// Record what the gateway's answer says about the route.
 async fn after_answer(
-    source: Arc<dyn HiveTokenSource>,
+    source: Arc<dyn CloudTokenSource>,
     response: Response,
     probe: bool,
 ) -> Response {
@@ -179,7 +179,7 @@ pub(super) async fn handle(
     rest: &str,
     mut req: Request<Body>,
 ) -> Result<Response, StatusCode> {
-    let Some(source) = hive_token_source() else {
+    let Some(source) = cloud_token_source() else {
         return Ok(refusal_response(&ModelsRefusal::Unavailable));
     };
     serve(state, rest, &mut req, source).await
@@ -189,7 +189,7 @@ async fn serve(
     state: ProxyState,
     rest: &str,
     req: &mut Request<Body>,
-    source: Arc<dyn HiveTokenSource>,
+    source: Arc<dyn CloudTokenSource>,
 ) -> Result<Response, StatusCode> {
     let admission = match admit_route(source.clone()).await {
         Ok(admission) => admission,
@@ -199,7 +199,7 @@ async fn serve(
         id: PROVIDER_ID.to_string(),
         local: false,
         account_ref: None,
-        region: Some("hive".to_string()),
+        region: Some("cloud".to_string()),
         gateway_managed_credential: true,
     });
     let path = format!("/{rest}");
@@ -251,10 +251,10 @@ mod tests {
         headers.insert("x-api-key", "caller-key".parse().unwrap());
         headers.insert("api-key", "caller-azure-key".parse().unwrap());
         headers.insert("x-goog-api-key", "caller-goog-key".parse().unwrap());
-        inject_instance_token(&mut headers, "hive_i_fixture").unwrap();
+        inject_instance_token(&mut headers, "cloud_i_fixture").unwrap();
         assert_eq!(
             headers.get("authorization").unwrap().to_str().unwrap(),
-            "Bearer hive_i_fixture"
+            "Bearer cloud_i_fixture"
         );
         assert_eq!(headers.len(), 1, "every caller credential is dropped");
         assert!(headers.get("authorization").unwrap().is_sensitive());
@@ -277,7 +277,7 @@ mod tests {
             status: 429,
             code: "quota_exceeded".into(),
             retry_after_s: 120,
-            line: "waiting for Hive until 2026-11-10T12:02:00Z: credit".into(),
+            line: "waiting for LeanCTX Cloud until 2026-11-10T12:02:00Z: credit".into(),
         });
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(response.headers().get("retry-after").unwrap(), "120");

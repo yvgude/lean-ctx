@@ -144,6 +144,12 @@ fn emit_prompt_submit_precedence(input: &str) {
     if v.get("hook_event_name").and_then(|e| e.as_str()) != Some("UserPromptSubmit") {
         return;
     }
+    // Code Mode also fires UserPromptSubmit for script output it hands back to
+    // the model (`source: "poll_event"`). That is not a turn: re-injecting
+    // here would bill the line once per poll instead of once per turn.
+    if v.get("source").and_then(|s| s.as_str()) == Some("poll_event") {
+        return;
+    }
     if !prompt_reinject_enabled() {
         return;
     }
@@ -190,7 +196,7 @@ fn record_session_lifecycle_presence(input: &str) {
         return;
     };
     if event == "close" {
-        // Queue the session's learnings for Hive (local only, no network).
+        // Queue the session's learnings for Cloud (local only, no network).
         lean_ctx::core::knowledge::hooks::session_ended(&workspace, &session_id);
     }
     if let Err(error) = lean_ctx::core::agents::AgentRegistry::record_logical_session_presence(

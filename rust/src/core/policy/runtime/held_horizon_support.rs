@@ -3,7 +3,7 @@
 //! admitted-send test.
 use super::refresh;
 use crate::core::policy::org::Lifetime;
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -17,9 +17,9 @@ pub enum Phase {
     Fresh,
 }
 
-pub fn wait_until_horizon(horizon: DateTime<Utc>) {
+pub fn wait_until_horizon(horizon: UtcDateTime) {
     let cap = Instant::now() + Duration::from_secs(10);
-    while Utc::now() < horizon {
+    while UtcDateTime::now() < horizon {
         assert!(Instant::now() < cap, "the original horizon did not arrive");
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -29,7 +29,7 @@ pub fn wait_until_horizon(horizon: DateTime<Utc>) {
 /// that decides how it answers, and how often each phase was asked. Shared by
 /// the source-view test here and the proxy's admitted-send test.
 pub struct HorizonClock {
-    pub h: Rc<Cell<DateTime<Utc>>>,
+    pub h: Rc<Cell<UtcDateTime>>,
     pub phase: Rc<Cell<Phase>>,
     pub open_calls: Rc<Cell<u32>>,
     pub closing_calls: Rc<Cell<u32>>,
@@ -45,7 +45,9 @@ impl Default for HorizonClock {
 impl HorizonClock {
     pub fn new() -> Self {
         Self {
-            h: Rc::new(Cell::new(Utc::now() + chrono::Duration::seconds(60))),
+            h: Rc::new(Cell::new(
+                UtcDateTime::now() + lean_ctx_time::Duration::seconds(60),
+            )),
             phase: Rc::new(Cell::new(Phase::Open)),
             open_calls: Rc::new(Cell::new(0_u32)),
             closing_calls: Rc::new(Cell::new(0_u32)),
@@ -65,7 +67,7 @@ impl HorizonClock {
         let fresh_calls = Rc::clone(&self.fresh_calls);
         refresh::answer_hook_for_test(move |lifetime| {
             let original = h.get();
-            let later = original + chrono::Duration::hours(1);
+            let later = original + lean_ctx_time::Duration::hours(1);
             let horizon = match phase.get() {
                 Phase::Open => {
                     open_calls.set(open_calls.get() + 1);

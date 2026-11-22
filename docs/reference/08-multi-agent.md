@@ -12,7 +12,7 @@ policy, and any coordination between agents. LeanCTX may run inside or alongside
 each of those agents to control how that agent selects, shapes, reuses, and
 recovers context before inference, with local evidence about those decisions.
 
-For current application integration, use the [LeanCTX SDK guide](sdk-surface.md).
+For current application integration, use the [LeanCTX | SDK guide](sdk-surface.md).
 The older integration-depth proposal below is retained for historical context:
 
 - **Attach — Available:** local CLI, MCP, hooks, or proxy around a supported

@@ -101,7 +101,7 @@ fn matches_target(task: &Task, request: &TaskControlDescriptorV1) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration, Utc};
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     fn fixture() -> (Task, TaskControlDescriptorV1) {
         let mut task = Task::new("owner", "receiver", "private payload");
@@ -109,7 +109,7 @@ mod tests {
         task.project_id = Some("project".into());
         task.authority_key_id = Some("original-key".into());
         task.descriptor_digest = Some(format!("sha256:{}", "a".repeat(64)));
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let request = TaskControlDescriptorV1::new(
             "owner",
             "receiver",
@@ -159,7 +159,7 @@ mod tests {
             recipient: "receiver",
             tenant_id: "tenant",
             project_id: "project",
-            now: Utc::now(),
+            now: UtcDateTime::now(),
         };
         assert!(matches!(
             get_status(&path, &request, &policy, &expected),
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn signed_cancel_rejects_backward_clock_without_touching_storage() {
         let (mut task, request, policy) = authorized_cancel();
-        task.updated_at = Utc::now() + Duration::hours(1);
+        task.updated_at = UtcDateTime::now() + Duration::hours(1);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tasks.json");
         let before = persist(&path, task);

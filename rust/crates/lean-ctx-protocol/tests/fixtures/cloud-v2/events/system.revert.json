@@ -1,0 +1,35 @@
+{
+  "actor": {
+    "kind": "person",
+    "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqde",
+  "body": {
+    "body_nonce": "13131313131313131313131313131313",
+    "reason": "Revert the refund investigation episode; the root cause was wrong."
+  },
+  "body_commit": "fa7ddef2a7681ba18ab6d5b1bb6742ae993b29afc2200b29c293cd06356e0b3d",
+  "causal_base": 18,
+  "cause": {
+    "id": "pv_rrrrrrrrrrrrrrrrrrrrrrrrra",
+    "kind": "revert"
+  },
+  "event_id": "01M5NKAMHR005000000000W00K",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800019000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "op": "retract",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800019350,
+  "schema": "leanctx.cloud.event/v2",
+  "seq": 19,
+  "signature": "33642050e684463436189d50c65d27557ccf3179a4c8ea23a9c483af8371420071d93d0f3be313276a634aa169a1805b6f4d3df1d8c52adb360225a47f9b3f02",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaacaay"
+}

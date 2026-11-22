@@ -702,10 +702,10 @@ impl Config {
         let this = match crate::core::config::managed::current() {
             Some(managed) if managed.config.is_ok() => {
                 let on_disk = Self::try_load_global_from(guard.path())
-                    .map(|config| config.hive)
+                    .map(|config| config.cloud)
                     .unwrap_or_default();
                 let mut copy = self.clone();
-                managed.keep_user_values(&mut copy.hive, &on_disk);
+                managed.keep_user_values(&mut copy.cloud, &on_disk);
                 unmanaged = copy;
                 &unmanaged
             }

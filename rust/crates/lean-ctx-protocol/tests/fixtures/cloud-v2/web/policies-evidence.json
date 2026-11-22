@@ -1,0 +1,95 @@
+{
+  "route": "W111",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/policies/evidence?instance=inst_8899aabbccddeeff0011223344556677&days=30",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "days": 30,
+      "from": "2026-10-26T09:00:00Z",
+      "to": "2026-11-25T09:00:00Z",
+      "totals": {
+        "admitted": 412,
+        "rejected": 3
+      },
+      "items": [
+        {
+          "version": 3,
+          "in_force": true,
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "admitted": 230,
+          "rejected": 2,
+          "last_admitted_at": "2026-11-25T08:41:12Z",
+          "last_rejected_at": "2026-11-24T16:03:55Z"
+        },
+        {
+          "version": 2,
+          "in_force": false,
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "admitted": 182,
+          "rejected": 1,
+          "last_admitted_at": "2026-11-12T10:20:00Z",
+          "last_rejected_at": "2026-11-02T07:55:31Z"
+        }
+      ],
+      "sessions": [
+        {
+          "session": "hmac-sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+          "version": 3,
+          "in_force": true,
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "admitted": 41,
+          "rejected": 1,
+          "first_at": "2026-11-25T07:02:10Z",
+          "last_at": "2026-11-25T08:41:12Z"
+        },
+        {
+          "session": "hmac-sha256:7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "version": 2,
+          "in_force": false,
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "admitted": 12,
+          "rejected": 0,
+          "first_at": "2026-11-12T09:58:40Z",
+          "last_at": "2026-11-12T10:20:00Z"
+        }
+      ],
+      "instance_id": "inst_8899aabbccddeeff0011223344556677",
+      "label": "bob-mbp",
+      "next_cursor": null
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "message": "days is 1 to 366",
+          "field": "days",
+          "reason": "invalid"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this is another member's instance",
+          "required_role": "admin"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "unknown policy scope"
+        }
+      }
+    }
+  ]
+}

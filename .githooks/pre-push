@@ -15,21 +15,137 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 PUSH_REFS="$(cat)"
 ZERO_SHA="0000000000000000000000000000000000000000"
 
-# ── Local CI-parity gate (runs for every remote) ──────────────────────
+# ── Public remote detection ───────────────────────────────────────────
+# GitHub is the public remote: the proprietary guard and the full preflight
+# apply to it. Recognised by the remote name `github`, by a remote listed in
+# `git config leanctx.publicRemote` (name or URL), or by the URL's host being
+# github.com, also behind an SSH host alias with or without a dot (resolved
+# with `ssh -G`, which reads the ssh config and connects nowhere). Fails
+# closed: an SSH host that ssh cannot resolve, or no ssh at all, counts as
+# public.
+remote_host() {
+    local url="$1" rest
+    case "$url" in
+        *://*)
+            rest="${url#*://}"; rest="${rest%%/*}"; rest="${rest##*@}"
+            # Keep IPv6 brackets out; drop a :port.
+            rest="${rest#[}"; rest="${rest%%]*}"; rest="${rest%%:*}"
+            ;;
+        *:*)
+            rest="${url%%:*}"; rest="${rest##*@}"
+            [[ "$rest" == */* ]] && rest=""
+            ;;
+        *) rest="" ;;
+    esac
+    printf '%s\n' "$rest" | tr '[:upper:]' '[:lower:]'
+}
+is_public_remote() {
+    local name="$1" url="$2" host resolved public config
+    [[ "$name" == "github" ]] && return 0
+    public="$(git config --get-all leanctx.publicRemote 2>/dev/null || true)"
+    if [[ -n "$public" ]] && printf '%s\n' "$public" | grep -qxF -e "$name" -e "$url"; then
+        return 0
+    fi
+    host="$(remote_host "$url")"
+    [[ "$host" == "github.com" || "$host" == *.github.com ]] && return 0
+    [[ "$url" == *"github.com"* ]] && return 0
+    [[ -z "$host" ]] && return 1
+    case "$url" in
+        ssh://*|git+ssh://*|ssh+git://*) ;;
+        *://*) return 1 ;;   # http(s), git://, file://: no ssh alias involved
+    esac
+    command -v ssh >/dev/null 2>&1 || return 0
+    config="$(ssh -G -- "$host" 2>/dev/null)" || return 0
+    resolved="$(printf '%s\n' "$config" | awk '$1 == "hostname" { print tolower($2); exit }')"
+    [[ -z "$resolved" ]] && return 0
+    [[ "$resolved" == "github.com" || "$resolved" == *.github.com ]] && return 0
+    return 1
+}
+PUBLIC_REMOTE=0
+if is_public_remote "$REMOTE_NAME" "$REMOTE_URL"; then
+    PUBLIC_REMOTE=1
+fi
+
+# ── Local CI-parity gate ──────────────────────────────────────────────
 # Blocks pushes that would fail the deterministic CI jobs (fmt / clippy /
 # doc / gen_docs / cross-platform compile) before they burn a full ~50-min
-# CI matrix. Deduped per HEAD so pushing to multiple remotes (github +
+# CI matrix. Deduped per commit so pushing to multiple remotes (github +
 # origin) only runs it once.
 # Bypass:  SKIP_PREFLIGHT=1 git push …   (or  git push --no-verify)
-if [[ "${SKIP_PREFLIGHT:-0}" != "1" && -x "$REPO_ROOT/scripts/preflight.sh" ]]; then
+# Light mode (owner decision 2026-11-19): pushes of feature branches to the
+# GitLab origin skip the local cargo preflight; pounce CI runs clippy (mr-lint,
+# v4-runtime), rustdoc, gen_docs and gen_registry drift (mr-docs, v4-runtime)
+# instead. The full local gate stays for GitHub (public), for any push that
+# updates refs/heads/main or a tag, and with LEANCTX_HOOKS=full. The decision
+# reads the pushed target refs, not the checked-out branch.
+# Main and tag pushes: preflight checks the checked-out tree, so the pushed
+# commit must be HEAD and the tracked files must be clean (else the push is
+# blocked with a hint), and every fast step runs regardless of the diff (a tag
+# on a landed main has none). Other full-mode pushes with a dirty tree still
+# run the preflight but write no "already green" stamp for HEAD.
+PREFLIGHT_MODE="light"
+PREFLIGHT_REASON=""
+TARGET_REFS=()
+TARGET_SHAS=()
+while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+    [[ -z "${LOCAL_SHA:-}" || "$LOCAL_SHA" == "$ZERO_SHA" ]] && continue
+    case "$REMOTE_REF" in
+        refs/heads/main|refs/tags/*)
+            TARGET_REFS+=("$REMOTE_REF")
+            # An annotated tag pushes the tag object; check its commit.
+            TARGET_SHAS+=("$(git rev-parse --verify --quiet "$LOCAL_SHA^{commit}" 2>/dev/null || true)")
+            ;;
+    esac
+done <<< "$PUSH_REFS"
+if [[ "${LEANCTX_HOOKS:-light}" == "full" ]]; then
+    PREFLIGHT_MODE="full"; PREFLIGHT_REASON="LEANCTX_HOOKS=full"
+elif [[ "$PUBLIC_REMOTE" == 1 ]]; then
+    PREFLIGHT_MODE="full"; PREFLIGHT_REASON="public remote $REMOTE_NAME"
+elif [[ ${#TARGET_REFS[@]} -gt 0 ]]; then
+    PREFLIGHT_MODE="full"; PREFLIGHT_REASON="push to ${TARGET_REFS[0]}"
+fi
+if [[ "$PREFLIGHT_MODE" == "light" ]]; then
+    echo "pre-push: light mode for $REMOTE_NAME; gates run in pounce CI (LEANCTX_HOOKS=full for local preflight)."
+else
+    echo "pre-push: full preflight ($PREFLIGHT_REASON)."
+fi
+if [[ "$PREFLIGHT_MODE" == "full" && "${SKIP_PREFLIGHT:-0}" != "1" && -x "$REPO_ROOT/scripts/preflight.sh" ]]; then
     HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+    FORCE_ALL=0
+    if [[ ${#TARGET_REFS[@]} -gt 0 ]]; then
+        FORCE_ALL=1
+        for i in "${!TARGET_REFS[@]}"; do
+            [[ -z "${TARGET_SHAS[$i]}" ]] && continue   # a tag on a tree or blob
+            if [[ "${TARGET_SHAS[$i]}" != "$HEAD_SHA" ]]; then
+                echo ""
+                echo "pre-push BLOCKED: ${TARGET_REFS[$i]} would get ${TARGET_SHAS[$i]:0:12}, but the checked-out commit is ${HEAD_SHA:0:12}."
+                echo "The preflight checks the working tree, so it cannot vouch for the pushed commit."
+                echo "Check it out and push again:  git switch --detach ${TARGET_SHAS[$i]:0:12}"
+                exit 1
+            fi
+        done
+        # A dirty tree would let the preflight vouch for a tree that is not
+        # the pushed commit (and stamp that commit green), so block instead.
+        if ! git diff --quiet HEAD -- 2>/dev/null; then
+            echo ""
+            echo "pre-push BLOCKED: tracked files have uncommitted changes; the preflight would check them, not the pushed commit."
+            echo "Commit or stash them and push again:  git stash push"
+            exit 1
+        fi
+    fi
     MARKER="$(git rev-parse --git-dir)/preflight-passed"
-    if [[ -n "$HEAD_SHA" && "$(cat "$MARKER" 2>/dev/null || true)" == "$HEAD_SHA" ]]; then
+    STAMP="$(cat "$MARKER" 2>/dev/null || true)"
+    # A run of every step ("<sha> all") also covers a diff-based run.
+    if [[ -n "$HEAD_SHA" && ( "$STAMP" == "$HEAD_SHA all" || ( "$FORCE_ALL" == 0 && "$STAMP" == "$HEAD_SHA" ) ) ]]; then
         echo "preflight: already green for ${HEAD_SHA:0:12} — skipping"
     else
         echo "preflight: running fast CI-parity gate (SKIP_PREFLIGHT=1 to bypass)…"
-        if "$REPO_ROOT/scripts/preflight.sh" fast; then
-            [[ -n "$HEAD_SHA" ]] && echo "$HEAD_SHA" > "$MARKER"
+        if PREFLIGHT_FORCE_ALL="$FORCE_ALL" "$REPO_ROOT/scripts/preflight.sh" fast; then
+            # Stamp HEAD only when the checked tree was HEAD: a dirty tree
+            # (possible here for non-main pushes) proves nothing about it.
+            if [[ -n "$HEAD_SHA" ]] && git diff --quiet HEAD -- 2>/dev/null; then
+                if [[ "$FORCE_ALL" == 1 ]]; then echo "$HEAD_SHA all" > "$MARKER"; else echo "$HEAD_SHA" > "$MARKER"; fi
+            fi
         else
             echo ""
             echo "pre-push BLOCKED: preflight failed — fix above, or: SKIP_PREFLIGHT=1 git push"
@@ -71,8 +187,8 @@ if [[ "${SKIP_DERIVATIONS:-0}" != "1" && -f "$REPO_ROOT/scripts/derivations.py" 
 fi
 
 # ── Proprietary-file guard (GitHub only) ──────────────────────────────
-# Only guard pushes to GitHub
-if [[ "$REMOTE_URL" != *"github.com"* && "$REMOTE_NAME" != "github" ]]; then
+# Only guard pushes to GitHub (see is_public_remote above)
+if [[ "$PUBLIC_REMOTE" != 1 ]]; then
     exit 0
 fi
 

@@ -275,6 +275,21 @@ Listing (`--list`, `status`, `config show`), narrowing (`--remove`) and tighteni
 (`secure`, `untrust`, `security secrets on`) still work. Run the blocked commands
 in your own terminal.
 
+**lean-ctx's own records.** Agent shells cannot read or write the records
+lean-ctx keeps about agents and earlier calls: the context ledger, cost
+attribution, value assessments, the dashboard token, the runtime environment
+file, `tool-calls.log`, `slow-commands.log`, `heatmap.json`, `feedback.json`
+and `work-graphs/` in the state directory, and the agent records in the data
+directory. Names compare without case on every platform, and a name in the
+state directory that starts with a record's name before its extension
+(`context_ledger.json.bak`, `context_ledgerx`) is treated as that record. The rest of the state
+directory (`events.jsonl`, `journal.md`, `tee/`, `logs/`, the statistics
+files) stays readable with any listed reader. A path whose directory comes
+from a variable the gate does not know (`echo x > $X/f`, `cp f $X`,
+`tar -C $X …`, a `sed` script that writes to `$X/f`) is not refused, the same
+as a top-level redirect to such a path: the gate judges the paths it can
+resolve.
+
 **`ctx_execute` follows the same gate.** Shell code in `ctx_execute`
 (`language` `shell`, `bash` or `sh`) is checked by the same allowlist as
 `ctx_shell`, self-loosening refusal included, before anything runs. Code in
@@ -464,11 +479,11 @@ complete literal.
 
 ## 3. OS sandboxing for executed code
 
-**What it does:** `ctx_execute` supports OS isolation when configured with
-`sandbox_level >= 1`: **Seatbelt** on macOS and **Landlock** on Linux.
-Level 0 provides timeout/output limits without that OS boundary. Unsupported
-platforms can fall back to level 0; verify the effective platform and settings
-before depending on isolation.
+**What it does:** by default (`sandbox_level = 0`) `ctx_execute` runs code as a
+restricted subprocess: a timeout and output limits, but no OS
+isolation. OS isolation is opt-in with `sandbox_level >= 1`: **Seatbelt** on
+macOS and **Landlock** on Linux. On a platform without an OS sandbox (such as Windows)
+level 1 or higher refuses to run the code instead of running it unsandboxed.
 
 This is separate from PathJail (which guards lean-ctx's *own* reads); the sandbox
 guards *child processes* lean-ctx spawns on your behalf.
@@ -514,7 +529,7 @@ default**.
 enabled = true              # LEAN_CTX_CONTEXT_GATEWAY=off disables for one run
 mode = "developer"          # governed|sovereign: unclassified content counts as internal
 secrets = "redact"          # off | warn | redact | block (patterns from [secret_detection])
-pii = "redact"              # checksum-validated only: AHV, IBAN, payment cards
+pii = "redact"              # checksum-validated only: payment cards (Luhn); e-mail/phone need a pack's [filters] pii
 injection = "warn"          # prompt-injection heuristic; content stays, signal is shown
 classification = "warn"     # CONFIDENTIAL / TOP SECRET markings raise the level
 max_inspected_bytes = 8388608
@@ -771,7 +786,7 @@ default**.
 enabled = true              # LEAN_CTX_CONTEXT_GATEWAY=off disables for one run
 mode = "developer"          # governed|sovereign: unclassified content counts as internal
 secrets = "redact"          # off | warn | redact | block (patterns from [secret_detection])
-pii = "redact"              # checksum-validated only: AHV, IBAN, payment cards
+pii = "redact"              # checksum-validated only: payment cards (Luhn); e-mail/phone need a pack's [filters] pii
 injection = "warn"          # prompt-injection heuristic; content stays, signal is shown
 classification = "warn"     # CONFIDENTIAL / TOP SECRET markings raise the level
 max_inspected_bytes = 8388608

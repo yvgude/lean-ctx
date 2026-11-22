@@ -82,7 +82,7 @@ pub fn pin_for(org: &str, public_key: &str) -> Result<PinOutcome, String> {
     store.keys.push(TrustedKey {
         org: org.to_string(),
         public_key: public_key.to_string(),
-        added_at: chrono::Utc::now().to_rfc3339(),
+        added_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
     });
     save(&store)?;
     Ok(PinOutcome::Added)

@@ -1,0 +1,53 @@
+{
+  "graph": {
+    "edges": [
+      {
+        "from": "code:rust/src/core/cloud/outbox.rs",
+        "to": "code:rust/src/core/cloud/outbox.rs#cloud::outbox::enqueue",
+        "type": "contains"
+      },
+      {
+        "from": "code:rust/src/core/cloud/outbox.rs",
+        "to": "code:rust/src/core/cloud/queue.rs",
+        "type": "imports"
+      },
+      {
+        "from": "code:rust/src/core/cloud/outbox.rs#cloud::outbox::enqueue",
+        "to": "code:rust/src/core/cloud/queue.rs#cloud::queue::push",
+        "type": "calls"
+      },
+      {
+        "from": "code:rust/src/core/cloud/queue.rs",
+        "to": "code:rust/src/core/cloud/queue.rs#cloud::queue::push",
+        "type": "contains"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "code:rust/src/core/cloud/outbox.rs",
+        "kind": "file",
+        "lang": "rust"
+      },
+      {
+        "id": "code:rust/src/core/cloud/outbox.rs#cloud::outbox::enqueue",
+        "kind": "symbol",
+        "lang": "rust",
+        "symbol_kind": "fn"
+      },
+      {
+        "id": "code:rust/src/core/cloud/queue.rs",
+        "kind": "file",
+        "lang": "rust"
+      },
+      {
+        "id": "code:rust/src/core/cloud/queue.rs#cloud::queue::push",
+        "kind": "symbol",
+        "lang": "rust",
+        "symbol_kind": "fn"
+      }
+    ],
+    "revision_hint": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f423f6c1e9a",
+    "schema": "leanctx.cloud.code-graph/v1"
+  },
+  "schema": "leanctx.cloud.code-graph-put/v1"
+}

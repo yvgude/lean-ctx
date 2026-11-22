@@ -23,7 +23,7 @@ use super::{
 /// ([`refuse_redaction_marker_in_command`]).
 pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
     refuse_redaction_marker_in_command(command)?;
-    use lean_ctx::core::hive_signals as signals;
+    use lean_ctx::core::cloud_signals as signals;
     let mode = ShellSecurity::resolve();
     let decided = match mode {
         ShellSecurity::Off => Ok(()),
@@ -201,6 +201,66 @@ pub(super) fn enforce_with(
     granted: &[String],
     misses: Option<&MissLog>,
 ) -> Result<(), ShellError> {
+    enforce_line(command, granted, misses)?;
+    match windows_escapes_removed(command) {
+        Some(read) => enforce_line(&read, granted, misses),
+        None => Ok(()),
+    }
+}
+
+/// `command` as cmd and PowerShell read the escapes in it, when that differs
+/// from the line as written: cmd drops a `^` before an ordinary character
+/// (`p^wsh` is `pwsh`, `^"x.bat^"` is `"x.bat"`), turns `^^` into `^` and
+/// joins a line ending in `^` with the next; inside `"…"` its `^` is
+/// literal. PowerShell drops a backtick inside a word (`` p`wsh ``). Both
+/// readings are judged: a line passes only when it passes either way. A `^`
+/// before a separator, a redirection or a blank (`a^|b`) keeps it, so that
+/// reading is the one the line already got.
+fn windows_escapes_removed(command: &str) -> Option<String> {
+    if !command.contains(['^', '`']) {
+        return None;
+    }
+    let chars: Vec<char> = command.chars().collect();
+    let mut out = String::with_capacity(command.len());
+    let mut quoted = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '"' => {
+                quoted = !quoted;
+                out.push(c);
+            }
+            '^' if !quoted => match chars.get(i + 1) {
+                None => {}
+                Some('\n') => i += 1,
+                Some('\r') if chars.get(i + 2) == Some(&'\n') => i += 2,
+                Some(&next @ ('^' | '"')) => {
+                    out.push(next);
+                    i += 1;
+                }
+                Some(&next) if "|&<>() \t\r".contains(next) => out.push(c),
+                Some(&next) => {
+                    out.push(next);
+                    i += 1;
+                }
+            },
+            '`' if i > 0
+                && chars[i - 1].is_alphanumeric()
+                && chars.get(i + 1).is_some_and(|n| n.is_alphanumeric()) => {}
+            _ => out.push(c),
+        }
+        i += 1;
+    }
+    (out != command).then_some(out)
+}
+
+/// [`enforce_with`] for one reading of the line.
+fn enforce_line(
+    command: &str,
+    granted: &[String],
+    misses: Option<&MissLog>,
+) -> Result<(), ShellError> {
     let _line = super::self_config::enter_line();
     // Neither limit refusal echoes the command: it is long or deep by
     // definition, and the agent already has it.
@@ -273,8 +333,13 @@ pub(super) fn enforce_with(
     check_pipe_to_bare_interpreter(cmd, strict)?;
     check_pipe_to_bare_interpreter(cmd_all, strict)?;
     super::side_doors::check_location_with_leanctx(&extract_all_commands(cmd_all))?;
+    // The agent records (§37.4), judged over the whole line: its variables,
+    // directory changes and the commands output is handed on to.
+    super::self_config::check_records_line(&normalized)?;
 
     let mut allowlist = effective_allowlist();
+    check_editor_keys_from_input(cmd_all, strict || !allowlist.is_empty())?;
+    check_editor_home(cmd_all)?;
     if allowlist.is_empty() {
         check_unconditional_blocked_only(cmd_all)?;
         return Ok(());
@@ -378,8 +443,500 @@ pub(super) fn check_pipe_to_bare_interpreter(
     Ok(())
 }
 
+/// Editors of the vi family, which read the keys they act on (`:!cmd`
+/// included) from their input.
+const VI_EDITORS: &[&str] = &[
+    "vi", "vim", "nvim", "ex", "view", "gvim", "rvim", "rview", "vimdiff", "nvi", "evim",
+];
+
+/// A vi-family editor that reads its input from a pipe or a `<` redirection
+/// runs the keys in it as commands, like a shell reading a pipe: refused
+/// when `refuse` (an allowlist or strict mode), else noted like
+/// [`check_pipe_to_bare_interpreter`].
+fn check_editor_keys_from_input(command: &str, refuse: bool) -> Result<(), ShellError> {
+    // A call of a function whose body starts an editor hands the call's
+    // input on to it (`f() { vim f; }; f < k`): judged with the call
+    // spelled as the editor.
+    if let Some(inlined) = editor_functions_inlined(command) {
+        check_editor_keys_in(&inlined, refuse)?;
+    }
+    check_editor_keys_in(command, refuse)
+}
+
+fn check_editor_keys_in(command: &str, refuse: bool) -> Result<(), ShellError> {
+    // The commands inside groups, which the splitter keeps whole
+    // (`{ cat k | firejail vim f; }`).
+    let flat = super::groups::flatten(command);
+    if flat != command {
+        editor_keys_from_input(&flat, refuse)?;
+    }
+    editor_keys_from_input(command, refuse)
+}
+
+/// `command` with each call of a function that starts a vi-family editor
+/// (directly or through another such function) spelled as that editor;
+/// `None` when it defines none.
+fn editor_functions_inlined(command: &str) -> Option<String> {
+    let mut defs: Vec<(String, String)> = Vec::new();
+    collect_function_defs(command, &mut defs, 0);
+    let mut editors: Vec<(String, String)> = Vec::new();
+    for _ in 0..defs.len() {
+        let before = editors.len();
+        for (name, body) in &defs {
+            if editors.iter().any(|(n, _)| n == name) {
+                continue;
+            }
+            let body = calls_spelled_as(body, &editors);
+            if let Some(editor) = editor_started(&body, 0, is_vi_editor) {
+                editors.push((name.clone(), editor));
+            }
+        }
+        if editors.len() == before {
+            break;
+        }
+    }
+    (!editors.is_empty()).then(|| calls_spelled_as(command, &editors))
+}
+
+/// The function definitions in `line`: at the top level and inside groups,
+/// which the splitter keeps whole (`{ f() { vim f; }; f < k\n} && pwd -P`).
+fn collect_function_defs(line: &str, defs: &mut Vec<(String, String)>, depth: usize) {
+    if depth > 8 {
+        return;
+    }
+    for (seg, _) in segments_with_separators(line) {
+        if let Some(name) = super::tokenizer::detect_function_def(&seg) {
+            if let Some(body) = super::tokenizer::function_body(&seg)
+                && !defs.iter().any(|(n, _)| *n == name)
+            {
+                defs.push((name, body.to_string()));
+            }
+        } else if let Some(inner) = group_inner(&seg) {
+            collect_function_defs(inner, defs, depth + 1);
+        }
+    }
+}
+
+/// The commands inside a segment that is one group (`{ …; }`, `( … )`),
+/// with any redirection after it left out.
+fn group_inner(seg: &str) -> Option<&str> {
+    let t = seg.trim();
+    let (open, close) = match t.as_bytes().first()? {
+        b'{' => ('{', '}'),
+        b'(' => ('(', ')'),
+        _ => return None,
+    };
+    let end = t.rfind(close)?;
+    (end > 0).then(|| &t[open.len_utf8()..end])
+}
+
+/// `text` with every word that is one of the `(name, editor)` names, bar
+/// the punctuation around it, replaced by the editor.
+fn calls_spelled_as(text: &str, names: &[(String, String)]) -> String {
+    let mut out = String::with_capacity(text.len());
+    for piece in text.split_inclusive(char::is_whitespace) {
+        let word = piece.trim_end_matches(char::is_whitespace);
+        let core = word
+            .trim_start_matches(['(', '{'])
+            .trim_end_matches([';', ')', '}', '&', '|']);
+        match names.iter().find(|(n, _)| n == core) {
+            Some((_, editor)) if !core.is_empty() => {
+                let at = word.find(core).unwrap_or(0);
+                out.push_str(&word[..at]);
+                out.push_str(editor);
+                out.push_str(&piece[at + core.len()..]);
+            }
+            _ => out.push_str(piece),
+        }
+    }
+    out
+}
+
+fn editor_keys_from_input(command: &str, refuse: bool) -> Result<(), ShellError> {
+    let segments = segments_with_separators(command);
+    for (at, (seg, _)) in segments.iter().enumerate() {
+        let piped = at > 0 && segments[at - 1].1 == Some(Separator::Pipe);
+        // The editor the segment starts, itself or through a shell's command
+        // line (`sh -c 'vim f' < k`), which reads the shell's input.
+        let Some(base) = segment_program(seg)
+            .filter(|b| VI_EDITORS.contains(&b.as_str()))
+            .or_else(|| editor_in_shell_strings(seg, 0, is_vi_editor))
+        else {
+            continue;
+        };
+        if piped || reads_redirect(seg) {
+            return editor_reads_input(command, &base, refuse);
+        }
+    }
+    if let Some(base) = editor_in_group_reading_input(&segments)
+        .or_else(|| editor_in_compound_reading_input(&segments))
+    {
+        return editor_reads_input(command, &base, refuse);
+    }
+    Ok(())
+}
+
+fn is_vi_editor(name: &str) -> bool {
+    VI_EDITORS.contains(&name)
+}
+
+fn is_any_editor(name: &str) -> bool {
+    VI_EDITORS.contains(&name) || STARTUP_FILE_EDITORS.contains(&name)
+}
+
+/// Whether `seg` redirects its input from a file (`< k`, `0<k`, `<<<`).
+fn reads_redirect(seg: &str) -> bool {
+    seg.split_whitespace().any(|w| {
+        let w = w.trim_start_matches(|c: char| c.is_ascii_digit());
+        w.starts_with('<') && !w.starts_with("<(")
+    })
+}
+
+/// Reserved words that start a command inside a compound command.
+const COMPOUND_WORDS: &[&str] = &[
+    "do", "then", "else", "elif", "while", "until", "if", "!", "time",
+];
+
+/// `seg` without the reserved words in front of its command (`do vim f`).
+fn without_compound_words(seg: &str) -> &str {
+    let mut rest = seg.trim_start();
+    for _ in 0..8 {
+        let word = rest.split_whitespace().next().unwrap_or("");
+        if !COMPOUND_WORDS.contains(&word) {
+            break;
+        }
+        rest = rest[word.len()..].trim_start();
+    }
+    rest
+}
+
+/// A vi-family editor inside a loop or conditional (`while …; do vim f;
+/// done < k`, `cat k | while …`) whose input is a pipe or a `<`
+/// redirection: every command of the body reads that input.
+fn editor_in_compound_reading_input(segments: &[(String, Option<Separator>)]) -> Option<String> {
+    let mut open: Vec<(usize, bool)> = Vec::new();
+    for (at, (seg, _)) in segments.iter().enumerate() {
+        let word = seg.split_whitespace().next().unwrap_or("");
+        if matches!(word, "while" | "until" | "for" | "select" | "if" | "case") {
+            let piped = at > 0 && segments[at - 1].1 == Some(Separator::Pipe);
+            open.push((at, piped));
+        }
+        if !matches!(word, "done" | "fi" | "esac") {
+            continue;
+        }
+        let Some((start, piped)) = open.pop() else {
+            continue;
+        };
+        if !piped && !reads_redirect(seg) {
+            continue;
+        }
+        let editor = segments[start..at].iter().find_map(|(body, _)| {
+            let body = without_compound_words(body);
+            segment_program(body)
+                .filter(|b| is_vi_editor(b))
+                .or_else(|| editor_in_shell_strings(body, 0, is_vi_editor))
+        });
+        if editor.is_some() {
+            return editor;
+        }
+    }
+    None
+}
+
+/// The editor `pick` accepts that a shell's command line in `seg` starts
+/// (`sh -c 'vim f'`, `env HOME=x bash -c 'firejail vim f'`), nested ones
+/// included.
+fn editor_in_shell_strings(seg: &str, depth: u8, pick: fn(&str) -> bool) -> Option<String> {
+    if depth > 4 {
+        return None;
+    }
+    let tokens = shell_tokenize(seg.trim());
+    (0..tokens.len()).find_map(|at| {
+        let name = super::tokenizer::exec_name(&tokens[at]);
+        if !POSIX_SHELLS.contains(&name.as_str()) {
+            return None;
+        }
+        let script = shell_command_string(&tokens[at..])?;
+        editor_started(&script, depth + 1, pick)
+    })
+}
+
+/// The editor `pick` accepts that any command of `text` starts: directly,
+/// behind wrappers, in groups and loops, or through a shell's command line.
+fn editor_started(text: &str, depth: u8, pick: fn(&str) -> bool) -> Option<String> {
+    if depth > 8 {
+        return None;
+    }
+    segments_with_separators(text).iter().find_map(|(seg, _)| {
+        let (opened, rest) = strip_group_openers(seg);
+        if opened > 0 {
+            return editor_started(rest, depth + 1, pick);
+        }
+        let rest = without_compound_words(rest);
+        segment_program(rest)
+            .filter(|b| pick(b))
+            .or_else(|| editor_in_shell_strings(rest, depth, pick))
+    })
+}
+
+fn editor_reads_input(command: &str, base: &str, refuse: bool) -> Result<(), ShellError> {
+    if refuse {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] '{base}' reading its input from a pipe or a file \
+             runs the keys in it as editor commands, which the shell gate cannot \
+             review. Edit the file with the edit tools instead.\n\
+             Command: {command}"
+        )
+        .into());
+    }
+    tracing::info!("[SECURITY] Editor '{base}' reads keys from its input (warn-only)");
+    Ok(())
+}
+
+/// A vi-family editor inside a group (`{ vim f; }`) or subshell (`(vim f)`)
+/// whose input is a pipe or a `<` redirection: the group hands that input on
+/// to the editor. Returns the editor's name.
+fn editor_in_group_reading_input(segments: &[(String, Option<Separator>)]) -> Option<String> {
+    struct Group {
+        piped: bool,
+        editor: Option<String>,
+    }
+    let mut open: Vec<Group> = Vec::new();
+    for (at, (seg, _)) in segments.iter().enumerate() {
+        let piped = at > 0 && segments[at - 1].1 == Some(Separator::Pipe);
+        let (opened, rest) = strip_group_openers(seg);
+        for _ in 0..opened {
+            open.push(Group {
+                piped,
+                editor: None,
+            });
+        }
+        if let Some(base) = vi_editor_launched(rest, 0) {
+            for group in &mut open {
+                group.editor.get_or_insert_with(|| base.clone());
+            }
+        }
+        let bytes = rest.as_bytes();
+        let mut quote = None;
+        let mut nested = 0usize;
+        for (i, &b) in bytes.iter().enumerate() {
+            if let Some(q) = quote {
+                if b == q {
+                    quote = None;
+                }
+                continue;
+            }
+            let closes = match b {
+                b'\'' | b'"' => {
+                    quote = Some(b);
+                    false
+                }
+                b'(' => {
+                    nested += 1;
+                    false
+                }
+                b')' if nested > 0 => {
+                    nested -= 1;
+                    false
+                }
+                b')' => true,
+                b'}' => {
+                    (i == 0 || bytes[i - 1].is_ascii_whitespace())
+                        && bytes
+                            .get(i + 1)
+                            .is_none_or(|n| n.is_ascii_whitespace() || matches!(n, b'<' | b'>'))
+                }
+                _ => false,
+            };
+            if !closes {
+                continue;
+            }
+            let Some(group) = open.pop() else { continue };
+            let after = &bytes[i + 1..];
+            let redirected = after
+                .iter()
+                .enumerate()
+                .any(|(j, &c)| c == b'<' && after.get(j + 1) != Some(&b'('));
+            if let Some(editor) = group.editor
+                && (group.piped || redirected)
+            {
+                return Some(editor);
+            }
+        }
+    }
+    None
+}
+
+/// `text` without the `(`, `{ ` and `! ` that open it, and how many groups
+/// and subshells those open.
+fn strip_group_openers(text: &str) -> (usize, &str) {
+    let mut opened = 0;
+    let mut rest = text.trim_start();
+    loop {
+        if let Some(after) = rest.strip_prefix('(').filter(|a| !a.starts_with('(')) {
+            opened += 1;
+            rest = after.trim_start();
+        } else if let Some(after) = rest
+            .strip_prefix('{')
+            .filter(|a| a.starts_with(char::is_whitespace))
+        {
+            opened += 1;
+            rest = after.trim_start();
+        } else if let Some(after) = rest
+            .strip_prefix('!')
+            .filter(|a| a.starts_with(char::is_whitespace))
+        {
+            rest = after.trim_start();
+        } else {
+            return (opened, rest);
+        }
+    }
+}
+
+/// The vi-family editor any command of `text` (groups and subshells in it
+/// included) runs.
+fn vi_editor_launched(text: &str, depth: u8) -> Option<String> {
+    for (seg, _) in segments_with_separators(text) {
+        let (opened, rest) = strip_group_openers(&seg);
+        if opened > 0 && depth < 8 {
+            if let Some(editor) = vi_editor_launched(rest, depth + 1) {
+                return Some(editor);
+            }
+        } else if let Some(base) =
+            segment_program(rest).filter(|b| VI_EDITORS.contains(&b.as_str()))
+        {
+            return Some(base);
+        }
+    }
+    None
+}
+
+/// The program a segment runs, behind the commands that run another
+/// (`env`, `timeout`, `xargs`, …), as its name.
+fn segment_program(seg: &str) -> Option<String> {
+    let (_, seg) = strip_group_openers(seg.trim());
+    let mut tokens = shell_tokenize(skip_env_assignments(seg.trim()));
+    for _ in 0..8 {
+        let Some(first) = tokens.first() else { break };
+        let base = super::tokenizer::exec_name(first);
+        if DELEGATION_COMMANDS.contains(&base.as_str()) {
+            tokens = delegated_command_tokens(&base, &tokens[1..]);
+        } else if RUNNING_WRAPPERS.contains(&base.as_str()) {
+            // Of the words that may be the target, the one naming a program
+            // these checks know (an option value is rarely an editor).
+            let candidates = wrapper_target_candidates(&tokens);
+            let known = candidates.iter().copied().find(|&i| {
+                let name = super::tokenizer::exec_name(&tokens[i]);
+                VI_EDITORS.contains(&name.as_str())
+                    || STARTUP_FILE_EDITORS.contains(&name.as_str())
+                    || DELEGATION_COMMANDS.contains(&name.as_str())
+                    || RUNNING_WRAPPERS.contains(&name.as_str())
+            });
+            let at = known.or_else(|| candidates.first().copied())?;
+            tokens = tokens[at..].to_vec();
+        } else {
+            break;
+        }
+    }
+    tokens
+        .first()
+        .map(|first| super::tokenizer::exec_name(first))
+}
+
+/// Editors that load startup files (a vimrc, `init.el`) and plugins from
+/// the user's home and XDG directories.
+const STARTUP_FILE_EDITORS: &[&str] = &["emacs", "xemacs"];
+
+/// Where those editors find their startup files and plugins.
+const EDITOR_HOME_ENV: &[&str] = &[
+    "HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CONFIG_DIRS",
+    "XDG_DATA_DIRS",
+];
+
+/// A line that moves the home or XDG directories (`HOME=./x vim f`, `env
+/// XDG_CONFIG_HOME=./x nvim`, `export HOME=./x; emacs`) and starts an
+/// editor: the editor would run the startup file found there, which the
+/// shell gate cannot review. Refused in every mode.
+fn check_editor_home(command: &str) -> Result<(), ShellError> {
+    let flat = super::groups::flatten(command);
+    if flat != command {
+        editor_home(&flat)?;
+    }
+    editor_home(command)
+}
+
+fn editor_home(command: &str) -> Result<(), ShellError> {
+    let segments = segments_with_separators(command);
+    let Some(editor) = editor_started(command, 0, is_any_editor) else {
+        return Ok(());
+    };
+    // Also behind other wrappers (`nice env HOME=… vim`, `firejail env …`):
+    // every word may start the command that sets it.
+    let moved = segments.iter().find_map(|(seg, _)| {
+        let tokens = shell_tokenize(seg.trim());
+        (0..tokens.len().max(1)).find_map(|at| {
+            let rest = if at == 0 {
+                seg.clone()
+            } else {
+                rejoin_words(&tokens[at..])
+            };
+            super::side_doors::assigned_names(&rest)
+                .into_iter()
+                .find(|entry| {
+                    let name = entry.split_once('=').map_or(entry.as_str(), |(n, _)| n);
+                    EDITOR_HOME_ENV.contains(&name.strip_suffix('+').unwrap_or(name))
+                })
+        })
+    });
+    match moved {
+        Some(entry) => Err(format!(
+            "[BLOCKED — DO NOT RETRY] '{entry}' on a line that starts '{editor}' moves \
+             where the editor loads its startup files from, which the shell gate cannot \
+             review. Run the editor without it, or edit the file with the edit tools.\n\
+             Command: {command}"
+        )
+        .into()),
+        None => Ok(()),
+    }
+}
+
+/// `script` without its `#` comments, for the checks that split it into
+/// commands. Those splitters know quotes but not comments, so a quote,
+/// backtick, `$(` or `\` in a comment would join the next line into the
+/// commented one. The lexer reads comments as the shell does: a `#` at the
+/// start of a word, outside quotes and `${…}`, up to the end of its line.
+///
+/// A line the enforcer already stripped has no comments left and comes back
+/// unchanged. A script with comments that the lexer cannot read with
+/// certainty (a construct the shells disagree on, nesting too deep) is
+/// refused: where its comments end is unknown.
+pub(super) fn without_comments(script: &str) -> Result<std::borrow::Cow<'_, str>, ShellError> {
+    if !script.contains('#') {
+        return Ok(std::borrow::Cow::Borrowed(script));
+    }
+    let lexed = super::lexer::lex(script);
+    if lexed.too_deep {
+        return Err(too_deep());
+    }
+    if lexed.comments.is_empty() {
+        return Ok(std::borrow::Cow::Borrowed(script));
+    }
+    if let Some(reason) = lexed.problem {
+        return Err(unvalidatable(reason, script));
+    }
+    Ok(std::borrow::Cow::Owned(super::lexer::remove_ranges(
+        script,
+        lexed.comments,
+    )))
+}
+
 /// For empty allowlists: still enforce UNCONDITIONAL_BLOCKED commands.
 pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), ShellError> {
+    let stripped = without_comments(command)?;
+    let command = &*stripped;
     let _loop_vars = super::self_config::bind_loop_variables(command);
     {
         let _line = super::self_config::enter_line();
@@ -390,7 +947,7 @@ pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), Shel
     if super::groups::flatten(command) != command {
         check_inside_groups(command, false)?;
     }
-    Ok(())
+    super::command_word::check_line(command)
 }
 
 /// GHSA-9jrf-q94p-frhr: the commands inside `( … )` and `{ …; }` groups and
@@ -461,22 +1018,18 @@ fn check_unconditional_segment(seg: &str, command: &str) -> Result<(), ShellErro
         check_interpreter_eval_only(seg)?;
         check_dangerous_flags(seg)?;
         let tokens = extract_command_tokens_from_segment(seg);
+        // `mapfile -C`, `hash -p`, `jobs -x`, …: code no command shows.
+        super::side_doors::check_builtin_options(&tokens)?;
         // Without an allowlist lean-ctx's own guardrails still hold: an agent
         // must not loosen them or rewrite its state.
         super::self_config::check_self_reconfiguration(seg, &tokens)?;
         super::self_config::check_state_tampering(seg, &tokens)?;
         // A `trap` action runs like `eval`: the same rules hold inside it.
         if let Some(action) = super::side_doors::trap_action(&tokens) {
-            check_unconditional_blocked_only(action)?;
+            check_nested_script_unconditional(action)?;
         }
-        // GHSA-cfmv-qg29-3rvp: an alias body runs wherever its name is used
-        // later on the line, also inside another alias or a function.
-        if tokens.first().is_some_and(|t| t == "alias") {
-            for body in tokens[1..].iter().filter_map(|t| t.split_once('=')) {
-                check_unconditional_blocked_only(body.1)?;
-            }
-        }
-        check_embedded_commands(&tokens, None)?;
+        // Alias bodies are gated in `check_embedded_commands`.
+        check_embedded_commands(seg, &tokens, None)?;
     }
     Ok(())
 }
@@ -488,24 +1041,24 @@ fn check_unconditional_segment(seg: &str, command: &str) -> Result<(), ShellErro
 /// Skips allowlist-membership tests (no allowlist exists in blocklist-only mode),
 /// but still follows delegation wrappers so `xargs bash -c …` / `timeout 5 sh -c …`
 /// cannot smuggle inline code past the check (GH #391).
-fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
+pub(super) fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
     let inline_ok = lean_ctx::core::config::shell_policy::allow_inline_scripts();
     check_interpreter_inner(segment, None, 0, inline_ok)
 }
 
 /// `words` joined back into one command line. A word of plain text with
-/// blanks in it (`"a rm -rf b"`) is single-quoted so it stays one word when
-/// the line is split again (#2231); any other word is joined as it is, so a
-/// substitution, quote or operator in it stays visible to the checks that
-/// follow.
+/// blanks or backslashes in it (`"a rm -rf b"`, `C:\Tools\sh.exe`) is
+/// single-quoted so it stays the same one word when the line is split again
+/// (#2231); any other word is joined as it is, so a substitution, quote or
+/// operator in it stays visible to the checks that follow.
 fn rejoin_words(words: &[String]) -> String {
     words
         .iter()
         .map(|w| {
-            let plain = !w.contains([
-                '\'', '"', '$', '`', '\\', ';', '|', '&', '<', '>', '(', ')', '\n',
-            ]);
-            if plain && w.contains(char::is_whitespace) {
+            let plain = !w.contains(['\'', '"', '$', '`', ';', '|', '&', '<', '>', '(', ')', '\n']);
+            if w.is_empty() {
+                "''".to_string()
+            } else if plain && w.contains(|c: char| c.is_whitespace() || c == '\\') {
                 format!("'{w}'")
             } else {
                 w.clone()
@@ -519,7 +1072,7 @@ fn rejoin_words(words: &[String]) -> String {
 /// them is not theirs; `None` for an interpreter this check does not parse.
 fn value_free_short_flags(base: &str) -> Option<&'static str> {
     Some(match base {
-        b if b.starts_with("python") || b.starts_with("pypy") => "bBdEhiIOPqRsSuvVx",
+        b if b.starts_with("python") || b.starts_with("pypy") || b == "py" => "bBdEhiIOPqRsSuvVx",
         "node" => "hvi",
         "ruby" => "acdlnpsSvwWyU",
         "perl" => "acnpsStTuUvwW",
@@ -527,7 +1080,7 @@ fn value_free_short_flags(base: &str) -> Option<&'static str> {
         "lua" => "iEvW",
         // No `c`, `s`, `o`, `O`: `-c` takes code, `-s` reads it from stdin,
         // `-o`/`-O` take an option name.
-        "bash" | "sh" | "zsh" | "dash" | "ksh" => "abefhiklmnprtuvxBCEHPT",
+        "bash" | "sh" | "zsh" | "dash" | "ksh" | "ash" | "mksh" => "abefhiklmnprtuvxBCEHPT",
         "fish" => "ilnP",
         _ => return None,
     })
@@ -580,6 +1133,22 @@ fn check_interpreter_inner(
         return Ok(());
     }
     let base = super::tokenizer::exec_name(&tokens[0]);
+    if let Some(reason) = unresolvable_program_word(&tokens[0]) {
+        return Err(unresolvable_program_refusal(&tokens[0], reason));
+    }
+    // cmd and PowerShell keep a backslash in an unquoted word
+    // (`C:\Tools\sh.exe`), where a POSIX shell drops it: judge the program
+    // word by that reading too.
+    if let Some(literal) = backslash_literal_program(trimmed)
+        && literal != base
+    {
+        if let Some(reason) = unresolvable_program_word(&literal) {
+            return Err(unresolvable_program_refusal(&literal, reason));
+        }
+        let mut words = tokens.clone();
+        words[0] = literal;
+        check_interpreter_inner(&rejoin_words(&words), allowlist, depth, inline_ok)?;
+    }
 
     // `flock … -c COMMAND` runs COMMAND through `sh -c`: inline code.
     if base == "flock"
@@ -633,8 +1202,34 @@ fn check_interpreter_inner(
             .into());
         }
     }
+    // cmd, PowerShell and pwsh run their arguments as a command line
+    // (`cmd /c`, `/k`, `powershell -Command`, `-EncodedCommand`, a bare
+    // positional script): any argument is code, like `sh -c`.
+    // Windows runs a `.bat`/`.cmd` script through cmd, which reads the
+    // script and its arguments as a command line: judged like cmd.
+    if is_windows_batch_script(&tokens[0]) && !inline_ok && !claude_ok {
+        return Err(format!(
+            "[BLOCKED] {}: a Windows batch script runs through cmd, which is not \
+             auto-allowed.\n{}",
+            tokens[0],
+            script_file_recipe("cmd")
+        )
+        .into());
+    }
+    if WINDOWS_COMMAND_INTERPRETERS.contains(&base.as_str())
+        && tokens.len() > 1
+        && !inline_ok
+        && !claude_ok
+    {
+        return Err(format!(
+            "[BLOCKED] {base} {}: inline code execution is blocked.\n{}",
+            tokens[1],
+            script_file_recipe(&base)
+        )
+        .into());
+    }
     if is_interpreter(&base) && !inline_ok && !claude_ok {
-        let python = base.starts_with("python") || base.starts_with("pypy");
+        let python = base.starts_with("python") || base.starts_with("pypy") || base == "py";
         // The words after the script are its own arguments, not interpreter
         // flags (`node x.js "a rm -rf b"`, #2231).
         let operand = script_operand(&base, &tokens).unwrap_or(tokens.len());
@@ -687,10 +1282,43 @@ fn check_interpreter_inner(
         }
     }
 
+    // With inline scripts allowed, a POSIX shell's `-c` string is still a
+    // command line: each command in it gets the checks a top-level command
+    // gets.
+    if inline_ok
+        && POSIX_SHELLS.contains(&base.as_str())
+        && let Some(script) = shell_command_string(&tokens)
+    {
+        check_shell_string(&base, &script, allowlist)?;
+    }
+
+    // `start "TITLE" PROGRAM …`: cmd's `start` takes its first quoted word
+    // as the window title; the program is the word after it (and after the
+    // options that may follow the title). The title is dropped once: the
+    // program and its words are judged as `call`'s, which runs them as they
+    // are, so a quoted program word (`start "t" "pwsh" -c …`) stays the
+    // program.
+    if base.eq_ignore_ascii_case("start")
+        && let Some(program) = start_program_after_title(trimmed)
+    {
+        let line = format!("call {}", rejoin_words(&program));
+        return check_interpreter_inner(&line, allowlist, depth + 1, inline_ok);
+    }
+
     // Delegation-command walk (recursive).
     if DELEGATION_COMMANDS.contains(&base.as_str()) {
         let rest_tokens = delegated_command_tokens(&base, &tokens[1..]);
         if let Some(delegated_tok) = rest_tokens.first() {
+            // `command -v "$x"` only looks a name up; any other wrapper runs
+            // the word, which the shell only knows when it runs.
+            let looks_up = base == "command"
+                && tokens[1..]
+                    .iter()
+                    .take_while(|t| t.starts_with('-') && t.as_str() != "--")
+                    .any(|t| t.contains(['v', 'V']));
+            if !looks_up && super::command_word::is_dynamic_command_word(delegated_tok) {
+                return Err(super::command_word::dynamic_word_refusal(delegated_tok));
+            }
             let delegated_name = super::tokenizer::exec_name(delegated_tok);
             let delegated = delegated_name.as_str();
             if UNCONDITIONAL_BLOCKED.contains(&delegated) {
@@ -717,27 +1345,29 @@ fn check_interpreter_inner(
             // In restricted mode, the delegated command must be in the allowlist.
             // Builtins need no entry (`command echo`), as at the top level.
             if let Some(al) = allowlist {
-                // GH #1419 follow-up: match on the delegated command's own
-                // tokens (basenamed), not just its bare name — `timeout 5
-                // git status` must be scoped by "git status *" the same way
-                // a top-level `git status` is, not blanket-allowed by "git".
-                let mut delegated_tokens = rest_tokens.clone();
-                if let Some(first) = delegated_tokens.first_mut() {
-                    *first = delegated.to_string();
-                }
-                if !delegated.is_empty()
-                    && !SHELL_BUILTINS.contains(&delegated)
-                    && !matches_allowlist_entry(&delegated_tokens, al)
-                    && !al.record_miss(delegated, delegated_tok)
-                {
-                    return Err(format!(
-                        "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}' which is not \
-                         in the shell allowlist. This is a permanent restriction."
-                    )
-                    .into());
-                }
+                check_delegated_listed(&base, &rest_tokens, al)?;
             }
-            let rest_str = rejoin_words(&rest_tokens);
+            // Without `-e`/`--exec`, `wsl` hands its words to the Linux
+            // default shell as one command line: shell syntax in them is code
+            // no check here sees.
+            if base == "wsl"
+                && !tokens[1..tokens.len() - rest_tokens.len()]
+                    .iter()
+                    .any(|t| t == "-e" || t == "--exec")
+                && rest_tokens.iter().any(|t| {
+                    t.contains(|c: char| c.is_whitespace() || ";&|<>()$`'\"\\*?[]{}~#!".contains(c))
+                })
+            {
+                return Err(format!(
+                    "[BLOCKED — DO NOT RETRY] 'wsl' passes '{}' to a shell as one command \
+                     line, which cannot be checked. Use `wsl -e` with plain words.\n\
+                     This is a permanent security restriction.",
+                    rest_tokens.join(" ")
+                )
+                .into());
+            }
+            // Empty quoted words stay: they are option values (`exec_words`).
+            let rest_str = rejoin_words(&super::exec_options::exec_words(trimmed, &rest_tokens));
             // GHSA-rxv5-4c3x-g4q6 E: the target runs like a top-level command,
             // so it gets the same per-command checks at every unwrap level.
             let mut target_tokens = rest_tokens.clone();
@@ -756,17 +1386,291 @@ fn check_interpreter_inner(
     // command line of its own. Its side doors are checked like a wrapper
     // target's — assignments, inline code, the wrappers after it — without
     // asking the allowlist about a word that may be a plain argument.
-    if let Some(at) = tokens.iter().skip(1).position(|t| {
-        let name = super::tokenizer::exec_name(t);
-        DELEGATION_COMMANDS.contains(&name.as_str()) || is_interpreter(&name)
+    // A cmd/PowerShell word or a `.bat`/`.cmd` word is far more often a
+    // plain argument (`rg pwsh src/`, `node gen.js --out=x.cmd`) than a
+    // program these wrappers start. It counts as one only as the program's
+    // first word that is not an option or an option's value, the wrapper's
+    // target (`firejail --private ./x.bat`, `firejail pwsh -c …` with an
+    // option after it), and not after a program whose words name files or
+    // text.
+    // An option's value may stand in the next word (`firejail --profile p
+    // ./x.bat`, `--net none pwsh -c …`): a word after an option may be that
+    // value, so the word after it may still be the target.
+    let targets = wrapper_target_candidates(&tokens);
+    // A sandbox or session starter runs its target like a top-level
+    // command: every word that may be that target gets the same checks
+    // (command-running options, startup variables, state writes).
+    if RUNNING_WRAPPERS.contains(&base.as_str()) {
+        if let Some(al) = allowlist {
+            check_running_wrapper_listed(&base, trimmed, &tokens, al, depth, inline_ok)?;
+        }
+        for &at in &targets {
+            let rest = &tokens[at..];
+            let rest_str = rejoin_words(&super::exec_options::exec_words(trimmed, rest));
+            check_delegated_target(&rest_str, rest, None)?;
+            check_interpreter_inner(&rest_str, None, depth + 1, inline_ok)?;
+        }
+    }
+    let windows_target = |i: usize| {
+        targets.contains(&i) && !names_file_operands(&base) && {
+            let t = &tokens[i];
+            let name = super::tokenizer::exec_name(t);
+            let next_is_option = tokens
+                .get(i + 1)
+                .is_some_and(|n| n.starts_with('-') || n.starts_with('/'));
+            is_windows_batch_script(t)
+                || (WINDOWS_COMMAND_INTERPRETERS.contains(&name.as_str()) && next_is_option)
+        }
+    };
+    if let Some(at) = (1..tokens.len()).position(|i| {
+        let name = super::tokenizer::exec_name(&tokens[i]);
+        (DELEGATION_COMMANDS.contains(&name.as_str()) && !matches!(name.as_str(), "start" | "call"))
+            || (is_interpreter(&name) && !WINDOWS_COMMAND_INTERPRETERS.contains(&name.as_str()))
+            || windows_target(i)
     }) {
         let rest = &tokens[at + 1..];
-        let rest_str = rest.join(" ");
+        let rest_str =
+            super::exec_options::join_words(&super::exec_options::exec_words(trimmed, rest));
         check_delegated_target(&rest_str, rest, None)?;
         return check_interpreter_inner(&rest_str, None, depth + 1, inline_ok);
     }
 
     Ok(())
+}
+
+/// In restricted mode, the program a wrapper runs (`rest_tokens`, starting at
+/// that program's word) must be in the allowlist like a top-level one.
+/// Builtins need no entry (`command echo`), as at the top level.
+fn check_delegated_listed(
+    base: &str,
+    rest_tokens: &[String],
+    al: &Allowlist,
+) -> Result<(), ShellError> {
+    let Some(delegated_tok) = rest_tokens.first() else {
+        return Ok(());
+    };
+    let delegated_name = super::tokenizer::exec_name(delegated_tok);
+    let delegated = delegated_name.as_str();
+    // GH #1419 follow-up: match on the delegated command's own
+    // tokens (basenamed), not just its bare name — `timeout 5
+    // git status` must be scoped by "git status *" the same way
+    // a top-level `git status` is, not blanket-allowed by "git".
+    // Off Windows the allowlist compares the program word by its
+    // spelling, as at the top level: `git.exe`, `ls.com` or
+    // `git.` there name other files than `git` or `ls`.
+    let listed =
+        if !cfg!(windows) && super::tokenizer::windows_executable_stem(delegated_tok).is_some() {
+            delegated_tok.rsplit('/').next().unwrap_or(delegated_tok)
+        } else {
+            delegated
+        };
+    let mut delegated_tokens = rest_tokens.to_vec();
+    if let Some(first) = delegated_tokens.first_mut() {
+        *first = listed.to_string();
+    }
+    if !listed.is_empty()
+        && !SHELL_BUILTINS.contains(&listed)
+        && !matches_allowlist_entry(&delegated_tokens, al)
+        && !al.record_miss(listed, delegated_tok)
+    {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}' which is not \
+             in the shell allowlist. This is a permanent restriction."
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// A running wrapper's target in restricted mode, judged like a delegation
+/// wrapper's: the program it runs must be in the allowlist, and the target
+/// line gets the checks of a listed command (inline code by the target's own
+/// entry). `runuser`'s `-c`/`--command`/`--session-command` string is a
+/// command line for the user's shell and is judged as one.
+fn check_running_wrapper_listed(
+    base: &str,
+    trimmed: &str,
+    tokens: &[String],
+    al: &Allowlist,
+    depth: usize,
+    inline_ok: bool,
+) -> Result<(), ShellError> {
+    if base == "runuser" {
+        for script in runuser_command_strings(&tokens[1..]) {
+            check_shell_string(base, &script, Some(al))?;
+        }
+    }
+    let rest_tokens = delegated_command_tokens(base, &tokens[1..]);
+    let Some(target) = rest_tokens.first() else {
+        return Ok(());
+    };
+    if super::command_word::is_dynamic_command_word(target) {
+        return Err(super::command_word::dynamic_word_refusal(target));
+    }
+    let name = super::tokenizer::exec_name(target);
+    if UNCONDITIONAL_BLOCKED.contains(&name.as_str()) {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{name}', which is \
+             unconditionally blocked. This is a permanent security restriction."
+        )
+        .into());
+    }
+    check_delegated_listed(base, &rest_tokens, al)?;
+    let rest_str = rejoin_words(&super::exec_options::exec_words(trimmed, &rest_tokens));
+    let mut target_tokens = rest_tokens.clone();
+    if let Some(first) = target_tokens.first_mut() {
+        *first = name;
+    }
+    check_delegated_target(&rest_str, &target_tokens, Some(al))?;
+    check_interpreter_inner(&rest_str, Some(al), depth + 1, inline_ok)
+}
+
+/// The command strings `runuser` hands to the user's shell: the values of
+/// `-c`, `--command` and `--session-command` (also a cluster ending in `c`,
+/// `-lc`, and the attached `--command=…`).
+fn runuser_command_strings(words: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        let word = &words[i];
+        if word == "--" {
+            break;
+        }
+        if let Some(long) = word.strip_prefix("--") {
+            let (name, attached) = match long.split_once('=') {
+                Some((name, value)) => (name, Some(value.to_string())),
+                None => (long, None),
+            };
+            let takes_command = name.len() >= 2
+                && ("command".starts_with(name) || "session-command".starts_with(name));
+            if takes_command {
+                if let Some(value) = attached {
+                    out.push(value);
+                } else {
+                    i += 1;
+                    out.extend(words.get(i).cloned());
+                }
+            }
+        } else if let Some(cluster) = word.strip_prefix('-')
+            && let Some(pos) = cluster.find(|c: char| "cugGsw".contains(c))
+        {
+            let attached = &cluster[pos + 1..];
+            let command = cluster[pos..].starts_with('c');
+            if attached.is_empty() {
+                i += 1;
+                if command {
+                    out.extend(words.get(i).cloned());
+                }
+            } else if command {
+                out.push(attached.to_string());
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Shells whose `-c` option takes a command line in POSIX shell syntax.
+const POSIX_SHELLS: &[&str] = &[
+    "sh", "bash", "dash", "zsh", "ksh", "mksh", "ash", "yash", "posh", "lksh", "oksh",
+];
+
+/// The command string of `sh -c STRING` (also `-ec`, `-lc`, `-o opt -c`),
+/// `tokens` starting at the shell.
+fn shell_command_string(tokens: &[String]) -> Option<String> {
+    let mut command = false;
+    let mut words = tokens.iter().skip(1);
+    while let Some(word) = words.next() {
+        if word == "--" {
+            break;
+        }
+        if matches!(
+            word.as_str(),
+            "-o" | "+o" | "-O" | "+O" | "--rcfile" | "--init-file"
+        ) {
+            words.next();
+            continue;
+        }
+        if let Some(cluster) = word.strip_prefix('-').or_else(|| word.strip_prefix('+')) {
+            if !cluster.starts_with('-') && cluster.contains('c') {
+                command = true;
+            }
+            continue;
+        }
+        return command.then(|| word.clone());
+    }
+    if command { words.next().cloned() } else { None }
+}
+
+/// A shell's command string, judged like a command line of its own: with an
+/// allowlist through it, without one by the unconditional rules, and in both
+/// by the line checks for editors.
+fn check_shell_string(
+    shell: &str,
+    script: &str,
+    allowlist: Option<&Allowlist>,
+) -> Result<(), ShellError> {
+    let strict = lean_ctx::core::config::shell_policy::config().shell_strict_mode;
+    check_editor_keys_from_input(script, strict || allowlist.is_some())?;
+    check_editor_home(script)?;
+    match allowlist {
+        Some(allowlist) => check_embedded_script(
+            &format!("The command line of '{shell} -c'"),
+            script,
+            allowlist,
+        ),
+        None => check_nested_script_unconditional(script),
+    }
+}
+
+/// Programs that run their first word that is not an option as a program,
+/// like the wrappers in [`DELEGATION_COMMANDS`], but whose options this
+/// module does not model one by one.
+pub(super) const RUNNING_WRAPPERS: &[&str] = &[
+    "firejail",
+    "dbus-run-session",
+    "pkexec",
+    "systemd-run",
+    "sandbox-exec",
+    "chpst",
+    "runuser",
+];
+
+/// The words of `tokens` (starting at the program word) that may be the
+/// program a wrapper starts: its first word that is not an option, and
+/// before it each word after an option, which may be that option's value
+/// (`firejail --profile p vim`) or the target itself (`--private vim`).
+pub(super) fn wrapper_target_candidates(tokens: &[String]) -> Vec<usize> {
+    let mut targets = Vec::new();
+    let mut after_option = false;
+    for (i, word) in tokens.iter().enumerate().skip(1) {
+        if word.starts_with('-') {
+            after_option = !word.contains('=');
+            continue;
+        }
+        targets.push(i);
+        if !after_option {
+            break;
+        }
+        after_option = false;
+    }
+    targets
+}
+
+/// Programs whose words after them are files or text, never a program they
+/// start: a batch script or a cmd/PowerShell word named there is not run.
+/// `open`/`xdg-open` run a file with its default handler.
+fn names_file_operands(base: &str) -> bool {
+    const FILE_PROGRAMS: &[&str] = &[
+        "rm", "cp", "mv", "touch", "chmod", "ln", "mkdir", "git", "sed", "tar", "rg", "vi", "vim",
+        "nvim", "view", "nano", "emacs",
+    ];
+    if matches!(base, "open" | "xdg-open") {
+        return false;
+    }
+    SHELL_BUILTINS.contains(&base)
+        || super::self_config::READ_ONLY_COMMANDS.contains(&base)
+        || FILE_PROGRAMS.contains(&base)
 }
 
 /// Actionable message for the heredoc-stdin block (GL #1161): the restriction
@@ -851,9 +1755,105 @@ pub(super) const SHELL_BUILTINS: &[&str] = &[
 
 /// Interpreters that can execute arbitrary code via -c/-e flags.
 pub(super) const INTERPRETER_COMMANDS: &[&str] = &[
-    "python", "python3", "python2", "node", "ruby", "perl", "lua", "php", "bash", "sh", "zsh",
-    "fish", "dash", "ksh",
+    "python",
+    "python3",
+    "python2",
+    "py",
+    "node",
+    "ruby",
+    "perl",
+    "lua",
+    "php",
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "dash",
+    "ksh",
+    "ash",
+    "mksh",
+    "csh",
+    "tcsh",
+    "nu",
+    "elvish",
+    "Rscript",
+    "rscript",
+    "osascript",
+    "cmd",
+    "powershell",
+    "pwsh",
 ];
+
+/// Windows command interpreters: every argument is part of the command
+/// line they run (`cmd /c`, `powershell -Command`, `pwsh -e`).
+const WINDOWS_COMMAND_INTERPRETERS: &[&str] = &["cmd", "powershell", "pwsh"];
+
+/// Whether the program word names a Windows batch script (`x.cmd`,
+/// `./X.BAT`, `run.bat.`): its last path component (`/` or `\`) ends in
+/// `.bat` or `.cmd` in any letter case, trailing dots and spaces dropped.
+pub(super) fn is_windows_batch_script(word: &str) -> bool {
+    let last = word.rsplit(['/', '\\']).next().unwrap_or(word);
+    let name = last.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+    name.rsplit_once('.')
+        .is_some_and(|(stem, ext)| !stem.is_empty() && matches!(ext, "bat" | "cmd"))
+}
+
+/// Why the program a command word names cannot be told from its spelling,
+/// or `None`. Judged on its last path component (`/` or `\`):
+/// - a non-ASCII character: a case-insensitive file system folds `ſh`, the
+///   Kelvin sign in `Ksh` or the ligature in `ﬆat` to ASCII names, which a
+///   comparison by spelling does not see;
+/// - `%NAME%`: cmd expands it to any program (`%COMSPEC%`);
+/// - `~` before a digit: a Windows short name (`POWERS~1.EXE`) stands for a
+///   longer one.
+pub(super) fn unresolvable_program_word(word: &str) -> Option<&'static str> {
+    let last = word.rsplit(['/', '\\']).next().unwrap_or(word);
+    if !last.is_ascii() {
+        return Some("contains a non-ASCII character");
+    }
+    // A `%NAME%` pair, or a word PowerShell reads as its `%` alias; a lone
+    // `%` inside a word (`--format=%e`) expands to nothing.
+    if word.matches('%').count() > 1 || last.starts_with('%') {
+        return Some("contains a %VARIABLE% reference");
+    }
+    let short_name = last
+        .char_indices()
+        .any(|(i, c)| c == '~' && last[i + 1..].starts_with(|d: char| d.is_ascii_digit()));
+    if short_name {
+        return Some("is a Windows short name");
+    }
+    None
+}
+
+fn unresolvable_program_refusal(word: &str, reason: &str) -> ShellError {
+    format!(
+        "[BLOCKED — DO NOT RETRY] The program word '{word}' {reason}, so the program it \
+         starts cannot be checked. Name the program in plain ASCII.\n\
+         This is a permanent security restriction."
+    )
+    .into()
+}
+
+/// The program word of `segment` as cmd and PowerShell read it, when that
+/// differs from the POSIX reading: the first word with its backslashes kept
+/// (quotes removed), by its executable name. `None` without a backslash.
+fn backslash_literal_program(segment: &str) -> Option<String> {
+    let mut word = String::new();
+    let mut quote = None;
+    for c in segment.chars() {
+        match (quote, c) {
+            (None, c) if c.is_whitespace() => break,
+            (None, '\'' | '"') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (_, c) => word.push(c),
+        }
+    }
+    if !word.contains('\\') {
+        return None;
+    }
+    let last = word.rsplit(['/', '\\']).next().unwrap_or(&word);
+    (!last.is_empty()).then(|| super::tokenizer::exec_name(last))
+}
 
 /// An interpreter's name without its version (`python3.12` → `python`,
 /// `node@18` → `node`, `lua5.4` → `lua`).
@@ -886,8 +1886,9 @@ const SCRIPT_EXTENSIONS: &[&str] = &[
 /// `command` and `builtin` are shell builtins that run the word after them.
 /// `stdbuf`, `setsid`, `flock`, `busybox` (its applet), `strace`, `ionice`,
 /// `taskset`, `caffeinate`, `arch`, `chrt`, `unshare`, `nsenter` and
-/// `fakeroot` run the command after their options the same way.
-const DELEGATION_COMMANDS: &[&str] = &[
+/// `fakeroot` run the command after their options the same way, and so does
+/// `time`, the reserved word and the program at any path (`/usr/bin/time`).
+pub(super) const DELEGATION_COMMANDS: &[&str] = &[
     "env",
     "nice",
     "timeout",
@@ -910,11 +1911,84 @@ const DELEGATION_COMMANDS: &[&str] = &[
     "unshare",
     "nsenter",
     "fakeroot",
+    "wsl",
+    "time",
+    "start",
+    "call",
 ];
 
 /// Safe PowerShell aliases that are also POSIX programs able to write a
 /// file they name.
 const POSIX_WRITING_ALIASES: &[&str] = &["sort"];
+
+/// How many of `tokens` (after cmd's `start`) are its own options: the flag
+/// words (`/b`, `/WAIT`, `/min`, …) and the value words (`/d DIR` or `/dDIR`,
+/// `/node N`, `/affinity MASK`). Any other `/` word is the program
+/// (`start /bin/rm`).
+fn start_options_len(tokens: &[String]) -> usize {
+    const FLAGS: &[&str] = &[
+        "/b",
+        "/wait",
+        "/min",
+        "/max",
+        "/i",
+        "/separate",
+        "/shared",
+        "/low",
+        "/normal",
+        "/high",
+        "/realtime",
+        "/abovenormal",
+        "/belownormal",
+    ];
+    const VALUED: &[&str] = &["/d", "/node", "/affinity", "/machine"];
+    let mut i = 0;
+    while let Some(word) = tokens.get(i) {
+        let lower = word.to_ascii_lowercase();
+        if FLAGS.contains(&lower.as_str()) {
+            i += 1;
+        } else if VALUED.contains(&lower.as_str()) {
+            i += 2;
+        } else if lower.starts_with("/d") && !lower[2..].contains('/') {
+            // `/dC:\dir`: the value attached.
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    i.min(tokens.len())
+}
+
+/// The program words of `segment` (a `start` command line with a window
+/// title): the words after the first word past `start`'s options that opens
+/// with a double quote (the title, up to its closing quote) and after the
+/// options that follow the title. `None` without such a title.
+fn start_program_after_title(segment: &str) -> Option<Vec<String>> {
+    let program = segment.split_whitespace().next()?;
+    let mut rest = segment.trim_start()[program.len()..].trim_start();
+    loop {
+        let word = rest.split_whitespace().next()?;
+        if word.starts_with('"') {
+            break;
+        }
+        let consumed = start_options_len(&[word.to_string(), String::new()]);
+        if consumed == 0 {
+            return None;
+        }
+        // A value word (`/d DIR`) goes with its flag.
+        for _ in 0..consumed.min(2) {
+            let w = rest.split_whitespace().next()?;
+            rest = rest[w.len()..].trim_start();
+        }
+    }
+    let close = rest[1..].find('"')? + 2;
+    let after = &rest[close..];
+    if !after.is_empty() && !after.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let words = shell_tokenize(after.trim_start());
+    Some(words[start_options_len(&words)..].to_vec())
+}
 
 /// Wrappers nested deeper than this are refused rather than walked.
 const MAX_DELEGATION_DEPTH: usize = 3;
@@ -957,6 +2031,14 @@ fn wrapper_options(wrapper: &str) -> WrapperOptions {
             split_string: Some(('S', "split-string")),
             assignments: true,
             bare_dash: true,
+            ..WrapperOptions::default()
+        },
+        // The `time` keyword (`-p`, then assignments) and the GNU/BSD
+        // `time` program (`-f FORMAT`, `-o FILE`).
+        "time" => WrapperOptions {
+            short_value: "fo",
+            long_value: &["format", "output"],
+            assignments: true,
             ..WrapperOptions::default()
         },
         "nice" => WrapperOptions {
@@ -1109,7 +2191,79 @@ fn wrapper_options(wrapper: &str) -> WrapperOptions {
             long_value: &["lib", "faked", "save-file", "import-state", "fd-base"],
             ..WrapperOptions::default()
         },
+        // `wsl [-d DISTRO] [-u USER] [--cd DIR] [-e | --exec | --] CMD…`.
+        "wsl" => WrapperOptions {
+            short_value: "du",
+            long_value: &[
+                "distribution",
+                "distribution-id",
+                "user",
+                "cd",
+                "shell-type",
+            ],
+            ..WrapperOptions::default()
+        },
         // `setsid` and `busybox APPLET …` take no option values.
+        // The running wrappers: `firejail` and `dbus-run-session` take
+        // their values attached (`--profile=p`).
+        "pkexec" => WrapperOptions {
+            short_value: "u",
+            long_value: &["user"],
+            ..WrapperOptions::default()
+        },
+        "systemd-run" => WrapperOptions {
+            short_value: "upEHMC",
+            long_value: &[
+                "unit",
+                "property",
+                "description",
+                "slice",
+                "setenv",
+                "uid",
+                "gid",
+                "nice",
+                "working-directory",
+                "host",
+                "machine",
+                "capsule",
+                "service-type",
+                "on-active",
+                "on-boot",
+                "on-startup",
+                "on-unit-active",
+                "on-unit-inactive",
+                "on-calendar",
+                "timer-property",
+                "path-property",
+                "socket-property",
+            ],
+            ..WrapperOptions::default()
+        },
+        // macOS: `sandbox-exec [-f FILE | -n NAME | -p TEXT] [-D K=V] CMD`.
+        "sandbox-exec" => WrapperOptions {
+            short_value: "fnpD",
+            ..WrapperOptions::default()
+        },
+        // runit: every option but `-P`, `-v` and `-012` takes a value.
+        "chpst" => WrapperOptions {
+            short_value: "uUbe/CnlLmdopfcrt",
+            ..WrapperOptions::default()
+        },
+        // util-linux: `runuser -u USER [--] CMD`; without `-u` the first word
+        // is the user, which the allowlist then has to name.
+        "runuser" => WrapperOptions {
+            short_value: "ugGswc",
+            long_value: &[
+                "user",
+                "group",
+                "supp-group",
+                "shell",
+                "whitelist-environment",
+                "command",
+                "session-command",
+            ],
+            ..WrapperOptions::default()
+        },
         _ => WrapperOptions::default(),
     }
 }
@@ -1133,6 +2287,12 @@ pub(super) fn wrapper_assignment_words(wrapper: &str, tokens: &[String]) -> Vec<
 
 /// [`delegated_command_tokens`] plus the assignments before the command.
 fn delegated_parts(wrapper: &str, tokens: &[String]) -> (Vec<String>, Vec<String>) {
+    match wrapper.to_ascii_lowercase().as_str() {
+        // cmd's `call` runs the rest of its line; it has no options.
+        "call" => return (Vec::new(), tokens.to_vec()),
+        "start" => return (Vec::new(), tokens[start_options_len(tokens)..].to_vec()),
+        _ => {}
+    }
     let opts = wrapper_options(wrapper);
     let mut assignments = Vec::new();
     let mut words = tokens.to_vec();
@@ -1297,8 +2457,6 @@ const DANGEROUS_GIT_FLAGS: &[&str] = &[
     "--config=core.gitproxy",
 ];
 
-const DANGEROUS_TAR_FLAGS: &[&str] = &["--to-command", "--use-compress-program"];
-
 fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
     let trimmed = skip_env_assignments(segment.trim());
     let tokens = shell_tokenize(trimmed);
@@ -1321,21 +2479,11 @@ fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
                 }
             }
         }
-        "tar" => {
-            for tok in &tokens[1..] {
-                for flag in DANGEROUS_TAR_FLAGS {
-                    if tok.starts_with(flag) {
-                        return Err(format!(
-                            "[BLOCKED — DO NOT RETRY] 'tar' with dangerous flag '{tok}' is blocked.\n\
-                             This is a permanent security restriction."
-                        ).into());
-                    }
-                }
-            }
-        }
+        // tar's command-running options (`--to-command`, `-I`, …) are judged
+        // with the command they name, in every spelling: `check_exec_options`.
         "find" => {
             for tok in &tokens[1..] {
-                if tok == "-exec" || tok == "-execdir" {
+                if matches!(tok.as_str(), "-exec" | "-execdir" | "-ok" | "-okdir") {
                     return Err(format!(
                         "[BLOCKED — DO NOT RETRY] 'find' with '{tok}' is blocked. \
                          Use 'find ... -print' and pipe to xargs instead.\n\
@@ -1588,43 +2736,431 @@ fn check_delegated_target(
 ) -> Result<(), ShellError> {
     check_inline_env_block(target)?;
     check_dangerous_flags(target)?;
+    // The command string of a wrapped shell, from its own word (re-joined
+    // words keep their quotes as written).
+    if let Some(shell) = tokens.first().map(|w| super::tokenizer::exec_name(w))
+        && POSIX_SHELLS.contains(&shell.as_str())
+        && lean_ctx::core::config::shell_policy::allow_inline_scripts()
+        && let Some(script) = shell_command_string(tokens)
+    {
+        check_shell_string(&shell, &script, allowlist)?;
+    }
     super::self_config::check_self_reconfiguration(target, tokens)?;
     super::side_doors::check_builtin_options(tokens)?;
     super::operand_eval::check_evaluated_tokens(tokens)?;
-    check_embedded_commands(tokens, allowlist)?;
+    check_embedded_commands(target, tokens, allowlist)?;
     match (super::side_doors::trap_action(tokens), allowlist) {
         (Some(action), Some(allowlist)) => check_trap_action(action, allowlist),
-        (Some(action), None) => check_unconditional_blocked_only(action),
+        (Some(action), None) => check_nested_script_unconditional(action),
         (None, _) => Ok(()),
     }
 }
 
 /// The commands a program runs that its command line names as text — git's
 /// (`submodule foreach`, `rebase --exec`, `bisect run`, `difftool
-/// --extcmd`, `filter-branch --*-filter`), `watch CMD…`, `script -c CMD`:
-/// each is gated like a command line of its own — in restricted mode it
-/// must pass the allowlist like any command, without an allowlist it gets
-/// the unconditional rules. `tokens` start at the program word.
+/// --extcmd`, `filter-branch --*-filter`), `watch CMD…`, `script -c CMD`,
+/// and an alias body (it runs wherever the alias name is used later on the
+/// line, also inside another alias or a function): each is gated like a
+/// command line of its own — in restricted mode it must pass the allowlist
+/// like any command, without an allowlist it gets the unconditional rules.
+/// `tokens` start at the program word; `segment` is the command they come
+/// from, whose empty quoted words option values need (`exec_options`).
 fn check_embedded_commands(
+    segment: &str,
     tokens: &[String],
     allowlist: Option<&Allowlist>,
 ) -> Result<(), ShellError> {
+    let tokens = alias_command_words(tokens).unwrap_or(tokens);
     let Some(program) = tokens.first() else {
         return Ok(());
     };
-    let scripts = match super::tokenizer::exec_name(program).as_str() {
+    let program = super::tokenizer::exec_name(program);
+    if program == "alias" {
+        match allowlist {
+            Some(allowlist) => check_alias_names(tokens, allowlist)?,
+            None => check_alias_definitions(tokens)?,
+        }
+    }
+    let scripts = match program.as_str() {
         "git" => super::side_doors::git_embedded_commands(tokens),
+        "alias" => tokens[1..]
+            .iter()
+            .filter_map(|t| t.split_once('=').map(|(_, body)| body.to_string()))
+            .collect(),
         _ => super::side_doors::inline_scripts(tokens),
     };
     for script in scripts {
-        match allowlist {
-            Some(allowlist) => {
-                check_embedded_script("A command another one runs", &script, allowlist)?;
+        if let Some(allowlist) = allowlist {
+            check_embedded_script("A command another one runs", &script, allowlist)?;
+        } else {
+            super::self_config::check_records_line(&script)?;
+            check_nested_script_unconditional(&script)?;
+        }
+    }
+    check_exec_options(&super::exec_options::exec_words(segment, tokens), allowlist)
+}
+
+/// A program's option whose value is a command (`tar -I CMD`, `rg --pre
+/// CMD`, `sed 'e CMD'`; see `exec_options`). With an allowlist the value is
+/// gated like a command line of its own and may not name an interpreter,
+/// which would run the data it is fed. Without an allowlist it is refused,
+/// like `tar --to-command`. A command the line does not show (a sed script
+/// file, `s///e`) is refused in every mode.
+fn check_exec_options(tokens: &[String], allowlist: Option<&Allowlist>) -> Result<(), ShellError> {
+    for found in super::exec_options::exec_options(tokens) {
+        let refusal = |why: &str| -> ShellError {
+            format!(
+                "[BLOCKED — DO NOT RETRY] '{}' with '{}' runs {why}.\n\
+                 This is a permanent security restriction.",
+                found.program, found.option
+            )
+            .into()
+        };
+        let Some(command) = found.command.as_deref() else {
+            return Err(refusal(
+                "a command the shell gate cannot read from the command line",
+            ));
+        };
+        let Some(allowlist) = allowlist else {
+            return Err(refusal(
+                "a command, which is only allowed when the shell allowlist names its program",
+            ));
+        };
+        if runs_interpreter(command) {
+            return Err(refusal(
+                "an interpreter on data the shell gate cannot check",
+            ));
+        }
+        check_embedded_script(
+            &format!(
+                "The command that '{}' starts through '{}'",
+                found.program, found.option
+            ),
+            command,
+            allowlist,
+        )?;
+    }
+    Ok(())
+}
+
+/// Whether `command` starts an interpreter, also behind delegation wrappers.
+fn runs_interpreter(command: &str) -> bool {
+    let mut tokens = shell_tokenize(skip_env_assignments(command.trim()));
+    for _ in 0..=MAX_DELEGATION_DEPTH {
+        let Some(first) = tokens.first() else {
+            return false;
+        };
+        let base = super::tokenizer::exec_name(first);
+        if is_interpreter(&base) {
+            return true;
+        }
+        if !DELEGATION_COMMANDS.contains(&base.as_str()) {
+            return false;
+        }
+        tokens = delegated_command_tokens(&base, &tokens[1..]);
+    }
+    true
+}
+
+/// The words of an `alias` command behind leading reserved words and
+/// `builtin` / `command` (with their options), which still define the alias
+/// in the current shell; `None` when the words run another program.
+fn alias_command_words(tokens: &[String]) -> Option<&[String]> {
+    let mut i = 0;
+    while let Some(word) = tokens.get(i) {
+        match super::tokenizer::exec_name(word).as_str() {
+            "alias" => return Some(&tokens[i..]),
+            "builtin" | "command" => {
+                i += 1;
+                while tokens.get(i).is_some_and(|t| t.starts_with('-')) {
+                    i += 1;
+                }
             }
-            None => check_unconditional_blocked_only(&script)?,
+            "if" | "then" | "else" | "elif" | "do" | "while" | "until" | "!" | "{" | "time" => {
+                i += 1;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// With an allowlist, an alias may not take the name of a listed program or
+/// a shell builtin: the gate judges a later use of that name as the program
+/// it names, while the shell runs the alias body instead. An alias under any
+/// other name is still refused where it is used, as an unlisted program.
+/// A body behind `builtin` or `command` reaches a builtin past the gate's
+/// reading of the name, so it is refused as without an allowlist.
+fn check_alias_names(tokens: &[String], allowlist: &Allowlist) -> Result<(), ShellError> {
+    for (name, body) in tokens[1..].iter().filter_map(|t| t.split_once('=')) {
+        let first = shell_tokenize(body).into_iter().next().unwrap_or_default();
+        if matches!(
+            super::tokenizer::exec_name(&first)
+                .to_ascii_lowercase()
+                .as_str(),
+            "builtin" | "command"
+        ) {
+            return Err(format!(
+                "[BLOCKED — DO NOT RETRY] The alias '{name}' is refused: a body that starts \
+                 with `builtin` or `command` runs a builtin the gate cannot judge where the \
+                 alias is used. Run the command directly."
+            )
+            .into());
+        }
+        let listed = allowlist
+            .entries
+            .iter()
+            .any(|entry| entry.split_whitespace().next() == Some(name));
+        if listed || SHELL_BUILTINS.contains(&name) || ALIAS_RESERVED_NAMES.contains(&name) {
+            return Err(format!(
+                "[BLOCKED — DO NOT RETRY] An alias named '{name}' is refused: with a shell \
+                 allowlist an alias may not take the name of a listed program or a shell \
+                 builtin. Pick another name, or run the command directly."
+            )
+            .into());
         }
     }
     Ok(())
+}
+
+/// Without an allowlist an alias definition is accepted only in a form whose
+/// later use the gate can judge from the line itself
+/// ([`alias_definition_is_plain`]); any other definition is refused. Plain
+/// definitions such as `ll='ls -l'` stay allowed.
+///
+/// Known limit: a body may not start with `git` (a use passes further git
+/// options), so a common shortcut such as `gs='git status'` is refused too;
+/// so is a body that starts with an interpreter (`py=python3`).
+fn check_alias_definitions(tokens: &[String]) -> Result<(), ShellError> {
+    for (name, body) in tokens[1..].iter().filter_map(|t| t.split_once('=')) {
+        if !alias_definition_is_plain(name, body) {
+            return Err(format!(
+                "[BLOCKED — DO NOT RETRY] The alias '{name}' is refused: without a shell \
+                 allowlist an alias is accepted only when its name is no known program or \
+                 builtin and its body is plain words that start with a program the gate does \
+                 not judge by its arguments, so the gate can tell what a later use of it runs. \
+                 Run the command directly."
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Characters a plain alias word may use.
+fn is_plain_alias_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "_./:=@%+,-".contains(c)
+}
+
+/// Reserved words: in the first position of an alias body they open or
+/// change a compound command around the words of a later use.
+const ALIAS_RESERVED_WORDS: &[&str] = &[
+    "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac",
+    "select", "function", "in", "time", "coproc", "{", "}", "!", "[[", "]]",
+];
+
+/// Builtins beyond [`SHELL_BUILTINS`] that run or change other commands.
+const ALIAS_RESERVED_NAMES: &[&str] = &["eval", "exec", "source", ".", "alias", "unalias"];
+
+/// Programs the gate judges by name and arguments beyond the lists it shares
+/// with other checks ([`DELEGATION_COMMANDS`], the interpreters and
+/// `self_config`'s read, write, script and viewer lists).
+const ALIAS_JUDGED_PROGRAMS: &[&str] = &[
+    "git",
+    "find",
+    "watch",
+    "script",
+    "parallel",
+    "rush",
+    "patch",
+    "split",
+    "csplit",
+    "sort",
+    "zip",
+    "gzip",
+    "gunzip",
+    "bzip2",
+    "bunzip2",
+    "xz",
+    "unxz",
+    "lzma",
+    "unlzma",
+    "lz4",
+    "zstd",
+    "unzstd",
+    "compress",
+    "uncompress",
+    "lean-ctx",
+    "pushd",
+    "ssh",
+    "su",
+    "pwsh",
+    "powershell",
+    // Builtins that run a command by option (`-C`), like `hash`/`compgen`.
+    "mapfile",
+    "readarray",
+];
+
+/// Common programs an alias may not be named after: the gate would judge a
+/// later use of the name as that program.
+const ALIAS_COMMON_PROGRAMS: &[&str] = &[
+    "awk",
+    "base64",
+    "basename",
+    "brew",
+    "cargo",
+    "chgrp",
+    "clear",
+    "column",
+    "comm",
+    "crontab",
+    "cut",
+    "date",
+    "dig",
+    "dirname",
+    "docker",
+    "emacs",
+    "expand",
+    "fmt",
+    "fold",
+    "gh",
+    "glab",
+    "go",
+    "gpg",
+    "helm",
+    "history",
+    "host",
+    "hostname",
+    "htop",
+    "iconv",
+    "id",
+    "ifconfig",
+    "ip",
+    "java",
+    "join",
+    "kill",
+    "killall",
+    "kubectl",
+    "launchctl",
+    "lsof",
+    "make",
+    "man",
+    "mount",
+    "nano",
+    "netstat",
+    "nl",
+    "npm",
+    "npx",
+    "nslookup",
+    "od",
+    "openssl",
+    "passwd",
+    "paste",
+    "ping",
+    "pip",
+    "pip3",
+    "pnpm",
+    "printenv",
+    "ps",
+    "rustc",
+    "rustup",
+    "seq",
+    "service",
+    "sleep",
+    "strings",
+    "systemctl",
+    "terraform",
+    "tmux",
+    "top",
+    "tr",
+    "uname",
+    "uniq",
+    "umount",
+    "vi",
+    "vim",
+    "which",
+    "whoami",
+    "xxd",
+    "yarn",
+    "yes",
+];
+
+/// Whether `word` (by its executable name, lower-cased: `/bin/sh` runs `sh`
+/// and a case-insensitive file system finds `LS` as `ls`) is a builtin, a
+/// reserved word or a program the gate judges by name and arguments: such a
+/// word may start no plain alias body.
+pub(super) fn alias_word_is_judged(word: &str) -> bool {
+    if unresolvable_program_word(word).is_some() || is_windows_batch_script(word) {
+        return true;
+    }
+    let word = super::tokenizer::exec_name(word).to_ascii_lowercase();
+    let word = word.as_str();
+    SHELL_BUILTINS.contains(&word)
+        || ALIAS_RESERVED_NAMES.contains(&word)
+        || ALIAS_RESERVED_WORDS.contains(&word)
+        || UNCONDITIONAL_BLOCKED.contains(&word)
+        || DELEGATION_COMMANDS.contains(&word)
+        || is_interpreter(word)
+        || ["python", "pypy", "perl", "ruby", "node", "php", "lua"]
+            .iter()
+            .any(|p| word.starts_with(p))
+        || ALIAS_JUDGED_PROGRAMS.contains(&word)
+        || super::self_config::WRITE_PROGRAMS.contains(&word)
+        || super::self_config::SCRIPT_PROGRAMS.contains(&word)
+        || super::self_config::VIEWERS.contains(&word)
+}
+
+/// Whether `name` is a builtin or a known program, so the gate would judge a
+/// later use of it as that program.
+fn alias_name_is_known(name: &str) -> bool {
+    let lower = super::tokenizer::exec_name(name).to_ascii_lowercase();
+    alias_word_is_judged(&lower)
+        || super::self_config::READ_ONLY_COMMANDS.contains(&lower.as_str())
+        || ALIAS_COMMON_PROGRAMS.contains(&lower.as_str())
+        || matches!(lower.as_str(), "rg" | "xdg-open")
+}
+
+/// The positive form of an accepted alias definition (blocklist mode):
+///
+/// - the name is plain characters and no builtin or known program;
+/// - the body is plain words separated by single spaces, with at most one
+///   `'…'` segment of plain words after the first word: no `$`, backtick,
+///   backslash, other quote, `;|&<>(){}!#`, glob, tilde, newline, tab or
+///   blank at either end, so the body is complete and cannot join the
+///   words of a later use;
+/// - the first word is no assignment, no path (known limit: `./build.sh`
+///   is refused too) and no word [`alias_word_is_judged`] names (wrappers,
+///   interpreters, reserved words, builtins, `git`, `sudo`, programs judged
+///   by their arguments).
+fn alias_definition_is_plain(name: &str, body: &str) -> bool {
+    if name.is_empty() || !name.chars().all(is_plain_alias_char) || alias_name_is_known(name) {
+        return false;
+    }
+    let words_are_plain = |text: &str| {
+        !text.is_empty()
+            && text
+                .split(' ')
+                .all(|w| !w.is_empty() && w.chars().all(is_plain_alias_char))
+    };
+    let head = match body.split_once('\'') {
+        None => body,
+        Some((head, rest)) => {
+            let Some((inner, tail)) = rest.split_once('\'') else {
+                return false;
+            };
+            let tail_is_plain =
+                tail.is_empty() || tail.strip_prefix(' ').is_some_and(words_are_plain);
+            match head.strip_suffix(' ') {
+                Some(head) if words_are_plain(inner) && tail_is_plain => head,
+                _ => return false,
+            }
+        }
+    };
+    if !words_are_plain(head) {
+        return false;
+    }
+    let first = head.split(' ').next().unwrap_or_default();
+    !first.contains(['=', '/', '\\']) && !alias_word_is_judged(first)
 }
 
 /// A `trap` action is a script of its own: it is gated like a command line.
@@ -1647,6 +3183,7 @@ fn check_embedded_script(
         return Err(unvalidatable(reason, action));
     }
     check_substitution_in_args(action)?;
+    super::self_config::check_records_line(action)?;
     check_all_segments(&strip_for_analysis(action, false, true), allowlist).map_err(|err| {
         format!(
             "[BLOCKED — DO NOT RETRY] {what} runs like a command and is gated like one: {}",
@@ -1656,6 +3193,24 @@ fn check_embedded_script(
         .into()
     })
 }
+
+/// Without an allowlist (blocklist-only mode): a script a command runs (a
+/// `trap` action, an alias body, git's `--exec`, `watch`'s command) is read
+/// the way [`check_embedded_script`] reads it with one: its substitutions
+/// are gated, and its segments are split with comments and here-document
+/// bodies removed, then judged by the unconditional rules.
+fn check_nested_script_unconditional(script: &str) -> Result<(), ShellError> {
+    let lexed = super::lexer::lex(script);
+    if lexed.too_deep {
+        return Err(too_deep());
+    }
+    if let Some(reason) = lexed.problem {
+        return Err(unvalidatable(reason, script));
+    }
+    check_substitution_in_args(script)?;
+    check_unconditional_blocked_only(&strip_for_analysis(script, false, true))
+}
+
 /// #813: check whether a command token resolves to an existing file under the
 /// project root. Called as a fallback when the base command name isn't in the
 /// allowlist — agents frequently build project-local binaries (`go build -o
@@ -1796,10 +3351,13 @@ pub(super) fn matches_allowlist_entry(tokens: &[String], allowlist: &Allowlist) 
         return false;
     };
     if !allowlist.subcommand_scoping {
-        return allowlist
-            .entries
-            .iter()
-            .any(|entry| entry == base || entry.split_whitespace().next() == Some(base));
+        return allowlist.entries.iter().any(|entry| {
+            entry == base
+                || entry
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|first| same_program(first, base))
+        });
     }
     allowlist
         .entries
@@ -1815,23 +3373,45 @@ fn entry_matches(entry: &str, tokens: &[String]) -> bool {
     let (Some(&first_word), Some(base)) = (words.first(), tokens.first()) else {
         return false;
     };
+    if !same_program(first_word, base) {
+        return false;
+    }
     if words.len() == 1 {
-        return base.as_str() == first_word;
+        return true;
     }
     if words.last() == Some(&"*") {
-        let prefix = &words[..words.len() - 1];
-        tokens.len() >= prefix.len()
-            && tokens
+        let prefix = &words[1..words.len() - 1];
+        tokens.len() > prefix.len()
+            && tokens[1..]
                 .iter()
                 .zip(prefix.iter())
                 .all(|(t, w)| t.as_str() == *w)
     } else {
         tokens.len() == words.len()
-            && tokens
+            && tokens[1..]
                 .iter()
-                .zip(words.iter())
+                .zip(words[1..].iter())
                 .all(|(t, w)| t.as_str() == *w)
     }
+}
+
+/// Whether the program words `a` and `b` name the same program: equal, or,
+/// on Windows, the same executable stem (`git.exe` and `git`, `GIT.EXE`,
+/// `git.`). Other hosts keep `git.exe`, `ls.com` and `git.` as names of
+/// their own files.
+fn same_program(a: &str, b: &str) -> bool {
+    use super::tokenizer::windows_executable_stem;
+    if a == b {
+        return true;
+    }
+    if !cfg!(windows) {
+        return false;
+    }
+    let (sa, sb) = (windows_executable_stem(a), windows_executable_stem(b));
+    if sa.is_none() && sb.is_none() {
+        return false;
+    }
+    sa.as_deref().unwrap_or(a) == sb.as_deref().unwrap_or(b)
 }
 
 /// Names of the function definitions in `command` that bash always executes:
@@ -1962,6 +3542,8 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
     if allowlist.is_empty() {
         return Ok(());
     }
+    let stripped = without_comments(command)?;
+    let command = &*stripped;
     let _loop_vars = super::self_config::bind_loop_variables(command);
 
     if has_dangerous_patterns(command) {
@@ -1974,6 +3556,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         .into());
     }
 
+    super::command_word::check_implicit_arguments(command)?;
     let segments = expand_to_leaf_segments(command)?;
     if segments.is_empty() {
         // #1930: a line of inert PowerShell (`$sw.Elapsed.TotalSeconds`,
@@ -2014,7 +3597,12 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             // GH #2002: expand the body like a top-level line, so `for`/`if`/
             // `while`/`case` in it are control flow, not commands to gate.
             let body_cmds = match super::tokenizer::function_body(seg) {
-                Some(body) => expand_to_leaf_segments(body)?,
+                Some(body) => {
+                    // A body that takes the arguments of its call runs them
+                    // like an alias body runs the words of its use.
+                    super::command_word::check_function_forwarding(body, 0)?;
+                    expand_to_leaf_segments(body)?
+                }
                 None => Vec::new(),
             };
             for body_seg in &body_cmds {
@@ -2041,7 +3629,8 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 }
                 check_interpreter_abuse(body_seg, allowlist)?;
                 check_dangerous_flags(body_seg)?;
-                check_embedded_commands(&body_tokens, Some(allowlist))?;
+                super::side_doors::check_builtin_options(&body_tokens)?;
+                check_embedded_commands(body_seg, &body_tokens, Some(allowlist))?;
                 super::self_config::check_self_reconfiguration(body_seg, &body_tokens)?;
                 super::self_config::check_state_tampering(body_seg, &body_tokens)?;
             }
@@ -2049,6 +3638,8 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         }
 
         check_powershell_argument_groups(seg, allowlist)?;
+        super::command_word::check_command_word(seg)?;
+        super::command_word::check_positional_forwarding(seg)?;
         let tokens = extract_command_tokens_from_segment(seg);
         let Some(base) = tokens.first().cloned() else {
             continue;
@@ -2107,7 +3698,9 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         }
         check_interpreter_abuse(seg, allowlist)?;
         check_dangerous_flags(seg)?;
-        check_embedded_commands(&tokens, Some(allowlist))?;
+        // A listed builtin (`mapfile`) still may not run code by option.
+        super::side_doors::check_builtin_options(&tokens)?;
+        check_embedded_commands(seg, &tokens, Some(allowlist))?;
         super::self_config::check_self_reconfiguration(seg, &tokens)?;
         super::self_config::check_state_tampering(seg, &tokens)?;
         if !matches_allowlist_entry(&tokens, allowlist) {

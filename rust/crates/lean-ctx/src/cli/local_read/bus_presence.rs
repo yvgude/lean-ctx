@@ -49,7 +49,7 @@ pub(crate) struct AgentRow {
     pub project: ProjectRow,
 }
 
-/// The machine of a presence: the Hive Instance id when this machine is
+/// The machine of a presence: the Cloud Instance id when this machine is
 /// enrolled, and its name (the enrollment label, else the hostname).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct InstanceRow {
@@ -57,7 +57,7 @@ pub(crate) struct InstanceRow {
     pub name: Option<String>,
 }
 
-/// The project of a presence and the Hive vault linked to it.
+/// The project of a presence and the Cloud vault linked to it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct ProjectRow {
     pub root: Option<String>,
@@ -122,7 +122,7 @@ pub(crate) fn agent_row(agent: &AgentEntry, alive: bool, status: &'static str) -
 
 /// This machine as an [`InstanceRow`]: the enrolled Instance's id and
 /// label, else the hostname.
-fn this_instance(store: Option<&lean_ctx_hive::HiveStore>) -> InstanceRow {
+fn this_instance(store: Option<&lean_ctx_cloud::CloudStore>) -> InstanceRow {
     let record = store.and_then(|s| s.instance().ok().flatten());
     let hostname = gethostname::gethostname().into_string().ok();
     InstanceRow {
@@ -156,7 +156,7 @@ pub(crate) fn rows(
     include_finished: bool,
     liveness: impl Fn(&AgentEntry) -> (bool, &'static str),
 ) -> Vec<AgentRow> {
-    let mut out: Vec<(chrono::DateTime<chrono::Utc>, AgentRow)> = registry
+    let mut out: Vec<(lean_ctx_time::UtcDateTime, AgentRow)> = registry
         .agents
         .iter()
         .filter(|a| {
@@ -181,14 +181,14 @@ pub(crate) fn build(args: &[String]) -> Result<PresenceList, Failure> {
     let all_projects = args.iter().any(|a| a == "--all-projects");
     let registry = AgentRegistry::load().unwrap_or_default();
     let identities = ProcessIdentityIndex::load();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let mut agents = rows(&registry, &root, all_projects, include_finished, |a| {
         super::super::agent_cmd::agent_liveness(a, now, &identities)
     });
-    let store = lean_ctx_hive::HiveStore::open().ok();
+    let store = lean_ctx_cloud::CloudStore::open().ok();
     let vaults = store
         .as_ref()
-        .map(|s| lean_ctx_hive::vault::VaultMap::load(s.data_dir()));
+        .map(|s| lean_ctx_cloud::vault::VaultMap::load(s.data_dir()));
     place(&mut agents, &this_instance(store.as_ref()), |root| {
         vaults
             .as_ref()?

@@ -16,7 +16,7 @@ pub fn record(command: &str, duration_ms: u128, exit_code: i32) {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+    let ts = lean_ctx_time::LocalDateTime::now().format("%Y-%m-%d %H:%M:%S");
     let entry = format!("{ts}\t{duration_ms}ms\texit:{exit_code}\t{command}\n");
 
     let existing = std::fs::read_to_string(&path).unwrap_or_default();

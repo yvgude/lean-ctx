@@ -37,7 +37,7 @@ audit_retention_days = 365      # governance intent (hosted plane enforces its p
 employee_id = 'EMP-\d{6}'
 
 [filters]                       # inbound content detectors (GL #675); action = off|warn|redact|block
-pii = "redact"                  # Swiss AHV, IBAN, payment cards, email (checksum-validated)
+pii = "redact"                  # payment cards (Luhn), e-mail, phone (shape-validated)
 classification = "block"        # gate files marked confidential/secret
 injection = "redact"            # OWASP LLM01 prompt-injection in file content
 blocked_labels = ["TS//SCI"]    # optional: override the default confidential/secret label set
@@ -82,7 +82,7 @@ Built-ins are embedded at compile time (`include_str!`) and covered by tests:
 every pack must parse, validate, resolve and retain the baseline secret
 coverage.
 
-**Paid packs (2026-10-16).** `healthcare` and `finance-eu` (LeanCTX Hive) and
+**Paid packs (2026-10-16).** `healthcare` and `finance-eu` (LeanCTX Cloud) and
 `soc2-context`, `iso42001-aligned`, `eu-ai-act-deployer` (LeanCTX Enterprise)
 were built-ins up to 3.11.x. `extends` naming one of them now fails with
 `PolicyError::UnknownParent`, whose message names the tier instead of listing
@@ -156,7 +156,7 @@ path for policy testing and for producing enforcement evidence in CI — and wha
 `[filters]` adds net-new detectors that run **before** tool output reaches the
 agent, on the same chokepoint as `[redaction]`:
 
-- **`pii`** — Swiss AHV (EAN-13), IBAN (mod-97), payment cards (Luhn) and email,
+- **`pii`** — payment cards (Luhn, layout and issuer checks), e-mail and phone,
   each checksum/shape-validated to keep false positives low. `redact` →
   `[REDACTED:<class>]`; `block` → refuse.
 - **`classification`** — gates content *marked* confidential/secret (banner

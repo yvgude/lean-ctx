@@ -103,10 +103,10 @@ pub(crate) fn integration_generic(
         }
     }
 
-    if let Some(rules_path) = rules_path_for(target.name, home) {
+    let cfg = lean_ctx::core::config::Config::load();
+    if let Some(rules_path) = rules_path_for(target.name, home, cfg.rules_injection_effective()) {
         // #1596: honour rules_injection / rules_scope — an intentionally absent
         // rules file is not drift.
-        let cfg = lean_ctx::core::config::Config::load();
         checks.push(check_rules_file_for_policy(
             &rules_path,
             cfg.rules_injection_effective(),

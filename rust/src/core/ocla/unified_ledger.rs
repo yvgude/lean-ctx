@@ -212,7 +212,7 @@ impl FileUnifiedLedger {
     }
 
     pub(crate) fn from_savings_event(event: &SavingsEvent) -> OclaResult<UnifiedSavingsEventV2> {
-        let timestamp_epoch_ms = chrono::DateTime::parse_from_rfc3339(&event.ts)
+        let timestamp_epoch_ms = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&event.ts)
             .map_err(Self::io_error)?
             .timestamp_millis();
         let timestamp_epoch_ms = u64::try_from(timestamp_epoch_ms)

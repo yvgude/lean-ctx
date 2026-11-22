@@ -1,0 +1,13 @@
+{
+ "engine_version": "0.0.0-fixture",
+ "runs": [
+  {"agent": "claude", "outcome": "pass", "steps": ["ctx_compose", "ctx_read", "ctx_search", "Edit", "Bash"], "task": "t1", "tokens": {"input": 1000, "saved": 600}},
+  {"agent": "codex", "outcome": "pass", "steps": ["ctx_compose", "ctx_read", "shell", "shell"], "task": "t1", "tokens": {"input": 1000, "saved": 400}},
+  {"agent": "claude", "outcome": "pass", "steps": ["ctx_compose", "ctx_read", "Read", "ctx_shell"], "task": "t2", "tokens": {"input": 2000, "saved": 900}},
+  {"agent": "codex", "outcome": "pass", "steps": ["ctx_read", "ctx_compose", "shell"], "task": "t2", "tokens": {"input": 1000, "saved": 300}},
+  {"agent": "claude", "outcome": "pass", "steps": ["ctx_search", "ctx_compose", "Read", "ctx_read", "TodoWrite"], "task": "t3", "tokens": {"input": 1000, "saved": 500}},
+  {"agent": "codex", "outcome": "pass", "steps": ["ctx_compose", "ctx_search", "ctx_read", "apply_patch", "shell"], "task": "t3", "tokens": {"input": 4000, "saved": 2000}}
+ ],
+ "schema": "leanctx.agent-suite-traces/v1",
+ "suite": "fixture-suite"
+}

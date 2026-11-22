@@ -240,7 +240,7 @@ pub(crate) fn walk(
 
         // Never surface secret-like paths (.env, keys, …) unless the active role
         // explicitly allows it.
-        if !allow_secret_paths && lean_ctx::core::io_boundary::is_secret_like(path).is_some() {
+        if lean_ctx::core::io_boundary::withheld_secret(path, allow_secret_paths).is_some() {
             continue;
         }
 

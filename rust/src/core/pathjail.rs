@@ -338,16 +338,23 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
     // This boundary covers caller-selected edit/backup/export destinations.
     // Engine-owned knowledge persistence uses its own authorized store writer.
     crate::core::protected_store::enforce_protected_store_path(candidate)?;
-    // Hive policies and limits are never changed by an agent (Release B).
-    if crate::core::policy::hive_floor::is_policy_path(&canonical_target(candidate)) {
+    // Cloud policies and limits are never changed by an agent (Release B).
+    if crate::core::policy::cloud_floor::is_policy_path(&canonical_target(candidate)) {
         return Err(format!(
-            "Hive policy files are written by the instance only; agents cannot change them: {}",
+            "LeanCTX Cloud policy files are written by the instance only; agents cannot change them: {}",
             candidate.display()
         ));
     }
     // The session's own rights profile (process-v1 §9) narrows every write,
     // under a Workspace too: own worktree only, never a locked path.
     crate::core::session_rights::check_write(candidate)?;
+    // A project adopted from a first path keeps its VCS metadata and
+    // execution hooks closed until the user declares it (activation #3).
+    if let Some(denial) =
+        super::pathjail_autobind::adopted_write_denial(&canonical_target(candidate))
+    {
+        return Err(denial);
+    }
     // Under a Workspace a write needs a read-write root (#2120).
     match crate::core::workspace_authority::current() {
         crate::core::workspace_authority::Authority::Legacy => {}
@@ -1172,11 +1179,14 @@ fn jail_path_checked(
         if !allowed {
             let is_suspicious = crate::core::pathutil::is_suspicious_root(&root);
             let mut hint = if is_suspicious || root == std::path::Path::new("/") {
-                ". lean-ctx has not bound this session to a project yet (the host reported \
-                     no project directory). Relative paths cannot bind it: pass one \
+                format!(
+                    ". {}. lean-ctx has not bound this session to a project yet (the host \
+                     reported no project directory). Relative paths cannot bind it: one \
                      absolute path inside the project, e.g. /home/me/code/my-app/README.md, \
-                     and it stays the session project; if it persists: lean-ctx doctor --fix"
-                    .to_string()
+                     binds it and it stays the session project; if it persists, the user \
+                     runs: lean-ctx doctor --fix",
+                    super::pathjail_scope::AGENT_BIND_ACTION
+                )
             } else {
                 super::pathjail_scope::escape_hint(candidate, &base, &root)
             };

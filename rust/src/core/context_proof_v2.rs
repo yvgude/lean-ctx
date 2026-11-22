@@ -103,7 +103,7 @@ impl ContextProofV2 {
         Self {
             proof_version: "ContextProofV2".to_string(),
             run_id,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             lean_ctx_version: env!("CARGO_PKG_VERSION").to_string(),
             session_id,
             quality_level: QualityLevel::Provenance,

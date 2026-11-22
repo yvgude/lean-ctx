@@ -49,7 +49,7 @@ pub(super) fn system_message(input: &str) -> Option<String> {
         color: false,
         ..Style::from_env()
     };
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     if event == "Stop" {
         // A Stop hook that already blocked once is a continuation of the
         // same turn, not a new one.

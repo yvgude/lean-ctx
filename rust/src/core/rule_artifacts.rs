@@ -68,6 +68,18 @@ pub const CLAUDE_MOD_COPIES: &[(&str, &str)] = &[
         "integrations/claude-code-mod/types/index.d.ts",
         crate::core::claude_host::TYPES_DTS,
     ),
+    (
+        "integrations/claude-code-mod-jobs/hooks/register.ts",
+        crate::core::claude_host::JOBS_REGISTER_TS,
+    ),
+    (
+        "integrations/claude-code-mod-jobs/hooks/hooks.json",
+        crate::core::claude_host::JOBS_HOOKS_JSON,
+    ),
+    (
+        "integrations/claude-code-mod-jobs/.claude-plugin/plugin.json",
+        crate::core::claude_host::JOBS_PLUGIN_JSON,
+    ),
 ];
 
 /// `(relative_path, content)` for every artifact the generator writes: the

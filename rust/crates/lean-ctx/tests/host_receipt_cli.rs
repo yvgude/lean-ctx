@@ -88,12 +88,12 @@ fn real_cli_signs_native_receipt_from_host_stdin_and_refuses_repeat() {
         serde_json::to_vec(&request).expect("request JSON"),
     )
     .expect("write request");
-    let current = chrono::Utc::now();
+    let current = lean_ctx_time::UtcDateTime::now();
     let settings = serde_json::to_vec(&json!({
         "schema_version":1,"signing_key_hex":seed,"ledger_path":root.join("host-ledger.jsonl"),
         "signer":{"key_id":"cli-host-key","public_key_digest":public["public_key_digest"],
-            "admitted_at":(current-chrono::Duration::hours(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
-            "expires_at":(current+chrono::Duration::hours(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),"revoked_at":null}
+            "admitted_at":(current-lean_ctx_time::Duration::hours(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
+            "expires_at":(current+lean_ctx_time::Duration::hours(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),"revoked_at":null}
     })).expect("host fixture JSON");
     let args = [
         "engine",

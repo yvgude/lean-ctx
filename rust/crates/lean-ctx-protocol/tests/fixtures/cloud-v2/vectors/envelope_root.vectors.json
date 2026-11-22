@@ -1,0 +1,63 @@
+{
+  "fixtures": [
+    {
+      "envelope_root": "8d650a9912ed7335278691da85f0c3a690c308759ee2c5aa5c640ba2dec389ac",
+      "leaves": [
+        "ea4df957199664f741a3948b2f1d436ea4bb436136ec8f276c2422e245eb0b86",
+        "dd6407eb2b72bb4637946e52664bba495797742e6f5f0c627a0ffdf7d58c3124",
+        "345f426ef22643667f1b60988cc60ee3e385a12a032196dbeb6df3bbc7809755",
+        "b3e9e9c62de71477814751c02b7efe2c25991f16efc7064571cbb7d36aae5bd5",
+        "23cd7e3d0a5522a7fe2cf8588e3b31c08d2abf9d5a562215c491f6df616f02e3",
+        "1dd58181d9ebde9dc242ebd4ad967ecf38b123faa4ae89231f5569e1b880e0d5",
+        "1b4ee231f07a9b71d303d2b5be56e5bf0c6a5de84f810f12fb9145fe5a0eccd5",
+        "b3d4d92e9843d9c8e16ff70a9569de4888c54489da5c46f538724373783097b5",
+        "abe99d1603e0eea44849124e453a68c855694345d00dd66c4a920d96b85215ed",
+        "e74f935fdd3667f88846fb838e9f23190592c6052b183c8346f68fcc8027709a",
+        "db97c70ef93a8ca762c75277f95bc43f65f78108602007e5c0513f6c8942c467",
+        "1832617b2375ab9002ccc4f46f6a7732ba208cd286800ed1eee87a13ab78cc94",
+        "dabd38d553b3bbe4c6caf2d47c03259b6d74208f87b10f9e4746662a37a2ce24",
+        "c9bc69b323637d2eaea409d5912216d204e914f5e1c1038069b911e4e40bfbd5",
+        "9110369ce72953bcce3122b42d18b10d087aaa548a37716736baa6883c3ab30e",
+        "9daa41aa2e913c3f2b8ca627adf78234080e9691b2847e7da49ca5c1b68796c5",
+        "99e2ea18e1817c8966e9c7a334007e9e4d95cb760f0eb653ec74cf86eaf74aaa",
+        "23ff857ec869215d65ef15bd52ebd2a0aef4a9fc52c9c6f597282989918cd6f5"
+      ],
+      "note": "seq 4 withheld, seq 5 purged: both keep their leaf",
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+      "seq_from": 1,
+      "seq_to": 18
+    }
+  ],
+  "rules": {
+    "inner": "blake3(0x01 ‖ left ‖ right); an odd last node is promoted unchanged",
+    "leaf": "blake3(0x00 ‖ canonical_json(signed envelope)): the signed members plus signature, never server fields or body; a withheld or converted record contributes its leaf",
+    "synthetic": "leaf i = blake3(0x00 ‖ canonical_json({\"i\": i})) for i = 0..leaves"
+  },
+  "synthetic": [
+    {
+      "envelope_root": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 1
+    },
+    {
+      "envelope_root": "77aa576d422c7d2d2ea35c5f239f1c60b9ac5e36e53687d97751140338578168",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 2
+    },
+    {
+      "envelope_root": "ace3d8bcce8bae401d5c072702ac5827392f31268b7c5175a3d8ca461afbaad1",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 3
+    },
+    {
+      "envelope_root": "7e4bbfb050816d6e3302c11d84b83ffaeff6fc02cb64c6d888388423224a3df4",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 7
+    },
+    {
+      "envelope_root": "1b74d25642e39cc8f815c3319adca4c996810bacc52db403cf57ce366696107d",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 60000
+    }
+  ]
+}

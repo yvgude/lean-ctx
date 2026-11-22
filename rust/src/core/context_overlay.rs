@@ -1,7 +1,7 @@
 //! Reversible context overlays — user/policy manipulations that modify
 //! context items without changing source files ("synaptic modulation").
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
@@ -20,7 +20,7 @@ impl OverlayId {
         Self(format!(
             "ov_{}_{}",
             target.as_str(),
-            Utc::now().timestamp_millis()
+            UtcDateTime::now().timestamp_millis()
         ))
     }
 
@@ -95,7 +95,7 @@ pub struct ContextOverlay {
     pub scope: OverlayScope,
     pub before_hash: String,
     pub author: OverlayAuthor,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     pub stale: bool,
 }
 
@@ -114,14 +114,14 @@ impl ContextOverlay {
             scope,
             before_hash,
             author,
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
             stale: false,
         }
     }
 
     fn is_expired(&self) -> bool {
         if let OverlayOp::Expire { after_secs } = &self.operation {
-            let elapsed = Utc::now()
+            let elapsed = UtcDateTime::now()
                 .signed_duration_since(self.created_at)
                 .num_seconds();
             elapsed >= *after_secs as i64
@@ -255,8 +255,8 @@ impl OverlayStore {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        let now = chrono::Utc::now();
-        let session_ttl = chrono::Duration::hours(24);
+        let now = lean_ctx_time::UtcDateTime::now();
+        let session_ttl = lean_ctx_time::Duration::hours(24);
         store.overlays.retain(|o| match &o.scope {
             OverlayScope::Session | OverlayScope::Call => {
                 now.signed_duration_since(o.created_at) < session_ttl
@@ -391,7 +391,7 @@ mod tests {
     fn prune_removes_expired_overlays() {
         let mut store = OverlayStore::new();
         let mut expired = make_overlay(OverlayOp::Expire { after_secs: 0 });
-        expired.created_at = Utc::now() - chrono::Duration::seconds(10);
+        expired.created_at = UtcDateTime::now() - lean_ctx_time::Duration::seconds(10);
         store.add(expired);
         store.add(make_overlay(OverlayOp::Include));
 
@@ -476,7 +476,7 @@ mod tests {
     fn history_returns_chronological_order() {
         let mut store = OverlayStore::new();
         let mut older = make_overlay(OverlayOp::Include);
-        older.created_at = Utc::now() - chrono::Duration::seconds(60);
+        older.created_at = UtcDateTime::now() - lean_ctx_time::Duration::seconds(60);
         store.overlays.push(older);
 
         let newer = make_overlay(OverlayOp::SetPriority { set_priority: 0.5 });

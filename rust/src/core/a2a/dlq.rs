@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 use serde::{Deserialize, Serialize};
 
 use crate::core::agents::{AgentRegistry, FileLock};
@@ -89,9 +89,9 @@ impl DeadLetter {
                 "dead letter attempts must be greater than zero".into(),
             ));
         }
-        let first_failed_at = DateTime::parse_from_rfc3339(&self.first_failed_at)
+        let first_failed_at = OffsetDateTime::parse_from_rfc3339(&self.first_failed_at)
             .map_err(|_| OclaError::InvalidRequest("invalid first_failed_at".into()))?;
-        let last_failed_at = DateTime::parse_from_rfc3339(&self.last_failed_at)
+        let last_failed_at = OffsetDateTime::parse_from_rfc3339(&self.last_failed_at)
             .map_err(|_| OclaError::InvalidRequest("invalid last_failed_at".into()))?;
         if last_failed_at < first_failed_at {
             return Err(OclaError::InvalidRequest(
@@ -339,7 +339,7 @@ impl DeadLetterQueue {
                 }
                 Err(error) => {
                     entries[position].attempts = entries[position].attempts.saturating_add(1);
-                    entries[position].last_failed_at = Utc::now().to_rfc3339();
+                    entries[position].last_failed_at = UtcDateTime::now().to_rfc3339();
                     Ok(Some(error))
                 }
             }
@@ -352,7 +352,7 @@ impl DeadLetterQueue {
             scope.validate()?;
         }
         self.with_entries(scope, false, |entries| {
-            let now = Utc::now();
+            let now = UtcDateTime::now();
             let mut oldest_age_seconds = 0;
             let mut by_target_agent = BTreeMap::new();
             let mut by_scope = BTreeMap::new();
@@ -369,9 +369,8 @@ impl DeadLetterQueue {
                 *by_target_agent
                     .entry(letter.target_agent.clone())
                     .or_insert(0) += 1;
-                if let Ok(failed_at) = DateTime::parse_from_rfc3339(&letter.first_failed_at) {
-                    let age = u64::try_from((now - failed_at.with_timezone(&Utc)).num_seconds())
-                        .unwrap_or(0);
+                if let Ok(failed_at) = OffsetDateTime::parse_from_rfc3339(&letter.first_failed_at) {
+                    let age = u64::try_from((now - failed_at.to_utc()).num_seconds()).unwrap_or(0);
                     oldest_age_seconds = oldest_age_seconds.max(age);
                 }
             }

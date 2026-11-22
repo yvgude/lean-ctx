@@ -9,7 +9,7 @@
 //!   read for knowledge are read, so a pulled fact's anchor never turns the
 //!   checkout into an oracle. The live state is the one source of truth for
 //!   anchors; the stored *to verify* mark (what `knowledge list`, AGENTS.md
-//!   and Hive read) is reconciled with it whenever it is checked.
+//!   and Cloud read) is reconciled with it whenever it is checked.
 //! - [`mark_edited`] reconciles the facts anchored to a file when an agent
 //!   edits it through this instance (cheap, no model): marked while the code
 //!   does not hold, unmarked once a revert restores it. [`stale`] reconciles
@@ -23,7 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::Serialize;
 
 use lean_ctx::core::knowledge::anchors::{self, AnchorState, GuardedResolver, MAX_ANCHORS};
@@ -163,7 +163,7 @@ fn live_anchor_reason(
 /// hold, clear the mark once it holds again (an edit that was reverted).
 /// A contradiction or source mark needs a person and is left alone.
 /// Returns whether the stored review changed.
-fn reconcile(fact: &mut KnowledgeFact, live: Option<FactReviewReason>, now: DateTime<Utc>) -> bool {
+fn reconcile(fact: &mut KnowledgeFact, live: Option<FactReviewReason>, now: UtcDateTime) -> bool {
     if fact
         .review
         .as_ref()
@@ -190,7 +190,7 @@ fn reconcile_store(
     let selected = |f: &KnowledgeFact| f.is_current() && !f.anchors.is_empty() && wanted(f);
     let knowledge = load(project_root);
     let mut guard = GuardedResolver::local(root);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let differs = knowledge.facts.iter().filter(|f| selected(f)).any(|f| {
         let mut probe = f.clone();
         reconcile(&mut probe, live_anchor_reason(f, &mut guard), now)
@@ -316,7 +316,7 @@ pub struct StaleReport {
 /// The live anchor check is the one source of truth: before listing, a
 /// stored anchor mark that disagrees with it is written back (set for code
 /// that changed outside this instance, cleared for code that was restored),
-/// so `knowledge list`, AGENTS.md and Hive show what this listing shows.
+/// so `knowledge list`, AGENTS.md and Cloud show what this listing shows.
 /// When the store cannot be written the listing still reports the live
 /// state.
 pub fn stale(project_root: &str, limit: Option<usize>) -> StaleReport {
@@ -463,7 +463,7 @@ pub fn verify(project_root: &str, id: &str) -> Result<VerifyReport, FreshnessErr
         if cleared.is_some() {
             fact.clear_review();
         }
-        fact.last_confirmed = Utc::now();
+        fact.last_confirmed = UtcDateTime::now();
         fact.confirmation_count = fact.confirmation_count.saturating_add(1);
         Ok((fact.clone(), reanchored, cleared))
     });
@@ -683,7 +683,7 @@ fn plan_dedupe(
 /// stays in the history (`outdated`, `knowledge list --state superseded`).
 /// The survivor's text is never rewritten: a merge loses no wording.
 fn apply_dedupe(knowledge: &mut ProjectKnowledge, plans: &[GroupPlan]) -> usize {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let mut merged = 0;
     for plan in plans {
         let keep_name = pair_name(&knowledge.facts[plan.keep]);
@@ -818,9 +818,9 @@ pub struct OutdatedReport {
 }
 
 /// Midnight UTC of (`now`'s day − `days`): the same all day long.
-fn cutoff_of(now: DateTime<Utc>, days: u32) -> DateTime<Utc> {
-    let day = now.date_naive() - chrono::Duration::days(i64::from(days));
-    DateTime::from_naive_utc_and_offset(day.and_hms_opt(0, 0, 0).unwrap_or_default(), Utc)
+fn cutoff_of(now: UtcDateTime, days: u32) -> UtcDateTime {
+    let day = now.date_naive() - lean_ctx_time::Duration::days(i64::from(days));
+    lean_ctx_time::utc_from_civil(day.to_datetime(lean_ctx_time::Time::midnight())).unwrap_or(now)
 }
 
 /// The position of the current fact that replaced `fact`: a recorded
@@ -859,7 +859,7 @@ pub fn outdated(
     project_root: &str,
     days: Option<u32>,
     limit: Option<usize>,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
 ) -> Result<OutdatedReport, FreshnessError> {
     let days = days.unwrap_or(DEFAULT_OUTDATED_DAYS);
     if days > MAX_OUTDATED_DAYS {
@@ -940,8 +940,7 @@ pub fn conflicts(project_root: &str) -> ConflictsReport {
     for (i, fact) in facts.iter().enumerate().filter(|(_, f)| f.is_current()) {
         by_name.entry(pair_name(fact)).or_default().push(i);
     }
-    let mut pairs: BTreeMap<(usize, usize), (&'static str, Option<DateTime<Utc>>)> =
-        BTreeMap::new();
+    let mut pairs: BTreeMap<(usize, usize), (&'static str, Option<UtcDateTime>)> = BTreeMap::new();
     for pair in knowledge
         .judged_pairs
         .iter()

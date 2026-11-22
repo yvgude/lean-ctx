@@ -118,9 +118,12 @@ fn shared_context_item(
             title(&entry.content)
         ),
         path: path.to_path_buf(),
-        date: chrono::DateTime::from_timestamp(i64::try_from(entry.timestamp).unwrap_or(0), 0)
-            .map(|at| at.to_rfc3339())
-            .unwrap_or_default(),
+        date: lean_ctx_time::UtcDateTime::from_timestamp(
+            i64::try_from(entry.timestamp).unwrap_or(0),
+            0,
+        )
+        .map(lean_ctx_time::UtcDateTime::to_rfc3339)
+        .unwrap_or_default(),
         source: Source::SharedContext {
             content: entry.content,
             agent: entry.agent,

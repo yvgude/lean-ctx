@@ -23,6 +23,13 @@ pub use state::{extract_session_facts, is_auto_task_intent};
 mod types;
 pub(crate) use paths::{EngineSessionId, parse_engine_session_id};
 
+/// Whether `id` has the shape of a session id this Engine generates
+/// (`YYYYMMDD-HHMMSSu<µs>p<pid>s<n>`, or the legacy `-` form): other crates
+/// use it to refuse caller-chosen labels where only real sessions count.
+pub fn is_engine_session_id(id: &str) -> bool {
+    parse_engine_session_id(id).is_some()
+}
+
 pub use playbook::{DeltaOutcome, EntryKind, Playbook, PlaybookEntry};
 pub use slot::{SessionSlot, SharedSession};
 pub use types::{
@@ -35,7 +42,7 @@ pub use types::{
 mod tests {
     use super::paths::{extract_cd_target, sessions_dir};
     use super::types::*;
-    use chrono::{Duration, Utc};
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     /// Bypass path "memory": findings and decisions the agent records are
     /// recalled into later context, so a credential never enters them.
@@ -224,12 +231,12 @@ mod tests {
         let _data = crate::core::data_dir::isolated_data_dir();
         let mut older = SessionState::new();
         older.id = "older".to_string();
-        older.updated_at = Utc::now() - Duration::days(1);
+        older.updated_at = UtcDateTime::now() - Duration::days(1);
         older.save().unwrap();
 
         let mut newer = SessionState::new();
         newer.id = "newer".to_string();
-        newer.updated_at = Utc::now();
+        newer.updated_at = UtcDateTime::now();
         newer.save().unwrap();
         assert_eq!(
             SessionState::load_global_latest_pointer().unwrap().id,

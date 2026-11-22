@@ -24,6 +24,15 @@
 //!   (`bash::r4_may_collapse`). A live rule beats a shadow one; among
 //!   shadow rules R2 wins.
 //! - **R3** — output already in context; shadow only in v1.
+//! - **R5** — the first whole-file Read of a large code file comes as its
+//!   outline (symbols with line spans); a second whole-file Read returns the
+//!   full content ([`outline`]). Checked before R1.read.
+//!
+//! Code Mode ([`repl`]): a tool call made by a REPL script (`tool_use_id`
+//! `repl_…`) returns the script's data, so it is never rewritten and leaves
+//! no R1/R3 record (the model has not seen it). R2, R4 and R5 still decide on
+//! it; their view is remembered, and the REPL's own result, which is what the
+//! model reads, gets that view wherever it carries the native output verbatim.
 //!
 //! Every rule runs under a mode: `on` replaces the result, `shadow` writes
 //! only a decision receipt, `off` skips it. Built in, R1.bash, R2 and R4 are
@@ -41,6 +50,8 @@
 mod bash;
 mod diagnostics;
 mod enforce;
+mod outline;
+mod repl;
 #[cfg(test)]
 mod tests;
 
@@ -110,12 +121,13 @@ pub(crate) struct Policy {
     pub r2: RuleMode,
     pub r3: RuleMode,
     pub r4: RuleMode,
+    pub r5: RuleMode,
 }
 
 impl Policy {
     /// Per rule, first that is set: `LEAN_CTX_GOVERNOR_<RULE>`, the `[governor]`
     /// config key (a governor install writes the measured modes there), the
-    /// built-in default (R1.read on, the rest shadow).
+    /// built-in default (R1.read and R5 on, the rest shadow).
     pub(crate) fn load() -> Self {
         Self::resolve(&lean_ctx::core::config::Config::load().governor)
     }
@@ -132,6 +144,7 @@ impl Policy {
             r2: rule("r2", "LEAN_CTX_GOVERNOR_R2", RuleMode::Shadow),
             r3: rule("r3", "LEAN_CTX_GOVERNOR_R3", RuleMode::Shadow).min(RuleMode::Shadow),
             r4: rule("r4", "LEAN_CTX_GOVERNOR_R4", RuleMode::Shadow),
+            r5: rule("r5", "LEAN_CTX_GOVERNOR_R5", RuleMode::On),
         }
     }
 }
@@ -184,6 +197,15 @@ pub(crate) struct Decision {
     pub receipt: Option<Receipt>,
     /// Stats of an applied R1.read hit (dashboard counters, as before).
     read_stats: Option<read_dedup::DedupHit>,
+    /// The payload's `session_id` when the hook handled a host tool call
+    /// (never one of LeanCTX's own MCP tools, which the MCP server counts
+    /// itself): the host session whose hook-call counter this call bumps, so
+    /// that session's MCP server does not report it as empty.
+    hook_session: Option<String>,
+    /// The text that replaced the native output (stdout or file content) of
+    /// an applied content rule (R2, R4, R5); [`repl`] replays it into a Code
+    /// Mode REPL result.
+    view: Option<String>,
 }
 
 impl Decision {
@@ -228,7 +250,18 @@ impl Decision {
             },
             receipt: Some(receipt),
             read_stats: None,
+            hook_session: None,
+            view: None,
         }
+    }
+
+    /// Attach the replacement text of an applied rule; a shadow decision
+    /// delivers nothing and keeps none.
+    fn with_view(mut self, view: String) -> Self {
+        if !self.output.is_empty() {
+            self.view = Some(view);
+        }
+        self
     }
 }
 
@@ -265,6 +298,9 @@ pub fn handle_govern() {
     }
     if let Some(receipt) = &decision.receipt {
         receipt.record();
+    }
+    if let Some(session) = &decision.hook_session {
+        lean_ctx::core::telemetry_features::record_hook_call(session);
     }
 }
 
@@ -317,21 +353,56 @@ pub(crate) fn decide(input: &str, policy: &Policy) -> Decision {
     if session_id.is_empty() {
         return Decision::default();
     }
-    match super::payload::resolve_tool_name(&v).as_deref() {
-        Some("Read") => r1_read(&v, policy, session_id),
+    let tool = super::payload::resolve_tool_name(&v);
+    // A tool call made by a Code Mode REPL script: its result is the script's
+    // data, so it is never rewritten (only remembered for the REPL result).
+    if repl::is_inner_call(&v) {
+        return repl::inner(&v, tool.as_deref(), policy, session_id);
+    }
+    let mut decision = match tool.as_deref() {
+        Some(repl::REPL_TOOL) => repl::shape(&v, policy, session_id),
+        Some(repl::POLL_TOOL) => repl::shape_poll(&v, policy, session_id),
+        Some("Read") => read(&v, policy, session_id),
         Some(name) if read_dedup::CTX_READ_TOOLS.contains(&name) => r1_read(&v, policy, session_id),
-        Some("Bash") => bash::decide(&v, policy, session_id),
+        Some("Bash") => bash::decide(&v, policy, session_id, bash::Scope::Model),
         Some("Edit" | "Write" | "MultiEdit" | "NotebookEdit") => {
             bash::bump_epoch(session_id);
             Decision::default()
         }
         _ => Decision::default(),
+    };
+    if tool.as_deref().is_some_and(counts_as_hook_call) {
+        decision.hook_session = Some(session_id.to_owned());
     }
+    decision
+}
+
+/// Whether a handled tool call counts toward `mcp.session.hook_calls`:
+/// LeanCTX's own MCP tools (`mcp__lean-ctx__*`, e.g. `ctx_read` under the
+/// R1 matcher) are already counted by the MCP server and stay out.
+fn counts_as_hook_call(tool: &str) -> bool {
+    !["mcp__lean-ctx__", "mcp__lean_ctx__"]
+        .iter()
+        .any(|prefix| tool.starts_with(prefix))
 }
 
 fn purge(session_id: &str) {
     if !session_id.is_empty() {
         read_dedup::purge_session(session_id);
+    }
+}
+
+/// Native Read: R5 first. A live outline answers alone (and leaves no R1
+/// record, so the later whole-file Read is not mistaken for a re-read); a
+/// shadow outline only keeps its receipt when R1.read has nothing to say.
+fn read(v: &serde_json::Value, policy: &Policy, session_id: &str) -> Decision {
+    match outline::decide(v, policy, session_id) {
+        Some(d) if policy.r5 == RuleMode::On => d,
+        Some(shadow) => {
+            let r1 = r1_read(v, policy, session_id);
+            if r1.receipt.is_some() { r1 } else { shadow }
+        }
+        None => r1_read(v, policy, session_id),
     }
 }
 

@@ -1,0 +1,13 @@
+{
+  "error": {
+    "code": "quota_exceeded",
+    "limit": 42949672960,
+    "message": "This workspace has used all its monthly transfer (42949672960 of 42949672960). Nothing is charged for more; it waits until the quota frees.",
+    "next_step": "upgrade_team",
+    "plan": "personal",
+    "reset_at": "2026-11-01T00:00:00Z",
+    "resource": "transfer_bytes",
+    "retry_after_s": 86400,
+    "used": 42949672960
+  }
+}

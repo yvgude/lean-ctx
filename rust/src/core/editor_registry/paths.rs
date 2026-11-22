@@ -250,10 +250,50 @@ pub fn omp_agent_dir(home: &Path) -> PathBuf {
 /// without mutating process-global environment state. A blank/whitespace-only
 /// override is not a usable directory and falls back to the default layout.
 pub(crate) fn omp_agent_dir_from(home: &Path, override_dir: Option<&str>) -> PathBuf {
-    if let Some(explicit) = override_dir.map(str::trim).filter(|dir| !dir.is_empty()) {
-        return PathBuf::from(explicit);
+    agent_dir_from(home, override_dir, ".omp/agent")
+}
+
+/// The part of `explicit` below `~`, as Pi's `normalizePath` reads it:
+/// `~/x` everywhere, and `~\x` only on Windows, where `\` is a separator;
+/// elsewhere a backslash is a filename character, so the value stays literal
+/// (and relative, so it is refused). `windows` is a parameter so both
+/// platforms' rules are tested on every OS.
+fn home_relative_part(explicit: &str, windows: bool) -> Option<&str> {
+    explicit
+        .strip_prefix("~/")
+        .or_else(|| windows.then(|| explicit.strip_prefix("~\\")).flatten())
+}
+
+/// `PI_CODING_AGENT_DIR` semantics shared by Pi and its fork Oh My Pi: a
+/// non-blank override replaces the whole directory, else `home/default_rel`.
+///
+/// Like Pi's own `getAgentDir` (`expandTildePath` → `normalizePath`), a
+/// leading `~` or `~/` (also `~\` on Windows)
+/// expands against `home`, so an unexpanded value from a quoted export or an
+/// IDE env file still names the dir Pi reads. A value that is still relative
+/// is ignored: it would resolve against lean-ctx's working directory (often a
+/// project repo), not Pi's, and Pi would never read what lands there.
+fn agent_dir_from(home: &Path, override_dir: Option<&str>, default_rel: &str) -> PathBuf {
+    let Some(explicit) = override_dir.map(str::trim).filter(|dir| !dir.is_empty()) else {
+        return home.join(default_rel);
+    };
+    let home_relative = home_relative_part(explicit, cfg!(windows));
+    let expanded = if explicit == "~" {
+        home.to_path_buf()
+    } else if let Some(rest) = home_relative {
+        home.join(rest)
+    } else {
+        PathBuf::from(explicit)
+    };
+    if expanded.is_absolute() {
+        expanded
+    } else {
+        tracing::warn!(
+            "PI_CODING_AGENT_DIR={explicit:?} is not an absolute path; using {}",
+            home.join(default_rel).display()
+        );
+        home.join(default_rel)
     }
-    home.join(".omp/agent")
 }
 
 pub fn omp_mcp_path(home: &Path) -> PathBuf {
@@ -262,6 +302,23 @@ pub fn omp_mcp_path(home: &Path) -> PathBuf {
 
 pub fn omp_agents_path(home: &Path) -> PathBuf {
     omp_agent_dir(home).join("AGENTS.md")
+}
+
+/// Stock Pi's user-level agent directory (`~/.pi/agent`). Pi loads
+/// `<agent-dir>/AGENTS.md` as global context and honours the same
+/// `PI_CODING_AGENT_DIR` full override (pi-mono `docs/configuration.md`).
+pub fn pi_agent_dir(home: &Path) -> PathBuf {
+    pi_agent_dir_from(home, std::env::var("PI_CODING_AGENT_DIR").ok().as_deref())
+}
+
+/// Env-free core of [`pi_agent_dir`]; a blank override falls back to the default.
+pub(crate) fn pi_agent_dir_from(home: &Path, override_dir: Option<&str>) -> PathBuf {
+    agent_dir_from(home, override_dir, ".pi/agent")
+}
+
+/// The global instruction file Pi actually reads (`<agent-dir>/AGENTS.md`).
+pub fn pi_agents_path(home: &Path) -> PathBuf {
+    pi_agent_dir(home).join("AGENTS.md")
 }
 
 /// Qoder CLI stores user-scoped MCP servers in the shared Qoder settings file.
@@ -681,7 +738,9 @@ mod tests {
 
 #[cfg(test)]
 mod omp_path_tests {
-    use super::{omp_agent_dir_from, omp_agents_path, omp_mcp_path};
+    use super::{
+        home_relative_part, omp_agent_dir_from, omp_agents_path, omp_mcp_path, pi_agent_dir_from,
+    };
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -694,10 +753,40 @@ mod omp_path_tests {
 
     #[test]
     fn pi_coding_agent_dir_is_a_full_override() {
+        // An absolute path on every OS (`/elsewhere` has no drive on Windows).
+        let elsewhere = std::env::temp_dir().join("elsewhere/omp-agent");
         assert_eq!(
-            omp_agent_dir_from(Path::new("/home/tester"), Some("/elsewhere/omp-agent")),
-            PathBuf::from("/elsewhere/omp-agent")
+            omp_agent_dir_from(Path::new("/home/tester"), elsewhere.to_str()),
+            elsewhere
         );
+    }
+
+    /// Pi expands `~` itself (`getAgentDir` → `expandTildePath`); lean-ctx
+    /// must name the same dir, and never resolve the override against its own
+    /// working directory (a `./~/pi-agent/AGENTS.md` inside a project repo).
+    #[test]
+    fn agent_dir_override_expands_tilde_and_refuses_relative_paths() {
+        let home = std::env::temp_dir().join("tester");
+        assert_eq!(pi_agent_dir_from(&home, Some("~")), home);
+        assert_eq!(
+            pi_agent_dir_from(&home, Some("~/pi-agent")),
+            home.join("pi-agent")
+        );
+        assert_eq!(
+            omp_agent_dir_from(&home, Some("~/omp-agent")),
+            home.join("omp-agent")
+        );
+        // Pi's `normalizePath` treats `~\\` as `~/` on Windows only.
+        assert_eq!(home_relative_part("~\\pi-agent", true), Some("pi-agent"));
+        assert_eq!(home_relative_part("~\\pi-agent", false), None);
+        assert_eq!(home_relative_part("~/pi-agent", false), Some("pi-agent"));
+        for relative in ["pi-agent", "./pi-agent", "~other/pi-agent"] {
+            assert_eq!(
+                pi_agent_dir_from(&home, Some(relative)),
+                home.join(".pi/agent"),
+                "{relative}"
+            );
+        }
     }
 
     #[test]
@@ -717,5 +806,20 @@ mod omp_path_tests {
         assert_eq!(omp_mcp_path(home).parent(), omp_agents_path(home).parent());
         assert_eq!(omp_mcp_path(home).file_name().unwrap(), "mcp.json");
         assert_eq!(omp_agents_path(home).file_name().unwrap(), "AGENTS.md");
+    }
+
+    #[test]
+    fn stock_pi_agent_dir_stays_apart_from_omp_and_honours_the_override() {
+        let home = Path::new("/home/tester");
+        assert_eq!(
+            pi_agent_dir_from(home, None),
+            PathBuf::from("/home/tester/.pi/agent")
+        );
+        assert_ne!(
+            pi_agent_dir_from(home, None),
+            omp_agent_dir_from(home, None)
+        );
+        let elsewhere = std::env::temp_dir().join("elsewhere/pi-agent");
+        assert_eq!(pi_agent_dir_from(home, elsewhere.to_str()), elsewhere);
     }
 }

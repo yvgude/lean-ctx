@@ -38,6 +38,7 @@ mod config;
 mod discovery;
 mod handlers;
 mod local_service;
+mod oauth;
 mod relay_rate;
 mod relay_replay;
 mod relay_replay_async;
@@ -107,6 +108,8 @@ struct AppState {
     /// Serving the local daemon socket: a tool call may name its project.
     local_ipc: bool,
     project_servers: Arc<ProjectServers>,
+    /// The OAuth authorization server (`serve --oauth`); TCP only.
+    oauth: Option<Arc<oauth::OAuthState>>,
 }
 
 /// One server per project a CLI call named, so a call from project B never
@@ -222,57 +225,76 @@ impl RateLimiter {
 
 async fn auth_middleware(
     State(state): State<AppState>,
-    req: Request<axum::body::Body>,
+    mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
     if state.token.is_none() {
         return next.run(req).await;
     }
 
+    let path = req.uri().path().to_string();
     // Relay deliveries authenticate against their selected peer channel; the
     // general server bearer must not become a second singleton authority.
-    if req.uri().path() == "/a2a/deliver" && !state.a2a_peers.peers.is_empty() {
+    if path == "/a2a/deliver" && !state.a2a_peers.peers.is_empty() {
         return next.run(req).await;
     }
 
-    if req.uri().path() == "/health" {
+    if path == "/health" {
+        return next.run(req).await;
+    }
+
+    // OAuth discovery, registration, consent and token endpoints are how a
+    // client without a token gets one.
+    if state.oauth.is_some() && oauth::is_public_path(&path) {
         return next.run(req).await;
     }
 
     let expected = state.token.as_deref().unwrap_or("");
     let Some(h) = req.headers().get(header::AUTHORIZATION) else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "missing Authorization header",
-        );
+        return unauthorized(&state, "missing Authorization header", None);
     };
     let Ok(s) = h.to_str() else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "malformed Authorization header",
-        );
+        return unauthorized(&state, "malformed Authorization header", None);
     };
     let Some(token) = s
         .strip_prefix("Bearer ")
         .or_else(|| s.strip_prefix("bearer "))
     else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "Authorization must use the Bearer scheme",
-        );
+        return unauthorized(&state, "Authorization must use the Bearer scheme", None);
     };
-    if !constant_time_eq(token.as_bytes(), expected.as_bytes()) {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "invalid bearer token",
-        );
-    }
+    let kind = if constant_time_eq(token.as_bytes(), expected.as_bytes()) {
+        oauth::AuthKind::Owner
+    } else if let Some(client_id) = state
+        .oauth
+        .as_deref()
+        .and_then(|o| o.verify_access(token, oauth::unix_now()))
+    {
+        if !oauth::oauth_may_call(req.method(), &path) {
+            return json_error(
+                StatusCode::FORBIDDEN,
+                "insufficient_scope",
+                "an OAuth client may not call this route; it needs the instance token",
+            );
+        }
+        oauth::AuthKind::OAuth { client_id }
+    } else {
+        return unauthorized(&state, "invalid bearer token", Some("invalid_token"));
+    };
+    req.extensions_mut().insert(kind);
 
     next.run(req).await
+}
+
+/// A 401; with OAuth on it points the client at the protected resource
+/// metadata (MCP authorization, RFC 9728 §5.1).
+fn unauthorized(state: &AppState, message: &str, error: Option<&str>) -> Response {
+    let mut resp = json_error(StatusCode::UNAUTHORIZED, "unauthorized", message);
+    if let Some(oauth) = state.oauth.as_deref()
+        && let Ok(value) = axum::http::HeaderValue::from_str(&oauth.challenge(error))
+    {
+        resp.headers_mut().insert(header::WWW_AUTHENTICATE, value);
+    }
+    resp
 }
 
 /// Structured REST error envelope: `{ "error": <human message>, "error_code": <stable code> }`.
@@ -1096,12 +1118,45 @@ fn build_router(
         cfg.mcp_http_config(),
     );
 
-    let state = AppState {
-        token: if require_auth {
-            cfg.effective_auth_token()
-        } else {
-            None
+    let token = if require_auth {
+        cfg.effective_auth_token()
+    } else {
+        None
+    };
+    let oauth_state = match (token.as_deref(), cfg.oauth_enabled()) {
+        (Some(owner), true) => match cfg.oauth_issuer_url() {
+            Ok(Some(issuer)) => {
+                let dir = cfg.oauth_state_dir.clone().or_else(|| {
+                    lean_ctx::core::data_dir::lean_ctx_data_dir()
+                        .ok()
+                        .map(|dir| dir.join("oauth"))
+                });
+                let store = dir.map(|dir| oauth::OAuthState::store_path(&dir, &issuer));
+                // An explicit --auth-token is fingerprinted: rotating it ends
+                // every grant approved with the old one. The loopback token
+                // generated per start keeps the grants across restarts.
+                let explicit = cfg.auth_token.as_deref().is_some_and(|t| !t.is_empty());
+                Some(Arc::new(oauth::OAuthState::open(
+                    issuer,
+                    owner.to_string(),
+                    store,
+                    explicit,
+                )))
+            }
+            Ok(None) => None,
+            Err(error) => {
+                tracing::error!("OAuth not served: {error}");
+                None
+            }
         },
+        _ => None,
+    };
+    let oauth_routes = match &oauth_state {
+        Some(state) => oauth::router(state.clone()),
+        None => Router::new(),
+    };
+    let state = AppState {
+        token,
         a2a_signing_key: cfg.a2a_signing_key.clone(),
         a2a_recipient_id: cfg.a2a_recipient_id.clone(),
         a2a_tenant_id: cfg.a2a_tenant_id.clone(),
@@ -1129,6 +1184,7 @@ fn build_router(
             servers: tokio::sync::Mutex::new(Vec::new()),
             factory: Box::new(project_factory),
         }),
+        oauth: oauth_state,
     };
 
     let ocla = match (
@@ -1213,6 +1269,7 @@ fn build_router(
         )
         .merge(ocla.with_state(()))
         .merge(local_routes)
+        .merge(oauth_routes)
         .fallback_service(mcp_http)
         .layer(axum::extract::DefaultBodyLimit::max(cfg.max_body_bytes))
         .layer(middleware::from_fn_with_state(
@@ -1246,6 +1303,13 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     // Surface any path-jail relaxation inherited from the launch env or config,
     // so a loosened boundary is never silent (GH security audit, finding 3).
     lean_ctx::core::pathjail::warn_if_relaxed();
+
+    // OAuth exposed without TLS, or a public consent page guarded only by
+    // the generated token, is never silent (ux16 review).
+    for warning in cfg.oauth_exposure_warnings() {
+        tracing::warn!("{warning}");
+        eprintln!("[lean-ctx] WARNING: {warning}");
+    }
 
     // Pre-warm the project indices in the background for this long-lived HTTP
     // server. The stdio path deliberately stays lazy — short-lived respawns must
@@ -1302,10 +1366,10 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
 
     lean_ctx::core::telemetry_send::spawn_daemon_telemetry();
     lean_ctx::core::context_admission::receipt_store::retention::maintain_at_startup();
-    // One Hive scheduler per machine (the daemon is the singleton).
-    lean_ctx_hive::scheduler::spawn(lean_ctx::core::config::Config::load().hive.clone());
-    // One Hive bus relay per machine, beside the scheduler.
-    lean_ctx_hive::bus::spawn(lean_ctx::core::config::Config::load().hive.clone());
+    // One Cloud scheduler per machine (the daemon is the singleton).
+    lean_ctx_cloud::scheduler::spawn(lean_ctx::core::config::Config::load().cloud.clone());
+    // One Cloud bus relay per machine, beside the scheduler.
+    lean_ctx_cloud::bus::spawn(lean_ctx::core::config::Config::load().cloud.clone());
 
     match addr {
         #[cfg(unix)]

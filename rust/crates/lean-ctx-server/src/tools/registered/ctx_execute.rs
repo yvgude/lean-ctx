@@ -216,7 +216,7 @@ pub(crate) mod session_rights_fixture {
         std::fs::create_dir_all(worktree.join("specs/42")).expect("spec dir");
         std::fs::write(worktree.join("tests/locked_test.rs"), "#[test] fn t() {}\n").expect("test");
         let list = serde_json::json!({
-            "schema": "leanctx.hive.process.feature-list/v1", "process": "1.0",
+            "schema": "leanctx.cloud.process.feature-list/v1", "process": "1.0",
             "task": {"vault": "#acme/payments", "number": 42},
             "spec_commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
             "test_command": "cargo test",

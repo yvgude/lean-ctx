@@ -366,7 +366,7 @@ pub mod tests {
         session.progress.push(crate::core::session::ProgressEntry {
             action: "deployed billing".to_string(),
             detail: None,
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
 
         let default_layout = position_optimize_with_share(&session, 0.7);

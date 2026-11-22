@@ -35,7 +35,7 @@ const LOCKED: &str = "crates/pay/tests/refund.rs";
 
 fn feature_list(after_g2: bool) -> serde_json::Value {
     let mut list = json!({
-      "schema": "leanctx.hive.process.feature-list/v1",
+      "schema": "leanctx.cloud.process.feature-list/v1",
       "process": "1.0",
       "task": {"vault": "#acme/payments", "number": 42},
       "test_command": "cargo test -p pay refund",
@@ -961,7 +961,7 @@ mod feature_list_rules {
     use std::collections::BTreeMap;
 
     const SPEC: &str = r##"{
-      "schema": "leanctx.hive.process.feature-list/v1",
+      "schema": "leanctx.cloud.process.feature-list/v1",
       "process": "1.0",
       "task": {"vault": "#acme/payments", "number": 42},
       "spec_commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
@@ -1167,7 +1167,7 @@ fn session_rights_rights_file_cannot_be_replaced_through_its_directory() {
     );
 }
 
-/// Hive Desktop binds a Developer's scratchpad and build folder as further
+/// Cloud Desktop binds a Developer's scratchpad and build folder as further
 /// `own_worktree` entries: writable, but not roots of the locked paths.
 #[test]
 fn session_rights_extra_own_worktree_folders_are_writable_not_lock_roots() {

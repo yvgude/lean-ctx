@@ -406,7 +406,7 @@ fn knowledge_health(project: &Path) -> KnowledgeHealth {
     };
     let total = knowledge.facts.len();
     let current: Vec<_> = knowledge.facts.iter().filter(|f| f.is_current()).collect();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let stale = current
         .iter()
         .filter(|f| (now - f.created_at).num_days() > STALE_FACT_DAYS && f.retrieval_count == 0)

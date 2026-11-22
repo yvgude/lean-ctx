@@ -529,7 +529,7 @@ fn send_clock() -> (String, i64) {
     {
         return clock;
     }
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     (now.format("%Y-%m-%d").to_string(), now.timestamp())
 }
 
@@ -614,7 +614,7 @@ fn build_batch(
         .map(|day| day.totals.clone())
         .unwrap_or_default();
     let mut batch = build_day(today, &today_totals)?;
-    if let Some(history) = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d")
+    if let Some(history) = lean_ctx_time::parse_date(today, "%Y-%m-%d")
         .ok()
         .and_then(history::usage_history)
     {
@@ -1140,7 +1140,7 @@ fn record_error_category_inner(category: ErrorCategory) -> Result<(), String> {
 
 /// Collection stays off whenever the opt-out cannot be read: an unreadable or
 /// corrupt config must never be mistaken for consent.
-fn telemetry_collection_eligible() -> bool {
+pub(crate) fn telemetry_collection_eligible() -> bool {
     let Ok(config) = crate::core::config::Config::try_load_global() else {
         return false;
     };

@@ -46,8 +46,12 @@ lean-ctx graph export-html --out graph.html
 ```
 
 `ctx_graph` (MCP) actions: `build`, `related`, `symbol`, `impact`, `context`,
-`diagram`, `neighbors`, `path`, `explain`, `diff`, `status`, `enrich`. It's the
-one entry point for file-level structure; `ctx_callgraph` covers call edges.
+`diagram`, `neighbors`, `path`, `explain`, `diff`, `landing`, `status`, `enrich`.
+It's the one entry point for file-level structure; `ctx_callgraph` covers call edges.
+`landing since=<base> head=<ref> [other=<ref>]` reports the changed units of a
+landing, their dependents, the affected tests (security tests always included)
+and the overlap with a second head; it reports `full_suite=true` whenever a
+change cannot be mapped to tests.
 
 ---
 

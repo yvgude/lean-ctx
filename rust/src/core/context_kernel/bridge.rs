@@ -116,7 +116,7 @@ pub(crate) fn reference_input(
     let evaluation_time = policy
         .retention_days
         .is_some()
-        .then(|| chrono::Utc::now().fixed_offset());
+        .then(|| lean_ctx_time::UtcDateTime::now().fixed_offset());
     Ok(AutopilotInput {
         retrieval,
         evaluation_time,

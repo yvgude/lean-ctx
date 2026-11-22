@@ -2,10 +2,10 @@
 
 use super::*;
 use axum::body::{Body, to_bytes};
-use chrono::{Duration as ChronoDuration, Utc};
 use ed25519_dalek::SigningKey;
 use lean_ctx::core::a2a::{task::*, task_response::SignedTaskStatusV1};
 use lean_ctx::core::a2a_transport::{AgentIdentityV1, TransportContentType, TransportEnvelopeV1};
+use lean_ctx_time::UtcDateTime;
 use tower::ServiceExt;
 
 struct Fixture {
@@ -24,7 +24,7 @@ impl Fixture {
         // Explicit fixture provisioning, never called by request processing.
         let receiver_key =
             lean_ctx::core::agent_identity::get_or_create_keypair(&receiver).expect("key");
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let peer = |agent: &str, id: &str, key: &SigningKey| TaskPeerTrustV1 {
             schema_version: 1,
             key_id: id.into(),
@@ -40,8 +40,8 @@ impl Fixture {
                 tenant_id: "tenant".into(),
                 project_id: "project".into(),
             }],
-            not_before: now - ChronoDuration::hours(1),
-            expires_at: now + ChronoDuration::hours(1),
+            not_before: now - lean_ctx_time::Duration::hours(1),
+            expires_at: now + lean_ctx_time::Duration::hours(1),
             revoked: false,
         };
         let policy = TaskAuthorityConfigV1 {
@@ -59,8 +59,8 @@ impl Fixture {
                     action: action.into(),
                     tenant_id: "tenant".into(),
                     project_id: "project".into(),
-                    not_before: now - ChronoDuration::hours(1),
-                    expires_at: now + ChronoDuration::hours(1),
+                    not_before: now - lean_ctx_time::Duration::hours(1),
+                    expires_at: now + lean_ctx_time::Duration::hours(1),
                     revoked: false,
                 })
                 .collect(),
@@ -72,7 +72,7 @@ impl Fixture {
             "project",
             TASK_ACTION_SEND,
             now,
-            now + ChronoDuration::minutes(10),
+            now + lean_ctx_time::Duration::minutes(10),
             "task-fixture",
             "not disclosed in status",
             vec![],
@@ -91,7 +91,7 @@ impl Fixture {
             &task.task_id,
             &descriptor.content_digest(),
             now,
-            now + ChronoDuration::minutes(5),
+            now + lean_ctx_time::Duration::minutes(5),
             "get-1",
             None,
             TASK_ACTION_GET,
@@ -188,7 +188,7 @@ fn verified(
 ) -> SignedTaskStatusV1 {
     let reply = SignedTaskStatusV1::from_json(&body.to_string()).expect("signed status");
     reply
-        .verify(request, &config.a2a_task_authority, Utc::now())
+        .verify(request, &config.a2a_task_authority, UtcDateTime::now())
         .expect("receiver provenance");
     assert!(!body.to_string().contains("not disclosed"));
     reply
@@ -329,7 +329,7 @@ async fn signed_control_http_denials_preserve_task_bytes() {
 async fn signed_control_http_reply_respects_receiver_key_expiry() {
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     let mut fixture = Fixture::new();
-    let deadline = Utc::now() + ChronoDuration::seconds(30);
+    let deadline = UtcDateTime::now() + lean_ctx_time::Duration::seconds(30);
     fixture.config.a2a_task_authority.peers[1].expires_at = deadline;
     let request = fixture.control(TASK_ACTION_GET, "short-key");
     let (code, body) = deliver(

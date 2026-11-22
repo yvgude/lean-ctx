@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::held_horizon_support::{HorizonClock, MINIMAL_PACK, Phase};
 use super::{PublicationAuthority, REQUEST_PROJECT, TestPolicyOverride};
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 
@@ -28,7 +28,9 @@ fn the_original_horizon_passing_in_the_closing_refresh_withholds_the_result_desp
         assert!(clock.open_calls.get() >= 1);
         assert!(clock.fresh_calls.get() >= 1);
 
-        clock.h.set(Utc::now() + chrono::Duration::seconds(3));
+        clock
+            .h
+            .set(UtcDateTime::now() + lean_ctx_time::Duration::seconds(3));
         clock.phase.set(Phase::Open);
         clock.closing_calls.set(0);
         let operation_calls = Cell::new(0_u32);
@@ -45,7 +47,7 @@ fn the_original_horizon_passing_in_the_closing_refresh_withholds_the_result_desp
         );
         assert_eq!(operation_calls.get(), 1);
         assert!(clock.closing_calls.get() >= 1);
-        assert!(Utc::now() >= clock.h.get());
+        assert!(UtcDateTime::now() >= clock.h.get());
         assert!(held_authority.unwrap().verify().is_err());
     });
 }

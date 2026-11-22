@@ -156,7 +156,7 @@ fn dedupe_groups_duplicates_and_merges_only_on_apply() {
             key_a: "ops/deploy-day".into(),
             key_b: "ops/deploy-window".into(),
             verdict: "unrelated".into(),
-            judged_at: chrono::Utc::now(),
+            judged_at: lean_ctx_time::UtcDateTime::now(),
         }],
     );
 
@@ -204,7 +204,7 @@ fn dedupe_groups_duplicates_and_merges_only_on_apply() {
             .any(|f| !f.is_current() && f.value == "Deploys run on Fridays only after review"),
         "the merged wording stays in the history"
     );
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     assert!(outdated(&root, Some(MAX_OUTDATED_DAYS), None, now).is_ok());
     assert_eq!(
         outdated(&root, Some(u32::MAX), None, now).unwrap_err().code,
@@ -236,7 +236,7 @@ fn dedupe_groups_duplicates_and_merges_only_on_apply() {
 fn conflicts_list_judged_contradictions_and_unpaired_marks() {
     let _guards = isolated();
     let (_directory, root) = project();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let contradicted = |mut f: KnowledgeFact| {
         f.mark_review(
             FactReviewState::Contradicted,

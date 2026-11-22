@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::ranking::{
     build_knowledge_index, fact_version_id_v1, hash_project_root, string_similarity,
@@ -57,7 +57,7 @@ impl ProjectKnowledge {
             facts: Vec::new(),
             patterns: Vec::new(),
             history: Vec::new(),
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
             judged_pairs: Vec::new(),
             index: Default::default(),
             withheld: Vec::new(),
@@ -178,7 +178,7 @@ impl ProjectKnowledge {
         if let Some(existing) = self.facts.iter_mut().find(|f| {
             f.category == category && f.key == key && f.is_current() && f.origin == origin
         }) {
-            let now = Utc::now();
+            let now = UtcDateTime::now();
             let same_value_ci = existing.value.to_lowercase() == value.to_lowercase();
             let similarity = string_similarity(&existing.value, value);
 
@@ -233,7 +233,7 @@ impl ProjectKnowledge {
                 });
             }
         } else {
-            let now = Utc::now();
+            let now = UtcDateTime::now();
             self.facts.push(KnowledgeFact {
                 anchors: Vec::new(),
                 review: None,
@@ -266,7 +266,7 @@ impl ProjectKnowledge {
             });
         }
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         self.rebuild_index();
 
         let action = if contradiction.is_some() {
@@ -364,7 +364,7 @@ impl ProjectKnowledge {
             }
         }
         let (idx, _) = best?;
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let f = &mut self.facts[idx];
         f.last_confirmed = now;
         f.source_session = session_id.to_string();
@@ -410,7 +410,7 @@ impl ProjectKnowledge {
             description: description.to_string(),
             examples,
             source_session: session_id.to_string(),
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
         });
 
         // Lossless capacity reclaim (#995): keep the newest patterns and archive
@@ -432,7 +432,7 @@ impl ProjectKnowledge {
         ) {
             tracing::warn!(%error, "pattern capacity reclaim failed");
         }
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 
     pub fn remove_fact(&mut self, category: &str, key: &str) -> bool {
@@ -441,7 +441,7 @@ impl ProjectKnowledge {
             .retain(|f| !(f.category == category && f.key == key));
         let removed = self.facts.len() < before;
         if removed {
-            self.updated_at = Utc::now();
+            self.updated_at = UtcDateTime::now();
             self.rebuild_index();
         }
         removed

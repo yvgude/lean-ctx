@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -87,9 +87,9 @@ pub struct KnowledgeEdge {
     pub from: KnowledgeNodeRef,
     pub to: KnowledgeNodeRef,
     pub kind: KnowledgeEdgeKind,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     #[serde(default)]
-    pub last_seen: Option<DateTime<Utc>>,
+    pub last_seen: Option<UtcDateTime>,
     #[serde(default)]
     pub count: u32,
     pub source_session: String,
@@ -104,7 +104,7 @@ pub struct KnowledgeEdge {
 pub struct KnowledgeRelationGraph {
     pub project_hash: String,
     pub edges: Vec<KnowledgeEdge>,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
     /// Ephemeral incident-edge lookup rebuilt after JSON load and mutations.
     /// Skipping it preserves the existing relations.json format.
     #[serde(skip)]
@@ -125,7 +125,7 @@ impl Default for KnowledgeRelationGraph {
         Self {
             project_hash: String::new(),
             edges: Vec::new(),
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
             edge_positions: BTreeMap::new(),
             foreign_edges: Vec::new(),
             unreadable: false,
@@ -138,7 +138,7 @@ impl KnowledgeRelationGraph {
         Self {
             project_hash: project_hash.to_string(),
             edges: Vec::new(),
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
             edge_positions: BTreeMap::new(),
             foreign_edges: Vec::new(),
             unreadable: false,
@@ -240,7 +240,7 @@ impl KnowledgeRelationGraph {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         self.edges.sort_by(|a, b| {
             a.from
                 .category
@@ -280,7 +280,7 @@ impl KnowledgeRelationGraph {
         kind: KnowledgeEdgeKind,
         session_id: &str,
     ) -> bool {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         if let Some(e) = self
             .edges
             .iter_mut()
@@ -369,7 +369,7 @@ impl KnowledgeRelationGraph {
             .find(|e| &e.from == from && &e.to == to)
         {
             e.strength = (e.strength + amount * (1.0 - e.strength)).min(1.0);
-            e.last_seen = Some(Utc::now());
+            e.last_seen = Some(UtcDateTime::now());
             e.count = e.count.saturating_add(1);
             return true;
         }
@@ -379,7 +379,7 @@ impl KnowledgeRelationGraph {
             .find(|e| &e.from == to && &e.to == from)
         {
             e.strength = (e.strength + amount * (1.0 - e.strength)).min(1.0);
-            e.last_seen = Some(Utc::now());
+            e.last_seen = Some(UtcDateTime::now());
             e.count = e.count.saturating_add(1);
             return true;
         }

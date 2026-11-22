@@ -1,7 +1,7 @@
 # LeanCTX | OSS
 
 **LeanCTX is the Context Gateway for AI agents.**
-**Control what your AI can see.**
+**Less context. More intelligence.**
 
 The open-source Engine brings context selection, supported access and content
 controls, local knowledge and observable evidence to existing AI tools through

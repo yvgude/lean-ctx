@@ -185,7 +185,7 @@ mod tests {
             scope: name
                 .starts_with('@')
                 .then(|| name.split('/').next().unwrap_or_default().to_string()),
-            created_at: chrono::Utc::now(),
+            created_at: lean_ctx_time::UtcDateTime::now(),
             updated_at: None,
             layers: Vec::new(),
             dependencies: Vec::new(),

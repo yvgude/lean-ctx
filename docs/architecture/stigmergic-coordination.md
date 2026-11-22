@@ -86,16 +86,16 @@ account. It may expose bounded claim, done, stuck and avoid signals through
 the Local Agent Bus and the local Cockpit. It must work without transmitting
 message or source payloads.
 
-### LeanCTX Hive Team
+### LeanCTX Cloud Team
 
-LeanCTX Hive Team adds durable workspace-scoped scents across users, devices and machines.
+LeanCTX Cloud Team adds durable workspace-scoped scents across users, devices and machines.
 The shared projection requires membership, role and seat enforcement; bounded
 retention; deterministic conflict resolution; reconnect/resume behavior; and no
 cross-workspace leakage.
 
-### LeanCTX Hive Enterprise
+### LeanCTX Cloud Enterprise
 
-LeanCTX Hive Enterprise adds governed identity, RBAC, classification, region, retention,
+LeanCTX Cloud Enterprise adds governed identity, RBAC, classification, region, retention,
 audit and deployment policy. Organization policy may restrict which agents can
 deposit or observe signals for a target. Audit records remain payload-free and
 must not claim hardware attestation without measured evidence.
@@ -148,11 +148,11 @@ These metrics cannot establish accepted outcome without the Outcome Evaluator.
    signals while leases continue to fence mutation.
 2. Crash, corrupt-file, concurrent writer, stale PID, clock shift, capacity and
    decay behavior are tested on supported platforms.
-3. LeanCTX Hive Team proves authenticated shared scents across two users and machines with
+3. LeanCTX Cloud Team proves authenticated shared scents across two users and machines with
    no cross-workspace access and deterministic reconnect behavior.
-4. LeanCTX Hive Enterprise proves policy denial, identity revocation, retention and
+4. LeanCTX Cloud Enterprise proves policy denial, identity revocation, retention and
    payload-free audit.
-5. Capability gates match the OSS / Hive (Team, Enterprise) packaging at every
+5. Capability gates match the OSS / Cloud (Team, Enterprise) packaging at every
    CLI/MCP/HTTP entry point; nothing local is gated.
 6. Telemetry fixtures prove no raw target, path, prompt, message, source or
    secret leakage.

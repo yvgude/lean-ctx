@@ -24,6 +24,8 @@ pub(crate) enum Shape {
     Repeat,
     /// `--flag` when `true`; absent when `false`.
     Switch,
+    /// `--flag <JSON>`: an object input (or its JSON text) as compact JSON.
+    Json,
 }
 
 /// One input of a route.
@@ -128,7 +130,7 @@ const SESSION: Param = value("session", "--session");
 pub(crate) const EVENTS_PATH: &str = "/v1/local/events";
 
 /// The event types of [`EVENTS_PATH`], sorted.
-pub(crate) const EVENT_TYPES: [&str; 8] = [
+pub(crate) const EVENT_TYPES: [&str; 9] = [
     "activity",
     "agents_changed",
     "hello",
@@ -136,8 +138,18 @@ pub(crate) const EVENT_TYPES: [&str; 8] = [
     "message",
     "presence_changed",
     "release_notice",
+    "snapshot",
     "tool_call",
 ];
+
+/// The view subscriptions of [`EVENTS_PATH`] (`view=`, local-service-v1 §3a).
+pub(crate) const VIEWS: [&str; 1] = ["messages"];
+/// The parameters of a view subscription, sorted.
+pub(crate) const VIEW_PARAMS: [&str; 5] = ["cursor", "from", "limit", "thread", "to"];
+/// Rows a view holds when the reader names no `limit`.
+pub(crate) const VIEW_LIMIT: usize = 100;
+/// The most rows a view holds.
+pub(crate) const VIEW_MAX_LIMIT: usize = 200;
 
 /// Every route (`table_json` lists them sorted by path, then method).
 pub(crate) const ROUTES: &[Route] = &[
@@ -154,8 +166,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "docs.list",
         method: Method::Get,
-        path: "/v1/local/hive/docs",
-        cli: &["hive", "docs", "list", "--json"],
+        path: "/v1/local/cloud/docs",
+        cli: &["cloud", "docs", "list", "--json"],
         action: &["list"],
         params: &[PROJECT_ROOT],
         project: Project::Required,
@@ -164,8 +176,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "docs.page",
         method: Method::Get,
-        path: "/v1/local/hive/docs/{id}",
-        cli: &["hive", "docs", "show", "<id>", "--json"],
+        path: "/v1/local/cloud/docs/{id}",
+        cli: &["cloud", "docs", "show", "<id>", "--json"],
         action: &["show"],
         params: &[PROJECT_ROOT],
         project: Project::Required,
@@ -245,20 +257,20 @@ pub(crate) const ROUTES: &[Route] = &[
         names: None,
     },
     Route {
-        kind: "hive.presence",
+        kind: "cloud.presence",
         method: Method::Get,
         path: "/v1/local/presence",
-        cli: &["hive", "presence", "--json"],
+        cli: &["cloud", "presence", "--json"],
         action: &[],
         params: &[],
         project: Project::None,
         names: None,
     },
     Route {
-        kind: "hive.status",
+        kind: "cloud.status",
         method: Method::Get,
         path: "/v1/local/status",
-        cli: &["hive", "status", "--json", "--contract", "local-read/1"],
+        cli: &["cloud", "status", "--json", "--contract", "local-read/1"],
         action: &[],
         params: &[PROJECT_ROOT],
         project: Project::Optional,
@@ -267,8 +279,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "tasks.list",
         method: Method::Get,
-        path: "/v1/local/hive/tasks",
-        cli: &["hive", "tasks", "list", "--json"],
+        path: "/v1/local/cloud/tasks",
+        cli: &["cloud", "tasks", "list", "--json"],
         action: &["list"],
         params: &[
             PROJECT_ROOT,
@@ -286,8 +298,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "tasks.task",
         method: Method::Get,
-        path: "/v1/local/hive/tasks/{n}",
-        cli: &["hive", "tasks", "show", "<n>", "--json"],
+        path: "/v1/local/cloud/tasks/{n}",
+        cli: &["cloud", "tasks", "show", "<n>", "--json"],
         action: &["show"],
         params: &[PROJECT_ROOT],
         project: Project::Required,
@@ -325,13 +337,13 @@ pub(crate) const ROUTES: &[Route] = &[
         project: Project::None,
         names: Some(("queens", "remove")),
     },
-    // C0 2.2 E47: a person (the socket is Hive Desktop) sets the order of
+    // C0 2.2 E47: a person (the socket is Cloud Desktop) sets the order of
     // work; `labels` is a list (or `a,b`), the whole new set.
     Route {
         kind: "tasks.ack",
         method: Method::Post,
-        path: "/v1/local/hive/tasks/{n}/priority",
-        cli: &["hive", "tasks", "priority", "<n>", "--json"],
+        path: "/v1/local/cloud/tasks/{n}/priority",
+        cli: &["cloud", "tasks", "priority", "<n>", "--json"],
         action: &["priority"],
         params: &[
             PROJECT_ROOT,
@@ -349,8 +361,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "tasks.ack",
         method: Method::Post,
-        path: "/v1/local/hive/tasks/{n}/labels",
-        cli: &["hive", "tasks", "labels", "<n>", "--json"],
+        path: "/v1/local/cloud/tasks/{n}/labels",
+        cli: &["cloud", "tasks", "labels", "<n>", "--json"],
         action: &["labels"],
         params: &[
             PROJECT_ROOT,
@@ -666,6 +678,58 @@ pub(crate) const ROUTES: &[Route] = &[
         project: Project::None,
         names: None,
     },
+    // LeanCTX Code's computers (§44). A socket call is the person's, so a
+    // paid create or start needs no terminal; it is sent only with `yes`.
+    Route {
+        kind: "cloud.computers",
+        method: Method::Get,
+        path: "/v1/local/cloud/computers",
+        cli: &["cloud", "computer", "list", "--json"],
+        action: &["list"],
+        params: &[],
+        project: Project::None,
+        names: None,
+    },
+    Route {
+        kind: "cloud.computer.ack",
+        method: Method::Post,
+        path: "/v1/local/cloud/computers",
+        cli: &["cloud", "computer", "create", "--json"],
+        action: &["create"],
+        params: &[
+            value("name", "--name"),
+            value("role", "--role"),
+            value("team", "--team"),
+            switch_param("personal", "--personal"),
+            value("request_id", "--request-id"),
+            switch_param("yes", "--yes"),
+        ],
+        project: Project::None,
+        names: None,
+    },
+    Route {
+        kind: "cloud.computer.ack",
+        method: Method::Post,
+        path: "/v1/local/cloud/computers/{id}/start",
+        cli: &["cloud", "computer", "start", "<id>", "--json"],
+        action: &["start"],
+        params: &[
+            value("request_id", "--request-id"),
+            switch_param("yes", "--yes"),
+        ],
+        project: Project::None,
+        names: None,
+    },
+    Route {
+        kind: "cloud.computer.ack",
+        method: Method::Post,
+        path: "/v1/local/cloud/computers/{id}/stop",
+        cli: &["cloud", "computer", "stop", "<id>", "--json"],
+        action: &["stop"],
+        params: &[value("request_id", "--request-id")],
+        project: Project::None,
+        names: None,
+    },
 ];
 
 /// Every route: [`ROUTES`] and those of the feature modules
@@ -756,6 +820,15 @@ pub(crate) fn args_of(
                     args.push(param.flag.into());
                 }
             }
+            Shape::Json => {
+                let raw = match value {
+                    Value::String(text) => text.clone(),
+                    Value::Object(_) => value.to_string(),
+                    _ => return Err(Failure::invalid(format!("{key} is a JSON object"))),
+                };
+                args.push(param.flag.into());
+                args.push(plain(key, raw)?);
+            }
             Shape::Value | Shape::Repeat => {
                 let values = strings(key, value)?;
                 if param.shape == Shape::Value && values.len() != 1 {
@@ -794,7 +867,7 @@ pub(crate) fn args_of(
     // of presence. (`presence.list`'s `all` adds finished agents and still
     // needs the project.)
     let every_project = match route.kind {
-        "agent.messages" | "bus.list" => args.iter().any(|a| a == "--all"),
+        "agent.messages" | "bus.list" | "agent.diaries" => args.iter().any(|a| a == "--all"),
         "presence.list" => args.iter().any(|a| a == "--all-projects"),
         _ => false,
     };
@@ -817,7 +890,14 @@ pub(crate) fn answer(route: &Route, segment: Option<&str>, inputs: &[(String, Va
         "knowledge.list" => super::knowledge::answer(&args, Via::Socket),
         "agent.messages" => super::bus::messages(&args, Via::Socket),
         "agent.post" => super::bus::post_answer(&args),
-        "hive.status" => super::status::answer(&args),
+        "cloud.status" => super::status::answer(&args),
+        // LeanCTX Code: a paid create or start over the socket is taken as
+        // the person's (no terminal needed), still only with `yes`. A guard
+        // against accidental agent calls, not a security boundary: any
+        // process of the same user can reach the 0600 socket.
+        "cloud.computers" | "cloud.computer.ack" => {
+            super::super::cloud_cmd::computer_answer(&args, Via::Socket)
+        }
         "tasks.list" | "tasks.task" | "tasks.ack" => super::tasks::answer(&args),
         "queens.list" => super::queens::answer(&args),
         "activity.list" => super::activity::answer(&args, Via::Socket),
@@ -832,7 +912,7 @@ fn contracts_answer(route: &Route, args: &[String]) -> Answer {
 }
 
 /// The command path (joined by `.`) and verb of the CLI command a route
-/// answers (`hive tasks show` → (`hive.tasks`, `show`)); `None` for a route
+/// answers (`cloud tasks show` → (`cloud.tasks`, `show`)); `None` for a route
 /// that is not a command verb (`capabilities`).
 fn command_of(route: &Route) -> Option<(String, &'static str)> {
     if let Some((command, verb)) = route.names {
@@ -880,7 +960,18 @@ pub(crate) fn table_json() -> Value {
 
 /// `events` of the capabilities document.
 pub(crate) fn events_json() -> Value {
-    json!({ "path": EVENTS_PATH, "types": EVENT_TYPES })
+    let views: Vec<Value> = VIEWS
+        .iter()
+        .map(|name| {
+            json!({
+                "name": name,
+                "params": VIEW_PARAMS,
+                "default_limit": VIEW_LIMIT,
+                "max_limit": VIEW_MAX_LIMIT,
+            })
+        })
+        .collect();
+    json!({ "path": EVENTS_PATH, "types": EVENT_TYPES, "views": views })
 }
 
 /// `GET /v1/local/capabilities`: the CLI's capabilities document, built by

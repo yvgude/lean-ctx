@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Foreign content as data (X5): every bus message, task body/update and
-//! repo fact pulled from Hive that reaches an agent's context passes
+//! repo fact pulled from Cloud that reaches an agent's context passes
 //! [`wrap`] first.
 //!
 //! The wrapper fences the text between markers whose id is derived from the
@@ -18,7 +18,7 @@ pub enum UntrustedKind {
     BusMessage,
     TaskBody,
     TaskUpdate,
-    /// A repo fact pulled from Hive (written by other members).
+    /// A repo fact pulled from Cloud (written by other members).
     Knowledge,
 }
 
@@ -38,7 +38,7 @@ impl UntrustedKind {
             UntrustedKind::BusMessage => "bus_message",
             UntrustedKind::TaskBody => "task_body",
             UntrustedKind::TaskUpdate => "task_update",
-            UntrustedKind::Knowledge => "hive_knowledge",
+            UntrustedKind::Knowledge => "cloud_knowledge",
         }
     }
 
@@ -95,7 +95,7 @@ pub fn shorten(text: &str, max_chars: usize) -> String {
 
 /// The body of a wrapper (already neutralised), `None` for any other text.
 /// For a person's own decision to republish reviewed foreign content
-/// outside the fence (`knowledge export-agents-md --include-hive`).
+/// outside the fence (`knowledge export-agents-md --include-cloud`).
 pub fn body_of(text: &str) -> Option<String> {
     if !is_wrapped(text) {
         return None;
@@ -232,10 +232,10 @@ fn clean_source(source: &str) -> String {
 }
 
 /// Control characters (except newline/tab/CR) and every character a text
-/// field refuses ([`lean_ctx_protocol::hive::invisible`], R3-3e-1: bidi
+/// field refuses ([`lean_ctx_protocol::cloud::invisible`], R3-3e-1: bidi
 /// controls, zero-width and other invisible or filler characters,
 /// interlinear annotations, format controls, the tag block and the
-/// variation selectors supplement), so what Hive refuses and what an
+/// variation selectors supplement), so what Cloud refuses and what an
 /// engine removes from foreign text stay one set. Besides: the Mongolian
 /// free variation selectors, kept in Mongolian text fields but removed
 /// here. Not here: the line and paragraph separators, which [`neutralise`]
@@ -244,7 +244,7 @@ fn clean_source(source: &str) -> String {
 /// marker).
 fn is_hidden(c: char) -> bool {
     (c.is_control() && !matches!(c, '\n' | '\t' | '\r'))
-        || (lean_ctx_protocol::hive::invisible(c) && !matches!(c, '\u{2028}' | '\u{2029}'))
+        || (lean_ctx_protocol::cloud::invisible(c) && !matches!(c, '\u{2028}' | '\u{2029}'))
         || matches!(c, '\u{180B}'..='\u{180D}' | '\u{180F}')
 }
 
@@ -396,7 +396,7 @@ mod tests {
     fn every_character_a_text_field_refuses_is_removed() {
         let refused = (0..=0x10_FFFF_u32)
             .filter_map(char::from_u32)
-            .filter(|c| lean_ctx_protocol::hive::invisible(*c));
+            .filter(|c| lean_ctx_protocol::cloud::invisible(*c));
         let mut checked = 0;
         for c in refused.filter(|c| !matches!(c, '\u{2028}' | '\u{2029}')) {
             assert!(is_hidden(c), "U+{:04X}", c as u32);

@@ -126,20 +126,20 @@ automatic local semantic checkpoints with knowledge/gotcha/learning continuity,
 history and recovery on one machine, free. Local shadow-Git code checkpoints
 remain a developer safety tool; they are not a hosted continuity promise.
 
-### LeanCTX Hive Personal
+### LeanCTX Cloud Personal
 
-LeanCTX Hive Personal adds encrypted personal cross-device push/pull and its
+LeanCTX Cloud Personal adds encrypted personal cross-device push/pull and its
 conflict handling for one account.
 
-### LeanCTX Hive Team
+### LeanCTX Cloud Team
 
-LeanCTX Hive Team adds `WorkspaceCheckpoint`, authenticated shared authority, membership,
+LeanCTX Cloud Team adds `WorkspaceCheckpoint`, authenticated shared authority, membership,
 roles, seat enforcement, personal-to-workspace promotion and shared conflict
 resolution. A personal checkpoint never becomes shared implicitly.
 
-### LeanCTX Hive Enterprise
+### LeanCTX Cloud Enterprise
 
-LeanCTX Hive Enterprise adds governed identity, RBAC, classification, region, retention,
+LeanCTX Cloud Enterprise adds governed identity, RBAC, classification, region, retention,
 legal hold, audit, customer-controlled deployment and offline/air-gap policy.
 
 ## Current implementation map

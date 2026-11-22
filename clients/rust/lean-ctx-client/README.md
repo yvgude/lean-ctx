@@ -1,8 +1,8 @@
 # lean-ctx-client
 
 > **Status: local Engine client.** LeanCTX is the **Context Gateway for AI Systems**.
-> **Control what your AI can see.** This crate is a narrow client for LeanCTX
-> Engine's local HTTP/MCP contract. The separate [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk)
+> **Less context. More intelligence.** This crate is a narrow client for LeanCTX
+> Engine's local HTTP/MCP contract. The separate [LeanCTX | SDK](https://github.com/Thinkery-AG/leanctx-sdk)
 > publishes language-native stable and Preview surfaces under its own license.
 > See [current positioning](../../../docs/POSITIONING_CANONICAL.md).
 

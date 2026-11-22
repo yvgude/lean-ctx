@@ -307,7 +307,10 @@ fn next_event_id() -> u64 {
         }
     }
 
-    fallback_event_id(&FALLBACK, chrono::Utc::now().timestamp_millis())
+    fallback_event_id(
+        &FALLBACK,
+        lean_ctx_time::UtcDateTime::now().timestamp_millis(),
+    )
 }
 
 /// Clock-derived id (milliseconds × 1000) that is strictly increasing within
@@ -435,7 +438,7 @@ fn admit_observation(
 > {
     let event = LeanCtxEvent {
         id: next_event_id(),
-        timestamp: chrono::Local::now()
+        timestamp: lean_ctx_time::LocalDateTime::now()
             .format("%Y-%m-%dT%H:%M:%S%.3f")
             .to_string(),
         kind,
@@ -984,7 +987,7 @@ mod tests {
         let id = next_event_id();
         bus().record(LeanCtxEvent {
             id,
-            timestamp: chrono::Local::now()
+            timestamp: lean_ctx_time::LocalDateTime::now()
                 .format("%Y-%m-%dT%H:%M:%S%.3f")
                 .to_string(),
             kind,

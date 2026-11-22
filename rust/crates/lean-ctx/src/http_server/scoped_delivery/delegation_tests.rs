@@ -47,7 +47,7 @@ async fn delegated_http_requires_current_attempt_and_certificate_bound_signature
             )
             .map_err(|e| e.to_string())?;
         store.create("graph", graph)?;
-        let now = u64::try_from(chrono::Utc::now().timestamp_millis()).unwrap();
+        let now = u64::try_from(lean_ctx_time::UtcDateTime::now().timestamp_millis()).unwrap();
         let ClaimNodeExecution::Claimed(node) =
             store.claim_node_execution("graph", "node", now, now + 600_000)?
         else {
@@ -90,7 +90,7 @@ async fn delegated_http_requires_current_attempt_and_certificate_bound_signature
                 action: DELIVERY_CHECK.into(),
                 request_digest: String::new(),
                 issued_at: certificate.issued_at,
-                expires_at: certificate.issued_at + chrono::Duration::minutes(1),
+                expires_at: certificate.issued_at + lean_ctx_time::Duration::minutes(1),
                 nonce: nonce.into(),
                 grant_ref: CapabilityGrantRefV1 {
                     schema_version: 1,
@@ -194,7 +194,7 @@ async fn delegated_http_requires_current_attempt_and_certificate_bound_signature
     );
     let mut transplanted = make_request("transplanted");
     let cert = transplanted.delegation.as_mut().unwrap();
-    cert.expires_at -= chrono::Duration::seconds(1);
+    cert.expires_at -= lean_ctx_time::Duration::seconds(1);
     cert.sign(&host_key);
     assert_eq!(send(transplanted).await, StatusCode::FORBIDDEN);
     WorkGraphStore::mutate(root, |store| {
@@ -213,7 +213,7 @@ async fn delegated_http_requires_current_attempt_and_certificate_bound_signature
         let certificate = request.delegation.as_mut().unwrap();
         certificate.execution.attempt = 2;
         certificate.execution.task_id = format!("{task}:attempt-2");
-        certificate.expires_at = certificate.issued_at + chrono::Duration::minutes(20);
+        certificate.expires_at = certificate.issued_at + lean_ctx_time::Duration::minutes(20);
         certificate.sign(&host_key);
         request.authority.request_digest = request.bound_request_digest();
         request.authority.sign(&child_key);
@@ -232,7 +232,7 @@ async fn delegated_http_requires_current_attempt_and_certificate_bound_signature
                 recipient: "daemon",
                 tenant_id: "account",
                 project_id: "project",
-                now: certificate.issued_at + chrono::Duration::minutes(11),
+                now: certificate.issued_at + lean_ctx_time::Duration::minutes(11),
             },
         );
     assert_eq!(

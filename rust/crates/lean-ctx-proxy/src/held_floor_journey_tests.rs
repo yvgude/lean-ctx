@@ -25,7 +25,7 @@ fn a_held_floor_denies_everything_once_its_horizon_has_passed() {
     // The bundle must be fresh enough for the view to start inside the
     // horizon; a stale one is a fixture error, not a result.
     assert!(
-        chrono::Utc::now() + chrono::Duration::seconds(5) < horizon,
+        lean_ctx_time::UtcDateTime::now() + lean_ctx_time::Duration::seconds(5) < horizon,
         "the fixture bundle's short horizon is spent; produce a fresh bundle"
     );
     let project = tempfile::tempdir().unwrap();
@@ -52,7 +52,7 @@ fn a_held_floor_denies_everything_once_its_horizon_has_passed() {
     while obtained.elapsed() < Duration::from_secs(3) {
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert!(chrono::Utc::now() < horizon);
+    assert!(lean_ctx_time::UtcDateTime::now() < horizon);
     // Past the request's deadline, inside the horizon: still the signed floor.
     assert_eq!(says(&kept), (false, true, false, false));
 
@@ -69,7 +69,7 @@ fn a_held_floor_denies_everything_once_its_horizon_has_passed() {
             let view_before = says(&from_view);
             // Wait on the clock the product reads until the signed instant
             // is observed to have passed.
-            while chrono::Utc::now() < horizon {
+            while lean_ctx_time::UtcDateTime::now() < horizon {
                 std::thread::sleep(Duration::from_millis(50));
             }
             let after = (allowed("ctx_shell"), allowed("ctx_read"));
@@ -105,7 +105,7 @@ fn a_held_floor_denies_everything_once_its_horizon_has_passed() {
     .unwrap();
     let late = instant(endpoint.facts["late_not_after"].as_str().unwrap());
     assert!(
-        chrono::Utc::now() + chrono::Duration::seconds(20) < late,
+        lean_ctx_time::UtcDateTime::now() + lean_ctx_time::Duration::seconds(20) < late,
         "the fixture bundle's second horizon is spent; produce a fresh bundle"
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -129,9 +129,7 @@ fn a_held_floor_denies_everything_once_its_horizon_has_passed() {
 /// pass. Returns how many requests were built, the first request as the
 /// upstream saw it, the reason codes of the second attempt's refusal (if it
 /// was refused) and whether the upstream saw a second connection.
-async fn send_across(
-    horizon: chrono::DateTime<chrono::Utc>,
-) -> (u32, String, Option<String>, bool) {
+async fn send_across(horizon: lean_ctx_time::UtcDateTime) -> (u32, String, Option<String>, bool) {
     use super::admitted::{AdmittedBody, Payload, REASON_CODES_HEADER, admit};
     use lean_ctx::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -205,7 +203,7 @@ async fn send_across(
             built.set(built.get() + 1);
             // The caller's own code, taking its time: until the signed
             // horizon is observed to have passed on the real clock.
-            while chrono::Utc::now() < horizon {
+            while lean_ctx_time::UtcDateTime::now() < horizon {
                 std::thread::sleep(Duration::from_millis(50));
             }
             request

@@ -118,12 +118,15 @@ fn load_lock_ordering_doc() -> String {
 
 #[test]
 fn all_static_locks_documented() {
-    // The engine library and the composition root (crates/lean-ctx) share one
+    // The engine library, the composition root (crates/lean-ctx) and the
+    // apps split out of the engine (crates/lean-ctx-apps) share one
     // lock-ordering document.
     let mut locks = collect_lock_files_from_source(&crate::engine_dir().join("src"));
-    locks.extend(collect_lock_files_from_source(
-        &crate::engine_dir().join("crates/lean-ctx/src"),
-    ));
+    for upper in ["crates/lean-ctx/src", "crates/lean-ctx-apps/src"] {
+        locks.extend(collect_lock_files_from_source(
+            &crate::engine_dir().join(upper),
+        ));
+    }
     let doc = load_lock_ordering_doc();
 
     let doc_referenced: HashSet<&str> = doc

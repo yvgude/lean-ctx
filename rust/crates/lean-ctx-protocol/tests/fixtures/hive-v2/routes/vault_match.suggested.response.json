@@ -1,9 +1,0 @@
-{
-  "match": "suggested",
-  "matched": "history",
-  "schema": "leanctx.hive.vault-match/v1",
-  "suggestion": {
-    "name": "payments",
-    "ns": "acme"
-  }
-}

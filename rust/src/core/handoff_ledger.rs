@@ -340,7 +340,7 @@ pub fn create_ledger(input: CreateLedgerInput) -> Result<(HandoffLedgerV1, PathB
 
     let mut ledger = HandoffLedgerV1 {
         schema_version: SCHEMA_VERSION,
-        created_at: chrono::Local::now().to_rfc3339(),
+        created_at: lean_ctx_time::LocalDateTime::now().to_rfc3339(),
         content_md5: String::new(),
         manifest_md5,
         project_root,

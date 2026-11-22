@@ -102,7 +102,7 @@ fn security_events_are_typed_audit_events() {
 fn role_changes_are_exported_events() {
     let event = LeanCtxEvent {
         id: 1,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         kind: EventKind::RoleChanged {
             from: "developer".into(),
             to: "reviewer".into(),
@@ -127,7 +127,7 @@ fn unauthorized_tool_use_is_blocked_and_exported() {
     }
     let event = LeanCtxEvent {
         id: 1,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         kind: EventKind::PolicyViolation {
             role: "reviewer".into(),
             tool: "ctx_edit".into(),

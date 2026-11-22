@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Plan, licence and entitlement checks may live only in rust/crates/lean-ctx-hive/src/."""
+"""Plan, licence and entitlement checks may live only in rust/crates/lean-ctx-cloud/src/."""
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -19,7 +19,7 @@ class LocalFreeTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.write("rust/src/core/cache.rs", "fn cache() {}\n")
-        self.write("rust/crates/lean-ctx-hive/src/plan.rs", 'fn gate() { require_pro(); std::env::var("LEAN_CTX_PLAN"); }\n')
+        self.write("rust/crates/lean-ctx-cloud/src/plan.rs", 'fn gate() { require_pro(); std::env::var("LEAN_CTX_PLAN"); }\n')
         self.allow("")
 
     def write(self, path, text):
@@ -33,17 +33,17 @@ class LocalFreeTests(unittest.TestCase):
     def errors(self):
         return "\n".join(check.verify(self.root)["errors"])
 
-    def test_gates_under_core_hive_pass(self):
+    def test_gates_under_core_cloud_pass(self):
         self.assertEqual(self.errors(), "")
 
-    def test_a_gate_outside_core_hive_fails_until_allowlisted_with_owner(self):
+    def test_a_gate_outside_core_cloud_fails_until_allowlisted_with_owner(self):
         self.write("rust/src/tools/x.rs", "fn x() { if plan == Plan::Pro { capability_admitted(); } }\n")
         self.assertIn("rust/src/tools/x.rs: gating symbol(s) capability_admitted, paid plan", self.errors())
         self.allow('[[file]]\npath = "rust/src/tools/x.rs"\nowner = "Z"\nreason = ""\n')
         found = self.errors()
         self.assertIn("needs owner B or C", found)
         self.assertIn("needs a reason", found)
-        self.allow('[[file]]\npath = "rust/src/tools/x.rs"\nowner = "B"\nreason = "moves to hive"\n')
+        self.allow('[[file]]\npath = "rust/src/tools/x.rs"\nowner = "B"\nreason = "moves to cloud"\n')
         self.assertEqual(self.errors(), "")
 
     def test_comments_strings_and_test_files_are_not_gates(self):

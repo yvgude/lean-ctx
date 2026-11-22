@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, NaiveTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn escape_xml_attr(value: &str) -> String {
@@ -45,7 +45,7 @@ pub(crate) fn sessions_dir() -> Option<PathBuf> {
 
 pub(crate) fn generate_session_id() -> String {
     static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     // Keep the sortable date/time prefix while separating numeric seconds from
     // microseconds with a letter. A hyphen made this prefix look like a
     // Luhn-valid payment-card number to content admission.
@@ -86,12 +86,12 @@ pub(crate) fn parse_engine_session_id(id: &str) -> Option<EngineSessionId<'_>> {
         return None;
     }
 
-    NaiveDate::parse_from_str(&id[..8], "%Y%m%d").ok()?;
-    let hour = id[9..11].parse::<u32>().ok()?;
-    let minute = id[11..13].parse::<u32>().ok()?;
-    let second = id[13..15].parse::<u32>().ok()?;
-    let micros = id[16..22].parse::<u32>().ok()?;
-    NaiveTime::from_hms_micro_opt(hour, minute, second, micros)?;
+    lean_ctx_time::parse_date(&id[..8], "%Y%m%d").ok()?;
+    let hour = id[9..11].parse::<i8>().ok()?;
+    let minute = id[11..13].parse::<i8>().ok()?;
+    let second = id[13..15].parse::<i8>().ok()?;
+    let micros = id[16..22].parse::<i32>().ok()?;
+    lean_ctx_time::Time::new(hour, minute, second, micros * 1_000).ok()?;
 
     let (pid, sequence) = id[23..].split_once('s')?;
     if pid.is_empty()

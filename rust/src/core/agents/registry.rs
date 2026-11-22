@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -74,7 +74,7 @@ const WAIT_RACY_MTIME: std::time::Duration = std::time::Duration::from_secs(3);
 /// How far before its registration an agent still receives broadcasts: the
 /// seconds a reconnect leaves between the old session's last read and the new
 /// one, with room to spare.
-const BROADCAST_GRACE: chrono::Duration = chrono::Duration::minutes(10);
+const BROADCAST_GRACE: lean_ctx_time::Duration = lean_ctx_time::Duration::minutes(10);
 
 /// A message `agent_id` has not read: addressed to it, or a broadcast posted
 /// after `floor` (the agent's registration less [`BROADCAST_GRACE`]), not its
@@ -85,8 +85,8 @@ fn unread_for(
     e: &ScratchpadEntry,
     agent_id: &str,
     project_root: Option<&str>,
-    now: chrono::DateTime<Utc>,
-    floor: Option<chrono::DateTime<Utc>>,
+    now: lean_ctx_time::UtcDateTime,
+    floor: Option<lean_ctx_time::UtcDateTime>,
 ) -> bool {
     !e.read_by.iter().any(|reader| reader == agent_id)
         && e.from_agent != agent_id
@@ -190,7 +190,7 @@ impl AgentRegistry {
             scratchpad: Vec::new(),
             logical_sessions: Vec::new(),
             logical_session_telemetry_seen: false,
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
         }
     }
 
@@ -250,7 +250,7 @@ impl AgentRegistry {
                 "agent {parent_id} is not registered by this process"
             ));
         }
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         if let Some(child) = self.agents.iter_mut().find(|a| {
             a.parent.as_deref() == Some(parent_id)
                 && a.role.as_deref() == Some(role)
@@ -274,6 +274,7 @@ impl AgentRegistry {
             durable_identity_id: None,
             status: AgentStatus::Active,
             status_message: None,
+            agent_status_message: None,
             transport: None,
             role_source: Some(RoleSource::Declared),
             parent: Some(parent_id.to_string()),
@@ -287,7 +288,7 @@ impl AgentRegistry {
 
     /// The oldest broadcast `agent_id` still receives: its registration less
     /// [`BROADCAST_GRACE`]; `None` (all) for an id the registry doesn't know.
-    fn broadcast_floor(&self, agent_id: &str) -> Option<chrono::DateTime<Utc>> {
+    fn broadcast_floor(&self, agent_id: &str) -> Option<lean_ctx_time::UtcDateTime> {
         self.agents
             .iter()
             .find(|a| a.agent_id == agent_id)
@@ -390,7 +391,7 @@ impl AgentRegistry {
                 )?;
             }
             let existing = &mut self.agents[existing_index];
-            existing.last_active = Utc::now();
+            existing.last_active = UtcDateTime::now();
             existing.status = AgentStatus::Active;
             if existing.status_message.as_deref() == Some(TRANSPORT_IDLE) {
                 existing.status_message = None;
@@ -457,13 +458,14 @@ impl AgentRegistry {
             agent_type: agent_type.to_string(),
             role: role.map(std::string::ToString::to_string),
             project_root: project_root.to_string(),
-            started_at: Utc::now(),
-            last_active: Utc::now(),
+            started_at: UtcDateTime::now(),
+            last_active: UtcDateTime::now(),
             pid,
             process_identity: Some(identity),
             durable_identity_id: durable_identity_id.map(str::to_string),
             status: AgentStatus::Active,
             status_message: None,
+            agent_status_message: None,
             transport: meta.transport,
             role_source: meta.role_source,
             parent: None,
@@ -472,7 +474,7 @@ impl AgentRegistry {
         });
         let agent_id = self.adopt_app_session_identity(self.agents.len() - 1);
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         crate::core::events::emit_agent_action(&agent_id, "register", None);
         Ok(agent_id)
     }
@@ -576,7 +578,7 @@ impl AgentRegistry {
             updated += 1;
         }
         if updated > 0 {
-            self.updated_at = Utc::now();
+            self.updated_at = UtcDateTime::now();
         }
         updated
     }
@@ -711,7 +713,7 @@ impl AgentRegistry {
         if agent.status_message.as_deref() == Some(TRANSPORT_IDLE) {
             agent.status_message = None;
         }
-        agent.last_active = Utc::now();
+        agent.last_active = UtcDateTime::now();
         Ok(())
     }
 
@@ -734,8 +736,26 @@ impl AgentRegistry {
         let agent = &mut self.agents[index];
         agent.status = status;
         agent.status_message = message.map(std::string::ToString::to_string);
-        agent.last_active = Utc::now();
-        self.updated_at = Utc::now();
+        agent.last_active = UtcDateTime::now();
+        self.updated_at = UtcDateTime::now();
+        Ok(())
+    }
+
+    /// [`Self::set_status`] for a status line the agent writes itself
+    /// (`ctx_agent action=status`): it is also kept as the agent's own
+    /// line, so readers that share it (team presence) can leave out
+    /// LeanCTX's lifecycle notes, which go through [`Self::set_status`] or
+    /// straight to `status_message` and never touch the agent's own line.
+    pub fn set_status_by_agent(
+        &mut self,
+        agent_id: &str,
+        status: AgentStatus,
+        message: Option<&str>,
+    ) -> Result<(), String> {
+        self.set_status(agent_id, status, message)?;
+        if let Some(agent) = self.agents.iter_mut().find(|a| a.agent_id == agent_id) {
+            agent.agent_status_message = message.map(std::string::ToString::to_string);
+        }
         Ok(())
     }
     /// Records explicit logical-session presence supplied by an owning editor
@@ -746,7 +766,7 @@ impl AgentRegistry {
         workspace: &str,
         session_id: &str,
     ) {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         self.logical_session_telemetry_seen = true;
         if let Some(session) = self.logical_sessions.iter_mut().find(|session| {
             session.source == source
@@ -780,16 +800,16 @@ impl AgentRegistry {
                 || session.session_id != session_id
         });
         let removed = self.logical_sessions.len() != previous_len;
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         removed
     }
 
     pub fn cleanup_stale_logical_sessions(&mut self, max_age_seconds: u64) {
         let seconds = i64::try_from(max_age_seconds).unwrap_or(i64::MAX);
-        let cutoff = Utc::now() - chrono::Duration::seconds(seconds);
+        let cutoff = UtcDateTime::now() - lean_ctx_time::Duration::seconds(seconds);
         self.logical_sessions
             .retain(|session| session.last_heartbeat >= cutoff);
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 
     pub fn record_logical_session_presence(
@@ -939,6 +959,38 @@ impl AgentRegistry {
         )
     }
 
+    /// The live entry `from_agent` posted in `project_root` under the
+    /// idempotency key `key`, if any: the one a keyed post would answer with.
+    fn keyed_post(
+        &self,
+        project_root: Option<&str>,
+        from_agent: &str,
+        key: &str,
+    ) -> Option<&ScratchpadEntry> {
+        let now = UtcDateTime::now();
+        self.scratchpad.iter().find(|entry| {
+            entry.from_agent == from_agent
+                && entry.project_root.as_deref() == project_root
+                && entry.expires_at.is_none_or(|expires| expires > now)
+                && entry
+                    .metadata
+                    .get(REQUEST_ID_METADATA_KEY)
+                    .map(String::as_str)
+                    == Some(key)
+        })
+    }
+
+    /// True when `from_agent` holds a live post in `project_root` under the
+    /// idempotency key `key` (whatever its request).
+    pub fn holds_request_id(
+        &self,
+        project_root: Option<&str>,
+        from_agent: &str,
+        key: &str,
+    ) -> bool {
+        self.keyed_post(project_root, from_agent, key).is_some()
+    }
+
     /// [`Self::post_message_scoped`] with an optional idempotency key
     /// (AP07-G9). A key is scoped to the sender and project: a retry with the
     /// same key and the same request returns the id of the message it first
@@ -977,17 +1029,7 @@ impl AgentRegistry {
                         ttl_hours
                     ]),
                 );
-                let now = Utc::now();
-                if let Some(entry) = self.scratchpad.iter().find(|entry| {
-                    entry.from_agent == from_agent
-                        && entry.project_root.as_deref() == project_root
-                        && entry.expires_at.is_none_or(|expires| expires > now)
-                        && entry
-                            .metadata
-                            .get(REQUEST_ID_METADATA_KEY)
-                            .map(String::as_str)
-                            == Some(key)
-                }) {
+                if let Some(entry) = self.keyed_post(project_root, from_agent, key) {
                     return if entry.metadata.get(REQUEST_DIGEST_METADATA_KEY) == Some(&digest) {
                         Ok(entry.id.clone())
                     } else {
@@ -1012,8 +1054,8 @@ impl AgentRegistry {
             .agents
             .scratchpad_default_ttl_hours;
         let expires_at = Some(match ttl_hours {
-            Some(hours) => Utc::now() + chrono::Duration::hours(hours as i64),
-            None => Utc::now() + chrono::Duration::hours(default_ttl_hours as i64),
+            Some(hours) => UtcDateTime::now() + lean_ctx_time::Duration::hours(hours as i64),
+            None => UtcDateTime::now() + lean_ctx_time::Duration::hours(default_ttl_hours as i64),
         });
         self.scratchpad.push(ScratchpadEntry {
             id: id.clone(),
@@ -1026,7 +1068,7 @@ impl AgentRegistry {
             message,
             metadata,
             project_root: project_root.map(std::string::ToString::to_string),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             read_by: vec![from_agent.to_string()],
             expires_at,
         });
@@ -1037,7 +1079,7 @@ impl AgentRegistry {
                 .drain(0..self.scratchpad.len() - max_scratchpad_entries);
         }
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         Ok(id)
     }
 
@@ -1068,7 +1110,7 @@ impl AgentRegistry {
         render: impl Fn(&ScratchpadEntry) -> String,
     ) -> Result<(Vec<String>, usize), String> {
         self.require_active_for_presence(agent_id, "reading messages")?;
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let floor = self.broadcast_floor(agent_id);
         let unread: Vec<usize> = self
             .scratchpad
@@ -1097,7 +1139,7 @@ impl AgentRegistry {
     /// Whether `agent_id` has a message waiting in `project_root` (what
     /// [`Self::read_unread_scoped`] would return), without marking it read.
     pub(crate) fn has_unread_scoped(&self, agent_id: &str, project_root: &str) -> bool {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let floor = self.broadcast_floor(agent_id);
         self.scratchpad
             .iter()
@@ -1107,7 +1149,7 @@ impl AgentRegistry {
     /// The unread messages of `agent_id` in `project_root` in scratchpad
     /// order (oldest first), without marking them read.
     pub fn unread_scoped(&self, agent_id: &str, project_root: &str) -> Vec<&ScratchpadEntry> {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let floor = self.broadcast_floor(agent_id);
         self.scratchpad
             .iter()
@@ -1126,7 +1168,7 @@ impl AgentRegistry {
             }
         }
         if marked > 0 {
-            self.updated_at = Utc::now();
+            self.updated_at = UtcDateTime::now();
         }
         marked
     }
@@ -1190,7 +1232,7 @@ impl AgentRegistry {
         project_root: Option<&str>,
     ) -> Result<Vec<&ScratchpadEntry>, String> {
         self.require_active_for_presence(agent_id, "reading messages")?;
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let floor = self.broadcast_floor(agent_id);
         let unread_indices: Vec<usize> = self
             .scratchpad
@@ -1204,7 +1246,7 @@ impl AgentRegistry {
             self.scratchpad[*i].read_by.push(agent_id.to_string());
         }
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
 
         Ok(unread_indices
             .into_iter()
@@ -1213,9 +1255,9 @@ impl AgentRegistry {
     }
 
     pub fn cleanup_stale(&mut self, max_age_hours: u64) {
-        let now = Utc::now();
-        let cutoff = now - chrono::Duration::hours(max_age_hours as i64);
-        let worker_cutoff = now - chrono::Duration::seconds(active_worker_lease_seconds());
+        let now = UtcDateTime::now();
+        let cutoff = now - lean_ctx_time::Duration::hours(max_age_hours as i64);
+        let worker_cutoff = now - lean_ctx_time::Duration::seconds(active_worker_lease_seconds());
         let mut compatibility_identities = ProcessIdentityIndex::load();
         let mut identities_changed = false;
         let mut newly_certified = Vec::new();
@@ -1310,11 +1352,11 @@ impl AgentRegistry {
         }
 
         // Remove expired scratchpad entries.
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         self.scratchpad
             .retain(|entry| entry.expires_at.is_none_or(|exp| exp > now));
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1328,7 +1370,7 @@ impl AgentRegistry {
         self.save_locked(&dir)
     }
 
-    fn save_locked(&self, dir: &std::path::Path) -> Result<(), String> {
+    pub(super) fn save_locked(&self, dir: &std::path::Path) -> Result<(), String> {
         let path = dir.join("registry.json");
         save_registry_file(&path, self)
     }
@@ -1382,8 +1424,8 @@ impl Default for AgentRegistry {
     }
 }
 
-/// "Announce this machine's agents now", from the Hive connector when it is
-/// linked in (`core::hive::register_hooks`): a revived worker is on the bus
+/// "Announce this machine's agents now", from the Cloud connector when it is
+/// linked in (`core::cloud::register_hooks`): a revived worker is on the bus
 /// again before its next claim. Bookkeeping only; without it nothing waits.
 static ANNOUNCE: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
 

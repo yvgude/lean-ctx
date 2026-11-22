@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -87,8 +87,8 @@ pub struct TaskPeerTrustV1 {
     pub public_key: String,
     pub allowed_actions: Vec<String>,
     pub allowed_scopes: Vec<TaskScopeV1>,
-    pub not_before: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub not_before: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub revoked: bool,
 }
 
@@ -101,8 +101,8 @@ pub struct TaskCapabilityGrantV1 {
     pub action: String,
     pub tenant_id: String,
     pub project_id: String,
-    pub not_before: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub not_before: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub revoked: bool,
 }
 
@@ -260,8 +260,8 @@ pub struct TaskDescriptorV1 {
     pub tenant_id: String,
     pub project_id: String,
     pub action: String,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub idempotency_key: String,
     pub description: String,
     pub artifact_refs: Vec<AgentArtifactRefV1>,
@@ -278,8 +278,8 @@ impl TaskDescriptorV1 {
         tenant_id: &str,
         project_id: &str,
         action: &str,
-        issued_at: DateTime<Utc>,
-        expires_at: DateTime<Utc>,
+        issued_at: UtcDateTime,
+        expires_at: UtcDateTime,
         idempotency_key: &str,
         description: &str,
         artifact_refs: Vec<AgentArtifactRefV1>,
@@ -455,8 +455,8 @@ pub struct TaskControlDescriptorV1 {
     pub action: String,
     pub task_id: String,
     pub task_descriptor_digest: String,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub nonce: String,
     pub reason: Option<String>,
     pub grant_ref: CapabilityGrantRefV1,
@@ -474,8 +474,8 @@ impl TaskControlDescriptorV1 {
         action: &str,
         task_id: &str,
         task_descriptor_digest: &str,
-        issued_at: DateTime<Utc>,
-        expires_at: DateTime<Utc>,
+        issued_at: UtcDateTime,
+        expires_at: UtcDateTime,
         nonce: &str,
         reason: Option<&str>,
         grant_id: &str,
@@ -548,7 +548,7 @@ impl TaskControlDescriptorV1 {
         if self.schema_version != TASK_CONTROL_DESCRIPTOR_VERSION
             || self.expires_at <= self.issued_at
             || (self.expires_at - self.issued_at)
-                > chrono::Duration::seconds(MAX_TASK_CONTROL_LIFETIME_SECONDS)
+                > lean_ctx_time::Duration::seconds(MAX_TASK_CONTROL_LIFETIME_SECONDS)
             || self.signature.len() != 128
             || !self.signature.bytes().all(|byte| byte.is_ascii_hexdigit())
         {
@@ -622,7 +622,7 @@ pub struct TaskAuthorityExpectationV1<'a> {
     pub recipient: &'a str,
     pub tenant_id: &'a str,
     pub project_id: &'a str,
-    pub now: DateTime<Utc>,
+    pub now: UtcDateTime,
 }
 
 /// The authority-relevant projection every signed descriptor reduces to.
@@ -636,8 +636,8 @@ pub(super) struct AuthorityClaimV1<'a> {
     pub(super) tenant_id: &'a str,
     pub(super) project_id: &'a str,
     pub(super) action: &'a str,
-    pub(super) issued_at: DateTime<Utc>,
-    pub(super) expires_at: DateTime<Utc>,
+    pub(super) issued_at: UtcDateTime,
+    pub(super) expires_at: UtcDateTime,
     pub(super) grant_id: &'a str,
     pub(super) key_id: &'a str,
     pub(super) signature: &'a str,
@@ -697,7 +697,7 @@ pub(super) fn authorize(
     if !verify_signed_transcript(claim.signature, &claim.signing_bytes, peer)? {
         return Err(TaskAuthorityError::InvalidSignature);
     }
-    if claim.issued_at > now + chrono::Duration::seconds(MAX_AUTHORITY_CLOCK_SKEW_SECONDS) {
+    if claim.issued_at > now + lean_ctx_time::Duration::seconds(MAX_AUTHORITY_CLOCK_SKEW_SECONDS) {
         return Err(TaskAuthorityError::DescriptorNotYetValid);
     }
     if now >= claim.expires_at {

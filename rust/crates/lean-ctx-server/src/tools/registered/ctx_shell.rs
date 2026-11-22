@@ -1262,7 +1262,7 @@ fn detect_bare_cat_file(command: &str) -> Option<String> {
 /// a later `ctx_read` of exactly that file is fenced too.
 fn note_tool_output(command: &str, cwd: Option<&str>, project_root: &str) {
     use lean_ctx::core::context_admission::{capture, origin};
-    let Some(found) = lean_ctx::core::patterns::tool_output::classify(command) else {
+    let Some(found) = lean_ctx::core::context_admission::tool_output::classify(command) else {
         // The project's own command: said explicitly, since an unclassified
         // output is admitted as of unknown origin.
         if let Some(capture) = capture::current() {

@@ -203,7 +203,7 @@ fn allow_once(id: &str, hours: u64) -> i32 {
          Type the block id to allow it: ",
         block.provider
     );
-    if let Err(reason) = lean_ctx_hive::consent::channel::human_typed(&prompt, id) {
+    if let Err(reason) = lean_ctx_cloud::consent::channel::human_typed(&prompt, id) {
         return fail(&format!("not allowed: {reason}"));
     }
     match withheld::write_grant(&block, hours) {

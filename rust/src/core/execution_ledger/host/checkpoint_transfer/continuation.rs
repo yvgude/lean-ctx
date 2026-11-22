@@ -2,8 +2,8 @@
 //! Explicit use of an authorized personal copy; original source rights stay separate.
 
 use anyhow::{Result, ensure};
-use chrono::{DateTime, Utc};
 use lean_ctx_protocol::{Sha256Digest, UtcTimestamp};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -30,8 +30,8 @@ pub(in crate::core::execution_ledger::host) struct CheckpointContinueAdmission {
 
 impl CheckpointContinueAdmission {
     pub(super) fn validate(&self, expected: &Sha256Digest) -> Result<()> {
-        let expires = DateTime::parse_from_rfc3339(self.expires_at.as_str())?;
-        let now = Utc::now();
+        let expires = OffsetDateTime::parse_from_rfc3339(self.expires_at.as_str())?;
+        let now = UtcDateTime::now();
         ensure!(
             self.schema_version == 1
                 && &self.package_digest == expected
@@ -39,7 +39,7 @@ impl CheckpointContinueAdmission {
                 && i64::try_from(self.revision).is_ok()
                 && uuid::Uuid::parse_str(&self.object_id).is_ok_and(|id| !id.is_nil())
                 && expires > now
-                && expires <= now + chrono::Duration::minutes(5),
+                && expires <= now + lean_ctx_time::Duration::minutes(5),
             "copied context grant invalid or expired"
         );
         Ok(())

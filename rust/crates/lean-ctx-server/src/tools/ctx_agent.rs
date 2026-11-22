@@ -11,7 +11,7 @@ use lean_ctx::core::ocla::types::{
 };
 
 #[path = "ctx_agent_claims.rs"]
-mod claims;
+pub(crate) mod claims;
 #[path = "ctx_agent_control.rs"]
 mod control;
 #[path = "ctx_agent_lease.rs"]
@@ -46,6 +46,7 @@ pub(crate) const ACTIONS: &[&str] = &[
     "sync",
     "claim",
     "release",
+    "claims",
     "brief",
     "return",
     "export",
@@ -59,14 +60,56 @@ pub(crate) const ACTIONS: &[&str] = &[
     "lease_acquire",
     "lease_renew",
     "lease_release",
-    "claims",
     "plan_claims",
     "send",
     "reply",
     "inbox",
+    "ack",
 ];
 
-/// Arguments of the Hive message actions (`send`, `reply`, `inbox`).
+/// `ack`: answer a Cloud directive (a plan update or a changed team
+/// decision, contract §37). `accept`, or `refuse` with one of
+/// [`lean_ctx::core::agents::REFUSE_REASONS`]; `reason` stays on this
+/// machine, Cloud sees the state and the code only.
+pub fn handle_ack(
+    current_agent_id: Option<&str>,
+    directive_id: Option<&str>,
+    verdict: Option<&str>,
+    reason_code: Option<&str>,
+    reason: Option<&str>,
+) -> Result<String, String> {
+    use lean_ctx::core::agents::{DirectiveStore, Verdict};
+    let Some(agent_id) = current_agent_id else {
+        return Err("Error: agent must be registered first (use action=register)".to_string());
+    };
+    let Some(directive_id) = directive_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return Err("Error: ack needs directive_id".to_string());
+    };
+    let Some(verdict) = verdict.and_then(Verdict::parse) else {
+        return Err("Error: ack needs verdict=accept or verdict=refuse".to_string());
+    };
+    let answered = DirectiveStore::mutate(|registry, store| {
+        store.ack(
+            registry,
+            agent_id,
+            directive_id,
+            verdict,
+            reason_code,
+            reason,
+        )
+    })
+    .map_err(|error| format!("Error: {error}"))?;
+    Ok(match answered.reason_code {
+        Some(code) => format!(
+            "Directive {directive_id}: refused ({code}). Cloud is told on the next relay pass."
+        ),
+        None => {
+            format!("Directive {directive_id}: accepted. Cloud is told on the next relay pass.")
+        }
+    })
+}
+
+/// Arguments of the Cloud message actions (`send`, `reply`, `inbox`).
 #[derive(Debug, Clone, Default)]
 pub struct MessageArgs {
     pub message_type: Option<String>,
@@ -91,15 +134,15 @@ impl MessageArgs {
 
 /// `send`: a typed message to the vault bus of the checkout. `reply`:
 /// answers a received message in its thread (type defaults to `answer`).
-/// `inbox`: the unread messages, Hive deliveries fenced as foreign data
-/// ([`lean_ctx_hive::bus::messages_v2`]).
+/// `inbox`: the unread messages, Cloud deliveries fenced as foreign data
+/// ([`lean_ctx_cloud::bus::messages_v2`]).
 pub fn handle_message(
     action: &str,
     args: &MessageArgs,
     project_root: &str,
     current_agent_id: Option<&str>,
 ) -> String {
-    use lean_ctx_hive::bus::messages_v2::{Extras, send};
+    use lean_ctx_cloud::bus::messages_v2::{Extras, send};
     let Some(agent) = current_agent_id else {
         return "Error: agent must be registered first (use action=register)".to_string();
     };
@@ -128,7 +171,7 @@ pub fn handle_message(
     };
     match send(project_root, agent, message_type, text, extras) {
         Ok(id) => format!(
-            "Queued [{}] {id}; the Hive relay sends it to the vault's agents",
+            "Queued [{}] {id}; the LeanCTX Cloud relay sends it to the vault's agents",
             message_type.unwrap_or("?")
         ),
         Err(error) => format!("Error: {error}"),
@@ -184,21 +227,21 @@ pub(crate) const READ_PAGE_BYTES: usize = 6_000;
 
 /// One unread message as `read` shows it.
 fn render_message(m: &ScratchpadEntry, project_root: &str) -> String {
-    let age = (chrono::Utc::now() - m.timestamp).num_minutes();
+    let age = (lean_ctx_time::UtcDateTime::now() - m.timestamp).num_minutes();
     // A new delivery: re-authorized under the current policy. One from
     // another instance carries its sender and kind inside the fence.
-    if lean_ctx_hive::bus::relay_v2::is_inbound(m) {
+    if lean_ctx_cloud::bus::relay_v2::is_inbound(m) {
         // Text from another Instance: untrusted by origin (pz21 §1.1).
         lean_ctx::core::context_admission::capture::note_origin(
             &lean_ctx::core::context_admission::origin::SourceClass::External(
                 lean_ctx::core::context_admission::origin::InputOrigin::new(
                     lean_ctx::core::context_admission::origin::InputKind::BusMessage,
-                    format!("hive:{}", m.id),
+                    format!("cloud:{}", m.id),
                 ),
             ),
         );
         return format!(
-            "  [hive] ({age}m ago):\n{}\n",
+            "  [cloud] ({age}m ago):\n{}\n",
             m.served_message(Some(project_root))
         );
     }
@@ -250,6 +293,14 @@ pub fn read_messages_as(
     // An MCP server older than the installed binary misses its fixes.
     if own_process && let Some(note) = lean_ctx::core::binary_identity::replaced_note() {
         renewed.insert_str(0, &note);
+    }
+    // Unanswered directives stay on top until acked, read or not (§37).
+    if let Some(lines) = lean_ctx::core::agents::pending_lines(
+        &lean_ctx::core::agents::DirectiveStore::load(),
+        agent_id,
+    ) {
+        renewed.push_str(&lines);
+        renewed.push('\n');
     }
     if shown.is_empty() {
         return Ok(format!("{renewed}No new messages."));
@@ -397,7 +448,7 @@ pub fn register(
         Ok((agent_id, role, name)) => {
             // The relay announces the agent (and its role) now, not on its
             // next tick: a claim right after register finds it.
-            lean_ctx_hive::bus::presence::request_announce();
+            lean_ctx_cloud::bus::presence::request_announce();
             // Callers take the id from the text after the first ':'; the
             // warnings and the note come after the stored values.
             let mut text = format!(
@@ -429,7 +480,7 @@ pub struct PostFields<'a> {
     pub thread: Option<&'a str>,
 }
 
-/// A `ctx_agent` call. What Hive answered to this agent's earlier lease
+/// A `ctx_agent` call. What Cloud answered to this agent's earlier lease
 /// requests (asked off the tool call) comes in front of the answer, except
 /// for `read`, whose answer is a delivery of its sources only.
 #[allow(clippy::too_many_arguments)]
@@ -479,14 +530,17 @@ pub fn handle(
 /// list), priority high or critical with a kind other than conflict,
 /// escalate or stop, a malformed task id or thread, and a kind from a sender
 /// that is no registered Queen (`not_queen`) or over its minute's budget
-/// (`rate_limited`).
+/// (`rate_limited`), and any kind while the team policy for `project_root`
+/// turns the Orchestrator network off (`orchestrator_network_off`, QN2; the
+/// same refusal as the CLI bus).
 fn checked_post_fields(
     registry: &AgentRegistry,
     sender: &str,
+    project_root: &str,
     post: PostFields<'_>,
     priority: &MessagePriority,
 ) -> Result<(Option<String>, std::collections::BTreeMap<String, String>), String> {
-    use lean_ctx_hive::bus::queen_kinds::{self, QueenKind, SenderRefusal};
+    use lean_ctx_cloud::bus::queen_kinds::{self, QueenKind, SenderRefusal};
     let kind = QueenKind::from_input(post.kind)?;
     if let Some(task_id) = post.task_id {
         queen_kinds::check_task_id(task_id)?;
@@ -505,10 +559,17 @@ fn checked_post_fields(
     }
     // Every post counts against its sender's budget, as on the CLI; a
     // kind also needs the registered Queen.
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = lean_ctx_time::UtcDateTime::now().timestamp_millis();
     queen_kinds::check_sender(registry, sender, kind, now).map_err(|refused| match refused {
         SenderRefusal::NotQueen(why) | SenderRefusal::RateLimited(why) => why,
     })?;
+    if kind.is_some()
+        && let Some(why) = lean_ctx::core::policy::cloud_orchestrator::network_refusal(Some(
+            std::path::Path::new(project_root),
+        ))
+    {
+        return Err(why);
+    }
     let mut metadata = std::collections::BTreeMap::new();
     if let Some(kind) = kind {
         metadata.insert(queen_kinds::KIND_KEY.to_owned(), kind.as_str().to_owned());
@@ -542,7 +603,7 @@ pub fn handle_with(
     post: PostFields<'_>,
 ) -> String {
     let earlier = current_agent_id.filter(|_| action != "read").map(|agent| {
-        lean_ctx_hive::background::earlier(&lean_ctx_hive::bus::leases::caller(agent))
+        lean_ctx_cloud::background::earlier(&lean_ctx_cloud::bus::leases::caller(agent))
     });
     let answer = handle_action(
         action,
@@ -627,26 +688,26 @@ fn handle_action(
 
             // V5.3: sessions are listed under the durable worker they attach
             // to; without an enrolled instance workers have no `wkr_` id.
-            let store = lean_ctx_hive::HiveStore::open().ok();
+            let store = lean_ctx_cloud::CloudStore::open().ok();
             let instance = store
                 .as_ref()
                 .and_then(|s| s.instance().ok().flatten())
                 .map(|record| record.instance_id);
             let book = match (&store, &instance) {
                 (Some(store), Some(id)) => {
-                    lean_ctx_hive::workers::attach::list(store, id).unwrap_or_default()
+                    lean_ctx_cloud::workers::attach::list(store, id).unwrap_or_default()
                 }
                 _ => Vec::new(),
             };
-            let mut roster = lean_ctx_hive::workers::roster::render(
+            let mut roster = lean_ctx_cloud::workers::roster::render(
                 &agents,
                 instance.as_deref().map(|id| (id, book.as_slice())),
-                chrono::Utc::now(),
+                lean_ctx_time::UtcDateTime::now(),
             );
             if let Some(store) = &store {
-                roster.push_str(&lean_ctx_hive::bus::presence::render_remote(
+                roster.push_str(&lean_ctx_cloud::bus::presence::render_remote(
                     store.data_dir(),
-                    chrono::Utc::now(),
+                    lean_ctx_time::UtcDateTime::now(),
                 ));
             }
             roster.push_str(&sessions);
@@ -669,7 +730,7 @@ fn handle_action(
             // `queen` reaches the registered Queen (QN0), never an agent that
             // only took the role name.
             let to_agent = match to_agent
-                .map(|t| lean_ctx_hive::bus::queen_kinds::resolve_to(&registry, t))
+                .map(|t| lean_ctx_cloud::bus::queen_kinds::resolve_to(&registry, t))
                 .transpose()
             {
                 Ok(to) => to,
@@ -677,7 +738,7 @@ fn handle_action(
             };
             let to_agent = to_agent.as_deref();
             let (task_id, metadata) =
-                match checked_post_fields(&registry, from, post, &msg_priority) {
+                match checked_post_fields(&registry, from, project_root, post, &msg_priority) {
                     Ok(fields) => fields,
                     Err(refused) => return format!("Error: not posted: {refused}"),
                 };
@@ -687,7 +748,7 @@ fn handle_action(
             let msg = {
                 // The sender among the active presences; a question, offer or
                 // handoff that passes on a refused action is refused too.
-                match lean_ctx_hive::bus::person_rules::check_local_post(
+                match lean_ctx_cloud::bus::person_rules::check_local_post(
                     &registry,
                     current_agent_id,
                     cat,
@@ -733,7 +794,7 @@ fn handle_action(
             Ok(text) | Err(text) => text,
         },
 
-        // Hive agent messages (I1). This entry point has no `type`/`reply_to`
+        // Cloud agent messages (I1). This entry point has no `type`/`reply_to`
         // arguments: `category` carries the type; the registered tool passes all.
         "send" => handle_message(
             "send",
@@ -770,7 +831,7 @@ fn handle_action(
             let status_msg = message;
 
             match AgentRegistry::mutate_locked(|registry| {
-                registry.set_status(agent_id, new_status.clone(), status_msg)
+                registry.set_status_by_agent(agent_id, new_status.clone(), status_msg)
             })
             .and_then(|(_, result)| result)
             {
@@ -797,7 +858,9 @@ fn handle_action(
             }
         }
 
-        "claims" => claims::list(project_root),
+        // Every unit claim of the repository (edit-made, `claim units=[…]`,
+        // path leases) and the overlaps between agents.
+        "claims" => claims::handle_claims(project_root, current_agent_id),
 
         "plan_claims" => {
             let holder = current_agent_id
@@ -831,23 +894,23 @@ fn handle_action(
             let summary = message.unwrap_or("(no summary provided)");
             let scratchpad_ttl = scratchpad_default_ttl_hours();
             // A worker of another machine (`wkr_…`, as `ctx_agent list`
-            // shows it): the handoff is a typed message through Hive, which
+            // shows it): the handoff is a typed message through Cloud, which
             // that worker answers (accept or decline). Any other target is
             // an agent on this machine.
             if target.starts_with("wkr_") {
-                use lean_ctx_hive::bus::messages_v2::{Extras, send};
+                use lean_ctx_cloud::bus::messages_v2::{Extras, send};
                 let extras = Extras {
                     to_worker: Some(target),
                     ..Extras::default()
                 };
                 return match send(project_root, from, Some("handoff"), summary, extras) {
                     Ok(id) => {
-                        let waiting = format!("handoff to {target} offered through Hive");
+                        let waiting = format!("handoff to {target} offered through LeanCTX Cloud");
                         let _ = AgentRegistry::mutate_locked(|registry| {
                             registry.set_status(from, AgentStatus::Idle, Some(&waiting))
                         });
                         format!(
-                            "Handoff offered (hive): {from} → {target} message={id}; \
+                            "Handoff offered (cloud): {from} → {target} message={id}; \
                              {target} answers it (accept or decline)\nSummary: {summary}"
                         )
                     }
@@ -1072,7 +1135,7 @@ fn handle_action(
             out.push_str(&format!("  Active agents: {}\n", agents.len()));
             for a in &agents {
                 let role = a.role.as_deref().unwrap_or("-");
-                let age = (chrono::Utc::now() - a.last_active).num_minutes();
+                let age = (lean_ctx_time::UtcDateTime::now() - a.last_active).num_minutes();
                 out.push_str(&format!(
                     "    {} [{}] role={} ({}m ago)\n",
                     a.agent_id, a.agent_type, role, age
@@ -1201,7 +1264,7 @@ fn handle_action(
                 && !lean_ctx::core::redaction::redaction_enabled_for_active_role();
             let should_redact = !allow_full;
 
-            let now = chrono::Utc::now();
+            let now = lean_ctx_time::UtcDateTime::now();
             let mut registry = AgentRegistry::load_or_create();
             registry.cleanup_stale(presence_ttl_hours());
 
@@ -1246,7 +1309,7 @@ fn handle_action(
                         .map(|(k, v)| (k.clone(), maybe_redact(v, should_redact)))
                         .collect(),
                     timestamp: m.timestamp.to_rfc3339(),
-                    expires_at: m.expires_at.map(|t| t.to_rfc3339()),
+                    expires_at: m.expires_at.map(lean_ctx_time::UtcDateTime::to_rfc3339),
                     read_by_count: m.read_by.len(),
                 })
                 .collect();
@@ -1396,7 +1459,7 @@ fn handle_action(
                 }
                 let mut out = format!("Agent Diaries ({}):\n", diaries.len());
                 for (id, count, updated) in &diaries {
-                    let age = (chrono::Utc::now() - *updated).num_minutes();
+                    let age = (lean_ctx_time::UtcDateTime::now() - *updated).num_minutes();
                     out.push_str(&format!("  {id}: {count} entries ({age}m ago)\n"));
                 }
                 return out;
@@ -1414,7 +1477,7 @@ fn handle_action(
             }
             let mut out = format!("Agent Diaries ({}):\n", diaries.len());
             for (id, count, updated) in &diaries {
-                let age = (chrono::Utc::now() - *updated).num_minutes();
+                let age = (lean_ctx_time::UtcDateTime::now() - *updated).num_minutes();
                 out.push_str(&format!("  {id}: {count} entries ({age}m ago)\n"));
             }
             out
@@ -1468,7 +1531,7 @@ fn handle_action(
             }
             let mut out = format!("Received {} facts:\n", facts.len());
             for f in &facts {
-                let age = (chrono::Utc::now() - f.timestamp).num_minutes();
+                let age = (lean_ctx_time::UtcDateTime::now() - f.timestamp).num_minutes();
                 out.push_str(&format!(
                     "  [{}] {} (from {}, {}m ago)\n",
                     f.category, f.text, f.from_agent, age
@@ -1534,6 +1597,13 @@ fn handle_action(
             category,
             _ttl_hours,
         ),
+
+        // This entry point has no `directive_id`/`verdict`/`reason_code`:
+        // `message` carries the directive id, `category` the verdict and
+        // `status` the reason code; the registered tool passes all.
+        "ack" => match handle_ack(current_agent_id, message, category, status, None) {
+            Ok(text) | Err(text) => text,
+        },
 
         _ => format!("Unknown action: {action}. Use: {}", ACTIONS.join(", ")),
     }

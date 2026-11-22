@@ -414,7 +414,12 @@ pub mod tests {
                     .expect("claude block");
                     return;
                 }
-                "codex-mcp-client" => ("Codex CLI", ".codex/instructions.md"),
+                // Codex has no rules-file carrier (it never reads the legacy
+                // instructions.md): its MCP instructions stay the channel.
+                "codex-mcp-client" => {
+                    std::fs::create_dir_all(home.join(".codex")).expect("codex dir");
+                    return;
+                }
                 _ => ("Cursor", ".cursor/rules/lean-ctx.mdc"),
             };
             let path = home.join(target.1);

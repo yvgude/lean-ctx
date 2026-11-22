@@ -1,0 +1,8 @@
+{
+  "anchor": {
+    "digest": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "path": "src/pay.rs",
+    "symbol": "charge"
+  },
+  "kind": "file_anchor"
+}

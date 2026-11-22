@@ -4,7 +4,7 @@
 //! The dependency tree enables both rustls providers: aws-lc-rs (reqwest's
 //! rustls feature, rustls' defaults) and ring (ureq). With two compiled in,
 //! rustls cannot pick a process default, and any TLS client built from the
-//! default (tokio-tungstenite's connector: the Hive bus relay, the Codex
+//! default (tokio-tungstenite's connector: the Cloud bus relay, the Codex
 //! ChatGPT passthrough) panics with "Could not automatically determine the
 //! process-level CryptoProvider". reqwest and the update verifier name
 //! aws-lc-rs explicitly; this installs the same one as the default.

@@ -13,9 +13,12 @@ Current product identity:
 
 - **Product:** LeanCTX
 - **Category:** Context Gateway for AI Systems
-- **Promise:** Control what your AI can see.
-- **Components:** LeanCTX | OSS and LeanCTX SDK
+- **Promise:** Less context. More intelligence.
+- **Components:** LeanCTX | OSS and LeanCTX | SDK
 - **Primary story:** Select → Control → Learn → Prove
+
+The `promise` field holds the public claim. The claim is a stance, not a
+measured promise; the field keeps its name for schema compatibility.
 
 Learn means local task and knowledge continuity under configured access and
 retention rules. It does not imply model training or guaranteed answer quality.
@@ -49,8 +52,8 @@ outcome quality.
   "product": {
     "name": "LeanCTX",
     "category": "Context Gateway for AI Systems",
-    "promise": "Control what your AI can see.",
-    "components": ["LeanCTX | OSS", "LeanCTX SDK"],
+    "promise": "Less context. More intelligence.",
+    "components": ["LeanCTX | OSS", "LeanCTX | SDK"],
     "primary_story": ["Select", "Control", "Learn", "Prove"]
   },
   "primary_entrypoints": [
@@ -79,8 +82,11 @@ outcome quality.
       "79 MCP tools",
       "lean-ctx addon search",
       "Used in production by teams",
-      "have shipped (see above)"
-    ]
+      "have shipped (see above)",
+      "LeanCTX SDK"
+    ],
+    "docs/POSITIONING_CANONICAL.md": ["LeanCTX SDK"],
+    "docs/what-is-leanctx.md": ["LeanCTX SDK"]
   },
   "status_guarded_records": [
     "docs/cognition-interface.md",

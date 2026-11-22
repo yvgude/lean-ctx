@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -39,7 +39,7 @@ impl BundlePrivacyV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandoffTransferBundleV1 {
     pub schema_version: u32,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
     pub privacy: String,
     pub project: ProjectIdentityV1,
     pub ledger: HandoffLedgerV1,
@@ -126,7 +126,7 @@ pub fn build_bundle_v1(
     // and silently swallowed failures.
     HandoffTransferBundleV1 {
         schema_version: crate::core::contracts::HANDOFF_TRANSFER_BUNDLE_V1_SCHEMA_VERSION,
-        exported_at: Utc::now(),
+        exported_at: UtcDateTime::now(),
         privacy: effective_privacy.as_str().to_string(),
         project: ProjectIdentityV1 {
             project_root_hash,
@@ -395,7 +395,9 @@ fn build_artifacts_excerpt_v1(project_root: &Path) -> ArtifactsExcerptV1 {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            if name.is_empty() {
+            // Dot-files are store internals (the landing receipt store lock
+            // `.landing-receipts.lock`), not proofs.
+            if name.is_empty() || name.starts_with('.') {
                 continue;
             }
             let bytes = p.metadata().map_or(0, |m| m.len());
@@ -520,6 +522,25 @@ mod tests {
             request_id: None,
             request_digest: None,
         }
+    }
+
+    #[test]
+    fn handoff_proof_files_skip_store_dot_files() {
+        let project = tempfile::tempdir().unwrap();
+        let proofs = project.path().join(".lean-ctx/proofs");
+        std::fs::create_dir_all(&proofs).unwrap();
+        std::fs::write(
+            proofs.join("landing-receipt-0123456789abcdef.json"),
+            b"{}\n",
+        )
+        .unwrap();
+        std::fs::write(proofs.join(".landing-receipts.lock"), b"").unwrap();
+        let names: Vec<String> = build_artifacts_excerpt_v1(project.path())
+            .proof_files
+            .into_iter()
+            .map(|file| file.name)
+            .collect();
+        assert_eq!(names, ["landing-receipt-0123456789abcdef.json"]);
     }
 
     #[test]

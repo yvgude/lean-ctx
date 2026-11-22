@@ -1,0 +1,14 @@
+{
+  "case": "person_publish_with_worker",
+  "base": "bus/frame.place_publish.person.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/worker_id",
+      "value": "wkr_vk4oelpv5lzjmev44hun"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

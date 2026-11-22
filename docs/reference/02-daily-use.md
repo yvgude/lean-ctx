@@ -39,7 +39,10 @@ lean-ctx read src/main.rs -m signatures
 lean-ctx read src/main.rs --fresh    # bypass cache
 ```
 
-**The 16 read modes** (`mode` param):
+**Read modes** (`mode` param). The 10 core modes are `auto`, `full`, `map`,
+`signatures`, `diff`, `aggressive`, `entropy`, `task`, `reference` and
+`lines:N-M`; `anchored`, `full-compact`, `raw` and `density:X` are variants of
+them, and `cognitive` and `mdl` are accepted as aliases of `map`:
 
 | Mode | Returns | Use when |
 |------|---------|----------|
@@ -56,8 +59,6 @@ lean-ctx read src/main.rs --fresh    # bypass cache
 | `anchored` | whole file + per-line `N:hh|` anchors | you'll edit it via `ctx_patch` |
 | `full-compact` | whole file, no header, trailing whitespace stripped | you need faithful bytes, minimal framing |
 | `raw` | exact bytes, no framing (gateway redactions still apply) | byte-exact content matters |
-| `cognitive` | 7±2 semantic chunks | you want the shape of a long file |
-| `mdl` | minimal structural description | you want the most compact outline |
 | `density:X` | highest-entropy lines until ~X of the tokens remain | you have a token budget |
 
 Every mode, `raw=true` and `fresh=true` included, delivers admitted content:

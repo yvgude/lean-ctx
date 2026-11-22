@@ -38,14 +38,14 @@ fn public_hex(key: &SigningKey) -> String {
 }
 
 fn signer_admission(key: &SigningKey, key_id: &str) -> Value {
-    let current = chrono::Utc::now();
+    let current = lean_ctx_time::UtcDateTime::now();
     json!({
         "key_id":key_id,
         "public_key_digest":digest(key.verifying_key().as_bytes()).unwrap(),
-        "admitted_at":(current - chrono::Duration::days(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        "expires_at":(current + chrono::Duration::days(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "admitted_at":(current - lean_ctx_time::Duration::days(1))
+            .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
+        "expires_at":(current + lean_ctx_time::Duration::days(1))
+            .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
         "revoked_at":null
     })
 }

@@ -148,7 +148,7 @@ fn log_shadow_intercept(tool: &str, detail: &str) {
         return;
     };
     let log_path = data_dir.join("shadow.log");
-    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+    let ts = lean_ctx_time::LocalDateTime::now().format("%Y-%m-%d %H:%M:%S");
     let line = format!("[{ts}] intercepted {tool}: {detail}\n");
     let _ = std::fs::OpenOptions::new()
         .create(true)

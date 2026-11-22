@@ -1,0 +1,9 @@
+{
+  "instance_id": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c",
+  "key_id": "41dad53017a5f8de",
+  "org_id": "4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a",
+  "reason": "web_revoke",
+  "revoked_at": 1792800500000,
+  "schema": "leanctx.cloud.revocation.v1",
+  "signature": "d4e3eaef323ae35a8031263a728231a55e86efc3515715b4b64bf9c5cc0edf22583d9341997eb3c498c5a2b39ed681300b7dd7f48bcbbb76cc2b445ec956f008"
+}

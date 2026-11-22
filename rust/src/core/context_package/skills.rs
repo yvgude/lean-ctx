@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::content::{
     DocumentBlob, DocumentsContent, MAX_DOCUMENT_FILE_BYTES, MAX_DOCUMENT_FILES,
@@ -147,7 +147,7 @@ pub fn build_skills_pack(
         scope: name
             .starts_with('@')
             .then(|| name.split('/').next().unwrap_or_default().to_string()),
-        created_at: Utc::now(),
+        created_at: UtcDateTime::now(),
         updated_at: None,
         layers: Vec::new(),
         dependencies: Vec::new(),

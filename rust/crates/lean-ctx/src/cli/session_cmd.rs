@@ -15,6 +15,11 @@ pub fn cmd_session_action(args: &[String]) {
         super::local_read::session::run(kind, &args[1..]);
         return;
     }
+    // The proxy's per-session token ledger (`session-usage-v1`).
+    if action == Some("usage") && super::local_read::wants_json(args) {
+        super::local_read::session_usage::run(&args[1..]);
+        return;
+    }
 
     match action {
         Some("task") => {

@@ -522,16 +522,6 @@ pub(super) fn supports_code_security(package: &VerifiedPackage) -> bool {
             })
 }
 
-pub(super) fn supports_protection(package: &VerifiedPackage) -> bool {
-    validate_capabilities(package).is_ok()
-        && package.description["capabilities"]
-            .as_array()
-            .is_some_and(|capabilities| {
-                capabilities.iter().any(|capability| capability ==
-                &serde_json::json!({"id": "pro.runtime.personal_protection", "version": "1.0.0"}))
-            })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

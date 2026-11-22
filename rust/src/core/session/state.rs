@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use crate::core::intent_protocol::{IntentRecord, IntentSource};
 
@@ -170,7 +170,7 @@ fn auto_session_fact(
     category: &str,
     value: String,
     session: &SessionState,
-    timestamp: chrono::DateTime<Utc>,
+    timestamp: lean_ctx_time::UtcDateTime,
     confidence: f32,
 ) -> crate::core::knowledge::KnowledgeFact {
     let key = value.clone();
@@ -215,7 +215,7 @@ impl Default for SessionState {
 impl SessionState {
     /// Creates a new session with a unique ID and current timestamp.
     pub fn new() -> Self {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         Self {
             canonical_checkpoint: None,
             save_gate: Default::default(),
@@ -286,7 +286,7 @@ impl SessionState {
     /// Bumps the version counter and marks the session as dirty.
     pub fn increment(&mut self) {
         self.version += 1;
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         self.stats.unsaved_changes += 1;
     }
 
@@ -471,7 +471,7 @@ impl SessionState {
             file: file.map(std::string::ToString::to_string),
             line,
             summary: summary_clean,
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
         while self.findings.len() > MAX_FINDINGS {
             self.findings.remove(0);
@@ -488,7 +488,7 @@ impl SessionState {
         self.decisions.push(Decision {
             summary: summary_clean,
             rationale: rationale_clean,
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
         while self.decisions.len() > MAX_DECISIONS {
             self.decisions.remove(0);
@@ -551,7 +551,7 @@ impl SessionState {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
         self.stats.total_tokens_input += tokens_input;
-        self.stats.day_mut(Utc::now()).tool_calls += 1;
+        self.stats.day_mut(UtcDateTime::now()).tool_calls += 1;
         if self.stats.client.is_none() {
             let client = crate::core::client_capabilities::current().client_id;
             if client != "unknown" {
@@ -623,7 +623,7 @@ impl SessionState {
         client_name: Option<&str>,
         task_id: Option<&str>,
     ) {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let mut push = |key: String| {
             self.evidence.push(EvidenceRecord {
                 kind: EvidenceKind::ToolCall,
@@ -661,7 +661,7 @@ impl SessionState {
             agent_id: None,
             client_name: None,
             task_id: None,
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
         while self.evidence.len() > MAX_EVIDENCE {
             self.evidence.remove(0);
@@ -677,12 +677,22 @@ impl SessionState {
     /// Increments the session-level cache hit counter.
     pub fn record_cache_hit(&mut self) {
         self.stats.cache_hits += 1;
-        self.stats.day_mut(Utc::now()).cache_hits += 1;
+        self.stats.day_mut(UtcDateTime::now()).cache_hits += 1;
     }
 
     /// Increments the session-level command counter.
     pub fn record_command(&mut self) {
         self.stats.commands_run += 1;
+    }
+
+    /// Counts a `ctx_compose` call, direct or routed through `ctx_call`.
+    pub fn record_compose(&mut self) {
+        self.stats.compose_calls += 1;
+    }
+
+    /// Counts a `ctx_knowledge` remember that wrote a fact.
+    pub fn record_knowledge_written(&mut self) {
+        self.stats.knowledge_written += 1;
     }
 
     /// Returns the effective working directory for shell commands.

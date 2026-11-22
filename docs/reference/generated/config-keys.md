@@ -22,7 +22,7 @@ Top-level configuration keys
 - `bm25_max_files` (u64, default `5000`) — Maximum files in the BM25 corpus (the semantic index chunks the same corpus). 0 = unlimited
 - `buddy_enabled` (bool, default `true`) — Enable the experimental local buddy helper. It does not enable a public multi-agent product or MCP surface.
 - `bypass_hints` (enum: on | off | aggressive, default `on` — env `LEAN_CTX_BYPASS_HINTS`) — Bypass-hint mode: when agents use native Read/Grep instead of lean-ctx tools, a hint is appended to the next tool response. on (default), off, aggressive (hint on every call, no cooldown). Override via LEAN_CTX_BYPASS_HINTS
-- `cache_max_tokens` (usize, default `0` — env `LEAN_CTX_CACHE_MAX_TOKENS`) — Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL
+- `cache_max_tokens` (usize, default `0` — env `LEAN_CTX_CACHE_MAX_TOKENS`) — Token budget for the in-memory ctx_read cache (0 = built-in default 2M). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL
 - `cache_policy` (enum(aggressive|safe|off), default `aggressive` — env `LEAN_CTX_CACHE_POLICY`) — Cache policy for ctx_read: aggressive (13-tok stubs), safe (map on hit), off (always disk)
 - `checkpoint_interval` (u32, default `15`) — Session checkpoint interval in minutes
 - `compression_aggressiveness` (f64, default `null` — env `LEAN_CTX_AGGRESSIVENESS`) — Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto read modes/entropy/IB. Empty = per-mode defaults
@@ -157,6 +157,28 @@ Cross-project boundary and access control policies
 - `cross_project_search` (bool, default `false`) — Allow searching across project boundaries
 - `universal_gotchas_enabled` (bool, default `true`) — Load universal (cross-project) gotchas
 
+## `[cloud]`
+
+LeanCTX Cloud: workspace knowledge, policies and the shared agent bus.
+
+- `auto_capture` (bool, default `true`) — Run the capture gate on session learnings and share what passes (renamed from auto_draft).
+- `bus` (string: auto | off, default `auto`) — Relay the agent bus through LeanCTX Cloud (auto) or keep it local (off).
+- `enabled` (bool, default `null`) — Pause all LeanCTX Cloud traffic with false; unset means on while this machine is connected.
+- `metrics_upload` (bool, default `true`) — Send hourly instance metrics to LeanCTX Cloud (counts only, including full re-fetches and unregulated program names; never content).
+- `models_anthropic_agents` (bool, default `false`) — Let Anthropic-shaped agents reach the subscription models through shape-xlat routing aliases; false means OpenAI-shaped agents only. Owner question Q3 is open: true takes effect only once it is decided.
+- `models_url` (string, default `null`) — Origin of the LeanCTX Cloud models gateway for the leanctx provider; unset means https://models.<cloud host>. Only the LeanCTX Cloud host or a direct subdomain of it is honoured.
+- `presence_names` (bool, default `true`) — Show your team what your agents are working on: the status line each agent sets itself, with paths and secrets removed (only through a server that shows it to your team alone); false keeps presence to role, state and this machine's short name.
+- `pull_interval_minutes` (integer, default `5`) — Minutes between LeanCTX Cloud sync passes (1-60; values outside are clamped).
+- `queen_identity` (string: warn | enforce, default `warn` — env `LEAN_CTX_CLOUD_QUEEN_IDENTITY`) — A bus sender presenting as the app's coordinator session that is no registered coordinator session: warn (pass, log in bus/queen-warnings.json, mark for the receiver) or enforce (refuse); any other value counts as enforce. Enforce only once queen-sessions.json lists every coordinator session.
+- `receipts_upload` (bool, default `true`) — Upload context receipts to LeanCTX Cloud.
+- `root_key` (string, default `null`) — Root public key (base64 Ed25519) of a self-hosted LeanCTX Cloud server.
+- `runtime_consent` (bool, default `false`) — You agreed to install the proprietary Intelligence runtime your plan licenses (set by `cloud connect` or `cloud runtime install`).
+- `url` (string, default `https://cloud.leanctx.com`) — LeanCTX Cloud origin (https; a self-hosted LeanCTX Cloud server may use any https URL).
+- `vault_labels` (bool, default `true`) — Send checkout folder names as vault labels.
+- `worker.max_tasks_per_day` (integer, default `null`) — Worker mode: at most this many claimed tasks per day on this machine; only tightens the opt-in budget set on the web.
+- `worker.max_tokens_per_day` (integer, default `null`) — Worker mode: stop claiming once the day's results reported this many tokens; only tightens the opt-in budget.
+- `worker.max_usd_micros_per_day` (integer, default `null`) — Worker mode: stop claiming once the day's results reported this cost (USD millionths); only tightens the opt-in budget.
+
 ## `[context]`
 
 Fixed-context budget accounting (#964)
@@ -192,7 +214,7 @@ Model declaration for measured-vs-estimated cost reporting
 
 ## `[cross_agent]`
 
-Cross-agent memory sharing and semantic retrieval (Hive adaptation)
+Cross-agent memory sharing and semantic retrieval (LeanCTX Cloud adaptation)
 
 - `auto_extract` (bool, default `true`) — Auto-extract decisions from completed sessions
 - `cross_agent_sync` (bool, default `true`) — Share knowledge facts across agent sessions
@@ -272,27 +294,7 @@ Claude Code governor (`hook govern`): rule modes (env LEAN_CTX_GOVERNOR_* overri
 - `r2` (enum: on | shadow | off, default `shadow` — env `LEAN_CTX_GOVERNOR_R2`) — Governor rule r2: lossless repeat collapse of large Bash output. Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
 - `r3` (enum: on | shadow | off, default `shadow` — env `LEAN_CTX_GOVERNOR_R3`) — Governor rule r3: output already in context (never above shadow). Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
 - `r4` (enum: on | shadow | off, default `shadow` — env `LEAN_CTX_GOVERNOR_R4`) — Governor rule r4: template collapse of large Bash output. Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
-
-## `[hive]`
-
-LeanCTX | Hive: workspace knowledge, policies and the shared agent bus.
-
-- `auto_capture` (bool, default `true`) — Run the capture gate on session learnings and share what passes (renamed from auto_draft).
-- `bus` (string: auto | off, default `auto`) — Relay the agent bus through Hive (auto) or keep it local (off).
-- `enabled` (bool, default `null`) — Pause all Hive traffic with false; unset means on while this machine is connected.
-- `metrics_upload` (bool, default `true`) — Send hourly instance metrics to Hive (counts only, including full re-fetches and unregulated program names; never content).
-- `models_anthropic_agents` (bool, default `false`) — Let Anthropic-shaped agents reach the subscription models through shape-xlat routing aliases; false means OpenAI-shaped agents only. Owner question Q3 is open: true takes effect only once it is decided.
-- `models_url` (string, default `null`) — Origin of the Hive models gateway for the leanctx provider; unset means https://models.<hive host>. Only the Hive host or a direct subdomain of it is honoured.
-- `pull_interval_minutes` (integer, default `5`) — Minutes between Hive sync passes (1-60; values outside are clamped).
-- `queen_identity` (string: warn | enforce, default `warn` — env `LEAN_CTX_HIVE_QUEEN_IDENTITY`) — A bus sender presenting as the Queen that is no registered Queen session: warn (pass, log in bus/queen-warnings.json, mark for the receiver) or enforce (refuse); any other value counts as enforce. Enforce only once queen-sessions.json lists every Queen session.
-- `receipts_upload` (bool, default `true`) — Upload context receipts to Hive.
-- `root_key` (string, default `null`) — Root public key (base64 Ed25519) of a self-hosted Hive.
-- `runtime_consent` (bool, default `false`) — You agreed to install the proprietary Intelligence runtime your plan licenses (set by `hive connect` or `hive runtime install`).
-- `url` (string, default `https://hive.leanctx.com`) — Hive origin (https; a self-hosted Hive may use any https URL).
-- `vault_labels` (bool, default `true`) — Send checkout folder names as vault labels.
-- `worker.max_tasks_per_day` (integer, default `null`) — Worker mode: at most this many claimed tasks per day on this machine; only tightens the opt-in budget set on the web.
-- `worker.max_tokens_per_day` (integer, default `null`) — Worker mode: stop claiming once the day's results reported this many tokens; only tightens the opt-in budget.
-- `worker.max_usd_micros_per_day` (integer, default `null`) — Worker mode: stop claiming once the day's results reported this cost (USD millionths); only tightens the opt-in budget.
+- `r5` (enum: on | shadow | off, default `on` — env `LEAN_CTX_GOVERNOR_R5`) — Governor rule r5: outline instead of a first whole read of a large code file (Read, `cat <file>`, Code Mode script reads). Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
 
 ## `[ide_paths]`
 
@@ -562,7 +564,7 @@ AI session summaries: periodic, semantically-recallable session digests
 
 Privacy-safe default-on telemetry with explicit opt-out
 
-- `enabled` (bool, default `true`) — Enable anonymous product telemetry (cumulative daily aggregates — no code, paths or PII)
+- `enabled` (bool, default `true`) — Enable pseudonymous product telemetry (cumulative daily aggregates — no code, paths or PII)
 - `preference` (enum: default_on | explicitly_enabled | explicitly_disabled, default `default_on`) — Whether telemetry is using the v4 default or an explicit user choice
 
 ## `[updates]`

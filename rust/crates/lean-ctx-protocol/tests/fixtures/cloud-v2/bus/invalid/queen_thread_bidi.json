@@ -1,0 +1,14 @@
+{
+  "case": "queen_thread_bidi",
+  "base": "bus/frame.place_publish.queen.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/thread",
+      "value": "ledger‮export"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

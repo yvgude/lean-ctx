@@ -559,20 +559,24 @@ pub struct ResolvedProvider {
 pub enum CredentialSource {
     /// The caller's own headers, or the key in `api_key_env`.
     Configured,
-    /// The Hive instance's short-lived access token (`hive_i_…`), only for
-    /// the built-in `leanctx` provider and only to the Hive models origin
-    /// (`core::hive_models`, mz6).
-    HiveInstance,
+    /// The Cloud instance's short-lived access token (`cloud_i_…`), only for
+    /// the built-in `leanctx` provider and only to the Cloud models origin
+    /// (`core::cloud_models`, mz6).
+    CloudInstance,
 }
 
+/// Registry id of the built-in subscription-model provider (mz6). Defined
+/// here, below `core::cloud_models`, which re-exports it as `PROVIDER_ID`.
+pub const LEANCTX_PROVIDER_ID: &str = "leanctx";
+
 /// Built-in provider route names a registry entry must not shadow
-/// (`leanctx`: the Hive subscription models, `core::hive_models`).
+/// (`leanctx`: the Cloud subscription models, `core::cloud_models`).
 const BUILTIN_PROVIDER_IDS: &[&str] = &[
     "anthropic",
     "openai",
     "chatgpt",
     "gemini",
-    crate::core::hive_models::PROVIDER_ID,
+    LEANCTX_PROVIDER_ID,
 ];
 
 /// True when `id` is usable as a registry id: non-empty, lowercase alnum plus

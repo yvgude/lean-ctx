@@ -64,8 +64,8 @@ fn allow_list_is_exclusive() {
     assert!(!p.tool_allowed("ctx_shell"));
 }
 
-fn hive(redaction: &[(&str, &str)]) -> crate::core::policy::hive_filters::FilterRules {
-    crate::core::policy::hive_filters::FilterRules {
+fn cloud(redaction: &[(&str, &str)]) -> crate::core::policy::cloud_filters::FilterRules {
+    crate::core::policy::cloud_filters::FilterRules {
         redaction: redaction
             .iter()
             .map(|(label, pattern)| ((*label).to_string(), (*pattern).to_string()))
@@ -74,44 +74,44 @@ fn hive(redaction: &[(&str, &str)]) -> crate::core::policy::hive_filters::Filter
     }
 }
 
-/// Hive filter packs alone make a policy of content rules only: every
+/// Cloud filter packs alone make a policy of content rules only: every
 /// tool stays allowed and the pack rule redacts.
 #[test]
-fn hive_filters_alone_redact_without_tool_or_path_rules() {
-    let rules = hive(&[("hive:ahv", r"756\.\d{4}\.\d{4}\.\d{2}")]);
+fn cloud_filters_alone_redact_without_tool_or_path_rules() {
+    let rules = cloud(&[("cloud:ahv", r"756\.\d{4}\.\d{4}\.\d{2}")]);
     let policy = apply_org_floor(None, Ok(None), None, &rules, None).expect("a policy");
     assert!(policy.content_valid);
     assert!(policy.tool_allowed("ctx_read"));
     assert!(policy.tool_allowed("ctx_shell"));
-    assert_eq!(policy.hive_rules, 1);
-    assert_eq!(policy.redaction[0].0, "hive:ahv");
+    assert_eq!(policy.cloud_rules, 1);
+    assert_eq!(policy.redaction[0].0, "cloud:ahv");
     assert!(policy.redaction[0].1.is_match("756.1234.5678.97"));
-    assert!(apply_org_floor(None, Ok(None), None, &hive(&[]), None).is_none());
+    assert!(apply_org_floor(None, Ok(None), None, &cloud(&[]), None).is_none());
 }
 
-/// Hive rules have their own budget: a pack at its own limit stays
-/// valid with them, and a Hive rule outside its bounds fails closed.
+/// Cloud rules have their own budget: a pack at its own limit stays
+/// valid with them, and a Cloud rule outside its bounds fails closed.
 #[test]
-fn hive_rules_keep_their_own_budget_and_fail_closed_out_of_bounds() {
+fn cloud_rules_keep_their_own_budget_and_fail_closed_out_of_bounds() {
     use super::super::content::MAX_REDACTION_RULES;
     let labels: Vec<String> = (0..MAX_REDACTION_RULES).map(|i| format!("r{i}")).collect();
     let full: Vec<(&str, &str)> = labels.iter().map(|l| (l.as_str(), "x[0-9]")).collect();
-    let with_hive = ActivePolicy::from_resolved_with_hive(
+    let with_cloud = ActivePolicy::from_resolved_with_cloud(
         rp(None, vec![], &full),
-        &hive(&[("hive:card", "4[0-9]{15}")]),
+        &cloud(&[("cloud:card", "4[0-9]{15}")]),
     );
-    assert!(with_hive.content_valid);
-    assert_eq!(with_hive.redaction.len(), MAX_REDACTION_RULES + 1);
-    for bad in [("card", "4[0-9]{15}"), ("hive:card", "(")] {
-        let policy = ActivePolicy::from_resolved_with_hive(rp(None, vec![], &[]), &hive(&[bad]));
+    assert!(with_cloud.content_valid);
+    assert_eq!(with_cloud.redaction.len(), MAX_REDACTION_RULES + 1);
+    for bad in [("card", "4[0-9]{15}"), ("cloud:card", "(")] {
+        let policy = ActivePolicy::from_resolved_with_cloud(rp(None, vec![], &[]), &cloud(&[bad]));
         assert!(!policy.content_valid, "{bad:?}");
     }
 }
 
 #[test]
-fn pack_labels_with_the_hive_prefix_are_refused() {
+fn pack_labels_with_the_cloud_prefix_are_refused() {
     let pack = crate::core::policy::load(
-        "name = \"p\"\nversion = \"1.0.0\"\ndescription = \"t\"\n[redaction]\n\"hive:x\" = \"y\"\n",
+        "name = \"p\"\nversion = \"1.0.0\"\ndescription = \"t\"\n[redaction]\n\"cloud:x\" = \"y\"\n",
     );
     assert!(pack.is_err(), "{pack:?}");
 }
@@ -157,20 +157,21 @@ fn invalid_org_policy_cannot_fall_back_to_permissive_local_policy() {
 #[test]
 fn a_policy_ends_with_its_signed_horizon_for_every_holder_and_for_good() {
     let floor = || Ok(Some(rp(None, vec![], &[])));
-    let hour = chrono::Duration::hours(1);
+    let hour = lean_ctx_time::Duration::hours(1);
     // No horizon, or one ahead: the policy's own rules decide.
-    for horizon in [None, Some(chrono::Utc::now() + hour)] {
+    for horizon in [None, Some(lean_ctx_time::UtcDateTime::now() + hour)] {
         let policy = apply_org_floor(None, floor(), horizon, &Default::default(), None).unwrap();
         assert!(policy.within_horizon() && policy.tool_allowed("ctx_read"));
     }
 
     // Past its horizon the same rules permit nothing, through any clone.
-    let mut policy = ActivePolicy::from_resolved(rp(None, vec![], &[]))
-        .until(Some(chrono::Utc::now() - chrono::Duration::seconds(1)));
+    let mut policy = ActivePolicy::from_resolved(rp(None, vec![], &[])).until(Some(
+        lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::seconds(1),
+    ));
     assert!(!policy.within_horizon() && !policy.tool_allowed("ctx_read"));
     // The expiry was observed. Were the clock set back behind the horizon
     // — here: the horizon moved ahead of the clock — nothing comes back.
-    policy.horizon = Some(chrono::Utc::now() + hour);
+    policy.horizon = Some(lean_ctx_time::UtcDateTime::now() + hour);
     let shared = Arc::new(policy);
     let twin = Arc::clone(&shared);
     assert!(!shared.within_horizon() && !twin.tool_allowed("ctx_read"));

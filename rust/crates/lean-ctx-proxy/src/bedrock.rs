@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use axum::http::{
     HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode, header, request::Parts,
 };
-use chrono::Utc;
 use futures::{Stream, StreamExt};
 use hmac::{Hmac, KeyInit, Mac};
+use lean_ctx_time::UtcDateTime;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -373,7 +373,7 @@ pub(super) fn sign_request_from_environment(
         return Ok(());
     };
     let credentials = Credentials::from_environment().map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+    let timestamp = UtcDateTime::now().format("%Y%m%dT%H%M%SZ").to_string();
     if !parts.headers.contains_key(header::CONTENT_TYPE) {
         parts.headers.insert(
             header::CONTENT_TYPE,

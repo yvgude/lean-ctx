@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 
 use crate::board::{BOARD_SCHEMA, Board, Transition};
 use crate::{Change, TaskError};
@@ -98,7 +98,7 @@ impl Store {
 
     /// The board as of `now`: claims that ran out are given back first
     /// (a write), and their changes returned for the caller's notices.
-    pub fn read(&self, now: DateTime<Utc>) -> Result<(Board, Vec<Change>), TaskError> {
+    pub fn read(&self, now: UtcDateTime) -> Result<(Board, Vec<Change>), TaskError> {
         let board = self.load()?;
         if !board.has_expired(now) {
             return Ok((board, Vec::new()));
@@ -116,7 +116,7 @@ impl Store {
     /// every change recorded in this write (expiries first), for notices.
     pub fn write<T>(
         &self,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         change: impl FnOnce(&mut Board) -> Result<T, TaskError>,
     ) -> Result<(T, Vec<Change>), TaskError> {
         self.locked(|| {
@@ -129,7 +129,7 @@ impl Store {
     /// taken yet (see [`Store::write_announced`]).
     pub fn read_announced(
         &self,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         post: impl FnOnce(&[Change]) -> bool,
     ) -> Result<(Board, Vec<Change>), TaskError> {
         let board = self.load()?;
@@ -167,11 +167,11 @@ impl Store {
     /// or contended bus never holds up the next task writer. It returns
     /// whether the bus took the notices; only then does the cursor
     /// (`notices.json`) move past them, so a failed bus write is retried on
-    /// the next access instead of being lost (Hive task #39). Notices are
+    /// the next access instead of being lost (Cloud task #39). Notices are
     /// keyed by their journal sequence, so a re-post is idempotent.
     pub fn write_announced<T>(
         &self,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         change: impl FnOnce(&mut Board) -> Result<T, TaskError>,
         post: impl FnOnce(&[Change]) -> bool,
     ) -> Result<(T, Vec<Change>), TaskError> {
@@ -279,7 +279,7 @@ impl Store {
     /// sequence after it.
     fn write_locked<T>(
         &self,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         change: impl FnOnce(&mut Board) -> Result<T, TaskError>,
     ) -> Result<(T, Vec<Change>, u64), TaskError> {
         let mut board = self.load()?;

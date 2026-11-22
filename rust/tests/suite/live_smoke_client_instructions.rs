@@ -4,8 +4,8 @@
 //!   1. `lean-ctx init --agent <client>` installs MCP registration + rules file,
 //!   2. `lean-ctx mcp` is spoken to over actual stdio JSON-RPC,
 //!   3. the `initialize` response proves the cross-channel dedup contract:
-//!      covered clients (Cursor mdc / Codex instructions.md) get the one-line
-//!      SKELETON_ANCHOR, uncovered clients (Claude Code) get the full skeleton,
+//!      covered clients (Cursor mdc) get the one-line SKELETON_ANCHOR,
+//!      uncovered clients (Codex) get the full skeleton,
 //!   4. `tools/list` proves the advertised surface is exactly the lazy core.
 //!
 //! This is the CI stand-in for a manual "open Cursor/Claude/Codex and check"
@@ -287,31 +287,28 @@ fn claude_covered_client_gets_anchor() {
     windows,
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
-fn codex_covered_client_gets_anchor() {
+fn codex_client_gets_full_skeleton_without_legacy_instructions() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
     let env = test_env();
 
     run_init(bin, &env, "codex");
 
-    // Wiring on disk: config.toml MCP entry + canonical instructions.md.
+    // Wiring on disk: config.toml MCP entry + AGENTS.md pointer block; the
+    // legacy instructions.md (never read by Codex) is no longer written.
     let config = std::fs::read_to_string(env.home.join(".codex/config.toml")).expect("config");
     assert!(config.contains("lean-ctx"), "config.toml must register us");
-    let instr_md =
-        std::fs::read_to_string(env.home.join(".codex/instructions.md")).expect("instructions.md");
     assert!(
-        instr_md.contains("<!-- lean-ctx-rules -->"),
-        "instructions.md must carry the canonical rules block"
+        !env.home.join(".codex/instructions.md").exists(),
+        "Codex does not read instructions.md; setup must not write it"
     );
 
     let (instructions, tools) = mcp_handshake(bin, &env, "codex");
 
+    // No rules file carries the canonical block for Codex, so the MCP
+    // instructions are its single rules channel.
     assert!(
-        instructions.contains(ANCHOR_PREFIX),
-        "codex is covered by instructions.md → anchor expected.\n{instructions}"
-    );
-    assert!(
-        !has_skeleton(&instructions),
-        "codex instructions must NOT repeat the full skeleton.\n{instructions}"
+        has_skeleton(&instructions),
+        "codex instructions must carry the full skeleton.\n{instructions}"
     );
     // GH #1474: ShadowOnly merged into LazyCore — hook-covered clients
     // now get the full core tool surface, not just ctx_call.

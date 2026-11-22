@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::Serialize;
 
 use super::SessionState;
@@ -18,8 +18,8 @@ pub(crate) struct AttachSessionJournalV1 {
     pub(crate) schema_version: u32,
     pub(crate) id: String,
     pub(crate) version: u32,
-    pub(crate) started_at: DateTime<Utc>,
-    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) started_at: UtcDateTime,
+    pub(crate) updated_at: UtcDateTime,
     pub(crate) project_root: Option<String>,
     pub(crate) shell_cwd: Option<String>,
     pub(crate) task: Option<AttachSessionTaskV1>,
@@ -40,14 +40,14 @@ pub(crate) struct AttachSessionFindingV1 {
     pub(crate) file: Option<String>,
     pub(crate) line: Option<u32>,
     pub(crate) summary: String,
-    pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) timestamp: UtcDateTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct AttachSessionDecisionV1 {
     pub(crate) summary: String,
     pub(crate) rationale: Option<String>,
-    pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) timestamp: UtcDateTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -173,10 +173,10 @@ mod tests {
         EvidenceKind, EvidenceRecord, FileTouched, Finding, ProgressEntry, TaskInfo, TestSnapshot,
     };
 
-    fn fixed_time() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-08-25T10:00:00Z")
+    fn fixed_time() -> UtcDateTime {
+        lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-08-25T10:00:00Z")
             .unwrap()
-            .with_timezone(&Utc)
+            .to_utc()
     }
 
     fn fixture() -> SessionState {

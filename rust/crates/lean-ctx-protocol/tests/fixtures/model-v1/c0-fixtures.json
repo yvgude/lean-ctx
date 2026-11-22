@@ -1,0 +1,22 @@
+[
+  ["cloud-v1/fixtures/task.claimed.response.json", "task.schema.json#/$defs/task", ""],
+  ["cloud-v1/fixtures/task.done.response.json", "task.schema.json#/$defs/task", ""],
+  ["cloud-v1/fixtures/task.threshold.response.json", "task.schema.json#/$defs/task", ""],
+  ["cloud-v1/fixtures/task_list.response.json", "task.schema.json#/$defs/list", ""],
+  ["cloud-v1/fixtures/task_result.request.json", "task.schema.json#/$defs/result_request", ""],
+  ["cloud-v1/fixtures/task_claim.request.json", "agent_run.schema.json#/$defs/claim_request", ""],
+  ["cloud-v1/fixtures/task_claim.response.json", "agent_run.schema.json#/$defs/claim_ack", ""],
+  ["cloud-v1/fixtures/agent_profile_list.response.json", "agent_run.schema.json#/$defs/profile", "profiles"],
+  ["cloud-v1/fixtures/vault_resolve.request.json", "project.schema.json#/$defs/resolve_request", ""],
+  ["cloud-v1/fixtures/vault_resolve.ref.request.json", "project.schema.json#/$defs/resolve_request", ""],
+  ["cloud-v2/fixtures/routes/device_setup.request.json", "project.schema.json#/$defs/setup", "project"],
+  ["cloud-v1/fixtures/vault.response.json", "vault.schema.json#/$defs/vault", ""],
+  ["cloud-v1/fixtures/knowledge_revision.response.json", "knowledge_node.schema.json#/$defs/revision", ""],
+  ["cloud-v1/fixtures/knowledge_revision.wiki.response.json", "knowledge_node.schema.json#/$defs/revision", ""],
+  ["cloud-v2/fixtures/events/edge.add.json", "knowledge_node.schema.json#/$defs/event", ""],
+  ["cloud-v2/fixtures/events/field.set.anchors.json", "knowledge_node.schema.json#/$defs/event", ""],
+  ["cloud-v2/fixtures/routes/policy_bundle.v2.response.json", "policy_bundle.schema.json#/$defs/bundle_response", ""],
+  ["cloud-v2/fixtures/routes/policy_ack.request.json", "policy_bundle.schema.json#/$defs/ack_request", ""],
+  ["cloud-v2/fixtures/routes/policy_ack.response.json", "audit_event.schema.json#/$defs/policy_ack", ""],
+  ["cloud-v2/fixtures/routes/receipts_v2.request.json", "audit_event.schema.json#/$defs/receipts_request", ""]
+]

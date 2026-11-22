@@ -213,7 +213,7 @@ impl SignedSavingsBatchV1 {
         Self {
             schema_version: SCHEMA_VERSION,
             kind: KIND.to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             lean_ctx_version: env!("CARGO_PKG_VERSION").to_string(),
             agent_id: agent_id.to_string(),
             period: period.to_string(),
@@ -338,7 +338,7 @@ fn events_head_tail(events: &[super::SavingsEvent]) -> (usize, String, String) {
 pub fn default_artifact_path() -> Result<PathBuf, String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()?.join("savings");
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir savings: {e}"))?;
-    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let stamp = lean_ctx_time::UtcDateTime::now().format("%Y%m%dT%H%M%SZ");
     Ok(dir.join(format!("signed-batch-v1_{stamp}.json")))
 }
 

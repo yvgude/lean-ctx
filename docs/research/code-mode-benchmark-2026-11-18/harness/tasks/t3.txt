@@ -1,0 +1,1 @@
+Explain how the hooks module integrations/claude-code-mod/hooks/register.ts handles the prompt.compose event: when it adds a section, how it finds the lean-ctx server name, and what the section tells the model. Keep it short. The last line of your answer must be exactly ANSWER= followed by the id of the section it adds.

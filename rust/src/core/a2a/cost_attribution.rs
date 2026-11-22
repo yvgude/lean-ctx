@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -96,7 +96,7 @@ impl CostStore {
         output_tokens: u64,
         cached_tokens: u64,
     ) {
-        let now = Utc::now().to_rfc3339();
+        let now = UtcDateTime::now().to_rfc3339();
         let pricing = crate::core::gain::model_pricing::ModelPricing::load();
         // Honors a declared model for MCP-only IDEs (`[cost.models]`/default).
         let quote = pricing.quote_for_client(agent_type);
@@ -202,7 +202,7 @@ impl CostStore {
             .map(std::string::ToString::to_string);
         let cost = estimate_cost(model_key.as_deref(), input, output, 0);
         self.sessions.push(SessionCostSnapshot {
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: UtcDateTime::now().to_rfc3339(),
             agent_id: agent_id.to_string(),
             model_key,
             total_input: input,

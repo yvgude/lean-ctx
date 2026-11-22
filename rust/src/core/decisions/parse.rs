@@ -7,7 +7,7 @@
 
 use serde::Deserialize;
 
-use super::{Check, CheckKind, Decision, Status};
+use super::{Check, CheckKind, Decision, RecordEvidence, Status};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,6 +26,8 @@ struct RawDecision {
     source: Option<RawSource>,
     #[serde(default)]
     scope: RawScope,
+    #[serde(default)]
+    evidence: Option<RawEvidence>,
     #[serde(default, rename = "check")]
     checks: Vec<RawCheck>,
 }
@@ -69,6 +71,24 @@ enum RawSourceKind {
     Mr,
     Session,
     Doc,
+    Commit,
+}
+
+/// `[evidence]`: the verbatim history line a record was confirmed from
+/// (`lean-ctx decisions confirm`, contract §38).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEvidence {
+    commit: String,
+    quote: String,
+    trust: RawTrust,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum RawTrust {
+    Confirmed,
+    Reconstructed,
 }
 
 #[derive(Deserialize, Default)]
@@ -120,8 +140,30 @@ fn valid_id(id: &str) -> bool {
         })
 }
 
+/// Strict `YYYY-MM-DD` calendar date, without a date crate.
 fn valid_date(date: &str) -> bool {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok() && date.len() == 10
+    let b = date.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    let num = |s: &[u8]| -> Option<u32> {
+        s.iter().try_fold(0u32, |acc, &c| {
+            c.is_ascii_digit().then(|| acc * 10 + u32::from(c - b'0'))
+        })
+    };
+    let (Some(year), Some(month), Some(day)) = (num(&b[0..4]), num(&b[5..7]), num(&b[8..10]))
+    else {
+        return false;
+    };
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    (1..=days_in_month).contains(&day)
 }
 
 fn compile_globs(field: &str, globs: &[String]) -> Result<Vec<glob::Pattern>, String> {
@@ -242,11 +284,13 @@ pub fn parse_decision(text: &str, file_stem: &str, rel_file: &str) -> Result<Dec
                 RawSourceKind::Mr => "mr",
                 RawSourceKind::Session => "session",
                 RawSourceKind::Doc => "doc",
+                RawSourceKind::Commit => "commit",
             };
             (Some(kind.to_string()), Some(s.reference))
         }
         None => (None, None),
     };
+    let evidence = raw.evidence.map(parse_evidence).transpose()?;
     nonempty_list("scope.repos", &raw.scope.repos)?;
     nonempty_list("scope.symbols", &raw.scope.symbols)?;
     let path_globs = compile_globs("scope.paths", &raw.scope.paths)?;
@@ -281,13 +325,116 @@ pub fn parse_decision(text: &str, file_stem: &str, rel_file: &str) -> Result<Dec
         path_globs,
         symbols: raw.scope.symbols,
         checks,
+        evidence,
         file: rel_file.to_string(),
     })
 }
 
+fn parse_evidence(raw: RawEvidence) -> Result<RecordEvidence, String> {
+    let commit = raw.commit.trim();
+    if !(7..=64).contains(&commit.len()) || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!(
+            "evidence.commit `{}`: expected a commit id (7 to 64 hex digits)",
+            raw.commit
+        ));
+    }
+    if raw.quote.trim().is_empty() || raw.quote.contains(['\n', '\r']) {
+        return Err("evidence.quote: must be one non-empty line".to_string());
+    }
+    Ok(RecordEvidence {
+        commit: commit.to_ascii_lowercase(),
+        quote: raw.quote,
+        trust: match raw.trust {
+            RawTrust::Confirmed => "confirmed",
+            RawTrust::Reconstructed => "reconstructed",
+        }
+        .to_string(),
+    })
+}
+
+/// Fields of a record confirmed from a draft (`lean-ctx decisions confirm`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewRecord {
+    pub id: String,
+    pub title: String,
+    pub statement: String,
+    pub supersedes: Vec<String>,
+    /// `owner`, `team` or `review`.
+    pub decided_by: String,
+    /// `YYYY-MM-DD`.
+    pub decided_at: String,
+    /// `mr` or `commit`.
+    pub source_kind: String,
+    pub source_ref: String,
+    pub evidence: RecordEvidence,
+}
+
+/// A TOML basic string: `\`, `"` and control characters escaped.
+fn toml_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            c if c.is_control() => out.push_str(&format!("\\u{:04X}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The record text of `r`: deterministic, parses with [`parse_decision`].
+pub fn render_record(r: &NewRecord) -> String {
+    let list = |v: &[String]| v.iter().map(|s| toml_str(s)).collect::<Vec<_>>().join(", ");
+    format!(
+        "id = {}\n\
+         title = {}\n\
+         statement = {}\n\
+         rationale = \"\"\n\
+         status = \"active\"\n\
+         supersedes = [{}]\n\
+         decided_by = {}\n\
+         decided_at = {}\n\
+         \n\
+         [source]\n\
+         kind = {}\n\
+         ref = {}\n\
+         \n\
+         [evidence]                        # verbatim history line (contract §38)\n\
+         commit = {}\n\
+         quote = {}\n\
+         trust = {}\n\
+         \n\
+         [scope]\n\
+         repos = []                        # empty = all\n\
+         paths = []                        # globs; empty = repo-wide\n\
+         symbols = []\n",
+        toml_str(&r.id),
+        toml_str(&r.title),
+        toml_str(&r.statement),
+        list(&r.supersedes),
+        toml_str(&r.decided_by),
+        toml_str(&r.decided_at),
+        toml_str(&r.source_kind),
+        toml_str(&r.source_ref),
+        toml_str(&r.evidence.commit),
+        toml_str(&r.evidence.quote),
+        toml_str(&r.evidence.trust),
+    )
+}
+
 /// A fresh record for `lean-ctx decisions new` that parses as written.
 pub fn scaffold(id: &str, title: &str, today: &str) -> String {
-    let title = title.replace('\\', "\\\\").replace('"', "\\\"");
+    // A TOML basic string: escape `\` and `"`, fold line breaks and other
+    // control characters into spaces so the record stays one parsable line.
+    let title: String = title
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
     format!(
         "id = \"{id}\"\n\
          title = \"{title}\"\n\

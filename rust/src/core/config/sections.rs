@@ -801,14 +801,6 @@ impl TelemetryConfig {
     }
 }
 
-/// What remains of the retired `[cloud]` section: the legacy opt-in the
-/// loader turns into `telemetry.enabled`. Read, never written.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
-pub struct LegacyCloudConfig {
-    pub contribute_enabled: bool,
-}
-
 /// Model declaration for **measured-vs-estimated** cost reporting.
 ///
 /// Proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, OpenCode) report

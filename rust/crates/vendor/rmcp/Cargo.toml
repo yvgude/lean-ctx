@@ -64,7 +64,7 @@ oauth2 = { version = "5.0", optional = true, default-features = false }
 jsonwebtoken = { version = "11", optional = true, features = ["aws_lc_rs"] }
 
 # for auto generate schema
-schemars = { version = "1.0", optional = true, features = ["chrono04"] }
+schemars = { version = "1.0", optional = true }
 
 # for image encoding
 base64 = { version = "0.23", optional = true }
@@ -113,16 +113,8 @@ hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 
 # macro
 rmcp-macros = { version = "3.9.0", path = "../rmcp-macros", optional = true }
-[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
-chrono = { version = "0.4.38", default-features = false, features = ["serde", "now"] }
-
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
-chrono = { version = "0.4.38", default-features = false, features = [
-  "serde",
-  "clock",
-  "std",
-  "oldtime",
-] }
+# LeanCTX: time over jiff instead of chrono (RUSTSEC-2026-0543).
+lean-ctx-time = { path = "../../lean-ctx-time", version = "0.1.0" }
 
 # the stdio pipe transport reopens `/proc/self/fd` with `O_NONBLOCK`;
 # the child process transport sends `SIGTERM` during graceful shutdown
@@ -206,11 +198,11 @@ tower = ["dep:tower-service"]
 auth = ["dep:async-trait", "dep:oauth2", "__reqwest", "dep:url"]
 auth-client-credentials-jwt = ["auth", "dep:jsonwebtoken", "uuid"]
 auth-enterprise-managed = ["auth", "base64"]
-schemars = ["dep:schemars"]
+schemars = ["dep:schemars", "lean-ctx-time/schemars"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
-schemars = { version = "1.1.0", features = ["chrono04"] }
+schemars = { version = "1.1.0" }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }

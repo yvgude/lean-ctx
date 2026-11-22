@@ -182,7 +182,7 @@ impl StartPlan {
 #[serde(deny_unknown_fields)]
 pub struct ChildDeliveryProfileV1 {
     pub task_id: String,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: lean_ctx_time::UtcDateTime,
     pub profile: crate::core::a2a::task::delivery_authority::DeliverySigningProfileV1,
 }
 
@@ -198,7 +198,7 @@ impl ChildDeliveryProfileV1 {
     /// when the profile no longer binds this task, project and child key.
     pub fn launch_value(&self, task_id: &str, working_dir: &Path) -> Option<String> {
         if self.task_id != task_id
-            || self.expires_at <= chrono::Utc::now()
+            || self.expires_at <= lean_ctx_time::UtcDateTime::now()
             || self.profile.schema_version != 1
             || !self.profile.project_root.is_absolute()
         {
@@ -209,7 +209,7 @@ impl ChildDeliveryProfileV1 {
             certificate.execution.task_id != task_id
                 || self.expires_at > certificate.expires_at
                 || certificate.schema_version != 1
-                || certificate.issued_at > chrono::Utc::now()
+                || certificate.issued_at > lean_ctx_time::UtcDateTime::now()
                 || certificate.project_root != root
                 || certificate.privacy != self.profile.privacy
                 || certificate.child_agent != self.profile.agent_id

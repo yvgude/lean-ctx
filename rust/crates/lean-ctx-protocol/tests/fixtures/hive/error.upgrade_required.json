@@ -1,7 +1,0 @@
-{
-  "error": {
-    "code": "upgrade_required",
-    "message": "This instance is too old for Hive.",
-    "min_instance": "3.12.0"
-  }
-}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -112,7 +112,7 @@ pub struct TaskStatusV1 {
     pub schema_version: u32,
     #[serde(with = "task_state_wire")]
     pub state: TaskState,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 mod task_state_wire {
@@ -139,7 +139,7 @@ mod task_state_wire {
 pub struct TaskMessage {
     pub role: String,
     pub parts: Vec<TaskPart>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,7 +203,7 @@ impl TaskPart {
 pub struct TaskTransition {
     pub from: TaskState,
     pub to: TaskState,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub reason: Option<String>,
 }
 
@@ -218,8 +218,8 @@ pub struct Task {
     pub artifacts: Vec<TaskPart>,
     pub history: Vec<TaskTransition>,
     pub metadata: HashMap<String, String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
+    pub updated_at: UtcDateTime,
     #[serde(default)]
     pub tenant_id: Option<String>,
     #[serde(default)]
@@ -238,7 +238,7 @@ pub struct Task {
 
 impl Task {
     pub fn new(from_agent: &str, to_agent: &str, description: &str) -> Self {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let id = format!("task-{}", uuid::Uuid::new_v4());
 
         Self {
@@ -281,7 +281,7 @@ impl Task {
         descriptor: &TaskDescriptorV1,
         task_id: String,
     ) -> Result<Self, Withheld> {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let description = admit_for_store(&descriptor.description)?;
         let parts = vec![TaskPart::Text {
             text: description.clone(),
@@ -387,7 +387,7 @@ impl Task {
             ));
         }
 
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         // Equal timestamps are valid; a backward clock must not poison reload.
         if now < self.updated_at {
             return Err("task clock precedes stored state".to_string());
@@ -416,9 +416,9 @@ impl Task {
         self.messages.push(TaskMessage {
             role: role.to_string(),
             parts,
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 
     /// [`Self::add_message`] for NEW caller content: every part is admitted
@@ -439,6 +439,6 @@ impl Task {
 
     pub fn add_artifact(&mut self, artifact: TaskPart) {
         self.artifacts.push(artifact);
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 }

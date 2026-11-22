@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::types::{JudgedPair, KnowledgeFact, KnowledgeIndex};
 
@@ -88,7 +88,7 @@ fn salience_score(f: &KnowledgeFact) -> u32 {
     let quality_bonus = (f.quality_score() * 60.0) as u32;
 
     let recency_bonus = f.last_retrieved.map_or(0u32, |t| {
-        let days = Utc::now().signed_duration_since(t).num_days();
+        let days = UtcDateTime::now().signed_duration_since(t).num_days();
         if days <= 7 {
             10u32
         } else if days <= 30 {

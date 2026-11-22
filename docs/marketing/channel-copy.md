@@ -1,7 +1,7 @@
 # LeanCTX channel copy
 
 Approved copy for repository, package and directory entry points.
-LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can see.**
+LeanCTX is the **Context Gateway for AI Systems**. **Less context. More intelligence.**
 Product scope follows [canonical positioning](../POSITIONING_CANONICAL.md).
 
 ## Shared description
@@ -35,7 +35,7 @@ LeanCTX — the Context Gateway for AI systems
 
 Select · Control · Learn · Prove
 
-Control what your AI can see. · leanctx.com
+Less context. More intelligence. · leanctx.com
 
 The 1280 × 640 [PNG](social-preview.png), with its editable [SVG](social-preview.svg),
 uses the official logo from the [brand page](https://leanctx.com/press/) and the

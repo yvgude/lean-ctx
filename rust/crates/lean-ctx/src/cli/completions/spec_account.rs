@@ -59,67 +59,10 @@ pub(super) const KNOWLEDGE: CommandNode = CommandNode {
     hidden: false,
 };
 
-const fn leaf(name: &'static str, description: &'static str) -> CommandNode {
-    CommandNode {
-        name,
-        aliases: &[],
-        description,
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    }
-}
-
-pub(super) const DECISIONS: CommandNode = CommandNode {
-    name: "decisions",
-    aliases: &[],
-    description: "Project decisions (.leanctx/decisions): list, show, check, new",
-    subcommands: &[
-        leaf("list", "List the project's decisions"),
-        leaf("show", "Show one decision"),
-        leaf("new", "Create a decision record"),
-        CommandNode {
-            name: "check",
-            aliases: &[],
-            description: "Check a change against the decisions (exit 1 on a violation)",
-            subcommands: &[],
-            flags: &[
-                FlagSpec {
-                    long: "--staged",
-                    short: None,
-                    description: "Check the staged changes",
-                    takes_value: false,
-                    value_kind: None,
-                },
-                FlagSpec {
-                    long: "--rev",
-                    short: None,
-                    description: "Check a revision range A..B",
-                    takes_value: true,
-                    value_kind: None,
-                },
-                FlagSpec {
-                    long: "--diff",
-                    short: None,
-                    description: "Check a unified diff file",
-                    takes_value: true,
-                    value_kind: None,
-                },
-            ],
-            positional: None,
-            hidden: false,
-        },
-    ],
-    flags: &[],
-    positional: None,
-    hidden: false,
-};
-
 pub(super) const TASKS: CommandNode = CommandNode {
     name: "tasks",
     aliases: &[],
-    description: "The project's tasks (local, or its Hive vault)",
+    description: "The project's tasks (local, or its LeanCTX Cloud vault)",
     subcommands: &[],
     flags: &[],
     positional: None,
@@ -129,8 +72,153 @@ pub(super) const TASKS: CommandNode = CommandNode {
 pub(super) const DOCS: CommandNode = CommandNode {
     name: "docs",
     aliases: &[],
-    description: "The project's doc pages (local, or its Hive vault)",
+    description: "The project's doc pages (local, or its LeanCTX Cloud vault)",
     subcommands: &[],
+    flags: &[],
+    positional: None,
+    hidden: false,
+};
+
+pub(super) const DECISIONS: CommandNode = CommandNode {
+    name: "decisions",
+    aliases: &[],
+    description: "The project's decision records (.leanctx/decisions)",
+    subcommands: &[
+        CommandNode {
+            name: "list",
+            aliases: &["ls"],
+            description: "Decisions in scope",
+            subcommands: &[],
+            flags: &[
+                FlagSpec {
+                    long: "--path",
+                    short: None,
+                    description: "Decisions covering this path",
+                    takes_value: true,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--symbol",
+                    short: None,
+                    description: "Decisions covering this symbol",
+                    takes_value: true,
+                    value_kind: None,
+                },
+            ],
+            positional: None,
+            hidden: false,
+        },
+        CommandNode {
+            name: "show",
+            aliases: &[],
+            description: "One decision in full",
+            subcommands: &[],
+            flags: &[],
+            positional: None,
+            hidden: false,
+        },
+        CommandNode {
+            name: "check",
+            aliases: &[],
+            description: "Violations a change introduces",
+            subcommands: &[],
+            flags: &[
+                FlagSpec {
+                    long: "--rev",
+                    short: None,
+                    description: "Check the range A..B",
+                    takes_value: true,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--staged",
+                    short: None,
+                    description: "Check the staged changes",
+                    takes_value: false,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--diff",
+                    short: None,
+                    description: "Check a unified diff file (- for stdin)",
+                    takes_value: true,
+                    value_kind: None,
+                },
+            ],
+            positional: None,
+            hidden: false,
+        },
+        CommandNode {
+            name: "new",
+            aliases: &[],
+            description: "Scaffold a decision record",
+            subcommands: &[],
+            flags: &[FlagSpec {
+                long: "--title",
+                short: None,
+                description: "Title of the decision",
+                takes_value: true,
+                value_kind: None,
+            }],
+            positional: None,
+            hidden: false,
+        },
+        CommandNode {
+            name: "suggest",
+            aliases: &[],
+            description: "Draft decisions from the git history (review file only)",
+            subcommands: &[],
+            flags: &[
+                FlagSpec {
+                    long: "--since",
+                    short: None,
+                    description: "Scan only commits after this ref",
+                    takes_value: true,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--max-commits",
+                    short: None,
+                    description: "Most commits to scan",
+                    takes_value: true,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--json",
+                    short: None,
+                    description: "JSON output",
+                    takes_value: false,
+                    value_kind: None,
+                },
+            ],
+            positional: None,
+            hidden: false,
+        },
+        CommandNode {
+            name: "confirm",
+            aliases: &[],
+            description: "Record a suggested draft as a decision",
+            subcommands: &[],
+            flags: &[
+                FlagSpec {
+                    long: "--id",
+                    short: None,
+                    description: "Record id or slug",
+                    takes_value: true,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--decided-by",
+                    short: None,
+                    description: "owner, team or review",
+                    takes_value: true,
+                    value_kind: None,
+                },
+            ],
+            positional: None,
+            hidden: false,
+        },
+    ],
     flags: &[],
     positional: None,
     hidden: false,

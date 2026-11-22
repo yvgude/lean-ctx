@@ -221,15 +221,15 @@ mod tests {
 
     fn host_config(ledger: &Path) -> Vec<u8> {
         let key = SigningKey::from_bytes(&[53; 32]);
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         serde_json::to_vec(&serde_json::json!({
             "schema_version":1,
             "signing_key_hex":lean_ctx::core::agent_identity::hex_encode(&key.to_bytes()),
             "signer":{
                 "key_id":"mcp-native-test-key",
                 "public_key_digest":format!("sha256:{}", lean_ctx::core::agent_identity::hex_encode(&Sha256::digest(key.verifying_key().as_bytes()))),
-                "admitted_at":(now-chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
-                "expires_at":(now+chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
+                "admitted_at":(now-lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
+                "expires_at":(now+lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
                 "revoked_at":null
             },
             "ledger_path":ledger

@@ -51,6 +51,8 @@ const SERVE_FLAGS: &[(&[&str], Arity)] = &[
     (&["--request-timeout-ms"], Arity::Number),
     (&["--allowed-host"], Arity::Text),
     (&["--disable-host-check"], Arity::Switch),
+    (&["--oauth"], Arity::Switch),
+    (&["--oauth-issuer"], Arity::Text),
 ];
 
 pub(super) const SERVE_USAGE: &str = "\
@@ -91,7 +93,11 @@ Options:
   --rate-burst          Rate limiter burst (global, default: 100)
   --request-timeout-ms  REST tool-call timeout (default: 30000)
   --allowed-host        Add allowed Host header (repeatable)
-  --disable-host-check  Disable Host header validation (unsafe)";
+  --disable-host-check  Disable Host header validation (unsafe)
+  --oauth               Let remote MCP clients connect with OAuth 2.1 (PKCE): the owner approves
+                        each client in the browser with the instance token
+  --oauth-issuer URL    Public https origin clients reach this instance at (implies --oauth;
+                        required off loopback)";
 
 /// What `serve` was asked to do.
 #[derive(Debug)]
@@ -206,6 +212,11 @@ pub(super) fn parse(rest: &[String]) -> Result<ServeArgs, String> {
             "--request-timeout-ms" => cfg.request_timeout_ms = number(name, &value)?,
             "--allowed-host" => cfg.allowed_hosts.push(value),
             "--disable-host-check" => cfg.disable_host_check = true,
+            "--oauth" => cfg.oauth = true,
+            "--oauth-issuer" => {
+                cfg.oauth = true;
+                cfg.oauth_issuer = Some(value);
+            }
             other => return Err(format!("{other} is listed but not handled")),
         }
     }

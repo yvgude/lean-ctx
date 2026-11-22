@@ -39,7 +39,7 @@ async fn relay_preserves_task_response_bytes_and_rejects_missing_response() {
     let raw = "{\n  \"signature\": \"opaque-downstream-signature\"\n}";
     let receipt = DeliveryReceipt {
         envelope_id: "relay-1".into(),
-        delivered_at: chrono::Utc::now(),
+        delivered_at: lean_ctx_time::UtcDateTime::now(),
         remote_status: 200,
         round_trip_ms: 1,
         unverified_task_response: Some(raw.into()),
@@ -91,7 +91,7 @@ async fn forwarded_task_response_passes_carrier_admission() {
         forwarded_delivery_response(
             DeliveryReceipt {
                 envelope_id: "relay-1".into(),
-                delivered_at: chrono::Utc::now(),
+                delivered_at: lean_ctx_time::UtcDateTime::now(),
                 remote_status: 200,
                 round_trip_ms: 1,
                 unverified_task_response: Some(raw),
@@ -193,7 +193,7 @@ async fn forwarded_task_response_that_needs_redaction_is_refused_not_altered() {
     let response = forwarded_delivery_response(
         DeliveryReceipt {
             envelope_id: "relay-1".into(),
-            delivered_at: chrono::Utc::now(),
+            delivered_at: lean_ctx_time::UtcDateTime::now(),
             remote_status: 200,
             round_trip_ms: 1,
             unverified_task_response: Some(raw),
@@ -286,7 +286,7 @@ async fn relay_replay_survives_legacy_freshness_window() {
         root.path().to_str().unwrap(),
         REMOTE_REPLAY_RETENTION_SECONDS,
     );
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let record = super::super::relay_replay_async::test_record(now);
     let id = relay_storage_id(&record);
     let fingerprint = record.origin_fingerprint().unwrap();
@@ -308,7 +308,7 @@ async fn relay_replay_survives_legacy_freshness_window() {
                 &id,
                 &record,
                 &fingerprint,
-                now + chrono::Duration::hours(23)
+                now + lean_ctx_time::Duration::hours(23)
             )
             .await
             .unwrap(),
@@ -319,7 +319,7 @@ async fn relay_replay_survives_legacy_freshness_window() {
 #[test]
 fn relay_storage_identity_is_path_safe_and_scope_bound() {
     use lean_ctx::core::a2a::relay::RelayRecordV1;
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let record = RelayRecordV1::new_signed(
         "../../outside\\windows:stream",
         "origin",
@@ -328,7 +328,7 @@ fn relay_storage_identity_is_path_safe_and_scope_bound() {
         "project",
         TransportContentType::ContextPackage,
         lean_ctx_protocol::DataClassification::Internal,
-        now + chrono::Duration::minutes(1),
+        now + lean_ctx_time::Duration::minutes(1),
         4,
         now,
         &lean_ctx::core::a2a::relay::test_origin_key("origin"),
@@ -359,7 +359,7 @@ fn relay_storage_identity_is_path_safe_and_scope_bound() {
     assert_ne!(relay_storage_id(&left), relay_storage_id(&right));
 }
 
-fn signed_at(sent_at: chrono::DateTime<chrono::Utc>) -> TransportEnvelopeV1 {
+fn signed_at(sent_at: lean_ctx_time::UtcDateTime) -> TransportEnvelopeV1 {
     let mut envelope = TransportEnvelopeV1::new(
         AgentIdentityV1 {
             agent_id: "sender".into(),
@@ -385,7 +385,7 @@ fn signed_at(sent_at: chrono::DateTime<chrono::Utc>) -> TransportEnvelopeV1 {
 fn authority_is_valid(
     envelope: &TransportEnvelopeV1,
     secret: &[u8],
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> bool {
     valid_remote_authority(
         envelope,
@@ -399,9 +399,9 @@ fn authority_is_valid(
 
 #[test]
 fn remote_authority_requires_valid_signature_recipient_and_freshness() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-09-07T12:00:00Z")
+    let now = lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-09-07T12:00:00Z")
         .expect("timestamp")
-        .with_timezone(&chrono::Utc);
+        .to_utc();
     let valid = signed_at(now);
     assert!(authority_is_valid(&valid, b"secret", now));
     assert!(!authority_is_valid(&valid, b"wrong", now));
@@ -411,9 +411,9 @@ fn remote_authority_requires_valid_signature_recipient_and_freshness() {
     no_recipient.sign(b"secret").expect("resign");
     assert!(!authority_is_valid(&no_recipient, b"secret", now));
 
-    let stale = signed_at(now - chrono::Duration::seconds(301));
+    let stale = signed_at(now - lean_ctx_time::Duration::seconds(301));
     assert!(!authority_is_valid(&stale, b"secret", now));
-    let future = signed_at(now + chrono::Duration::seconds(31));
+    let future = signed_at(now + lean_ctx_time::Duration::seconds(31));
     assert!(!authority_is_valid(&future, b"secret", now));
 
     let mut wrong_scope = signed_at(now);
@@ -442,9 +442,9 @@ fn legacy_delivery_alias_must_verify_as_the_original_envelope() {
         LEGACY_DELIVERY_ID_METADATA, LEGACY_DELIVERY_SENT_AT_METADATA,
     };
 
-    let now = chrono::DateTime::parse_from_rfc3339("2026-09-07T12:00:00Z")
+    let now = lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-09-07T12:00:00Z")
         .expect("timestamp")
-        .with_timezone(&chrono::Utc);
+        .to_utc();
     let original = signed_at(now);
     let original_signature = original.signature.clone().expect("signature");
     let mut retry = original.clone();
@@ -456,7 +456,7 @@ fn legacy_delivery_alias_must_verify_as_the_original_envelope() {
         LEGACY_DELIVERY_SENT_AT_METADATA.to_string(),
         original.sent_at.to_rfc3339(),
     );
-    retry.sent_at += chrono::Duration::seconds(1);
+    retry.sent_at += lean_ctx_time::Duration::seconds(1);
     retry.sign(b"secret").expect("sign retry");
     assert_eq!(
         verified_legacy_delivery_id(&retry, b"secret"),
@@ -482,9 +482,9 @@ async fn remote_replay_guard_rejects_duplicates_expires_and_releases_failures() 
     let root = dir.path().to_string_lossy();
     let guard =
         super::super::remote_replay::RemoteReplayGuard::new(&root, REMOTE_REPLAY_RETENTION_SECONDS);
-    let now = chrono::DateTime::parse_from_rfc3339("2026-09-07T12:00:00Z")
+    let now = lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-09-07T12:00:00Z")
         .expect("timestamp")
-        .with_timezone(&chrono::Utc);
+        .to_utc();
 
     let Reservation::Reserved(a_generation) = guard.reserve("sig-a", now).await.expect("reserve")
     else {
@@ -509,7 +509,7 @@ async fn remote_replay_guard_rejects_duplicates_expires_and_releases_failures() 
     );
     assert_eq!(
         restarted
-            .reserve("sig-a", now - chrono::Duration::seconds(1))
+            .reserve("sig-a", now - lean_ctx_time::Duration::seconds(1))
             .await
             .expect("clock rollback must preserve replay"),
         Reservation::Completed
@@ -518,7 +518,7 @@ async fn remote_replay_guard_rejects_duplicates_expires_and_releases_failures() 
         guard
             .reserve(
                 "sig-a",
-                now + chrono::Duration::seconds(REMOTE_REPLAY_RETENTION_SECONDS + 1),
+                now + lean_ctx_time::Duration::seconds(REMOTE_REPLAY_RETENTION_SECONDS + 1),
             )
             .await
             .expect("expired reserve"),
@@ -554,7 +554,7 @@ async fn remote_replay_guard_rejects_duplicates_expires_and_releases_failures() 
         guard
             .reserve(
                 "sig-c",
-                now + chrono::Duration::seconds(REMOTE_REPLAY_RETENTION_SECONDS * 2 + 2),
+                now + lean_ctx_time::Duration::seconds(REMOTE_REPLAY_RETENTION_SECONDS * 2 + 2),
             )
             .await
             .expect("expired pending reservation can retry idempotently"),
@@ -571,7 +571,7 @@ async fn replay_primary_and_legacy_alias_transition_atomically() {
         dir.path().to_str().expect("root"),
         REMOTE_REPLAY_RETENTION_SECONDS,
     );
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let Reservation::Reserved(generation) = guard
         .reserve_with_alias("stable-a", Some("legacy-a"), now)
         .await
@@ -746,6 +746,7 @@ fn handoff_state(root: &str) -> AppState {
         ),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     }
 }
 

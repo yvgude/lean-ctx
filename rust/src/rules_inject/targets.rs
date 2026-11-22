@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use super::content::{gemini_dedicated_rules_path, opencode_dedicated_rules_path};
+use super::content::{
+    antigravity_dedicated_rules_path, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
+};
 use super::{RulesFormat, RulesTarget};
 
 pub(super) fn build_rules_targets(
@@ -38,6 +40,22 @@ pub(super) fn build_rules_targets(
         ),
     };
 
+    // Antigravity: shared mode merges into `~/.gemini/AGENTS.md`, a documented
+    // always-on global file (antigravity.google/docs/rules). Dedicated mode
+    // never touches that user file: it writes the lean-ctx-owned modular rule
+    // `~/.gemini/config/rules/lean-ctx.md`, which needs `trigger: always_on`
+    // frontmatter (Antigravity silently drops a rule file without it). The
+    // former `~/.gemini/antigravity/rules/` dir is not a documented location.
+    let (antigravity_path, antigravity_format) = match injection {
+        RulesInjection::Dedicated => (
+            antigravity_dedicated_rules_path(home),
+            RulesFormat::AntigravityRule,
+        ),
+        RulesInjection::Shared | RulesInjection::Off => {
+            (home.join(".gemini/AGENTS.md"), RulesFormat::SharedMarkdown)
+        }
+    };
+
     // NOTE: Claude Code intentionally has NO rules target. Claude loads every
     // rules file without `paths:` frontmatter unconditionally at session start,
     // which duplicated the CLAUDE.md block in every session (12k+ token memory
@@ -60,7 +78,11 @@ pub(super) fn build_rules_targets(
     // reaches CodeWhale through the shared project `AGENTS.md` block that
     // `core::rules_channel::AGENTS_MD_READERS` already accounts for — writing a
     // `~/.codewhale/AGENTS.md` would create a file CodeWhale never reads.
-    vec![
+    //
+    // Codex CLI has NO rules target either: Codex reads `$CODEX_HOME/AGENTS.md`
+    // (pointer block, hooks/agents/codex.rs), never the legacy `instructions.md`
+    // older installs wrote; setup strips that stale block and uninstall removes it.
+    let mut targets = vec![
         // --- Shared config files (append-only) ---
         RulesTarget {
             name: "Gemini CLI",
@@ -140,15 +162,12 @@ pub(super) fn build_rules_targets(
             path: home.join(".jb-rules/lean-ctx.md"),
             format: RulesFormat::DedicatedMarkdown,
         },
+        // GEMINI.md stays Gemini CLI's carrier, so Antigravity's shared block
+        // goes to AGENTS.md, which Gemini CLI does not read by default.
         RulesTarget {
             name: "Antigravity",
-            path: home.join(".gemini/antigravity/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Pi Coding Agent",
-            path: home.join(".pi/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
+            path: antigravity_path,
+            format: antigravity_format,
         },
         RulesTarget {
             name: "AWS Kiro",
@@ -176,13 +195,6 @@ pub(super) fn build_rules_targets(
             format: RulesFormat::DedicatedMarkdown,
         },
         RulesTarget {
-            name: "Codex CLI",
-            path: crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("instructions.md"),
-            format: RulesFormat::SharedMarkdown,
-        },
-        RulesTarget {
             name: "Grok",
             path: home.join(".grok/AGENTS.md"),
             format: RulesFormat::SharedMarkdown,
@@ -205,7 +217,19 @@ pub(super) fn build_rules_targets(
             path: home.join(".qoder/rules/lean-ctx.md"),
             format: RulesFormat::DedicatedMarkdown,
         },
-    ]
+    ];
+    // Pi loads `<agent-dir>/AGENTS.md` as global context (agent dir
+    // `~/.pi/agent`, or `PI_CODING_AGENT_DIR`); it never read `~/.pi/rules/`.
+    // Pi loads no lean-ctx-owned file (`APPEND_SYSTEM.md` is user-owned too),
+    // so dedicated mode, which never edits shared files, skips Pi entirely.
+    if !matches!(injection, RulesInjection::Dedicated) {
+        targets.push(RulesTarget {
+            name: "Pi Coding Agent",
+            path: crate::core::editor_registry::pi_agents_path(home),
+            format: RulesFormat::SharedMarkdown,
+        });
+    }
+    targets
 }
 
 fn copilot_instructions_path(home: &std::path::Path) -> PathBuf {

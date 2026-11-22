@@ -113,7 +113,7 @@ pub fn spawn(server: crate::tools::LeanCtxServer) {
     let release_after = server.idle_ttl();
     LAST_ACTIVITY_MS.store(now_ms(), Ordering::SeqCst);
     SERVING.store(true, Ordering::SeqCst);
-    lean_ctx_hive::tasks::register_idle_clock(idle_for_now);
+    lean_ctx_cloud::tasks::register_idle_clock(idle_for_now);
     tokio::spawn(async move {
         // Activity stamp of the idle stretch that was released, so a stretch
         // is released once and a new call re-arms the release.
@@ -165,6 +165,7 @@ pub fn spawn(server: crate::tools::LeanCtxServer) {
                     // shutdown path (#550).
                     let _ = tokio::task::spawn_blocking(|| {
                         lean_ctx::core::tool_lifecycle::flush_all_at_exit();
+                        crate::server::client_sessions::ended();
                         lean_ctx::core::telemetry_features::record_mcp_session_end();
                         lean_ctx::core::telemetry_send::send_telemetry(
                             lean_ctx::core::telemetry_aggregate::SendTrigger::Exit,

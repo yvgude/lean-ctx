@@ -70,6 +70,12 @@ pub struct ModelUsage {
     /// it has no verified actor/endpoint scope or user-accepted outcome yet.
     #[serde(default)]
     pub response_observations: VecDeque<ResponseObservation>,
+    /// Input tokens the proxy's wire compression removed before forwarding
+    /// (the request-body estimate, bytes / 4). An estimate, not a provider
+    /// count — the verified pair above is the measured one. `serde(default)`
+    /// keeps older files loadable.
+    #[serde(default)]
+    pub saved_tokens: u64,
 }
 
 /// Token/cost sums of the turns that reported a measured provider charge.
@@ -201,6 +207,10 @@ pub struct PersistedUsage {
     /// most recently used sessions are kept. Attribution only.
     #[serde(default)]
     pub sessions: HashMap<String, SessionUsage>,
+    /// The same totals for turns that carried no (valid) session header —
+    /// the unattributed bucket of the session ledger. Never evicted.
+    #[serde(default)]
+    pub unattributed: SessionUsage,
 }
 
 /// One app session's totals per model and when the proxy last saw it.

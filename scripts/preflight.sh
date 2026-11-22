@@ -27,6 +27,7 @@
 #     fast   change-aware: fmt + clippy + doc + gen_docs drift + Windows
 #            cross-compile, each skipped when no Rust/generated-doc file changed
 #     full   force everything regardless of the diff, plus `cargo test --lib`
+#   PREFLIGHT_FORCE_ALL=1 makes `fast` run every step regardless of the diff.
 #
 # Bypass: not from here — use `SKIP_PREFLIGHT=1 git push` / `git push --no-verify`.
 #
@@ -164,6 +165,10 @@ classify_changes
 
 FORCE_ALL=0
 [[ "$LEVEL" == "full" ]] && FORCE_ALL=1
+# Set by the pre-push hook for pushes to main or a tag: the pushed commit may
+# equal the base (a tag on a landed main), so a diff-based skip would check
+# nothing. Runs every fast step regardless of the diff, still without tests.
+[[ "${PREFLIGHT_FORCE_ALL:-0}" == "1" ]] && FORCE_ALL=1
 [[ "$CLASSIFY_OK" -eq 0 ]] && FORCE_ALL=1
 
 if [[ "$FORCE_ALL" -eq 1 ]]; then
@@ -198,7 +203,7 @@ step "Engine ↔ Agent-Tools-SDK coupling" \
   "$COUPLING_PY" "$REPO_ROOT/scripts/check-sdk-engine-coupling.py"
 
 # Always-on, <1s, no build: plan/licence/entitlement checks only under
-# rust/crates/lean-ctx-hive/src/ or in product/local-free-allowlist.toml
+# rust/crates/lean-ctx-cloud/src/ or in product/local-free-allowlist.toml
 # (docs/contracts/local-free-invariant-v2.md).
 step "Local-free invariant (check-local-free.py)" \
   "$COUPLING_PY" "$REPO_ROOT/scripts/check-local-free.py" --root "$REPO_ROOT"
@@ -252,8 +257,11 @@ if [[ "$RUN_RUST" -eq 1 ]]; then
       env RUSTFLAGS=-Dwarnings cargo check --target "$WIN_TARGET" --lib --tests \
         --no-default-features --features "$WIN_FEATURES"
   else
-    skip "Windows cross-compile ($WIN_TARGET)" \
-      "target not installed — run: rustup target add $WIN_TARGET"
+    # Not a quiet skip: with light hooks this step is the only local Windows
+    # check, so a missing target leaves Windows to CI and is said so.
+    WIN_MSG="Windows cross-compile NOT checked: target $WIN_TARGET not installed (rustup target add $WIN_TARGET); Windows breakage surfaces only in CI"
+    printf "\n${YELLOW}▶ WARNING: %s${RESET}\n" "$WIN_MSG"
+    WARNED+=("$WIN_MSG")
   fi
 else
   skip "Windows cross-compile ($WIN_TARGET)" "no Rust/Cargo files changed (docs-only)"

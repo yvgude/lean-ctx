@@ -92,12 +92,12 @@ pub type InMemoryKnowledgeStore = LocalKnowledgeStore;
 mod tests {
     use super::*;
     use crate::core::knowledge::query::KnowledgeQuery;
-    use chrono::{Duration, Utc};
     use lean_ctx_protocol::ExtensionsV1;
     use lean_ctx_protocol::knowledge::{
         AuthorityMetadata, ClassificationLevel, DataClassification, KnowledgeSourceType,
         SourceReference, ValidityWindow,
     };
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     fn object(id: &str, tag: &str) -> KnowledgeObjectV1 {
         KnowledgeObjectV1 {
@@ -120,8 +120,8 @@ mod tests {
                 retention_days: Some(30),
             }),
             validity: Some(ValidityWindow {
-                valid_from: (Utc::now() - Duration::hours(1)).to_rfc3339(),
-                valid_until: Some((Utc::now() + Duration::hours(1)).to_rfc3339()),
+                valid_from: (UtcDateTime::now() - Duration::hours(1)).to_rfc3339(),
+                valid_until: Some((UtcDateTime::now() + Duration::hours(1)).to_rfc3339()),
                 superseded_by: None,
             }),
             supersedes: None,
@@ -150,7 +150,7 @@ mod tests {
         let query = KnowledgeQuery {
             source: Some("repo://lean-ctx".to_owned()),
             classification: Some(ClassificationLevel::Internal),
-            valid_at: Some(Utc::now()),
+            valid_at: Some(UtcDateTime::now()),
             tags: vec!["architecture".to_owned()],
         };
         let results = store.query(&query);

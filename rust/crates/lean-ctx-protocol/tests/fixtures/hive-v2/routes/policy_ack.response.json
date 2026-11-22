@@ -1,7 +1,0 @@
-{
-  "acked_at": "2026-10-25T12:00:05Z",
-  "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
-  "schema": "leanctx.hive.policy-ack/v1",
-  "state": "acked",
-  "version": 3
-}

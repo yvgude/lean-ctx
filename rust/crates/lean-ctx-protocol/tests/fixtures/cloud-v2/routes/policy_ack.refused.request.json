@@ -1,0 +1,10 @@
+{
+  "digest": "sha256:309839a13391ba6c3367fb020714a044c2ccb092fe0f53d967609fbd49cf8468",
+  "refused": {
+    "applied_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "applied_version": 2,
+    "detail": "effective policy: no valid policy key for this key_id",
+    "reason_code": "key_unavailable"
+  },
+  "version": 3
+}

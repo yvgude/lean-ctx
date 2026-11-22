@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx hive status --json --contract local-read/1`: the cockpit shape
+//! `lean-ctx cloud status --json --contract local-read/1`: the cockpit shape
 //! with the Local Read v1 fields beside it. Only on that explicit opt-in:
-//! plain `--json` keeps printing exactly `HiveCliStatusV1`, which readers
+//! plain `--json` keeps printing exactly `CloudCliStatusV1`, which readers
 //! built against it decode with unknown fields refused.
 
 use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use lean_ctx_hive::status::HiveStatusReport;
-use lean_ctx_protocol::hive::lease::{HivePlan, HiveRight, LeaseState};
-use lean_ctx_protocol::hive::status::HiveCliStatusV1;
+use lean_ctx_cloud::status::CloudStatusReport;
+use lean_ctx_protocol::cloud::lease::{CloudPlan, CloudRight, LeaseState};
+use lean_ctx_protocol::cloud::status::CloudCliStatusV1;
 
 /// The value of `--contract` that opts in.
 pub(crate) const OPT_IN: &str = "local-read/1";
@@ -25,7 +25,7 @@ pub(crate) fn opted_in(args: &[String]) -> bool {
             .any(|w| w[0] == "--contract" && w[1] == OPT_IN)
 }
 
-/// Capture-gate counts not yet reported to Hive (counts only).
+/// Capture-gate counts not yet reported to Cloud (counts only).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub(crate) struct CaptureRow {
     pub considered: u64,
@@ -41,17 +41,18 @@ pub(crate) struct LocalReadStatus {
     pub contract: &'static str,
     pub kind: &'static str,
     #[serde(flatten)]
-    pub cockpit: HiveCliStatusV1,
-    pub plan: Option<HivePlan>,
+    pub cockpit: CloudCliStatusV1,
+    pub plan: Option<CloudPlan>,
     pub lease_state: Option<LeaseState>,
     pub lease_valid_until: Option<String>,
     pub lease_grace_until: Option<String>,
-    pub rights: Vec<HiveRight>,
+    pub rights: Vec<CloudRight>,
     pub locked: Option<String>,
-    /// The lease does not carry a trial end yet: always `null` until it does.
+    /// When the lease's one-step trial ends (RFC 3339, `Z`); `null`
+    /// without a running trial.
     pub trial_ends_at: Option<String>,
     pub capture: Option<CaptureRow>,
-    /// `[hive] enabled` (`false` pauses all Hive traffic).
+    /// `[cloud] enabled` (`false` pauses all Cloud traffic).
     pub enabled: bool,
     /// Why the stored enrollment cannot be used, if it cannot.
     pub problem: Option<String>,
@@ -84,17 +85,17 @@ pub(crate) struct ProjectRow {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct CaptureGateRow {
-    /// `[hive] auto_capture`: session learnings go through the gate.
+    /// `[cloud] auto_capture`: session learnings go through the gate.
     pub enabled: bool,
     pub version: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct TrialRow {
-    /// The lease does not carry trial state yet: `null` until it does (a
-    /// Personal plan is not a trial).
+    /// `true` while the lease carries a trial end; `null` otherwise (a
+    /// lease without one may come from a Cloud that names no trials).
     pub active: Option<bool>,
-    /// The lease does not carry a trial end yet: always `null` until it does.
+    /// Same as the document's `trial_ends_at`.
     pub ends_at: Option<String>,
 }
 
@@ -128,7 +129,7 @@ pub(crate) struct LocalFacts {
 }
 
 /// The counts of every vault summed; `None` when none are recorded.
-pub(crate) fn capture_counts(counts: &lean_ctx_hive::capture::CountsFile) -> Option<CaptureRow> {
+pub(crate) fn capture_counts(counts: &lean_ctx_cloud::capture::CountsFile) -> Option<CaptureRow> {
     if counts.is_empty() {
         return None;
     }
@@ -148,12 +149,13 @@ pub(crate) fn capture_counts(counts: &lean_ctx_hive::capture::CountsFile) -> Opt
 }
 
 /// The document of `report` with the local facts beside it.
-pub(crate) fn of_report(report: &HiveStatusReport, facts: LocalFacts) -> LocalReadStatus {
+pub(crate) fn of_report(report: &CloudStatusReport, facts: LocalFacts) -> LocalReadStatus {
     let lease = report.lease.as_ref();
     let locked = report.activity.locked.clone();
+    let trial_ends_at = lease.and_then(lean_ctx_cloud::status::trial_ends_at);
     LocalReadStatus {
         contract: super::CONTRACT,
-        kind: "hive.status",
+        kind: "cloud.status",
         cockpit: report.cli_status(),
         plan: lease.map(|l| l.plan),
         lease_state: lease.and(report.lease_state),
@@ -163,10 +165,10 @@ pub(crate) fn of_report(report: &HiveStatusReport, facts: LocalFacts) -> LocalRe
             l.rights
                 .iter()
                 .copied()
-                .filter(|r| *r != HiveRight::Unknown)
+                .filter(|r| *r != CloudRight::Unknown)
                 .collect()
         }),
-        trial_ends_at: None,
+        trial_ends_at: trial_ends_at.clone(),
         capture: facts.capture,
         enabled: report.enabled,
         problem: report.problem.clone(),
@@ -181,11 +183,11 @@ pub(crate) fn of_report(report: &HiveStatusReport, facts: LocalFacts) -> LocalRe
         }),
         capture_gate: CaptureGateRow {
             enabled: facts.auto_capture,
-            version: lean_ctx_hive::capture::GATE_VERSION,
+            version: lean_ctx_cloud::capture::GATE_VERSION,
         },
         trial: TrialRow {
-            active: None,
-            ends_at: None,
+            active: trial_ends_at.as_ref().map(|_| true),
+            ends_at: trial_ends_at,
         },
         locked,
         seats_limit: lease.map(|l| l.seats_limit),
@@ -206,7 +208,7 @@ pub(crate) fn of_report(report: &HiveStatusReport, facts: LocalFacts) -> LocalRe
 
 /// Prints the Local Read status of `report` for the project of `args`.
 pub(crate) fn print(
-    report: &HiveStatusReport,
+    report: &CloudStatusReport,
     data_dir: &std::path::Path,
     auto_capture: bool,
     args: &[String],
@@ -222,18 +224,18 @@ pub(crate) fn print(
 /// The Local Read status document of `report` for `project_root` (`None`:
 /// the folder-less document).
 fn of_state(
-    report: &HiveStatusReport,
+    report: &CloudStatusReport,
     data_dir: &std::path::Path,
     auto_capture: bool,
     project_root: Option<String>,
 ) -> super::Answer {
     let linked_vault = project_root.as_deref().and_then(|root| {
-        lean_ctx_hive::vault::VaultMap::load(data_dir)
+        lean_ctx_cloud::vault::VaultMap::load(data_dir)
             .for_root(root)
             .map(|record| format!("{}/{}", record.ns, record.name))
     });
     let facts = LocalFacts {
-        capture: capture_counts(&lean_ctx_hive::capture::load_counts(data_dir)),
+        capture: capture_counts(&lean_ctx_cloud::capture::load_counts(data_dir)),
         project_root,
         linked_vault,
         auto_capture,
@@ -252,7 +254,7 @@ fn of_state(
     }
 }
 
-/// `hive status --json --contract local-read/1 [--project-root P]` from this
+/// `cloud status --json --contract local-read/1 [--project-root P]` from this
 /// Instance's local state, as the CLI builds it (no network), for the
 /// socket. `args` are the route's (`--project-root` already checked): the
 /// project is the one they name, else none — never the service's own
@@ -263,11 +265,11 @@ pub(crate) fn answer(args: &[String]) -> super::Answer {
         .iter()
         .any(|a| a == "--project-root")
         .then(|| super::super::common::detect_project_root(args));
-    let store = match lean_ctx_hive::HiveStore::open() {
+    let store = match lean_ctx_cloud::CloudStore::open() {
         Ok(store) => store,
         Err(error) => return super::Answer::failure(&error.into()),
     };
-    let config = lean_ctx::core::config::Config::load().hive.clone();
-    let report = lean_ctx_hive::status::report(&store, &config, chrono::Utc::now());
+    let config = lean_ctx::core::config::Config::load().cloud.clone();
+    let report = lean_ctx_cloud::status::report(&store, &config, lean_ctx_time::UtcDateTime::now());
     of_state(&report, store.data_dir(), config.auto_capture, project_root)
 }

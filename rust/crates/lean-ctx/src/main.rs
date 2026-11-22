@@ -29,12 +29,18 @@ fn main() {
     lean_ctx::core::memory_guard::route_tree_sitter_to_jemalloc();
 
     // Before any TLS client: the tree enables two rustls providers, so the
-    // process default must be named (the Hive bus relay panicked without it).
+    // process default must be named (the Cloud bus relay panicked without it).
     lean_ctx::core::crypto_provider::install_default();
 
     // Which binary this process runs, so a long-lived MCP server can tell an
     // agent when an install replaced it on disk.
     lean_ctx::core::binary_identity::record_start();
+
+    // The Cloud `security.require_proxy` rule asks whether an agent's model
+    // traffic is routed through the proxy; only this crate reads agent config.
+    lean_ctx::core::policy::cloud_agents::set_proxy_routing_probe(
+        lean_ctx_cli::proxy_setup::agent_routed_through_proxy,
+    );
 
     // Seal the inherited capability before the TCC guard can spawn a probe or
     // re-exec. An orphaned bootstrap may fail closed; its FD must not reach a

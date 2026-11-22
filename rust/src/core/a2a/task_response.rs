@@ -3,8 +3,8 @@
 //! Request-bound status response provenance, separate from control authority.
 //! The receiver must authorize the request and target before creating a reply.
 
-use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::SigningKey;
+use lean_ctx_time::{Duration, UtcDateTime};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "http-server")]
@@ -61,7 +61,7 @@ impl<'a> AdmittedStatusSigner<'a> {
     pub fn sign(
         &self,
         status: TaskStatusV1,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<SignedTaskStatusV1, InvalidTaskResponse> {
         let reply = SignedTaskStatusV1::sign_status_until(
             self.request,
@@ -89,9 +89,9 @@ impl<'a> AdmittedStatusSigner<'a> {
 fn validate_response_peer(
     peer: &TaskPeerTrustV1,
     request: &TaskControlDescriptorV1,
-    issued_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-    now: DateTime<Utc>,
+    issued_at: UtcDateTime,
+    expires_at: UtcDateTime,
+    now: UtcDateTime,
 ) -> Result<(), InvalidTaskResponse> {
     if peer.revoked
         || peer.agent_id != request.recipient
@@ -120,8 +120,8 @@ pub struct SignedTaskStatusV1 {
     pub task_id: String,
     pub request_digest: String,
     pub status: TaskStatusV1,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub key_id: String,
     pub signature: String,
 }
@@ -135,7 +135,7 @@ impl SignedTaskStatusV1 {
         status: TaskStatusV1,
         key_id: &str,
         key: &SigningKey,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Self, InvalidTaskResponse> {
         Self::sign_status_with(request, status, key_id, now, |bytes| {
             Ok(crate::core::agent_identity::sign_bytes_with(key, bytes))
@@ -149,7 +149,7 @@ impl SignedTaskStatusV1 {
         request: &TaskControlDescriptorV1,
         status: TaskStatusV1,
         key_id: &str,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         sign: impl FnOnce(&[u8]) -> Result<Vec<u8>, String>,
     ) -> Result<Self, InvalidTaskResponse> {
         Self::sign_status_until(request, status, key_id, now, request.expires_at, sign)
@@ -159,8 +159,8 @@ impl SignedTaskStatusV1 {
         request: &TaskControlDescriptorV1,
         status: TaskStatusV1,
         key_id: &str,
-        now: DateTime<Utc>,
-        not_after: DateTime<Utc>,
+        now: UtcDateTime,
+        not_after: UtcDateTime,
         sign: impl FnOnce(&[u8]) -> Result<Vec<u8>, String>,
     ) -> Result<Self, InvalidTaskResponse> {
         let deadline = now
@@ -206,7 +206,7 @@ impl SignedTaskStatusV1 {
         &self,
         request: &TaskControlDescriptorV1,
         policy: &TaskAuthorityConfigV1,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<(), InvalidTaskResponse> {
         // Reject non-ASCII before the legacy hex decoder slices byte pairs.
         // Ed25519 signatures are exactly 64 bytes, encoded as 128 hex bytes.
@@ -240,7 +240,7 @@ impl SignedTaskStatusV1 {
     fn validate_binding(
         &self,
         request: &TaskControlDescriptorV1,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<(), InvalidTaskResponse> {
         request.validate_shape().map_err(|_| InvalidTaskResponse)?;
         let skew = Duration::seconds(RESPONSE_SECONDS);
@@ -286,11 +286,11 @@ mod tests {
         TaskControlDescriptorV1,
         SignedTaskStatusV1,
         TaskAuthorityConfigV1,
-        DateTime<Utc>,
+        UtcDateTime,
     ) {
-        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+        let now = lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
             .expect("fixed time")
-            .with_timezone(&Utc);
+            .to_utc();
         let server_key = SigningKey::from_bytes(&[9; 32]);
         let mut request = TaskControlDescriptorV1::new(
             "owner",

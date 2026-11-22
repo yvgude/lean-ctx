@@ -105,7 +105,9 @@ fn current_snapshot() -> EfficacySnapshot {
         });
 
     EfficacySnapshot {
-        day: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        day: lean_ctx_time::UtcDateTime::now()
+            .format("%Y-%m-%d")
+            .to_string(),
         claims_rejected: crate::core::scent_field::claims_rejected_total(),
         playbook_entries: entries,
         playbook_aged_helpful: aged_helpful,
@@ -128,14 +130,14 @@ fn bounce_week_over_week() -> (Option<(f64, u64)>, Option<(f64, u64)>) {
     if trend.is_empty() {
         return (None, None);
     }
-    let today = chrono::Utc::now().date_naive();
+    let today = lean_ctx_time::UtcDateTime::now().date_naive();
     let mut prev = (0u64, 0u64); // (bounces, reads) days 8-14
     let mut recent = (0u64, 0u64); // days 0-7
     for (day, bounces, reads) in &trend {
-        let Ok(d) = chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d") else {
+        let Ok(d) = lean_ctx_time::parse_date(day, "%Y-%m-%d") else {
             continue;
         };
-        let age = (today - d).num_days();
+        let age = lean_ctx_time::days_between(d, today);
         if age < 7 {
             recent.0 += bounces;
             recent.1 += reads;
@@ -292,6 +294,11 @@ mod tests {
     #[test]
     fn current_snapshot_has_today() {
         let snap = current_snapshot();
-        assert_eq!(snap.day, chrono::Utc::now().format("%Y-%m-%d").to_string());
+        assert_eq!(
+            snap.day,
+            lean_ctx_time::UtcDateTime::now()
+                .format("%Y-%m-%d")
+                .to_string()
+        );
     }
 }

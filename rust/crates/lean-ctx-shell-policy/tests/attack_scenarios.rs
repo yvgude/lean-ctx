@@ -105,6 +105,24 @@ mod shell_security {
         assert!(check("git status && $(rm -rf /)", al).is_err());
     }
 
+    /// A substitution inside a case pattern cannot hide the arm body that
+    /// follows it from the allowlist.
+    #[test]
+    #[serial_test::serial]
+    fn scenario_case_pattern_substitution_keeps_arm_body_gated() {
+        let al = &["echo", "cat", "printf"];
+        for command in [
+            "echo $(case x in `echo x #(`) placeholder_cmd ;; y) echo ok ;; esac)",
+            "echo \"$(case x in `echo x #(`) placeholder_cmd ;; y) echo ok ;; esac)\"",
+            "cat <(case x in `echo x #(`) placeholder_cmd ;; y) echo ok ;; esac)",
+            "case x in `printf (`) placeholder_cmd ;; y) echo ok ;; esac",
+            "case x in $(printf '(')) placeholder_cmd ;; y) echo ok ;; esac",
+        ] {
+            assert!(check(command, al).is_err(), "{command:?}");
+        }
+        assert!(check("case x in x) echo hi ;; y) echo ok ;; esac", al).is_ok());
+    }
+
     #[test]
     #[serial_test::serial]
     fn scenario_quoted_operators_are_safe() {

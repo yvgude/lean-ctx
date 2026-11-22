@@ -18,11 +18,11 @@ impl McpTool for CtxDocTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_doc",
-            "Project documentation: pages of sections, bound to code. In the linked Hive vault, else local to this Instance.\n\
+            "Project documentation: pages of sections, bound to code. Stored in the linked LeanCTX Cloud vault, else locally.\n\
              WORKFLOW: action=list or search first, then show slug (outline=true, section=<heading-slug>).\n\
-             Reads are offline. action=write slug content='# Title\\n…' creates or revises a page;\n\
+             Reads are offline. action=write slug content='# Title\\n…' creates/revises a page;\n\
              action=edit slug find replace changes one unique stretch; action=note adds an addendum.\n\
-             anchors=[file:…] binds a page to code; action=status lists stale pages, confirm re-pins after a check.\n\
+             anchors=[file:…] binds a page to code; action=status lists stale pages; confirm re-pins after a check.\n\
              Vault writes queue in the background; local writes save at once as revisions\n\
              (local only: action=history slug, show slug rev=N, move slug to=new, delete slug). Link pages as [text](/slug#heading).",
             json!({

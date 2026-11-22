@@ -2,8 +2,11 @@
 
 Status: **experimental** (routes answer with `"contract": "local-read/1"` documents).
 
+Routes keep their 3.12 paths (`/v1/local/cloud/*`) in this contract version; see
+the wire id note in [Local Read v1](local-read-v1.md).
+
 The local LeanCTX service (`lean-ctx serve --daemon`) is the channel of a
-local reader such as LeanCTX | Hive Desktop: every [Local Read v1](local-read-v1.md)
+local reader such as LeanCTX Code: every [Local Read v1](local-read-v1.md)
 kind as an HTTP route of the daemon socket, tool calls, live events and a
 capabilities document listing all of them. The CLI (`lean-ctx … --json`)
 stays the fallback and prints the same bytes.
@@ -20,7 +23,7 @@ stays the fallback and prints the same bytes.
 - **Start on demand:** when `listening` is `false`, run `lean-ctx serve --daemon`
   (exit 0 = started; exit 1 with "Daemon already running" = another reader was
   faster) and connect once the socket answers.
-- **Idle:** the daemon is the per-user singleton (scheduler, Hive bus relay)
+- **Idle:** the daemon is the per-user singleton (scheduler, LeanCTX Cloud bus relay)
   and does not exit when idle.
 - **Stop and control are scoped to the data dir:** `lean-ctx serve --stop`,
   `daemon stop|restart|status` and `serve --status` resolve the daemon only
@@ -52,23 +55,45 @@ same arguments (the document and a final `\n`), `Content-Type: application/json`
 | Method | Path | Kind | CLI |
 |---|---|---|---|
 | GET | `/v1/local/capabilities` | `capabilities` | — (see §4) |
-| GET | `/v1/local/hive/docs` | `docs.list` | `hive docs list --json` |
-| GET | `/v1/local/hive/docs/{id}` | `docs.page` | `hive docs show <id> --json` |
-| GET | `/v1/local/hive/tasks` | `tasks.list` | `hive tasks list --json` |
-| GET | `/v1/local/hive/tasks/{n}` | `tasks.task` | `hive tasks show <n> --json` |
-| POST | `/v1/local/hive/tasks/{n}/labels` | `tasks.ack` | `hive tasks labels <n> --json` |
-| POST | `/v1/local/hive/tasks/{n}/priority` | `tasks.ack` | `hive tasks priority <n> --json` |
-| GET | `/v1/local/hive/sync` | `hive.sync` | `hive sync status --json` |
-| GET | `/v1/local/hive/policy/sessions` | `policy.sessions` | `hive policy sessions --json` |
-| GET | `/v1/local/hive/policy/sessions/{id}` | `policy.session` | `hive policy session <id> --json` |
+| GET | `/v1/local/cloud/docs` | `docs.list` | `cloud docs list --json` |
+| GET | `/v1/local/cloud/docs/{id}` | `docs.page` | `cloud docs show <id> --json` |
+| GET | `/v1/local/cloud/tasks` | `tasks.list` | `cloud tasks list --json` |
+| GET | `/v1/local/cloud/tasks/{n}` | `tasks.task` | `cloud tasks show <n> --json` |
+| POST | `/v1/local/cloud/tasks/{n}/labels` | `tasks.ack` | `cloud tasks labels <n> --json` |
+| POST | `/v1/local/cloud/tasks/{n}/priority` | `tasks.ack` | `cloud tasks priority <n> --json` |
+| GET | `/v1/local/cloud/sync` | `cloud.sync` | `cloud sync status --json` |
+| GET | `/v1/local/cloud/policy/sessions` | `policy.sessions` | `cloud policy sessions --json` |
+| GET | `/v1/local/cloud/policy/sessions/{id}` | `policy.session` | `cloud policy session <id> --json` |
+| POST | `/v1/local/cloud/lease/refresh` | `cloud.lease.refresh` | `cloud lease refresh --json` |
+| GET | `/v1/local/cloud/decisions` | `decisions.list` | `cloud decisions list --json` |
+| POST | `/v1/local/cloud/decisions/create` | `decisions.create` | `cloud decisions create --json` |
+| POST | `/v1/local/cloud/decisions/send` | `decisions.send` | (none: app-only, `x-leanctx-app-key`) |
+| GET | `/v1/local/cloud/members` | `cloud.members.list` | `cloud members list --json` |
+| POST | `/v1/local/cloud/billing/checkout` | `cloud.billing.checkout` | `cloud billing checkout --json` |
+| POST | `/v1/local/cloud/billing/portal` | `cloud.billing.portal` | `cloud billing portal --json` |
+| GET | `/v1/local/cloud/billing/credit` | `cloud.billing.credit` | `cloud billing credit --json` |
+| GET | `/v1/local/cloud/models/catalog` | `cloud.models.catalog` | `cloud models catalog --json` |
+| POST | `/v1/local/cloud/billing/topup` | `cloud.billing.topup` | `cloud billing topup --json` |
+| GET | `/v1/local/cloud/computers` | `cloud.computers` | `cloud computer list --json` |
+| POST | `/v1/local/cloud/computers` | `cloud.computer.ack` | `cloud computer create --json` (body `name`, `role`, `team`, `personal`, `request_id`, `yes`; no size, region or idle stop) |
+| POST | `/v1/local/cloud/computers/{id}/start` | `cloud.computer.ack` | `cloud computer start <id> --json` (body `request_id`, `yes`) |
+| POST | `/v1/local/cloud/computers/{id}/stop` | `cloud.computer.ack` | `cloud computer stop <id> --json` (body `request_id`) |
 | GET | `/v1/local/knowledge` | `knowledge.list` | `knowledge list --json` |
+| GET | `/v1/local/chat/channels` | `chat.channels` | `cloud chat channels --json` |
+| GET | `/v1/local/chat/channels/{id}/messages` | `chat.messages` | `cloud chat messages <id> --json` |
+| GET | `/v1/local/chat/replies` | `chat.replies` | `cloud chat replies --json` |
+| POST | `/v1/local/chat/post` | `chat.post` | `cloud chat post --json` |
+| POST | `/v1/local/chat/read` | `chat.read` | `cloud chat read --json` |
+| POST | `/v1/local/chat/dm` | `chat.dm` | `cloud chat dm --json` |
+| GET | `/v1/local/chat/mentions` | `chat.mentions` | `cloud chat mentions --json` |
 | GET | `/v1/local/messages` | `agent.messages` | `agent messages --json` |
 | POST | `/v1/local/messages` | `agent.post` | `agent post --json` |
-| GET | `/v1/local/presence` | `hive.presence` | `hive presence --json` |
-| GET | `/v1/local/status` | `hive.status` | `hive status --json --contract local-read/1` |
+| GET | `/v1/local/presence` | `cloud.presence` | `cloud presence --json` |
+| GET | `/v1/local/status` | `cloud.status` | `cloud status --json --contract local-read/1` |
 | GET | `/v1/local/activity` | `activity.list` | `activity list --json` |
 | GET | `/v1/local/session/stats` | `session.stats` | `session stats --json` |
 | GET | `/v1/local/session/cost` | `session.cost` | `session cost --json` |
+| GET | `/v1/local/session/usage` | `session.usage` | `session usage --json` ([session-usage-v1](session-usage-v1.md)) |
 | GET | `/v1/local/gain/daily` | `gain.daily` | `gain --daily --json` |
 | GET | `/v1/local/gain/projects` | `gain.projects` | `gain --by-project --json` |
 | GET | `/v1/local/spend/projects` | `spend.projects` | `spend --by-project --json` |
@@ -79,6 +104,10 @@ same arguments (the document and a final `\n`), `Content-Type: application/json`
 | POST | `/v1/local/bus/claim` | `bus.claim` | `bus claim --json` |
 | POST | `/v1/local/bus/release` | `bus.release` | `bus release --json` |
 | GET | `/v1/local/presence/agents` | `presence.list` | `presence list --json` |
+| GET | `/v1/local/bus/revision` | `bus.revision` | `bus revision --json` |
+| GET | `/v1/local/agent/diaries` | `agent.diaries` | `agent diaries --json` |
+| GET | `/v1/local/cloud/workers` | `cloud.workers` | `cloud worker list --json` |
+| GET | `/v1/local/archive/{id}` | `archive.entry` | `archive show <id> --json` |
 | POST | `/v1/local/knowledge/remember` | `knowledge.remembered` | `knowledge remember --json` |
 | POST | `/v1/local/knowledge/edit` | `knowledge.edited` | `knowledge edit --json` |
 | POST | `/v1/local/knowledge/relate` | `knowledge.related` | `knowledge relate --json` |
@@ -95,7 +124,7 @@ same arguments (the document and a final `\n`), `Content-Type: application/json`
 | POST | `/v1/local/queens/remove` | `queens.list` | — (socket only) |
 
 **Queen sessions (3.12.3).** Who sets a task's priority and labels: the person
-(Hive Desktop over this 0600 socket, the person's own CLI) and the Queen
+(LeanCTX Code over this 0600 socket, the person's own CLI) and the Queen
 sessions the app started. A bus role (`queen`) is self-declared and grants
 nothing. The app registers a Queen session's `LEAN_CTX_SESSION_ID` here, and
 `ctx_tasks action=prioritize` is answered only for a session whose MCP server
@@ -116,7 +145,7 @@ Queen session the app registered; this session can read them").
   same OS user, so this keeps workers from setting priority through their
   tools; it is not a boundary against code that runs as the user.
 
-The vault's docs and tasks live under `/v1/local/hive/`; `/v1/local/docs`
+The vault's docs and tasks live under `/v1/local/cloud/`; `/v1/local/docs`
 and `/v1/local/tasks` are kept for the project's local docs and tasks.
 
 - **Inputs:** query parameters (GET) or one JSON object (POST) whose keys are
@@ -132,16 +161,31 @@ and `/v1/local/tasks` are kept for the project's local docs and tasks.
   `forbidden`. Every project-dependent read names it, `bus.leases`,
   `presence.list` and the posts (`agent.post`, `bus.post`: a message always
   belongs to a project) included: the service never falls back to its own
-  working directory. Where it is `"optional"` (`hive.status`), a named
+  working directory. Where it is `"optional"` (`cloud.status`), a named
   project is checked the same way, but without `project_root`, or with one
   that is no project (`~`, `/`, a missing path), the route answers its
-  folder-less document instead of `no_project` (`hive.status`: `project`
+  folder-less document instead of `no_project` (`cloud.status`: `project`
   `null`, local-read-v1 §6); outside the Workspace stays `forbidden`. A reader
   that knows only `true`/`false` treats `"optional"` as not required.
 - **Errors:** the Local Read error document, with the HTTP status of its code:
-  `invalid_argument`, `no_project` → 400; `not_found`, `no_vault` → 404 (also
-  for an unknown `/v1/local/*` path); `forbidden`, `withheld` → 403; `anchor_gone`, `conflict` → 409;
-  `not_connected`, `unavailable` → 503; `internal` → 500.
+  `invalid_argument`, `no_project`, `invalid_field` → 400; `plan_required` → 402;
+  `not_found`, `no_vault` → 404 (also for an unknown `/v1/local/*` path);
+  `forbidden`, `withheld`, `sso_required`, `email_unverified`,
+  `policy_denied` → 403; `anchor_gone`, `conflict`,
+  `invalid_state` → 409; `rate_limited` → 429; `not_connected`, `unavailable`
+  → 503; `not_offered` → 501; `internal` → 500; `balance_empty` → 402;
+  `no_computer` → 404; `computer_exists`, `computer_busy` → 409;
+  `computer_provider_unavailable` → 503; `computer_not_available` → 503;
+  `confirmation_required` → 428; `app_only` → 403.
+  `plan_required`, `invalid_state` and `invalid_field` (3.12.3) are LeanCTX
+  Cloud's own refusals, kept for the reader (team chat, local-read-v1 §28);
+  so is `sso_required` (3.12.3, team billing, local-read-v1 §27),
+  `email_unverified` (top-up, local-read-v1 §33), and `policy_denied`
+  (next release, LeanCTX Cloud's policy refuses it, local-read-v1 §26.2), and so are
+  the LeanCTX computer codes (local-read-v1 §44; `confirmation_required`: a
+  write that can cost money was asked without `--yes`, so nothing was sent).
+  `not_offered` (team stop, local-read-v1 §34): the Cloud does not offer
+  the feature; a refusal, never an outage to retry.
 - **Posts (QN0):** `POST /v1/local/messages` and `POST /v1/local/bus/post`
   take `task_id`, `category`, `priority` and `expires_in_hours` besides
   their earlier keys; the answers add `task_id` and `message_kind` (always
@@ -159,12 +203,12 @@ and `/v1/local/tasks` are kept for the project's local docs and tasks.
   `/v1/local/messages` to find out.
 - **Release:** documents carrying project or agent text (`knowledge.list`,
   `docs.*`, `agent.messages`, `activity.list`, and every kind of
-  local-read-v1 §4 and §8–§17: `hive.presence`, sessions, rollups, `bus.*`,
+  local-read-v1 §4 and §8–§17: `cloud.presence`, sessions, rollups, `bus.*`,
   `presence.list`, knowledge writes, evidence, `providers.list`,
-  `policies.list`, `agents.list`, `daemon.status`, `hive.sync`, `policy.*`) pass the
+  `policies.list`, `agents.list`, `daemon.status`, `cloud.sync`, `policy.*`) pass the
   same release point (redaction, gateway) as on the CLI. Metadata-only, not
   released: `capabilities` (a function of the binary and its
-  configuration), `hive.status`, `tasks.*` and `agent.post`
+  configuration), `cloud.status`, `tasks.*` and `agent.post`
   as in Local Service v1. The receipt binds exactly the bytes of the response
   body (document and final `\n`) for the transport channel. When the release
   point masked a value (the masked value stands in its place), the response
@@ -181,8 +225,9 @@ and `/v1/local/tasks` are kept for the project's local docs and tasks.
 
 ## 3. Live events — `GET /v1/local/events`
 
-Query: `project_root`, `types` (comma list, default all), `all` (`true`/`false`).
-An unknown key, an unknown type or another value of `all` is
+Query: `project_root`, `types` (comma list, default all), `all` (`true`/`false`),
+and for a view subscription (§3a) `view`, `limit`, `thread`, `from`, `to`,
+`cursor`. An unknown key, an unknown type or another value of `all` is
 `invalid_argument` (a Local Read error document). Server-sent events, a
 keep-alive comment every 15 s:
 
@@ -199,9 +244,10 @@ data: {"contract":"local-read/1","kind":"event.tool_call","at":"…","event_id":
   cannot be loaded) every journal event is withheld, and without protection
   (Community) the stream carries the events of **every** project on the
   machine. `message` events need `project_root` or `all=true`.
-- `id` counts the events of this stream. The stream is **live only**: nothing
-  that happened before it opened is replayed; after a reconnect a reader
-  refetches what it shows (`/v1/local/messages?since=<ts>` for messages).
+- `id` counts the events of this stream. Without a view the stream is **live
+  only**: nothing that happened before it opened is replayed; after a
+  reconnect a reader refetches what it shows (`/v1/local/messages?since=<ts>`
+  for messages). A view subscription (§3a) resumes with a snapshot instead.
 - Every `data` line is one Local Read document. Events that carry free text
   — `message`, `knowledge_changed` and the `activity` kinds `policy_violation`,
   `verification_warning`, `agent_action`, `role_changed`, `profile_changed`
@@ -216,23 +262,70 @@ data: {"contract":"local-read/1","kind":"event.tool_call","at":"…","event_id":
   `threshold_shift`, `threshold_adapted` carry tool names, modes, admitted
   paths and numbers only and pass the observation gate without a release
   (one release costs about 2 ms per stream under protection).
-- The first event is `hello`: `{"project_root":str|null,"all":bool,"types":[…],"service":{"version":"…","build":{…}}}`; `build` as in local-read-v1 §14.
+- The first event is `hello`: `{"project_root":str|null,"all":bool,"types":[…],"view":object|null,"service":{"version":"…","build":{…}}}`; `build` as in local-read-v1 §14, `view` as in §3a.
 
 | type | data (besides `contract`, `kind`) | source |
 |---|---|---|
 | `tool_call` | `at`, `event_id`, `tool`, `mode` (nullable), `path` (nullable), `duration_ms`, `tokens_original`, `tokens_saved` | the event journal of all LeanCTX processes of this user, served through the observation gate |
 | `activity` | `at`, `event_id`, `activity` (`cache_hit`, `compression`, `agent_action`, `policy_violation`, `role_changed`, `profile_changed`, `verification_warning`, `threshold_shift`, `threshold_adapted`; show unknown values as-is), `detail` (object) | same journal; the free-text kinds released |
 | `knowledge_changed` | `at`, `event_id`, `project_root` (the stream's, nullable), `route` (`/v1/local/knowledge`), `category`, `key`, `action` | same journal, released |
-| `message` | one `agent.messages` row | local agent bus, released |
+| `message` | one `agent.messages` row; with a view also `cursor` (§3a) | local agent bus, released |
+| `snapshot` | only with a view: `view`, `mode`, `rows`, `cursor`, `truncated` (§3a) | local agent bus, released |
 | `release_notice` | `event` (the type of the event just before it), `notice` (content-free) | the release point |
 | `agents_changed` | `active` (live local agents of the project) | local agent registry |
-| `presence_changed` | `route` (`/v1/local/presence`) | Hive bus relay presence |
+| `presence_changed` | `route` (`/v1/local/presence`) | LeanCTX Cloud bus relay presence |
 
 Bounded: each stream looks at its sources once per second (the newest 32
 journal events; the registry and the presence map only when their file
 changed); at most 16 streams at once (the next gets 503 `unavailable`). More
 than 32 journal events within one second are not all delivered: the stream
 is a live view, not a counter (use the routes for totals).
+
+### 3a. View subscriptions and snapshot resume
+
+A view subscription binds a stream to what one screen shows: a bounded set
+of rows, filtered by the service, and resumed after a reconnect from a
+cursor instead of a full reload. The one view is `messages` (the rows of
+`agent.messages`, the person's bus console).
+
+- **Query:** `view=messages` with `project_root` or `all=true` (neither is
+  `no_project`). `limit`: rows the view holds, 1–200, default 100.
+  `thread`, `from`, `to`: the filters of `agent messages` / `bus list`
+  (`--thread`, `--from`, `--to`), applied to the snapshot and to the live
+  `message` events alike. `cursor`: the last `cursor` the reader received
+  (opaque; a value this service did not write is `invalid_argument`).
+  `limit`, `thread`, `from`, `to` and `cursor` without `view`, or another
+  `view`, are `invalid_argument`.
+- **Hello:** `view` is `{"name":"messages","limit":n,"thread":…,"from":…,"to":…}`
+  (filters nullable); `null` without a view.
+- **Snapshot:** right after `hello` the stream sends one `snapshot` event,
+  released like a `message` (one receipt for its `data` line):
+  `{"view":"messages","mode":"full"|"delta","rows":[row…],"cursor":str|null,"truncated":bool}`,
+  rows oldest first.
+  - `delta` (only when `cursor` was sent and every row newer than it fits
+    in `limit`): the rows stamped later than 2 s before the cursor. A row
+    may repeat one the reader holds: readers keep rows by `id`. The reader
+    adds them to what it shows.
+  - `full` (no cursor, or more newer rows than `limit`): the newest `limit`
+    rows; the reader **replaces** what it shows. `truncated` is `true` when
+    the view holds fewer rows than exist.
+  - `cursor`: the resume point after the newest row sent (a `delta` with no
+    rows echoes the reader's cursor; an empty `full` is `null`).
+- **Live:** each later `message` event carries `cursor`, the resume point
+  after that row, in the order sent; the reader stores the last one. When
+  more new rows arrive within one poll than `limit`, the stream sends a
+  `full` `snapshot` instead of the single events.
+- **Removals:** expired messages leave a `full` snapshot; a `delta` and the
+  live events do not report them (readers drop rows past `expires_at`).
+- **Bounds:** one view per stream; a snapshot holds at most `limit` rows. The
+  stream counts against the 16 streams like any other.
+- **Compatibility:** additive within `local-read/1`. The App and the Instance
+  are versioned independently: a reader subscribes to a view only when
+  `capabilities.events.views` lists it, and otherwise keeps the live-only
+  stream and refetches after a reconnect (the behaviour before views). An
+  Instance without views answers `view` with `invalid_argument` (unknown
+  parameter), so a reader that skips the capability check falls back the
+  same way.
 
 ## 4. Capabilities — `GET /v1/local/capabilities`
 
@@ -242,8 +335,8 @@ is a live view, not a counter (use the routes for totals).
   "kind": "capabilities",
   "version": "3.12.1",
   "kinds": ["agent.messages", "agent.post", "capabilities", "docs.list", "docs.page", "error",
-            "hive.presence", "hive.status", "knowledge.list", "tasks.list", "tasks.task"],
-  "commands": {"hive.tasks": [{"verb": "list", "via": ["cli", "socket"]},
+            "cloud.presence", "cloud.status", "knowledge.list", "tasks.list", "tasks.task"],
+  "commands": {"cloud.tasks": [{"verb": "list", "via": ["cli", "socket"]},
                               {"verb": "show", "via": ["cli", "socket"]}],
                "…": "one entry per command path, see below"},
   "server": {"…": "the /v1/capabilities document"},
@@ -253,13 +346,19 @@ is a live view, not a counter (use the routes for totals).
               "project": true, "cli": ["knowledge", "list", "--json"]}],
   "events": {"path": "/v1/local/events",
              "types": ["activity", "agents_changed", "hello", "knowledge_changed", "message",
-                       "presence_changed", "release_notice", "tool_call"]}
+                       "presence_changed", "release_notice", "snapshot", "tool_call"],
+             "views": [{"name": "messages",
+                        "params": ["cursor", "from", "limit", "thread", "to"],
+                        "default_limit": 100, "max_limit": 200}]}
 }
 ```
 
+`events.views` (§3a) lists the view subscriptions of the stream;
+a document without it offers none.
+
 `routes` are sorted by path then method; `kinds` and every verb list are
 sorted. A route row of a command verb names it (`command`: the command
-path joined by `.`, e.g. `hive.tasks`; `verb`); `capabilities` itself has
+path joined by `.`, e.g. `cloud.tasks`; `verb`); `capabilities` itself has
 neither. `commands` keys are command paths; each verb
 is `{"verb", "via"}`, `via` ⊆ `["cli", "socket"]` in that order.
 

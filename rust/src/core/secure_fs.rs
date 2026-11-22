@@ -60,23 +60,9 @@ pub fn private_dir(dir: &std::path::Path) -> std::io::Result<()> {
 }
 
 /// Sets `path` to mode 0700 on Unix, but only when its mode differs (GH #2227).
-///
-/// A `chmod` updates the inode's ctime and raises an inotify `IN_ATTRIB` event
-/// even when the mode stays the same, so an unconditional chmod on a path that
-/// runs per call floods watchers, backup and sync tools. Like `chmod`, this
-/// follows a symlink at `path`. A no-op on other platforms.
-pub fn restrict_to_owner(path: &std::path::Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        if std::fs::metadata(path)?.permissions().mode() & 0o7777 != 0o700 {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-    Ok(())
-}
+/// Lives in `lean-ctx-fs`, so `core::data_dir` reaches it without an edge into
+/// this module.
+pub use lean_ctx_fs::atomic_fs::restrict_to_owner;
 
 /// Writes `dir/name` so that it is never readable by others and never seen half-written:
 /// [`private_dir`] and `write_secret_file`.

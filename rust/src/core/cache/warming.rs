@@ -179,8 +179,6 @@ mod tests {
     use std::collections::HashMap;
     use std::time::{Duration, SystemTime};
 
-    use chrono::{TimeZone, Utc};
-
     use super::*;
 
     #[derive(Default)]
@@ -215,7 +213,7 @@ mod tests {
     }
 
     fn session_at(timestamp: i64) -> SessionState {
-        let time = Utc.timestamp_opt(timestamp, 0).unwrap();
+        let time = lean_ctx_time::UtcDateTime::from_timestamp(timestamp, 0).unwrap();
         SessionState {
             canonical_checkpoint: None,
             save_gate: Default::default(),
@@ -310,13 +308,13 @@ mod tests {
         older.touch_file("frequent.rs", None, "full", 10);
         older.touch_file("frequent.rs", None, "full", 10);
         older.touch_file("recent.rs", None, "full", 10);
-        older.updated_at = Utc.timestamp_opt(10, 0).unwrap();
+        older.updated_at = lean_ctx_time::UtcDateTime::from_timestamp(10, 0).unwrap();
 
         let mut newer = session_at(20);
         newer.touch_file("frequent.rs", None, "full", 10);
         newer.touch_file("recent.rs", None, "full", 10);
         newer.touch_file("peer.rs", None, "full", 10);
-        newer.updated_at = Utc.timestamp_opt(20, 0).unwrap();
+        newer.updated_at = lean_ctx_time::UtcDateTime::from_timestamp(20, 0).unwrap();
 
         let result = collect_recent_files(&[older, newer]);
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx hive link --vault <id|name|ws/vault> --json [--project-root P]
+//! `lean-ctx cloud link --vault <id|name|ws/vault> --json [--project-root P]
 //! [--dry-run]`: share a project with a vault from a local app, without a
 //! terminal and without a prompt.
 //!
@@ -11,20 +11,20 @@
 //! approves. `--dry-run` writes nothing and contacts nobody.
 //!
 //! `--bring-local` also brings the project's local doc pages into the vault
-//! ([`lean_ctx_hive::bring_local`]) once it is shared; before that (and on
+//! ([`lean_ctx_cloud::bring_local`]) once it is shared; before that (and on
 //! a dry run) it reports what it would bring.
 
 use std::path::Path;
 
 use serde::Serialize;
 
-use lean_ctx_hive::bring_local::{self, Brought, DocItem, TaskItem, Unsettled};
-use lean_ctx_hive::consent::ConsentError;
-use lean_ctx_hive::mapping::MapError;
-use lean_ctx_hive::state::InstanceRecord;
-use lean_ctx_hive::vault::{VaultMap, VaultRecord};
-use lean_ctx_hive::vault_address::VaultAddress;
-use lean_ctx_hive::{HiveError, HiveStore, link};
+use lean_ctx_cloud::bring_local::{self, Brought, DocItem, TaskItem, Unsettled};
+use lean_ctx_cloud::consent::ConsentError;
+use lean_ctx_cloud::mapping::MapError;
+use lean_ctx_cloud::state::InstanceRecord;
+use lean_ctx_cloud::vault::{VaultMap, VaultRecord};
+use lean_ctx_cloud::vault_address::VaultAddress;
+use lean_ctx_cloud::{CloudError, CloudStore, link};
 
 use super::vaults::server_of;
 use super::{Code, Failure};
@@ -74,10 +74,10 @@ pub(crate) struct BringLocal {
 pub(crate) fn bring_local_with(
     share: &Share,
     dry_run: bool,
-    plan: impl FnOnce() -> Result<Brought, HiveError>,
-    apply: impl FnOnce() -> Result<Brought, HiveError>,
+    plan: impl FnOnce() -> Result<Brought, CloudError>,
+    apply: impl FnOnce() -> Result<Brought, CloudError>,
 ) -> BringLocal {
-    let not_applied = |reason, message: Option<String>, plan: Result<Brought, HiveError>| {
+    let not_applied = |reason, message: Option<String>, plan: Result<Brought, CloudError>| {
         let (brought, message) = match plan {
             Ok(brought) => (brought, message),
             Err(e) => (
@@ -154,10 +154,10 @@ pub(crate) struct Target {
 /// Where sharing stands after the link.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct Share {
-    /// `not_checked` (dry run) | `not_connected` | `other_hive` | `shared` |
+    /// `not_checked` (dry run) | `not_connected` | `other_cloud` | `shared` |
     /// `consent_required` | `declined` | `waiting` | `pending` | `refused`.
     pub state: &'static str,
-    /// The vault Hive maps the project to (`shared`).
+    /// The vault Cloud maps the project to (`shared`).
     pub vault_id: Option<String>,
     pub consent_id: Option<String>,
     /// The person answers in the browser (opens it, prints the URL).
@@ -206,7 +206,7 @@ pub(crate) fn target(
         [] => Err(Failure::new(
             Code::NotFound,
             format!(
-                "this Instance knows no vault {value}; pass <workspace>/<vault> (`lean-ctx hive vaults --json` lists the known ones)"
+                "this machine knows no vault {value}; pass <workspace>/<vault> (`lean-ctx cloud vaults --json` lists the known ones)"
             ),
         )),
         _ => Err(Failure::invalid(format!(
@@ -223,8 +223,8 @@ pub(crate) fn share_state(result: Result<VaultRecord, MapError>) -> Share {
             ..Share::state("shared", None)
         },
         Err(MapError::Consent(ConsentError::Required { consent_id, .. })) => Share {
-            answer_web: Some(format!("lean-ctx hive consent --web {consent_id}")),
-            answer_terminal: Some(format!("lean-ctx hive consent approve {consent_id}")),
+            answer_web: Some(format!("lean-ctx cloud consent --web {consent_id}")),
+            answer_terminal: Some(format!("lean-ctx cloud consent approve {consent_id}")),
             consent_id: Some(consent_id),
             ..Share::state(
                 "consent_required",
@@ -235,15 +235,15 @@ pub(crate) fn share_state(result: Result<VaultRecord, MapError>) -> Share {
             Share::state("declined", Some("the person said no to sharing it".into()))
         }
         Err(MapError::Consent(error)) => Share::state("waiting", Some(error.to_string())),
-        Err(MapError::Hive(error)) => hive_state(&error),
+        Err(MapError::Cloud(error)) => cloud_state(&error),
     }
 }
 
-/// A Hive error before or during the mapping; the link file stays written
+/// A Cloud error before or during the mapping; the link file stays written
 /// and the background sync retries.
-fn hive_state(error: &HiveError) -> Share {
+fn cloud_state(error: &CloudError) -> Share {
     let state = match error {
-        HiveError::NotConnected | HiveError::LeaseLapsed | HiveError::Unauthorized => {
+        CloudError::NotConnected | CloudError::LeaseLapsed | CloudError::Unauthorized => {
             "not_connected"
         }
         e if e.is_transient() => "pending",
@@ -290,7 +290,7 @@ pub(crate) fn link_with(
         (missing, Share::state("not_checked", None))
     } else {
         let outcome = link::link(root, &address.to_string()).map_err(|e| match e {
-            HiveError::Config(why) => Failure::invalid(why),
+            CloudError::Config(why) => Failure::invalid(why),
             other => Failure::from(other),
         })?;
         (outcome.created_identity, share())
@@ -330,46 +330,46 @@ pub(crate) fn forget_other_vault(map: &mut VaultMap, root: &str, address: &Vault
 }
 
 /// Map the freshly linked `root` on the connected Instance.
-fn share_now(
-    store: &HiveStore,
+pub(crate) fn share_now(
+    store: &CloudStore,
     instance: &InstanceRecord,
     root: &Path,
     address: &VaultAddress,
 ) -> Share {
     let origin = instance.url.trim_end_matches('/').to_ascii_lowercase();
-    if address.origin() != origin {
+    if !lean_ctx_protocol::cloud::same_cloud_origin(&address.origin(), &origin) {
         return Share::state(
-            "other_hive",
+            "other_cloud",
             Some(format!(
-                "this Instance is connected to {origin}, not {}",
+                "this link is for {}; this machine is connected to {origin}",
                 address.origin()
             )),
         );
     }
-    let config = lean_ctx::core::config::Config::load().hive.clone();
+    let config = lean_ctx::core::config::Config::load().cloud.clone();
     let mut map = VaultMap::load(store.data_dir());
     if forget_other_vault(&mut map, &root.to_string_lossy(), address)
         && let Err(e) = map.save(store.data_dir())
     {
-        return hive_state(&HiveError::Local(e.to_string()));
+        return cloud_state(&CloudError::Local(e.to_string()));
     }
-    let session = lean_ctx_hive::root_cert::trust_root(store, &config, &instance.url)
-        .and_then(|cert| lean_ctx_hive::auth::Session::load(store.clone(), cert));
+    let session = lean_ctx_cloud::root_cert::trust_root(store, &config, &instance.url)
+        .and_then(|cert| lean_ctx_cloud::auth::Session::load(store.clone(), cert));
     match session {
-        Ok(session) => share_state(lean_ctx_hive::knowledge::pull::resolve_project(
+        Ok(session) => share_state(lean_ctx_cloud::knowledge::pull::resolve_project(
             &session, &config, root,
         )),
-        Err(error) => hive_state(&error),
+        Err(error) => cloud_state(&error),
     }
 }
 
 pub(crate) fn run(args: &[String]) {
     if !args.iter().any(|a| a == "--bring-local") {
-        return super::emit("hive.link", || build(args));
+        return super::emit("cloud.link", || build(args));
     }
     // Page titles and slugs are project text: released like docs reads.
     match super::project_root(args) {
-        Ok(root) => super::emit_released("ctx_doc", &root, "hive.link", || build(args)),
+        Ok(root) => super::emit_released("ctx_doc", &root, "cloud.link", || build(args)),
         Err(failure) => super::fail(&failure),
     }
 }
@@ -379,7 +379,7 @@ fn build(args: &[String]) -> Result<LinkDoc, Failure> {
         let value = super::flag(args, "--vault")?
             .ok_or_else(|| Failure::invalid("--vault <workspace>/<vault> is required"))?;
         let root = super::project_root(args)?;
-        let store = HiveStore::open().map_err(Failure::from)?;
+        let store = CloudStore::open().map_err(Failure::from)?;
         let instance = store.instance().map_err(Failure::from)?;
         let map = VaultMap::load(store.data_dir());
         let address = target(value, &map, instance.as_ref())?;
@@ -387,7 +387,7 @@ fn build(args: &[String]) -> Result<LinkDoc, Failure> {
         let root = Path::new(&root);
         let previous = previous_vault(root, &map, instance.as_ref(), &address)?;
         let bring = args.iter().any(|a| a == "--bring-local");
-        // Linked, a project's tasks are Hive's: a local task that is only
+        // Linked, a project's tasks are Cloud's: a local task that is only
         // proposed, claimed or submitted would be stranded, so every link
         // refuses until the person settles it, or leaves it local on
         // purpose. Refused before anything is written; a dry run names it.
@@ -398,7 +398,7 @@ fn build(args: &[String]) -> Result<LinkDoc, Failure> {
             Some(instance) => share_now(&store, instance, root, &address),
             None => Share::state(
                 "not_connected",
-                Some("linked locally; it is shared once this Instance connects".into()),
+                Some("linked locally; it is shared once this machine connects".into()),
             ),
         })?;
         if bring {
@@ -426,7 +426,7 @@ mod tests {
 
     use super::*;
     use crate::cli::local_read::vaults::tests::{instance, map};
-    use lean_ctx_hive::consent::Kind;
+    use lean_ctx_cloud::consent::Kind;
 
     fn address(text: &str) -> VaultAddress {
         VaultAddress::parse(text).unwrap()
@@ -439,7 +439,7 @@ mod tests {
             ("s2", "vlt_web", "web", &[]),
             ("s3", "vlt_web2", "web", &[]),
         ]);
-        let hosted = instance("https://hive.leanctx.com");
+        let hosted = instance("https://cloud.leanctx.com");
         let by = |v: &str| target(v, &known, Some(&hosted)).map(|a| a.to_string());
         assert_eq!(by("platform/new-one").unwrap(), "platform/new-one");
         assert_eq!(by("vlt_api").unwrap(), "platform/api");
@@ -484,7 +484,7 @@ mod tests {
     }
 
     /// The no-prompt path: the link is written, the mapping runs once (the
-    /// fake stands for Hive) and a first share that waits for the person
+    /// fake stands for Cloud) and a first share that waits for the person
     /// comes back as a state with the commands that answer it.
     #[test]
     fn link_writes_then_maps_once_and_reports_a_waiting_consent() {
@@ -509,12 +509,12 @@ mod tests {
         assert_eq!(back.address().to_string(), "platform/api");
         let root = dir.path().to_string_lossy().into_owned();
         let value: serde_json::Value =
-            serde_json::from_str(&super::super::document("hive.link", &doc)).unwrap();
+            serde_json::from_str(&super::super::document("cloud.link", &doc)).unwrap();
         assert_eq!(
             value,
             serde_json::json!({
                 "contract": "local-read/1",
-                "kind": "hive.link",
+                "kind": "cloud.link",
                 "project_root": root,
                 "vault": {"address": "platform/api", "ns": "platform", "name": "api"},
                 "previous_vault": null,
@@ -525,8 +525,8 @@ mod tests {
                     "state": "consent_required",
                     "vault_id": null,
                     "consent_id": "cns_1",
-                    "answer_web": "lean-ctx hive consent --web cns_1",
-                    "answer_terminal": "lean-ctx hive consent approve cns_1",
+                    "answer_web": "lean-ctx cloud consent --web cns_1",
+                    "answer_terminal": "lean-ctx cloud consent approve cns_1",
                     "message": "the first share waits for the person's yes",
                 },
                 "unsettled_local": [],
@@ -553,7 +553,7 @@ mod tests {
             docs_error: None,
         };
         let plan = || Ok(only(item("guide")));
-        let never = || -> Result<Brought, HiveError> { panic!("not applied here") };
+        let never = || -> Result<Brought, CloudError> { panic!("not applied here") };
         let shared = share_state(Ok(
             map(&[("s1", "vlt_api", "api", &[])]).vaults["s1"].clone()
         ));
@@ -576,7 +576,7 @@ mod tests {
         );
 
         let later = bring_local_with(&shared, false, plan, || {
-            Err(HiveError::Config("no replica here yet".into()))
+            Err(CloudError::Config("no replica here yet".into()))
         });
         assert_eq!((later.applied, later.reason), (false, Some("pending")));
         assert!(
@@ -631,9 +631,9 @@ mod tests {
         let state = |e: MapError| share_state(Err(e)).state;
         assert_eq!(state(MapError::Consent(ConsentError::Denied)), "declined");
         assert_eq!(state(MapError::Consent(ConsentError::Expired)), "waiting");
-        assert_eq!(state(HiveError::Offline("down".into()).into()), "pending");
-        assert_eq!(state(HiveError::LeaseLapsed.into()), "not_connected");
-        assert_eq!(state(HiveError::Forbidden.into()), "refused");
+        assert_eq!(state(CloudError::Offline("down".into()).into()), "pending");
+        assert_eq!(state(CloudError::LeaseLapsed.into()), "not_connected");
+        assert_eq!(state(CloudError::Forbidden.into()), "refused");
     }
 
     #[test]
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(known.vaults["s2"].roots, ["/code/web"]);
     }
 
-    /// `hive link --vault … --json` (with or without --bring-local) refuses
+    /// `cloud link --vault … --json` (with or without --bring-local) refuses
     /// while a local task is unsettled and writes nothing; a dry run names
     /// it; --leave-unsettled-local links and names what stays local.
     #[test]
@@ -664,7 +664,7 @@ mod tests {
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let project = tempfile::tempdir().unwrap();
         let root = project.path();
-        lean_ctx_hive::tasks::local::write(root, |board, now| {
+        lean_ctx_cloud::tasks::local::write(root, |board, now| {
             board.propose(
                 &lean_ctx_tasks::Actor::person("person"),
                 lean_ctx_tasks::Proposal {

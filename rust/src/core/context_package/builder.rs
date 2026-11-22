@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use sha2::{Digest, Sha256};
 
 use super::content::{
@@ -24,7 +24,7 @@ pub struct PackageBuilder {
     project_hash: Option<String>,
     session_id: Option<String>,
     /// The last update of the session a session layer was taken from (K04).
-    session_time: Option<chrono::DateTime<Utc>>,
+    session_time: Option<lean_ctx_time::UtcDateTime>,
     level: u32,
     redistributable: Option<bool>,
     scope_filter: ContentScope,
@@ -163,7 +163,7 @@ impl PackageBuilder {
             facts,
             patterns,
             insights,
-            exported_at: Utc::now(),
+            exported_at: UtcDateTime::now(),
         });
 
         self
@@ -184,7 +184,7 @@ impl PackageBuilder {
         self.content.graph = Some(GraphLayer {
             nodes,
             edges,
-            exported_at: Utc::now(),
+            exported_at: UtcDateTime::now(),
         });
 
         self
@@ -231,7 +231,7 @@ impl PackageBuilder {
                 .into_iter()
                 .filter_map(|file| portable_path(&file.path, root))
                 .collect(),
-            exported_at: Utc::now(),
+            exported_at: UtcDateTime::now(),
         };
 
         self.session_time = Some(session.updated_at);
@@ -248,7 +248,7 @@ impl PackageBuilder {
 
         self.content.patterns = Some(PatternsLayer {
             patterns: knowledge.patterns,
-            exported_at: Utc::now(),
+            exported_at: UtcDateTime::now(),
         });
 
         self
@@ -416,7 +416,7 @@ impl PackageBuilder {
                     confidence: g.confidence,
                 })
                 .collect(),
-            exported_at: Utc::now(),
+            exported_at: UtcDateTime::now(),
         });
 
         self
@@ -540,16 +540,16 @@ impl PackageBuilder {
 /// Never the clock: building the same sources twice gives the same bytes.
 fn build_time(
     content: &PackageContent,
-    session_time: Option<chrono::DateTime<Utc>>,
-) -> chrono::DateTime<Utc> {
+    session_time: Option<lean_ctx_time::UtcDateTime>,
+) -> lean_ctx_time::UtcDateTime {
     if let Some(epoch) = std::env::var("SOURCE_DATE_EPOCH")
         .ok()
         .and_then(|value| value.trim().parse::<i64>().ok())
-        .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
+        .and_then(|seconds| lean_ctx_time::UtcDateTime::from_timestamp(seconds, 0))
     {
         return epoch;
     }
-    let mut times: Vec<chrono::DateTime<Utc>> = session_time.into_iter().collect();
+    let mut times: Vec<lean_ctx_time::UtcDateTime> = session_time.into_iter().collect();
     if let Some(knowledge) = &content.knowledge {
         times.extend(
             knowledge
@@ -566,7 +566,7 @@ fn build_time(
     times
         .into_iter()
         .max()
-        .unwrap_or(chrono::DateTime::UNIX_EPOCH)
+        .unwrap_or(lean_ctx_time::UtcDateTime::UNIX_EPOCH)
 }
 
 /// A journal path as a package may carry it: a relative path as it is, an
@@ -763,7 +763,7 @@ mod tests {
                 file: Some(file.clone()),
                 line: Some(1),
                 summary: "parser entry".to_string(),
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
             });
             session.files_touched.push(
                 serde_json::from_value(serde_json::json!({
@@ -874,7 +874,7 @@ mod tests {
             facts: vec![],
             patterns: vec![],
             insights: vec![],
-            exported_at: chrono::Utc::now(),
+            exported_at: lean_ctx_time::UtcDateTime::now(),
         });
 
         let (manifest, _content) = builder.build().unwrap();

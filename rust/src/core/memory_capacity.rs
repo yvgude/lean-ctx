@@ -96,7 +96,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
     use serde::Deserialize;
 
     fn with_temp_data_dir<T>(f: impl FnOnce() -> T) -> T {
@@ -104,7 +104,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "lctx-capacity-{}-{}",
             std::process::id(),
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            UtcDateTime::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
@@ -231,7 +231,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!(
             "lctx-capacity-file-{}-{}",
             std::process::id(),
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            UtcDateTime::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         std::fs::write(&path, b"not a directory").expect("create blocking file");
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", path.to_str().unwrap());

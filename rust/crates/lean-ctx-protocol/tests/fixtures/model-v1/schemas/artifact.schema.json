@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/artifact.schema.json",
+  "title": "Artifact: what an agent run produced or points to as proof (commit, receipt, file anchor, URL, fact, file)",
+  "description": "C0 2.x knowledge events carry their own artefacts (node, commit, url, file, material) inside finding and episode bodies; they are part of knowledge_node#/$defs/event, not a separate view.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "(kind, reference) or (kind, anchor.path, anchor.digest)",
+    "views": {
+      "evidence": "evidence an agent run submits with its result",
+      "evidence_view": "evidence as a task shows it, with the server's check",
+      "session_artifact": "a file or published page an app session wrote (local only)"
+    }
+  },
+  "$defs": {
+    "evidence_kind": {
+      "enum": [
+        "receipt",
+        "commit",
+        "ci_run",
+        "file_anchor",
+        "url",
+        "fact"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/evidence_kind",
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs Evidence.kind",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceV1.kind"
+          ]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs Evidence.reference",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceV1.reference"
+          ]
+        },
+        "anchor": {
+          "$ref": "common.schema.json#/$defs/code_anchor",
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs Evidence.anchor",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceV1.anchor"
+          ]
+        }
+      }
+    },
+    "evidence_view": {
+      "type": "object",
+      "required": [
+        "kind",
+        "verified"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/evidence_kind",
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs EvidenceView.kind",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceViewV1.kind"
+          ]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs EvidenceView.reference",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceViewV1.reference"
+          ]
+        },
+        "anchor": {
+          "$ref": "common.schema.json#/$defs/code_anchor",
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs EvidenceView.anchor",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceViewV1.anchor"
+          ]
+        },
+        "verified": {
+          "description": "the server matched the evidence (a stored receipt, a live fact)",
+          "type": "boolean",
+          "x-producers": [
+            "p37 crates/cloud-wire/src/tasks.rs EvidenceView.verified",
+            "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs EvidenceViewV1.verified"
+          ]
+        }
+      }
+    },
+    "session_artifact": {
+      "description": "A file or published page an app conversation created or changed (local only; becomes evidence of kind url or file_anchor when a run submits it)",
+      "type": "object",
+      "required": [
+        "path",
+        "url",
+        "action",
+        "count",
+        "ts",
+        "first"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": [
+            "p43 src-tauri/src/session_data.rs Artifact.path"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-producers": [
+            "p43 src-tauri/src/session_data.rs Artifact.url"
+          ]
+        },
+        "action": {
+          "enum": [
+            "written",
+            "edited",
+            "published"
+          ],
+          "x-producers": [
+            "p43 src-tauri/src/session_data.rs Artifact.action"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": [
+            "p43 src-tauri/src/session_data.rs Artifact.count"
+          ]
+        },
+        "ts": {
+          "description": "the transcript time of the last change",
+          "type": "string",
+          "x-producers": [
+            "p43 src-tauri/src/session_data.rs Artifact.ts"
+          ]
+        },
+        "first": {
+          "description": "the transcript time of the first change",
+          "type": "string",
+          "x-producers": [
+            "p43 src-tauri/src/session_data.rs Artifact.first"
+          ]
+        }
+      }
+    }
+  }
+}

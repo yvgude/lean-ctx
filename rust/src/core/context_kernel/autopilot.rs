@@ -19,8 +19,8 @@ use std::{
     },
 };
 
-use chrono::{DateTime, FixedOffset};
 use lean_ctx_protocol::{AcceptanceState, ContextPlanProjectionV1, ExecutionPlanV1, TaskId};
+use lean_ctx_time::OffsetDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::core::{
@@ -308,7 +308,7 @@ fn bounded_increment(value: &mut u32) {
 pub struct AutopilotInput {
     pub retrieval: RetrievalContext,
     /// Validated task-envelope time used for deterministic retention checks.
-    pub evaluation_time: Option<DateTime<FixedOffset>>,
+    pub evaluation_time: Option<OffsetDateTime>,
     pub task_class: TaskClass,
     pub entitled_to_adaptive: bool,
     pub confidence_milli: u16,

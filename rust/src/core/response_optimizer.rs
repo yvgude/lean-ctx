@@ -437,7 +437,7 @@ fn record_response_measurement(request: &ResponseOptimizationRequest, delivered_
     let quote = crate::core::gain::model_pricing::ModelPricing::load().quote(None);
     let saved_tokens = request.original_tokens - delivered_tokens;
     let event = SavingsEvent {
-        ts: chrono::Utc::now().to_rfc3339(),
+        ts: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         tool: "proxy_response_optimizer".into(),
         mechanism: savings_ledger::MECHANISM_COMPRESSION.into(),
         model_id: quote.model_key.clone(),

@@ -4,7 +4,7 @@
 # shell lexer, and is used by hooks, server and the composition root.
 [package]
 name = "lean-ctx-shell-policy"
-version = "3.12.6"
+version = "3.12.7"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX shell-allowlist policy: enforcement, approvals and side-door checks on top of the LeanCTX Engine."
@@ -13,23 +13,34 @@ homepage = "https://leanctx.com"
 readme = "../../README.md"
 keywords = ["lean-ctx", "shell", "allowlist", "security"]
 categories = ["development-tools"]
+# The integration tests use a helper from rust/tests: they cannot run from
+# the published package.
+exclude = ["tests/"]
+# Integration tests are listed below: one binary instead of one per
+# tests/*.rs file (each would link the whole Engine).
+autotests = false
 
 [lib]
 name = "lean_ctx_shell_policy"
 path = "src/lib.rs"
 
+# The integration tests: tests/main.rs holds them as modules.
+[[test]]
+name = "shell_policy"
+path = "tests/main.rs"
+
 [features]
 default = []
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.6", default-features = false }
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false }
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 regex = "1.12"
 tracing = "0.1"
 dirs = "6.0"
 
 [dev-dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.6", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false, features = ["test-support"] }
 proptest = "1.11"
 serial_test = "3.5"
 tempfile = "3.27"

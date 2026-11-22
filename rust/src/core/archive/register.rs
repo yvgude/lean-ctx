@@ -48,7 +48,7 @@ struct Stamped<V> {
 }
 
 pub fn now() -> i64 {
-    chrono::Utc::now().timestamp()
+    lean_ctx_time::UtcDateTime::now().timestamp()
 }
 
 pub(super) fn valid_key(key: &str) -> bool {

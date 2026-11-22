@@ -78,7 +78,7 @@ mod shared_sessions {
                             file: Some(format!("src/agent{agent_idx}/file{i}.rs")),
                             line: Some((i * 10) as u32),
                             summary: format!("Agent {agent_idx} found pattern at iteration {i}"),
-                            timestamp: chrono::Utc::now(),
+                            timestamp: lean_ctx_time::UtcDateTime::now(),
                         });
                     }
 
@@ -86,7 +86,7 @@ mod shared_sessions {
                         s.decisions.push(Decision {
                             summary: format!("Agent {agent_idx} decided to refactor module {i}"),
                             rationale: Some("Performance improvement".to_string()),
-                            timestamp: chrono::Utc::now(),
+                            timestamp: lean_ctx_time::UtcDateTime::now(),
                         });
                     }
                 }
@@ -194,12 +194,12 @@ mod shared_sessions {
             file: Some("src/core/context_os/mod.rs".to_string()),
             line: Some(42),
             summary: "SharedSessionStore needs RwLock per workspace".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
         s.decisions.push(Decision {
             summary: "Use SQLite for event persistence".to_string(),
             rationale: Some("WAL mode supports concurrent reads".to_string()),
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
         s.next_steps = vec!["Add SSE endpoint".to_string(), "Wire metrics".to_string()];
 
@@ -479,7 +479,7 @@ mod redaction {
             channel_id: "ch".to_string(),
             kind: "tool_call_recorded".to_string(),
             actor: Some("agent".to_string()),
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
             version: 1,
             parent_id: None,
             consistency_level: "local".to_string(),
@@ -683,14 +683,14 @@ mod session_features {
                 file: Some(format!("src/module{i}.rs")),
                 line: Some(i * 10),
                 summary: format!("Found pattern {i}"),
-                timestamp: chrono::Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
             });
         }
 
         session.decisions.push(Decision {
             summary: "Use SSE for realtime events".to_string(),
             rationale: Some("Lower overhead than WebSocket for unidirectional flow".to_string()),
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
 
         for i in 0..10 {
@@ -716,7 +716,7 @@ mod session_features {
             output_md5: None,
             agent_id: Some("test-agent".to_string()),
             client_name: None,
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
             task_id: None,
         });
 
@@ -1005,7 +1005,7 @@ mod a2a_communication {
             content: "Please review the auth module changes".to_string(),
             metadata: std::collections::HashMap::new(),
             project_root: Some("/home/user/project".to_string()),
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
             read_by: vec![],
             expires_at: None,
         };
@@ -1045,7 +1045,7 @@ mod a2a_communication {
                 content: format!("Test {cat:?}"),
                 metadata: std::collections::HashMap::new(),
                 project_root: None,
-                timestamp: chrono::Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
                 read_by: vec![],
                 expires_at: None,
             };
@@ -1173,7 +1173,7 @@ mod e2e_multi_agent_scenario {
                 file: Some("src/auth/oauth2.rs".to_string()),
                 line: Some(15),
                 summary: "Missing PKCE challenge for public clients".to_string(),
-                timestamp: chrono::Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
             });
             session.files_touched.push(FileTouched {
                 path: "src/auth/pkce.rs".to_string(),
@@ -1206,7 +1206,7 @@ mod e2e_multi_agent_scenario {
             session.decisions.push(Decision {
                 summary: "Use authorization_code flow with PKCE".to_string(),
                 rationale: Some("More secure for SPA/mobile clients".to_string()),
-                timestamp: chrono::Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
             });
             if let Some(ref mut t) = session.task {
                 t.progress_pct = Some(40);

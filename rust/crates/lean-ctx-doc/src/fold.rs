@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Lowest-seq membership of doc nodes (C0 2.2, shared with Hive's
-//! `hive-docs`): a section's page is the `to` of its live `part_of` edge with
+//! Lowest-seq membership of doc nodes (C0 2.2, shared with Cloud's
+//! `cloud-docs`): a section's page is the `to` of its live `part_of` edge with
 //! the lowest seq; a note's subject the `to` of its live `about` edge with the
 //! lowest seq; a slug belongs to the live page with the lowest `node.add` seq
 //! that holds it now, and every other live page holding it is in conflict.
@@ -198,7 +198,7 @@ mod tests {
         }
     }
 
-    // C0 2.2 vectors (hive-v2 vectors/doc_fold).
+    // C0 2.2 vectors (cloud-v2 vectors/doc_fold).
     #[test]
     fn part_of_and_about_vectors() {
         let two = [

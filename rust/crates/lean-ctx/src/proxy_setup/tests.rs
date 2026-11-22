@@ -1424,3 +1424,48 @@ fn commandcode_omitted_note_mentions_cmd_login() {
         "binary is cmd, not commandcode: {COMMANDCODE_OMITTED_NOTE}"
     );
 }
+
+/// N1 `security.require_proxy`: only an agent whose routing can be confirmed
+/// counts as routed, and a base-URL variable pointing elsewhere overrides
+/// what its config file says.
+#[test]
+fn require_proxy_probe_never_confirms_what_it_cannot_see() {
+    let home = tempfile::tempdir().unwrap();
+    assert!(!agent_routed(home.path(), "cursor", |_| None));
+    assert!(!agent_routed(home.path(), "unknown", |_| None));
+    assert!(!agent_routed(home.path(), "claude-code", |name| {
+        (name == "ANTHROPIC_BASE_URL").then(|| "https://api.anthropic.com".to_string())
+    }));
+    assert!(!agent_routed(home.path(), "codex", |name| {
+        (name == "OPENAI_BASE_URL").then(|| "https://api.openai.com/v1".to_string())
+    }));
+    assert_eq!(routable_agent("claude-code").map(|r| r.0), Some("claude"));
+    assert_eq!(routable_agent("codex").map(|r| r.0), Some("codex"));
+    assert_eq!(routable_agent("grok").map(|r| r.0), Some("grok"));
+}
+
+/// The require_proxy probe caches the routed hosts by the stamps of the
+/// files they come from: a config that appears or changes is a new stamp,
+/// and the cached answer always equals a fresh read.
+#[test]
+fn the_routed_hosts_cache_follows_the_config_files() {
+    let home = tempfile::tempdir().unwrap();
+    let files = routing_files(home.path());
+    assert!(files.contains(&home.path().join(".grok/config.toml")));
+    let before = stamps(&files);
+    assert_eq!(
+        cached_routed_hosts(home.path()),
+        egress_routed_hosts(home.path())
+    );
+    std::fs::create_dir_all(home.path().join(".grok")).unwrap();
+    std::fs::write(
+        home.path().join(".grok/config.toml"),
+        "[model]\nbase_url = \"http://127.0.0.1:4444/v1\"\n",
+    )
+    .unwrap();
+    assert_ne!(stamps(&files), before, "a new config is a new stamp");
+    assert_eq!(
+        cached_routed_hosts(home.path()),
+        egress_routed_hosts(home.path())
+    );
+}

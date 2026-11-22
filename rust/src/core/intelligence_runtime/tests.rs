@@ -336,7 +336,6 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
     drop(command);
     prepared.close().unwrap();
     assert!(super::health::validate_capabilities(&verified).is_ok());
-    assert!(super::health::supports_protection(&verified));
     assert!(super::health::supports_code_security(&verified));
     assert!(!super::health::supports_semantic_detectors(&verified));
 
@@ -355,10 +354,11 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
         )
     };
     assert!(admit(&verified, &invocation).is_ok());
-    // Ranking, memory selection and read-strategy policies are free and
-    // local: declared for installation, never invoked.
+    // Ranking, memory selection, read-strategy policies and personal rule
+    // compilation are free and local: declared for installation, never invoked.
     for (id, version) in [
         ("pro.runtime.adaptive_context", "1.0.0"),
+        ("pro.runtime.personal_protection", "1.0.0"),
         ("pro.runtime.memory_curation", "1.0.0"),
         ("pro.runtime.context_policy", "1.0.0"),
         ("pro.runtime.context_policy", "1.1.0"),

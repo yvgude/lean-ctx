@@ -141,7 +141,7 @@ def build_wheel(
     metadata = f"""Metadata-Version: 2.4
 Name: {distribution}
 Version: {version}
-Summary: Platform-specific LeanCTX | OSS binary for the Thinkery LeanCTX SDK
+Summary: Platform-specific LeanCTX | OSS binary for the Thinkery LeanCTX | SDK
 Description-Content-Type: text/plain
 License-Expression: Apache-2.0
 License-File: LICENSE

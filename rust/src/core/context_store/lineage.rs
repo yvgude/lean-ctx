@@ -397,6 +397,16 @@ pub fn load(scope: &str, task_id: &str) -> TaskLineageV1 {
     let events = crate::core::execution_ledger::ExecutionLedgerStore::from_default()
         .and_then(|store| store.by_task_verified(task_id))
         .map_err(|error| error.to_string());
+    load_with_events(scope, task_id, events)
+}
+
+/// [`load`] with the task's verified execution-ledger events already read,
+/// so a caller resolving many tasks loads and verifies the ledger once.
+pub fn load_with_events(
+    scope: &str,
+    task_id: &str,
+    events: Result<Vec<ExecutionEvent>, String>,
+) -> TaskLineageV1 {
     let checked = events
         .as_ref()
         .map_or(LedgerScope::Verified, |events| ledger_scope(events, scope));

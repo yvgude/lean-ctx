@@ -3,7 +3,9 @@
 //! Metering is deliberately observational: failures are logged and never affect
 //! an MCP tool response.  The JSONL file contains token counts only.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use lean_ctx_time::Date;
+
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
@@ -33,7 +35,7 @@ pub struct DayTotals {
 /// One completed tool call, recorded locally as a JSONL line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MeterEntry {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub tool_name: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -53,7 +55,7 @@ impl MeterEntry {
         savings_tokens: u64,
     ) -> Self {
         Self {
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             tool_name: tool_name.into(),
             input_tokens,
             output_tokens,
@@ -63,7 +65,7 @@ impl MeterEntry {
     }
 }
 
-/// Aggregate used by local value displays such as "Pro would have saved you $X".
+/// Aggregate used by local value displays such as "LeanCTX saved you $X".
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct MeterAggregate {
     pub total_savings_tokens: u64,
@@ -153,23 +155,19 @@ impl MeterStore {
     /// grows to tens of MB, so it is read backwards and parsing stops at the first
     /// earlier entry: the cost follows the day's volume, not the history.
     #[must_use]
-    pub fn day_totals(&self, day: NaiveDate) -> DayTotals {
+    pub fn day_totals(&self, day: Date) -> DayTotals {
         self.day_totals_in_blocks(day, TAIL_BLOCK_BYTES, |_| true)
     }
 
     /// [`Self::day_totals`] over the entries whose project key `keep` accepts.
     #[must_use]
-    pub fn day_totals_where(
-        &self,
-        day: NaiveDate,
-        keep: impl Fn(Option<&str>) -> bool,
-    ) -> DayTotals {
+    pub fn day_totals_where(&self, day: Date, keep: impl Fn(Option<&str>) -> bool) -> DayTotals {
         self.day_totals_in_blocks(day, TAIL_BLOCK_BYTES, keep)
     }
 
     fn day_totals_in_blocks(
         &self,
-        day: NaiveDate,
+        day: Date,
         block: usize,
         keep: impl Fn(Option<&str>) -> bool,
     ) -> DayTotals {
@@ -273,7 +271,7 @@ mod tests {
             .append(&at("2026-10-02T10:00:00Z", "ctx_search", 50, 10))
             .unwrap();
 
-        let day = NaiveDate::from_ymd_opt(2026, 10, 2).unwrap();
+        let day = Date::new(2026, 10, 2).unwrap();
         let expected = DayTotals {
             input_tokens: 150,
             savings_tokens: 90,

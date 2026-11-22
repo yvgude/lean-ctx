@@ -532,7 +532,7 @@ impl Config {
                 )
             });
 
-        // The machine's managed configuration overlays `[hive]` (below).
+        // The machine's managed configuration overlays `[cloud]` (below).
         let managed = crate::core::config::managed::current();
         let managed_key = crate::core::config::managed::cache_key();
 
@@ -598,10 +598,10 @@ impl Config {
         if failure.is_none() {
             cfg.migrate_v4_config_on_disk();
         }
-        // Managed > Hive floor > user config > defaults. After the on-disk
+        // Managed > Cloud floor > user config > defaults. After the on-disk
         // migration, so the overlay never reaches the user's file.
         if let Some(managed) = &managed {
-            managed.apply_to_hive(&mut cfg.hive);
+            managed.apply_to_cloud(&mut cfg.cloud);
         }
         // Last, so no merge step can drop it: the marker belongs to this value.
         cfg.load_failure = failure;

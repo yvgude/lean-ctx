@@ -155,9 +155,11 @@ mod tests {
                 message: "old".to_string(),
                 metadata: std::collections::HashMap::new(),
                 project_root: None,
-                timestamp: chrono::Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
                 read_by: vec![],
-                expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+                expires_at: Some(
+                    lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::hours(1),
+                ),
             });
         })
         .expect("setup");

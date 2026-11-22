@@ -57,7 +57,7 @@ pub(crate) fn hash_path_only(root: &str) -> String {
 /// the hash falls back to path-only (same behaviour as pre-3.3.2).
 ///
 /// A linked git worktree has the origin of its main checkout, so both are
-/// one project (Hive, handoff bundles).
+/// one project (Cloud, handoff bundles).
 pub fn project_identity(root: &str) -> Option<String> {
     identity_at(root, Worktrees::Follow)
 }
@@ -697,7 +697,7 @@ mod tests {
         fs::create_dir_all(&admin).unwrap();
         fs::write(
             main.join(".git").join("config"),
-            "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:yves/hive.git\n",
+            "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:yves/cloud.git\n",
         )
         .unwrap();
         fs::write(admin.join("commondir"), "../..\n").unwrap();
@@ -708,7 +708,7 @@ mod tests {
             format!("gitdir: {}\n", admin.display()),
         )
         .unwrap();
-        fs::write(worktree.join("Cargo.toml"), "[package]\nname = \"hive\"\n").unwrap();
+        fs::write(worktree.join("Cargo.toml"), "[package]\nname = \"cloud\"\n").unwrap();
         let worktree = worktree.to_str().unwrap();
 
         assert_eq!(
@@ -717,17 +717,17 @@ mod tests {
         );
         assert_eq!(
             project_identity(worktree),
-            Some("git:github.com/yves/hive".into())
+            Some("git:github.com/yves/cloud".into())
         );
         // The local store keeps the hash it had: its knowledge stays put.
         assert_eq!(
             identity_at(worktree, Worktrees::Keep),
-            Some("cargo:hive".into())
+            Some("cargo:cloud".into())
         );
         // Hashed as `hash_project_root` sees it (macOS: /var → /private/var).
         let mut before = StableHasher::new();
         crate::core::pathutil::normalize_tool_path(worktree).hash(&mut before);
-        "cargo:hive".hash(&mut before);
+        "cargo:cloud".hash(&mut before);
         assert_eq!(
             hash_project_root(worktree),
             format!("{:016x}", before.finish())

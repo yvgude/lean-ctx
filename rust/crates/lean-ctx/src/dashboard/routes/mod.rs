@@ -4,6 +4,7 @@
 mod agent_control;
 mod agents;
 mod analysis_bridge;
+mod cloud_workspace;
 mod context;
 mod decisions;
 mod doctor;
@@ -14,7 +15,6 @@ mod gateway_stages;
 mod graph;
 pub(crate) mod health;
 pub mod helpers;
-mod hive_workspace;
 mod kernel;
 mod knowledge;
 mod learning;
@@ -94,7 +94,7 @@ pub fn route_response(
         .or_else(|| gateway_receipts::handle(path, query_str, method, body))
         .or_else(|| gateway_connect::handle(path, query_str, method, body))
         .or_else(|| gateway_stages::handle(path, query_str, method, body))
-        .or_else(|| hive_workspace::handle(path, query_str, method, body))
+        .or_else(|| cloud_workspace::handle(path, query_str, method, body))
         .or_else(|| decisions::handle(path, query_str, method, body));
     #[cfg(feature = "enterprise")]
     let response = response.or_else(|| usage_breakdown::handle(path, query_str, method, body));

@@ -145,6 +145,104 @@ fn is_placeholder_value(value: &str) -> bool {
     MARKERS.iter().any(|marker| value.contains(marker))
 }
 
+/// #1302: whether a value holding bracket or union syntax reads as code (a
+/// type, call, index or template) rather than a secret that merely contains
+/// such a character. Code nests its brackets and puts an operator or another
+/// bracket after a closer: `Promise<string>`, `getToken()`, `string[]`,
+/// `os.getenv(`, `&[u8]`, `T|null`, `${{`, `map[string]string`. A secret does
+/// not: `Pa(ss)word1` continues after `)`, `ab]c` closes what it never
+/// opened, `p@ss[w0rd` is no identifier before its bracket. An opener left
+/// open at the end is code (the value stops at the first blank or comma).
+#[must_use]
+pub fn is_code_shaped(value: &str) -> bool {
+    // A bare `|` is a union or a cell separator (`KEEP_LEFT|secret=…|KEEP_RIGHT`):
+    // judging the whole run would mask the neighbouring cell, so it stays
+    // as before and the token detectors judge the secret itself.
+    if !value.contains(['<', '>', '(', ')', '[', ']', '{', '}']) {
+        return true;
+    }
+    // printf-style `%(name)s` and YAML block scalars `|`, `>-`, `|2`.
+    if static_regex!(r"^(?:%\([A-Za-z_]\w*\)[sdifr]|[|>][+-]?[0-9]?)$").is_match(value) {
+        return true;
+    }
+    let bytes = value.as_bytes();
+    let mut at = 0;
+    // Leading sigils: references, pointers and template markers.
+    while at < bytes.len() && matches!(bytes[at], b'&' | b'*' | b'#' | b'$' | b'%' | b'@' | b'!') {
+        at += 1;
+    }
+    // ERB/JSP `<%=`.
+    if value[at..].starts_with("<%") {
+        return true;
+    }
+    // Open groups: (opener, word before it, start of its content).
+    let mut open: Vec<(u8, Option<&str>, usize)> = Vec::new();
+    // After a closer: whether a word may follow it.
+    let mut closed: Option<bool> = None;
+    let mut word_before: Option<&str> = None;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        if byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$' {
+            let start = at;
+            while at < bytes.len()
+                && (bytes[at].is_ascii_alphanumeric()
+                    || matches!(bytes[at], b'_' | b'$' | b'.' | b':'))
+            {
+                at += 1;
+            }
+            let word = &value[start..at];
+            let numeric = word.bytes().all(|b| b.is_ascii_digit());
+            if !numeric && byte.is_ascii_digit() {
+                return false;
+            }
+            if closed
+                .take()
+                .is_some_and(|word_may_follow| !word_may_follow)
+            {
+                return false;
+            }
+            word_before = Some(word);
+            continue;
+        }
+        let word = word_before.take();
+        let after_closer = closed.take().is_some();
+        match byte {
+            // After a closer, `&` and `*` are password characters, and `!`
+            // is code only as a trailing non-null assertion (`foo()!`,
+            // `foo()!.bar`): `Pa(ss)!word1`, `Pa(ss)*w0rd`.
+            b'&' | b'*' if after_closer => return false,
+            b'!' if after_closer && !matches!(bytes.get(at + 1), None | Some(b'.')) => {
+                return false;
+            }
+            b'(' | b'[' | b'{' | b'<' => open.push((byte, word, at + 1)),
+            b'>' if at > 0 && matches!(bytes[at - 1], b'=' | b'-') => {}
+            b')' | b']' | b'}' | b'>' => {
+                let expected = match byte {
+                    b')' => b'(',
+                    b']' => b'[',
+                    b'}' => b'{',
+                    _ => b'<',
+                };
+                let Some((opener, before, content_start)) = open.pop() else {
+                    return false;
+                };
+                if opener != expected {
+                    return false;
+                }
+                let sized = value[content_start..at].bytes().all(|b| b.is_ascii_digit());
+                // Only Go's `[]T`, `[4]T` and `map[K]V` continue with a word.
+                closed =
+                    Some(byte == b']' && ((sized && before.is_none()) || before == Some("map")));
+            }
+            b'|' | b'?' | b'!' | b'&' | b'*' | b'.' | b':' | b',' => {}
+            b'=' | b'-' if bytes.get(at + 1) == Some(&b'>') => {}
+            _ => return false,
+        }
+        at += 1;
+    }
+    true
+}
+
 fn is_non_secret_literal(value: &str) -> bool {
     let value = value
         .trim()
@@ -153,7 +251,7 @@ fn is_non_secret_literal(value: &str) -> bool {
         return true;
     }
     if value.contains(['<', '>', '|', '(', ')', '[', ']', '{', '}']) {
-        return true;
+        return is_code_shaped(value);
     }
     matches!(
         value.to_ascii_lowercase().as_str(),
@@ -175,14 +273,88 @@ fn is_non_secret_literal(value: &str) -> bool {
             | "void"
             | "nan"
             | "date"
+    ) || is_primitive_type_name(value)
+}
+
+/// Primitive type names (the list core redaction keeps) of Rust, Go, Java and C-family languages. In
+/// `const MAX_TOKEN: usize = 4` the "value" after `TOKEN:` is a type
+/// annotation, never a credential; masking it corrupts every read of such a
+/// source. Matched exactly (case-sensitive), so a password that merely
+/// contains one of these words is still protected.
+fn is_primitive_type_name(value: &str) -> bool {
+    matches!(
+        value,
+        "bool"
+            | "char"
+            | "str"
+            | "usize"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "int"
+            | "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "uint"
+            | "uint8"
+            | "uint16"
+            | "uint32"
+            | "uint64"
+            | "uintptr"
+            | "float"
+            | "float32"
+            | "float64"
+            | "double"
+            | "long"
+            | "short"
+            | "byte"
+            | "rune"
+            | "error"
+            | "Self"
     )
 }
 
+/// The value without the syntax that follows it in an expression: a trailing
+/// `:` and every unbalanced closing `)`, `]` or `}` — the reduction core
+/// redaction judges with (`canonical_secret_value`). The value of
+/// `(password: <x>?)` is captured as `<x>?)`; judged as captured, the `)` read
+/// as type syntax and the password stayed visible (#2255).
+fn canonical_secret_value(value: &str) -> &str {
+    let mut value = value.trim();
+    loop {
+        if let Some(rest) = value.strip_suffix(':') {
+            value = rest;
+            continue;
+        }
+        let (open, close) = match value.chars().last() {
+            Some(')') => ('(', ')'),
+            Some(']') => ('[', ']'),
+            Some('}') => ('{', '}'),
+            _ => break,
+        };
+        if value.matches(open).count() >= value.matches(close).count() {
+            break;
+        }
+        value = &value[..value.len() - 1];
+    }
+    value
+}
+
 fn is_benign_secret_value(value: &str) -> bool {
-    matches!(
-        value.trim(),
-        "=" | "==" | "!=" | "<=" | ">=" | "===" | "!=="
-    ) || is_non_secret_literal(value)
+    let value = canonical_secret_value(value);
+    matches!(value, "=" | "==" | "!=" | "<=" | ">=" | "===" | "!==")
+        || is_non_secret_literal(value)
         || is_identifier_reference(value)
         || is_placeholder_value(value)
 }
@@ -265,13 +437,13 @@ pub fn redact_text(input: &str) -> String {
                     if is_benign_secret_value(value.as_str()) {
                         return whole.to_owned();
                     }
-                    // The line scan runs only for type-shaped `?` values.
-                    if is_nullable_type_name(value.as_str()) {
+                    // The line scan runs only for type-shaped `?` values,
+                    // judged without a closing `)` (`fun f(token: Session?)`).
+                    let canonical = canonical_secret_value(value.as_str());
+                    if is_nullable_type_name(canonical) {
                         let line_start = text[..value.start()].rfind('\n').map_or(0, |at| at + 1);
-                        if is_nullable_type_annotation(
-                            &text[line_start..value.start()],
-                            value.as_str(),
-                        ) {
+                        if is_nullable_type_annotation(&text[line_start..value.start()], canonical)
+                        {
                             return whole.to_owned();
                         }
                     }
@@ -332,8 +504,93 @@ mod tests {
         ] {
             assert!(contains_credential(value), "{value}");
         }
+        // A closer after the value belongs to the expression, not the value.
+        for value in [
+            "f(password: Welcome?)",
+            "{password: Welcome?}",
+            "[pwd=s3cret]",
+        ] {
+            assert!(contains_credential(value), "{value}");
+        }
+        assert!(!contains_credential("f(token: Option<String>)"));
+        // A bracket inside a value is code only when it reads as code (#1302).
+        for value in [
+            "password=Pa(ss)word1",
+            "password=ab]c",
+            "secret: p@ss[w0rd",
+            "password=Pa(ss)!word1",
+            "password=Pa(ss)*w0rd",
+        ] {
+            assert!(contains_credential(value), "{value}");
+        }
+        for value in [
+            "token = getToken()",
+            "password: Promise<string>",
+            "secret map[string]string",
+            "api_key: &[u8]",
+            "token: string[]",
+            "password: T|null",
+            "token=${{ secrets.TOKEN }}",
+            "password: %(db_password)s",
+            "secret: |",
+        ] {
+            assert!(!contains_credential(value), "{value}");
+        }
         assert!(!contains_credential(
             "fun open(token: Session?, password: Secret?)"
         ));
+    }
+
+    /// #2255: a value followed by a closing bracket (`(password: <x>?)`,
+    /// `{token: <x>}`) was captured with the bracket, and the bracket read as
+    /// type syntax, so the secret stayed visible. Unbalanced closers are now
+    /// stripped before the judgement; a declared nullable type stays visible.
+    #[test]
+    fn a_secret_before_a_closing_bracket_is_masked() {
+        // Built at run time: no fixture looks like a real secret to a scanner.
+        let secret = ["Hun", "ter", "22"].concat();
+        let word = ["Let", "me", "in"].concat();
+        for line in [
+            format!("have fun (password: {secret}?)"),
+            format!("{{password: {secret}?}}"),
+            format!("[password: {secret}?]"),
+            format!("(password: {secret})"),
+            format!("{{token: {secret}}}"),
+            format!("call(api_key: {secret}))"),
+            format!("f(token: {word}?)"),
+        ] {
+            let redacted = redact_text(&line);
+            assert!(
+                !redacted.contains(&secret) && !redacted.contains(&word),
+                "{line} -> {redacted}"
+            );
+            assert!(redacted.contains("[REDACTED:"), "{line} -> {redacted}");
+        }
+        for kept in [
+            "fun open(token: Session?)",
+            "init(password: Secret?) {",
+            "password: Promise<string>",
+            "token: compute(x)",
+            "(token: process.env.API_TOKEN)",
+        ] {
+            assert_eq!(redact_text(kept), kept);
+        }
+    }
+
+    /// !427 review N1: with the closing bracket stripped, a primitive type
+    /// annotation (`fn f(token: u64)`) was masked here while core redaction
+    /// kept it; both layers now keep the same primitive type names.
+    #[test]
+    fn a_primitive_type_annotation_stays_readable() {
+        for kept in [
+            "fn f(token: u64)",
+            "fn f(token: u64) -> u64 {",
+            "fn f(secret: f64)",
+        ] {
+            assert_eq!(redact_text(kept), kept);
+        }
+        let secret = ["Hun", "ter", "22"].concat();
+        let line = format!("fn f(token: {secret})");
+        assert!(!redact_text(&line).contains(&secret));
     }
 }

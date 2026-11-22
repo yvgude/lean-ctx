@@ -92,7 +92,7 @@ fn redact_to_summary(payload: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
     use serde_json::json;
 
     fn sample_event() -> ContextEventV1 {
@@ -102,7 +102,7 @@ mod tests {
             channel_id: "ch1".to_string(),
             kind: "tool_call_recorded".to_string(),
             actor: Some("agent".to_string()),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             version: 1,
             parent_id: None,
             consistency_level: "local".to_string(),

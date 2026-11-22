@@ -254,7 +254,7 @@ fn post_knowledge_edit(body: &str) -> (&'static str, &'static str, String) {
 
             match req.action.as_str() {
                 "archive" => {
-                    knowledge.facts[real_idx].valid_until = Some(chrono::Utc::now());
+                    knowledge.facts[real_idx].valid_until = Some(lean_ctx_time::UtcDateTime::now());
                     knowledge.facts[real_idx].valid_from = knowledge.facts[real_idx]
                         .valid_from
                         .or(Some(knowledge.facts[real_idx].created_at));
@@ -279,7 +279,7 @@ fn post_knowledge_edit(body: &str) -> (&'static str, &'static str, String) {
                 }
             }
 
-            knowledge.updated_at = chrono::Utc::now();
+            knowledge.updated_at = lean_ctx_time::UtcDateTime::now();
             Ok(())
         });
 

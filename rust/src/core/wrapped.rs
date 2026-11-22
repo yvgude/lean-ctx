@@ -56,9 +56,9 @@ impl WrappedReport {
         };
         let bounce_tokens = crate::core::savings_ledger::bounce_tokens(period_days);
         let tokens_saved = gross_tokens_saved.saturating_sub(bounce_tokens);
-        let security = crate::core::value::proof::verified_security_since(
-            period_days.map(|d| chrono::Utc::now() - chrono::Duration::days(i64::from(d))),
-        )
+        let security = crate::core::value::proof::verified_security_since(period_days.map(|d| {
+            lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(i64::from(d))
+        }))
         .filter(|c| !c.is_empty());
 
         let env_model = std::env::var("LEAN_CTX_MODEL")
@@ -197,8 +197,14 @@ impl WrappedReport {
         let dim = theme::dim();
 
         let period_label = match self.period.as_str() {
-            "week" => format!("Week of {}", chrono::Utc::now().format("%b %d, %Y")),
-            "month" => format!("Month of {}", chrono::Utc::now().format("%B %Y")),
+            "week" => format!(
+                "Week of {}",
+                lean_ctx_time::UtcDateTime::now().format("%b %d, %Y")
+            ),
+            "month" => format!(
+                "Month of {}",
+                lean_ctx_time::UtcDateTime::now().format("%B %Y")
+            ),
             _ => "All Time".to_string(),
         };
 
@@ -377,7 +383,7 @@ fn aggregate_recent_stats(store: &stats::StatsStore, days: usize) -> (u64, u64, 
 }
 
 fn count_recent_sessions(sessions: &[crate::core::session::SessionSummary], days: i64) -> usize {
-    let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+    let cutoff = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(days);
     sessions.iter().filter(|s| s.updated_at > cutoff).count()
 }
 

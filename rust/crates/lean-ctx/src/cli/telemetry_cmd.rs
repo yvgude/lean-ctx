@@ -331,11 +331,11 @@ fn print_help() {
     println!();
     println!("Subcommands:");
     println!("  status     Show current telemetry status (default)");
-    println!("  on         Enable anonymous product telemetry");
-    println!("  off        Disable anonymous product telemetry");
+    println!("  on         Enable pseudonymous product telemetry");
+    println!("  off        Disable pseudonymous product telemetry");
     println!("  show       Display the exact payload that would be sent");
     println!("  pending    Display the exact typed batch currently eligible for sending");
-    println!("  reset-id   Regenerate the anonymous installation ID");
+    println!("  reset-id   Regenerate the pseudonymous installation ID");
     println!("  history    Show log of all sent batches");
     println!("  purge-local Delete the local telemetry history");
     println!("  delete-remote Delete server-side telemetry for this installation");

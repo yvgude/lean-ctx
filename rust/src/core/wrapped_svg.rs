@@ -15,8 +15,14 @@ impl WrappedReport {
     /// Renders a polished, dependency-free SVG share card.
     pub fn to_svg(&self) -> String {
         let period_label = match self.period.as_str() {
-            "week" => format!("Week of {}", chrono::Utc::now().format("%b %d, %Y")),
-            "month" => format!("Month of {}", chrono::Utc::now().format("%B %Y")),
+            "week" => format!(
+                "Week of {}",
+                lean_ctx_time::UtcDateTime::now().format("%b %d, %Y")
+            ),
+            "month" => format!(
+                "Month of {}",
+                lean_ctx_time::UtcDateTime::now().format("%B %Y")
+            ),
             _ => "All Time".to_string(),
         };
 

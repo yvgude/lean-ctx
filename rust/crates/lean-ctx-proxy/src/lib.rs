@@ -197,3 +197,17 @@ pub fn register_shapers() {
         },
     );
 }
+
+// The integration tests in tests/*.rs, compiled into this crate's unit-test
+// binary instead of a test binary each (each one linked the whole Engine
+// again). A test is `<file stem>::<test>`; `extern crate self` keeps their
+// `lean_ctx_proxy::` paths. Add new ones here (`autotests = false`).
+// They compile against this crate's cfg(test) build and could reach private
+// items, so they use only the public API (no `crate::`, guarded by
+// scripts/tests/test_mr_quick.py). A test that must exercise the production
+// build or the public API only stays a separate test target.
+#[cfg(test)]
+extern crate self as lean_ctx_proxy;
+#[cfg(all(test, feature = "http-server"))]
+#[path = "../tests/trace_correlation.rs"]
+mod trace_correlation;

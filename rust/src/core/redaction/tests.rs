@@ -40,6 +40,50 @@ fn standalone_provider_keys_are_fully_masked_in_nested_values() {
     );
 }
 
+/// Stripe secret, restricted and webhook-signing secrets are masked as bare
+/// tokens, inside JSON and after a `KEY=` assignment, in live and test mode.
+#[test]
+fn stripe_secrets_are_masked_in_every_position() {
+    let value = "4eC39HqLyjWDarjtT1zdp7dc";
+    for prefix in ["sk_live_", "rk_live_", "sk_test_", "rk_test_", "whsec_"] {
+        let secret = format!("{prefix}{value}");
+        let inputs = [
+            format!("charging with {secret} now"),
+            serde_json::json!({"nested": {"stripe": secret.clone()}}).to_string(),
+            format!("STRIPE_SECRET={secret}"),
+            format!("STRIPE_WEBHOOK={secret}"),
+        ];
+        for input in inputs {
+            let safe = redact_text(&input);
+            assert!(!safe.contains(value), "{prefix}: value leaked in {safe}");
+            assert!(safe.contains("[REDACTED:"), "{prefix}: no marker in {safe}");
+            assert_eq!(safe, redact_text(&input), "output must be deterministic");
+        }
+        assert!(
+            !crate::core::secret_detection::detect_secrets(&secret).is_empty(),
+            "{prefix}: detector must agree with the redactor"
+        );
+    }
+    let webhook = format!("whsec_{}", "Zm9vYmFyYmF6cXV4+/0123456789==");
+    assert_eq!(
+        redact_text(&webhook),
+        "whsec_[REDACTED:Stripe webhook secret]"
+    );
+}
+
+#[test]
+fn stripe_prefixes_without_a_value_stay_readable() {
+    for text in [
+        "Webhook secrets start with whsec_ and are shown once.",
+        "Use an sk_live key in production and sk_test_ keys locally.",
+        "STRIPE_KEY=sk_test_your_key_here",
+        "rk_live_ prefixes mark restricted keys",
+        "whsec_short",
+    ] {
+        assert_eq!(redact_text(text), text, "prose must not be masked");
+    }
+}
+
 // --- #952: exclude_patterns compilation cache ---
 
 #[test]
@@ -493,10 +537,10 @@ fn keeps_comparison_operators_in_source() {
 fn only_a_word_slug_as_a_fact_key_is_kept() {
     for kept in [
         r#"{"key":"governor-design-pull-forward-2026-10-29"}"#,
-        r#"{"key": "hive-desktop-knowledge-speed-round-one"}"#,
+        r#"{"key": "cloud-desktop-knowledge-speed-round-one"}"#,
         // Words with one vowel in six or seven letters, abbreviations.
         r#"{"key":"gotcha-code-reviewer-no-probe-rights"}"#,
-        r#"{"key":"hive-mr-ci-scripts-strict-backlog-check"}"#,
+        r#"{"key":"cloud-mr-ci-scripts-strict-backlog-check"}"#,
     ] {
         assert_eq!(redact_text(kept), kept);
     }
@@ -513,7 +557,7 @@ fn only_a_word_slug_as_a_fact_key_is_kept() {
         r#"{"encryption_key":"correct-horse-battery-staple-orbit-lamp"}"#.to_owned(),
         "SIGNING_KEY=governor-design-pull-forward-2026-10-29".to_owned(),
         "MASTER_KEY=governor-design-pull-forward-2026-10-29".to_owned(),
-        "key: hive-desktop-knowledge-speed-round-one".to_owned(),
+        "key: cloud-desktop-knowledge-speed-round-one".to_owned(),
     ];
     for masked in masked_cases {
         assert!(redact_text(&masked).contains("[REDACTED"), "{masked}");
@@ -565,5 +609,31 @@ fn random_lowercase_keys_under_a_key_member_stay_masked() {
             missed <= MAX_KEPT,
             "{groups}x{size}: {missed} of {SAMPLES} random keys undetected"
         );
+    }
+}
+
+/// #2255: a value followed by a closing bracket is judged without it. A
+/// secret before `)`, `]` or `}` is masked, and the last parameter of a
+/// declaration (`fun f(token: Session?)`) is the type it reads as.
+#[test]
+fn a_value_before_a_closing_bracket_is_judged_without_it() {
+    // Built at run time: no fixture looks like a real secret to a scanner.
+    let secret = ["Hun", "ter", "22"].concat();
+    for line in [
+        format!("have fun (password: {secret}?)"),
+        format!("{{password: {secret}?}}"),
+        format!("[password: {secret}?]"),
+        format!("(password: {secret})"),
+        format!("{{token: {secret}}}"),
+    ] {
+        let redacted = redact_text(&line);
+        assert!(!redacted.contains(&secret), "{line} -> {redacted}");
+    }
+    for kept in [
+        "fun open(token: Session?)",
+        "fun open(token: Session?, password: Secret?)",
+        "init(password: Secret?) {",
+    ] {
+        assert_eq!(redact_text(kept), kept);
     }
 }

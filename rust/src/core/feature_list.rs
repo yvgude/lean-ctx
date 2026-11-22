@@ -2,7 +2,7 @@
 //! The feature list of a task: its locked acceptance tests (process-v1 §4,
 //! `contracts/process-v1/feature-list.schema.json`).
 //!
-//! The Spec Writer writes the list until G2. Once G2 has passed (Hive sets
+//! The Spec Writer writes the list until G2. Once G2 has passed (Cloud sets
 //! `spec_commit`) the list is locked: only `features[].passes` may change, and
 //! only the G6 gate writes it, from its own re-run. Any other change is a spec
 //! change and goes back to `spec`; LeanCTX refuses it.
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Schema id of a feature list.
-pub const SCHEMA: &str = "leanctx.hive.process.feature-list/v1";
+pub const SCHEMA: &str = "leanctx.cloud.process.feature-list/v1";
 /// Largest feature list read.
 pub const MAX_FILE_BYTES: u64 = 512 * 1024;
 const MAX_FEATURES: usize = 200;
@@ -294,7 +294,7 @@ fn is_feature_id(id: &str) -> bool {
 /// Decide whether `writer` may turn `before` into `after`.
 ///
 /// Before G2 (`before.spec_commit` unset) the Spec Writer may change anything
-/// (Hive's G2 then judges it). After G2 the only change allowed is `passes`,
+/// (Cloud's G2 then judges it). After G2 the only change allowed is `passes`,
 /// and only by the gate. Every refusal names the rule `feature_list_locked`.
 pub fn validate_transition(
     before: &FeatureList,

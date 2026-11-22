@@ -2,7 +2,7 @@
 
 //! Context policy filtering for the Context Kernel.
 
-use chrono::{DateTime, FixedOffset};
+use lean_ctx_time::OffsetDateTime;
 
 use super::types::{ContextObjectV1, SensitivityLevel};
 
@@ -80,7 +80,7 @@ impl PolicyFilter {
     pub fn apply_at(
         &self,
         candidates: Vec<ContextObjectV1>,
-        evaluation_time: Option<&DateTime<FixedOffset>>,
+        evaluation_time: Option<&OffsetDateTime>,
     ) -> Vec<ContextObjectV1> {
         let allowed: Vec<ContextObjectV1> = candidates
             .into_iter()
@@ -113,7 +113,7 @@ impl PolicyFilter {
     pub fn is_allowed_at(
         &self,
         candidate: &ContextObjectV1,
-        evaluation_time: Option<&DateTime<FixedOffset>>,
+        evaluation_time: Option<&OffsetDateTime>,
     ) -> bool {
         if sensitivity_rank(&candidate.sensitivity) > sensitivity_rank(&self.policy.max_sensitivity)
         {
@@ -178,7 +178,7 @@ impl ContextPolicy {
     pub(crate) fn candidate_violation_at(
         &self,
         candidate: &ContextObjectV1,
-        evaluation_time: Option<&DateTime<FixedOffset>>,
+        evaluation_time: Option<&OffsetDateTime>,
     ) -> Option<String> {
         if candidate.id.as_str().trim().is_empty() || candidate.source.trim().is_empty() {
             return Some("candidate identity or source is empty".to_owned());
@@ -204,7 +204,7 @@ impl ContextPolicy {
     fn retention_violation(
         &self,
         candidate: &ContextObjectV1,
-        evaluation_time: Option<&DateTime<FixedOffset>>,
+        evaluation_time: Option<&OffsetDateTime>,
     ) -> Option<String> {
         let retention_days = self.retention_days?;
         let Some(evaluation_time) = evaluation_time else {
@@ -214,7 +214,7 @@ impl ContextPolicy {
         if raw_timestamp.trim().is_empty() {
             return Some("candidate creation timestamp is missing".to_owned());
         }
-        let Ok(candidate_time) = DateTime::parse_from_rfc3339(raw_timestamp) else {
+        let Ok(candidate_time) = OffsetDateTime::parse_from_rfc3339(raw_timestamp) else {
             return Some("candidate creation timestamp is invalid".to_owned());
         };
 
@@ -270,7 +270,7 @@ impl Default for ContextPolicy {
     }
 }
 
-fn timestamp_nanos(value: &DateTime<FixedOffset>) -> Option<i128> {
+fn timestamp_nanos(value: &OffsetDateTime) -> Option<i128> {
     i128::from(value.timestamp())
         .checked_mul(NANOS_PER_SECOND)?
         .checked_add(i128::from(value.timestamp_subsec_nanos()))
@@ -287,7 +287,7 @@ fn sensitivity_rank(level: &SensitivityLevel) -> u8 {
 
 #[cfg(test)]
 pub mod tests {
-    use chrono::{DateTime, FixedOffset};
+    use lean_ctx_time::OffsetDateTime;
 
     use super::{ContextPolicy, PolicyFilter};
     use crate::core::context_field::{ContextItemId, Provenance};
@@ -305,8 +305,8 @@ pub mod tests {
         }
     }
 
-    fn at(value: &str) -> DateTime<FixedOffset> {
-        DateTime::parse_from_rfc3339(value).expect("valid test timestamp")
+    fn at(value: &str) -> OffsetDateTime {
+        OffsetDateTime::parse_from_rfc3339(value).expect("valid test timestamp")
     }
 
     fn retention(days: u32) -> ContextPolicy {

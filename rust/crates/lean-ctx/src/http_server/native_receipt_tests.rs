@@ -62,15 +62,15 @@ fn isolated(test: &str, invalid_authority: bool) -> bool {
 }
 
 fn write_host_settings(path: &Path, ledger: &Path, key: &SigningKey) {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let settings = json!({
         "schema_version":1,
         "signing_key_hex":lean_ctx::core::agent_identity::hex_encode(&key.to_bytes()),
         "signer":{
             "key_id":"daemon-receipt-fixture",
             "public_key_digest":format!("sha256:{}", lean_ctx::core::agent_identity::hex_encode(&Sha256::digest(key.verifying_key().as_bytes()))),
-            "admitted_at":(now-chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
-            "expires_at":(now+chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),
+            "admitted_at":(now-lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
+            "expires_at":(now+lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs,true),
             "revoked_at":null
         },
         "ledger_path":ledger

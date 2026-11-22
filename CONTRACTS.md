@@ -1,7 +1,7 @@
 # LeanCTX Protocol Family & Contracts (v1)
 
-LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can see.**
-LeanCTX | OSS implements the runtime; LeanCTX SDK is the separate application
+LeanCTX is the **Context Gateway for AI Systems**. **Less context. More intelligence.**
+LeanCTX | OSS implements the runtime; LeanCTX | SDK is the separate application
 integration surface. Contracts define the supported interfaces and evidence.
 
 ## Current product and historical contract scope
@@ -148,7 +148,7 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Engine context sources v2 | `docs/contracts/engine-context-sources-v2.md` | 2 | experimental |
 | Operator-attested Engine outcome | `docs/contracts/engine-outcome-v1.md` | 1 | experimental |
 | Engine Context Store reads | `docs/contracts/engine-context-store-v1.md` | 1 | experimental |
-| Local Read (LeanCTX \| Hive Desktop) | `docs/contracts/local-read-v1.md` | 1 | experimental |
+| Local Read (LeanCTX Code) | `docs/contracts/local-read-v1.md` | 1 | experimental |
 | Client Calls (ACP client) | `docs/contracts/client-calls-v1.md` | 1 | experimental |
 | Local Service (daemon socket) | `docs/contracts/local-service-v1.md` | 1 | experimental |
 | Engine provider-execution | `docs/contracts/engine-provider-execution-v1.md` | 1 | experimental |
@@ -351,17 +351,17 @@ Define how LeanCTX communicates with the outside world.
 ### Local Read v1 (experimental)
 
 - **Doc**: `docs/contracts/local-read-v1.md`
-- **Surface**: `--json` on `knowledge list`, `knowledge stale|verify|dedupe|outdated|conflicts`, `knowledge related`, `knowledge graph`, `hive docs list|show`, `hive tasks list|show`, `hive presence`, `hive status`, `agent messages`, `agent post` and `activity list` (the per-session activity stream: hooks, MCP calls and ACP callbacks, bounded and redacted)
+- **Surface**: `--json` on `knowledge list`, `knowledge stale|verify|dedupe|outdated|conflicts`, `knowledge related`, `knowledge graph`, `cloud docs list|show`, `cloud tasks list|show`, `cloud presence`, `cloud status`, `agent messages`, `agent post` and `activity list` (the per-session activity stream: hooks, MCP calls and ACP callbacks, bounded and redacted)
 - **Shape**: one object per call with `"contract": "local-read/1"` and `kind`; nullable fields always present; errors as `kind: "error"` with a code
 - **Error codes**: `invalid_argument` (exit 2), `no_project`, `not_connected`, `no_vault`, `not_found`, `forbidden`, `withheld`, `anchor_gone` (`knowledge verify`: the code an anchor names is gone), `unavailable`, `internal` (exit 1); readers show unknown codes as they are
 - **Fact review values**: `null`, `to_verify`, `gone`, `contradicted`
-- **Reader**: local processes on the same machine (LeanCTX | Hive Desktop); no Hive token leaves the Instance
-- **Writes**: `agent post` (one bus message as the person, through the registry lock and admission); `knowledge verify <id>` and `knowledge dedupe --apply` (the person's, under the knowledge store lock); `knowledge stale` writes back only stored anchor marks that disagree with the live anchor check; `hive link` without `--dry-run` (the link file, then the first-share mapping under the unchanged consent rules)
+- **Reader**: local processes on the same machine (LeanCTX Code); no LeanCTX Cloud token leaves the Instance
+- **Writes**: `agent post` (one bus message as the person, through the registry lock and admission); `knowledge verify <id>` and `knowledge dedupe --apply` (the person's, under the knowledge store lock); `knowledge stale` writes back only stored anchor marks that disagree with the live anchor check; `cloud link` without `--dry-run` (the link file, then the first-share mapping under the unchanged consent rules)
 
 ### Client Calls v1 (experimental)
 
 - **Doc**: `docs/contracts/client-calls-v1.md`
-- **Surface**: `lean-ctx client fs-read|fs-write|exec --json --session S --agent A` (ACP `fs/*` and `terminal/*` of a local ACP client such as LeanCTX | Hive Desktop)
+- **Surface**: `lean-ctx client fs-read|fs-write|exec --json --session S --agent A` (ACP `fs/*` and `terminal/*` of a local ACP client such as LeanCTX Code)
 - **Shape**: one object per line with `"contract": "client-calls/1"` and `kind`; `exec` streams `client.exec.output` lines before its final `client.exec`; errors as `kind: "error"` with a code
 - **Boundaries**: PathJail, secret-path policy, shell allowlist, context policy and receipt of the CLI tool run, as `ctx_read`/`ctx_edit`/`ctx_shell`; reads are verbatim (never compressed)
 - **Audit**: every call, refused ones included, is one signed audit-trail entry attributed to `--session` and `--agent`

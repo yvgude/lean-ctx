@@ -111,7 +111,7 @@ fn truncate_chars(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
     use crate::core::gotcha_tracker::{Gotcha, GotchaCategory, GotchaSeverity, GotchaSource};
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     #[test]
     fn reminders_budgeted() {
@@ -137,8 +137,8 @@ mod tests {
                 file_patterns: vec![],
                 occurrences: 2,
                 session_ids: vec!["s1".to_string()],
-                first_seen: Utc::now(),
-                last_seen: Utc::now(),
+                first_seen: UtcDateTime::now(),
+                last_seen: UtcDateTime::now(),
                 confidence: 0.8,
                 source: GotchaSource::AutoDetected {
                     command: "cargo build".to_string(),

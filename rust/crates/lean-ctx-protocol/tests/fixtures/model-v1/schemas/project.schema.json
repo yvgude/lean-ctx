@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/project.schema.json",
+  "title": "Project: a checkout of one repository, bound to at most one vault",
+  "description": "A project is the local side (a checkout the app and the Instance see); the vault is its shared side in the cloud. The binding key is the stable identity digest (hex HMAC of the org salt and the checkout's identity), resolved to a vault_id.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "stable identity digest (Instance) -> vault_id (cloud); the local folder path (app)",
+    "views": {
+      "record": "core <data_dir>/cloud/projects.json entry",
+      "resolve_request": "POST /v1/vaults/resolve body",
+      "setup": "the project a device-code setup names",
+      "checkout": "app project frame facts (local only, never sent)"
+    }
+  },
+  "$defs": {
+    "record": {
+      "description": "One vault the Instance resolved for a stable identity, with the checkouts linked to it (projects.json `projects` value; written with the pre-VA name project_id)",
+      "type": "object",
+      "required": ["project_id", "ns", "name", "sealed"],
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/vault_id",
+          "x-producers": ["p5 rust/src/core/vault_map.rs VaultRecord.vault_id"]
+        },
+        "ns": {
+          "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/vault.schema.json#/$defs/id",
+          "x-producers": ["p5 rust/src/core/vault_map.rs VaultRecord.ns"]
+        },
+        "name": {
+          "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/vault.schema.json#/$defs/id",
+          "x-producers": ["p5 rust/src/core/vault_map.rs VaultRecord.name"]
+        },
+        "sealed": {
+          "description": "always false: sealed vaults are not supported",
+          "const": false,
+          "x-producers": ["p5 rust/src/core/vault_map.rs VaultRecord.sealed"]
+        },
+        "roots": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "x-producers": ["p5 rust/src/core/vault_map.rs VaultRecord.roots"]
+        }
+      }
+    },
+    "resolve_request": {
+      "description": "The Instance asks which vault a checkout belongs to, or binds it to an existing one (`vault`)",
+      "type": "object",
+      "required": ["schema", "org_salt_id", "identity_digest"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.vault-resolve-request/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/knowledge.rs VaultResolve.schema", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultResolveRequestV1.schema"]
+        },
+        "org_salt_id": {
+          "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/vault.schema.json#/$defs/id",
+          "x-producers": ["p37 crates/cloud-wire/src/knowledge.rs VaultResolve.org_salt_id", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultResolveRequestV1.org_salt_id"]
+        },
+        "identity_digest": {
+          "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/common.schema.json#/$defs/hex64",
+          "x-producers": ["p37 crates/cloud-wire/src/knowledge.rs VaultResolve.identity_digest", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultResolveRequestV1.identity_digest"]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "x-producers": ["p37 crates/cloud-wire/src/knowledge.rs VaultResolve.label", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultResolveRequestV1.label"]
+        },
+        "vault": {
+          "$ref": "vault.schema.json#/$defs/ref",
+          "x-producers": ["p37 crates/cloud-wire/src/knowledge.rs VaultResolve.vault", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultResolveRequestV1.vault"]
+        }
+      }
+    },
+    "setup": {
+      "description": "The checkout a device-code setup offers to share (C0 2.1 device setup)",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "the checkout's folder name",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "x-producers": ["p37 crates/cloud-wire/src/engine.rs DeviceSetupProject.name"]
+        },
+        "remote": {
+          "description": "the git remote the Instance sees, for the person to recognise; never an access check",
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-wire/src/engine.rs DeviceSetupProject.remote"]
+        }
+      }
+    },
+    "checkout": {
+      "description": "What the app knows about a project folder (read-only git facts; local, never sent to the cloud)",
+      "type": "object",
+      "required": ["exists", "repo", "branch", "worktrees"],
+      "additionalProperties": false,
+      "properties": {
+        "exists": {
+          "type": "boolean",
+          "x-producers": ["p43 src-tauri/src/project.rs ProjectInfo.exists"]
+        },
+        "repo": {
+          "type": "boolean",
+          "x-producers": ["p43 src-tauri/src/project.rs ProjectInfo.repo"]
+        },
+        "branch": {
+          "description": "null outside git or on a detached HEAD",
+          "type": ["string", "null"],
+          "x-producers": ["p43 src-tauri/src/project.rs ProjectInfo.branch"]
+        },
+        "worktrees": {
+          "description": "linked worktrees besides the main checkout",
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p43 src-tauri/src/project.rs ProjectInfo.worktrees"]
+        }
+      }
+    }
+  }
+}

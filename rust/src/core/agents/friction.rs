@@ -3,20 +3,20 @@
 //! loop: `<data>/agents/friction.jsonl`, one `{"at", "signal", "agent"?,
 //! "root"?}` line per event (fixed keys and ids, never message text),
 //! summed by `lean-ctx agent friction [--since <dur>]` and per hour, worker
-//! and vault by the Hive connector's friction counter for the vault bus
+//! and vault by the Cloud connector's friction counter for the vault bus
 //! (V16.1).
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 
-/// A task claim Hive refused because the agent was not on the bus.
+/// A task claim Cloud refused because the agent was not on the bus.
 pub const CLAIM_REFUSED_PRESENCE: &str = "claim_refused_presence";
-/// A task claim Hive refused because the agent was on the bus in another role.
+/// A task claim Cloud refused because the agent was on the bus in another role.
 pub const CLAIM_REFUSED_ROLE: &str = "claim_refused_role";
-/// A task claim Hive refused for a role or consent reason it did not name.
+/// A task claim Cloud refused for a role or consent reason it did not name.
 pub const CLAIM_REFUSED_PERMIT: &str = "claim_refused_permit";
 /// A claim this machine held ended before its agent finished (stale or closed).
 pub const CLAIM_EXPIRED: &str = "claim_expired";
@@ -46,7 +46,7 @@ struct Line {
 /// One recorded signal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
-    pub at: DateTime<Utc>,
+    pub at: UtcDateTime,
     pub signal: String,
     pub agent: Option<String>,
     pub root: Option<String>,
@@ -58,7 +58,7 @@ pub fn record_for(signal: &str, agent: Option<&str>, root: Option<&str>) {
     let Ok(dir) = super::persistence::agents_dir() else {
         return;
     };
-    if let Err(error) = record_in(&dir, signal, agent, root, Utc::now()) {
+    if let Err(error) = record_in(&dir, signal, agent, root, UtcDateTime::now()) {
         tracing::debug!("lean-ctx: friction log: {error}");
     }
 }
@@ -68,7 +68,7 @@ fn record_in(
     signal: &str,
     agent: Option<&str>,
     root: Option<&str>,
-    at: DateTime<Utc>,
+    at: UtcDateTime,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(FILE);
@@ -80,7 +80,7 @@ fn record_in(
             .map_err(std::io::Error::other)?;
     }
     let line = serde_json::to_string(&Line {
-        at: at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        at: at.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
         signal: signal.to_string(),
         agent: agent.map(str::to_string),
         root: root.map(str::to_string),
@@ -95,22 +95,20 @@ fn record_in(
 }
 
 /// The signals recorded in `[from, to)`, oldest first.
-pub fn events(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Event> {
+pub fn events(from: UtcDateTime, to: UtcDateTime) -> Vec<Event> {
     super::persistence::agents_dir()
         .map(|dir| events_in(&dir, from, to))
         .unwrap_or_default()
 }
 
-pub(crate) fn events_in(dir: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Event> {
+pub(crate) fn events_in(dir: &Path, from: UtcDateTime, to: UtcDateTime) -> Vec<Event> {
     let Ok(text) = std::fs::read_to_string(dir.join(FILE)) else {
         return Vec::new();
     };
     text.lines()
         .filter_map(|line| serde_json::from_str::<Line>(line).ok())
         .filter_map(|line| {
-            let at = DateTime::parse_from_rfc3339(&line.at)
-                .ok()?
-                .with_timezone(&Utc);
+            let at = OffsetDateTime::parse_from_rfc3339(&line.at).ok()?.to_utc();
             (from <= at && at < to).then_some(Event {
                 at,
                 signal: line.signal,
@@ -122,13 +120,13 @@ pub(crate) fn events_in(dir: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> V
 }
 
 /// Signal → count of the events at or after `since` (all when `None`).
-pub fn summary(since: Option<DateTime<Utc>>) -> BTreeMap<String, u64> {
+pub fn summary(since: Option<UtcDateTime>) -> BTreeMap<String, u64> {
     super::persistence::agents_dir()
         .map(|dir| summary_in(&dir, since))
         .unwrap_or_default()
 }
 
-fn summary_in(dir: &Path, since: Option<DateTime<Utc>>) -> BTreeMap<String, u64> {
+fn summary_in(dir: &Path, since: Option<UtcDateTime>) -> BTreeMap<String, u64> {
     let mut counts = BTreeMap::new();
     let Ok(text) = std::fs::read_to_string(dir.join(FILE)) else {
         return counts;
@@ -137,7 +135,7 @@ fn summary_in(dir: &Path, since: Option<DateTime<Utc>>) -> BTreeMap<String, u64>
         let Ok(line) = serde_json::from_str::<Line>(line) else {
             continue;
         };
-        let Ok(at) = DateTime::parse_from_rfc3339(&line.at) else {
+        let Ok(at) = OffsetDateTime::parse_from_rfc3339(&line.at) else {
             continue;
         };
         if since.is_none_or(|since| at >= since) {
@@ -161,17 +159,17 @@ pub fn render(counts: &BTreeMap<String, u64>) -> String {
 }
 
 /// `30m`, `12h`, `7d` or plain seconds.
-pub fn parse_duration(text: &str) -> Option<chrono::Duration> {
+pub fn parse_duration(text: &str) -> Option<lean_ctx_time::Duration> {
     let text = text.trim();
     let (number, unit) = text
         .find(|c: char| !c.is_ascii_digit())
         .map_or((text, ""), |at| text.split_at(at));
     let n: i64 = number.parse().ok()?;
     match unit {
-        "" | "s" => Some(chrono::Duration::seconds(n)),
-        "m" => Some(chrono::Duration::minutes(n)),
-        "h" => Some(chrono::Duration::hours(n)),
-        "d" => Some(chrono::Duration::days(n)),
+        "" | "s" => Some(lean_ctx_time::Duration::seconds(n)),
+        "m" => Some(lean_ctx_time::Duration::minutes(n)),
+        "h" => Some(lean_ctx_time::Duration::hours(n)),
+        "d" => Some(lean_ctx_time::Duration::days(n)),
         _ => None,
     }
 }
@@ -183,7 +181,7 @@ mod tests {
     #[test]
     fn signals_are_counted_by_key_and_window() {
         let dir = tempfile::tempdir().unwrap();
-        let at = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+        let at = |s: &str| OffsetDateTime::parse_from_rfc3339(s).unwrap().to_utc();
         record_in(
             dir.path(),
             WAIT_TIMEOUT,
@@ -245,7 +243,7 @@ mod tests {
     #[test]
     fn the_log_stays_bounded() {
         let dir = tempfile::tempdir().unwrap();
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         for _ in 0..6000 {
             record_in(dir.path(), CLAIM_EXPIRED, None, None, now).unwrap();
         }
@@ -258,7 +256,7 @@ mod tests {
     #[test]
     fn events_carry_agent_and_checkout_and_respect_the_window() {
         let dir = tempfile::tempdir().unwrap();
-        let at = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+        let at = |s: &str| OffsetDateTime::parse_from_rfc3339(s).unwrap().to_utc();
         record_in(
             dir.path(),
             WAIT_TIMEOUT,
@@ -301,10 +299,19 @@ mod tests {
 
     #[test]
     fn durations_parse() {
-        assert_eq!(parse_duration("90"), Some(chrono::Duration::seconds(90)));
-        assert_eq!(parse_duration("30m"), Some(chrono::Duration::minutes(30)));
-        assert_eq!(parse_duration("12h"), Some(chrono::Duration::hours(12)));
-        assert_eq!(parse_duration("7d"), Some(chrono::Duration::days(7)));
+        assert_eq!(
+            parse_duration("90"),
+            Some(lean_ctx_time::Duration::seconds(90))
+        );
+        assert_eq!(
+            parse_duration("30m"),
+            Some(lean_ctx_time::Duration::minutes(30))
+        );
+        assert_eq!(
+            parse_duration("12h"),
+            Some(lean_ctx_time::Duration::hours(12))
+        );
+        assert_eq!(parse_duration("7d"), Some(lean_ctx_time::Duration::days(7)));
         assert_eq!(parse_duration("7w"), None);
         assert_eq!(parse_duration("h"), None);
     }

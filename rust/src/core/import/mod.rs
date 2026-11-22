@@ -14,7 +14,7 @@ mod staging;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde_json::Value;
 
 use crate::core::knowledge::KnowledgeFact;
@@ -609,7 +609,7 @@ fn push_fact(
         return;
     }
 
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     result.facts.push(KnowledgeFact {
         anchors: Vec::new(),
         review: None,
@@ -652,7 +652,7 @@ pub(crate) struct RepoFact {
     pub value: String,
     pub confidence: f32,
     pub validity: Option<crate::core::knowledge::FactValidity>,
-    pub valid_from: Option<chrono::DateTime<Utc>>,
+    pub valid_from: Option<lean_ctx_time::UtcDateTime>,
     /// The section (or commit) it is anchored to, when one could be captured.
     pub anchors: Vec<crate::core::knowledge::anchors::CodeAnchor>,
 }
@@ -681,7 +681,7 @@ pub(crate) fn push_repo_fact(
     if value.is_empty() {
         return;
     }
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     result.facts.push(KnowledgeFact {
         origin: crate::core::knowledge::FactOrigin::Unverified,
         category: fact.category.to_owned(),

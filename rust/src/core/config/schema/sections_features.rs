@@ -720,7 +720,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(cfg.telemetry.enabled),
-            "Enable anonymous product telemetry (cumulative daily aggregates — no code, paths or PII)",
+            "Enable pseudonymous product telemetry (cumulative daily aggregates — no code, paths or PII)",
         ),
     );
     telemetry.insert(

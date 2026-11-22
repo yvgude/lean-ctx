@@ -77,6 +77,42 @@ pub fn boundary_mode_effective(role: &roles::Role) -> BoundaryMode {
     BoundaryMode::parse(&role.io.boundary_mode)
 }
 
+/// The name of LeanCTX Code's app key file in `<data dir>/agents/`.
+pub const APP_KEY_FILE: &str = "app-launch.key";
+
+/// The files only LeanCTX Code may read: its app key and the release ids of
+/// offered plan directives (§37.9), a damaged copy set aside (`….damaged`)
+/// included. Unlike the other secret-like paths, neither a role that allows
+/// secret paths (`admin`) nor the warn boundary mode opens them to an
+/// agent's read, search or listing tool.
+pub fn app_only_secret(path: &Path) -> Option<&'static str> {
+    let lower = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if lower == APP_KEY_FILE {
+        return Some("LeanCTX app key");
+    }
+    if lower.starts_with(crate::core::agents::RELEASE_IDS_FILE) {
+        return Some("LeanCTX release ids");
+    }
+    None
+}
+
+/// Whether a read, search or listing tool leaves `path` out: an app-only
+/// secret always ([`app_only_secret`]), any other secret-like path unless
+/// the role allows secret paths.
+pub fn withheld_secret(path: &Path, allow_secret_paths: bool) -> Option<&'static str> {
+    app_only_secret(path).or_else(|| {
+        if allow_secret_paths {
+            None
+        } else {
+            is_secret_like(path)
+        }
+    })
+}
+
 pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let lower = file.to_lowercase();
@@ -134,6 +170,10 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
         return Some("credential file");
     }
 
+    if let Some(reason) = app_only_secret(path) {
+        return Some(reason);
+    }
+
     if lower.starts_with("service-account") {
         let p = std::path::Path::new(&lower);
         if p.extension()
@@ -157,7 +197,7 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     None
 }
 
-/// The project whose Hive I/O rules apply when the caller names none: the
+/// The project whose Cloud I/O rules apply when the caller names none: the
 /// request's bound project, else the configured or detected project of the
 /// working directory ([`crate::core::protocol::detect_project_root_or_cwd`]).
 fn current_project() -> PathBuf {
@@ -170,26 +210,26 @@ fn current_project() -> PathBuf {
     ))
 }
 
-/// The Hive I/O rules (`security.readable_roots`, `security.never_send`) in
+/// The Cloud I/O rules (`security.readable_roots`, `security.never_send`) in
 /// force for `project` (default: `current_project`). `Err` when the
-/// installed Hive policy cannot be applied: callers fail closed.
-pub fn hive_io_rules(
+/// installed Cloud policy cannot be applied: callers fail closed.
+pub fn cloud_io_rules(
     project: Option<&Path>,
-) -> Result<Option<crate::core::policy::hive_io::IoRules>, String> {
+) -> Result<Option<crate::core::policy::cloud_io::IoRules>, String> {
     let project = project.map_or_else(current_project, Path::to_path_buf);
-    crate::core::policy::hive_io::rules_for(&project)
+    crate::core::policy::cloud_io::rules_for(&project)
 }
 
-/// Refuse reading `path` when the Hive policy keeps it out of context: outside
+/// Refuse reading `path` when the Cloud policy keeps it out of context: outside
 /// the readable roots, matching `never_send`, or (fail closed) the installed
 /// policy cannot be applied. Always enforced: neither the role nor the warn
-/// boundary mode loosens a Hive rule.
-pub fn check_hive_io_for_tool(
+/// boundary mode loosens a Cloud rule.
+pub fn check_cloud_io_for_tool(
     tool: &str,
     path: &Path,
     project: Option<&Path>,
 ) -> Result<(), String> {
-    let refusal = match hive_io_rules(project) {
+    let refusal = match cloud_io_rules(project) {
         Ok(None) => return Ok(()),
         Ok(Some(rules)) => match rules.refusal(path) {
             None => return Ok(()),
@@ -200,7 +240,7 @@ pub fn check_hive_io_for_tool(
             ),
         },
         Err(e) => format!(
-            "[I/O BOUNDARY] {} refused: {e}; reads stay refused until a valid Hive policy is installed.",
+            "[I/O BOUNDARY] {} refused: {e}; reads stay refused until a valid LeanCTX Cloud policy is installed.",
             path.display()
         ),
     };
@@ -208,10 +248,10 @@ pub fn check_hive_io_for_tool(
     Err(format!("ERROR: {refusal}"))
 }
 
-/// The Hive I/O rules ([`check_hive_io_for_tool`]) and then the role's
+/// The Cloud I/O rules ([`check_cloud_io_for_tool`]) and then the role's
 /// secret-path rule, for a path read in the current project.
 pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<String>, String> {
-    check_hive_io_for_tool(tool, path, None)?;
+    check_cloud_io_for_tool(tool, path, None)?;
     secret_path_rule(tool, path)
 }
 
@@ -219,6 +259,15 @@ fn secret_path_rule(tool: &str, path: &Path) -> Result<Option<String>, String> {
     let role_name = roles::active_role_name();
     let role = roles::active_role();
     let mode = boundary_mode_effective(&role);
+
+    if let Some(reason) = app_only_secret(path) {
+        let msg = format!(
+            "[I/O BOUNDARY] {} is the {reason}: only LeanCTX Code reads it, under every role and boundary mode.",
+            path.display()
+        );
+        events::emit_policy_violation(&role_name, tool, &msg);
+        return Err(format!("ERROR: {msg}"));
+    }
 
     let Some(reason) = is_secret_like(path) else {
         return Ok(None);
@@ -235,8 +284,8 @@ Role: {role_name}. To allow: switch role to 'admin' or set io.allow_secret_paths
     );
     events::emit_policy_violation(&role_name, tool, &msg);
     // K12: the secret-path rule refused (enforce) or would have (warn).
-    crate::core::hive_signals::refused(
-        &crate::core::hive_signals::secrets_rule(),
+    crate::core::cloud_signals::refused(
+        &crate::core::cloud_signals::secrets_rule(),
         matches!(mode, BoundaryMode::Enforce),
     );
 
@@ -258,7 +307,7 @@ pub fn jail_and_check_path(
     jail_root: &Path,
 ) -> Result<(PathBuf, Option<String>), String> {
     let (jailed, warning) = jail_and_check_with(tool, candidate, jail_root, pathjail::jail_path)?;
-    check_hive_io_for_tool(tool, &jailed, Some(jail_root))?;
+    check_cloud_io_for_tool(tool, &jailed, Some(jail_root))?;
     Ok((jailed, warning))
 }
 
@@ -338,6 +387,35 @@ pub mod tests {
         std::fs::write(&file, "hello").unwrap();
         let content = read_file_nofollow(&file.to_string_lossy()).unwrap();
         assert_eq!(content, "hello");
+    }
+
+    /// The app key and the release ids stay closed to an agent's read tools
+    /// under the admin role and the warn mode, which open every other
+    /// secret-like path.
+    #[test]
+    fn app_only_secrets_stay_refused_for_admin_and_in_warn_mode() {
+        let admin = roles::load_role("admin").expect("builtin admin role");
+        assert!(admin.io.allow_secret_paths, "admin opens secret paths");
+        for mode in ["enforce", "warn"] {
+            let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_IO_BOUNDARY_MODE", mode);
+            roles::with_test_active_role(admin.clone(), || {
+                for name in [
+                    APP_KEY_FILE,
+                    crate::core::agents::RELEASE_IDS_FILE,
+                    "directive-release-ids.json.damaged",
+                ] {
+                    let path = Path::new("/d/agents").join(name);
+                    let refused = secret_path_rule("ctx_read", &path)
+                        .expect_err("an app-only secret is refused");
+                    assert!(refused.contains("only LeanCTX Code"), "{refused}");
+                    assert!(withheld_secret(&path, true).is_some(), "{name}");
+                }
+                // Every other secret-like path stays open to admin.
+                let env = Path::new("/p/.env");
+                assert_eq!(secret_path_rule("ctx_read", env), Ok(None), "{mode}");
+                assert_eq!(withheld_secret(env, true), None);
+            });
+        }
     }
 
     #[test]

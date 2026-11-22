@@ -6,7 +6,7 @@
 > Measure a comparable workload with a declared quality threshold before making a
 > gain claim. Product scope and status are governed by
 > [canonical positioning](../../docs/POSITIONING_CANONICAL.md): LeanCTX is the
-> **Context Gateway for AI Systems**. **Control what your AI can see.**
+> **Context Gateway for AI Systems**. **Less context. More intelligence.**
 
 [Pi Coding Agent](https://github.com/badlogic/pi-mono) extension that provides
 `ctx_`-prefixed tools backed by a local [LeanCTX](https://leanctx.com) instance.
@@ -27,6 +27,37 @@ To switch to **replace mode** (disables Pi builtins, only `ctx_*` tools availabl
 ```bash
 export LEAN_CTX_PI_MODE=replace
 ```
+
+Pi lists your skills in the system prompt (`<skills>`) only while its `read` or
+`bash` tool is active. Replace mode removes both, so pi-lean-ctx adds the same
+section itself and tells the model to load a skill's `SKILL.md` with
+`ctx_read`. If you also disable `ctx_read`, no reader is left and skills are
+only reachable through `/skill:name`.
+
+## Prompt guidance
+
+Additive mode offers two tools for the same job, so pi-lean-ctx tells the agent
+which one to pick. Nothing is removed or overridden:
+
+- **Tool guidelines**: `ctx_read`, `ctx_grep`, `ctx_find`, `ctx_ls` and
+  `ctx_shell` each add one bullet to Pi's system-prompt rules, for example
+  "Prefer ctx_read over the built-in read tool: it is cached and compressed, …".
+  A bullet is left out when its builtin is suppressed (replace mode, or `bash`
+  with `routeShell`).
+- **Session note**: on `session_start`, one hidden note goes into the session,
+  naming the pairs where both tools are active, and reaches the model with the
+  next prompt:
+  "lean-ctx is active. Prefer ctx_read, ctx_grep, ctx_find, ctx_ls, ctx_shell
+  over the built-in read, grep, find, ls, bash tools: their output is cached and
+  compressed."
+  A resumed, forked or reloaded session that already carries the note does not
+  get it again. The note is skipped when `lean-ctx setup` has written the
+  lean-ctx rules block into Pi's `AGENTS.md` (`~/.pi/agent/AGENTS.md`, or
+  `$PI_CODING_AGENT_DIR/AGENTS.md`): that block is then Pi's rules channel.
+
+The text is fixed (no timestamps or counters), so the prompt stays cacheable.
+Turn both off with `LEAN_CTX_PI_GUIDANCE=0` or `"guidance": false` in
+`config.json`.
 
 ## Tool surface (lean / standard / power)
 
@@ -67,7 +98,8 @@ env vars — `~/.pi/agent/extensions/pi-lean-ctx/config.json`:
 `mode` → `LEAN_CTX_PI_MODE`, `enableMcp` → `LEAN_CTX_PI_ENABLE_MCP`,
 `toolProfile` → `LEAN_CTX_PI_TOOL_PROFILE`, `binary` → `LEAN_CTX_BIN`,
 `disableTools` → `LEAN_CTX_PI_DISABLE_TOOLS`,
-`toolPrefix` → `LEAN_CTX_PI_TOOL_PREFIX` (see
+`toolPrefix` → `LEAN_CTX_PI_TOOL_PREFIX`,
+`guidance` → `LEAN_CTX_PI_GUIDANCE` (see [Prompt guidance](#prompt-guidance) and
 [Coexisting with AFT and magic-context](#coexisting-with-aft-and-magic-context)).
 The `env` map is forwarded to every `lean-ctx` subprocess, so it can override
 `~/.lean-ctx/config.toml` engine settings. Explicit env vars still win over the

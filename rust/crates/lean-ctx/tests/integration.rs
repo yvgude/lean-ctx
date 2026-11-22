@@ -10,9 +10,9 @@
 //! Add new integration tests as modules here or in the suite, not as new
 //! tests/*.rs files (`autotests = false`).
 //!
-//! Kept as their own binaries (see `[[test]]` in Cargo.toml): codex_proxy_554
-//! and issue_326_parallel_knowledge, which point the whole process at a
-//! throwaway data or config dir.
+//! codex_proxy_554 and issue_326_parallel_knowledge point the whole process
+//! at a throwaway data or config dir, so each of their tests runs in a process
+//! of its own (see rust/tests/fresh_process.rs).
 
 mod libtest_serial {
     //! These modules mutate the process environment or other process-global
@@ -42,6 +42,10 @@ mod libtest_serial {
     static SERIALIZE_LIBTEST: extern "C" fn() = serialize_libtest;
 }
 
+#[path = "../../../tests/fresh_process.rs"]
+mod fresh_process;
+
+mod codex_proxy_554;
 mod context_budget_cli;
 mod doctor_json_stdout;
 mod engine_context_plan_transport;
@@ -51,6 +55,7 @@ mod engine_transport_compatibility;
 mod evidence_tamper_tests;
 mod host_receipt_cli;
 mod index_scoping_scenarios;
+mod issue_326_parallel_knowledge;
 mod oneshot_call_no_stub;
 mod oneshot_semantic_terminates;
 mod p17_relay_store;

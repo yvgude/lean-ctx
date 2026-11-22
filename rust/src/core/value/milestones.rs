@@ -14,7 +14,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::NaiveDate;
+use lean_ctx_time::Date;
+
 use serde::{Deserialize, Serialize};
 
 use super::proof::Proof;
@@ -93,13 +94,13 @@ fn streak_rung(longest: u32) -> Option<Rung> {
 pub fn longest_streak(days: &BTreeSet<String>) -> u32 {
     let mut longest = 0;
     let mut run = 0;
-    let mut prev: Option<NaiveDate> = None;
+    let mut prev: Option<Date> = None;
     for day in days {
-        let Ok(date) = NaiveDate::parse_from_str(day, "%Y-%m-%d") else {
+        let Ok(date) = lean_ctx_time::parse_date(day, "%Y-%m-%d") else {
             continue;
         };
         run = match prev {
-            Some(p) if p.succ_opt() == Some(date) => run + 1,
+            Some(p) if p.tomorrow().ok() == Some(date) => run + 1,
             _ => 1,
         };
         longest = longest.max(run);
@@ -193,7 +194,7 @@ fn notifications_enabled(cfg: &ValueDisplayConfig) -> bool {
 /// Called after tool calls (off the async runtime). Throttled; does nothing
 /// unless notifications are on.
 pub fn maybe_notify() {
-    let now = chrono::Utc::now().timestamp();
+    let now = lean_ctx_time::UtcDateTime::now().timestamp();
     let now_u = u64::try_from(now).unwrap_or(0);
     let last = LAST_CHECK.load(Ordering::Relaxed);
     if now_u.saturating_sub(last) < CHECK_EVERY_SECS

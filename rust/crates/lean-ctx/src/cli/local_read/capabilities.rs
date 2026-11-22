@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx capabilities --json`: which Local Read kinds and verbs this
-//! Instance supports, so a reader (Hive Desktop, the local service) decides
+//! Instance supports, so a reader (Cloud Desktop, the local service) decides
 //! on features from data instead of `--help` text. `server` embeds the
 //! `/v1/capabilities` document unchanged.
 
@@ -30,8 +30,15 @@ pub(crate) const KINDS: &[&str] = &[
     "evidence.export",
     "gain.daily",
     "gain.projects",
-    "hive.presence",
-    "hive.status",
+    "cloud.computer",
+    "cloud.computer.ack",
+    "cloud.computers",
+    "cloud.cpao",
+    "cloud.exchange.audit",
+    "cloud.gateway.key",
+    "cloud.presence",
+    "cloud.status",
+    "cloud.usage",
     "knowledge.edited",
     "knowledge.list",
     "knowledge.related",
@@ -42,6 +49,10 @@ pub(crate) const KINDS: &[&str] = &[
     "presence.list",
     "providers.list",
     "queens.list",
+    "run.ack",
+    "run.events",
+    "run.list",
+    "run.status",
     "session.cost",
     "session.stats",
     "spend.projects",
@@ -50,7 +61,7 @@ pub(crate) const KINDS: &[&str] = &[
     "tasks.task",
 ];
 
-/// Command path (`hive.tasks` = `lean-ctx hive tasks`) → verbs this build
+/// Command path (`cloud.tasks` = `lean-ctx cloud tasks`) → verbs this build
 /// accepts, sorted by path. Verbs that are flags (`gain --daily`) are named
 /// by the flag without its leading dashes.
 pub(crate) const COMMANDS: &[(&str, &[&str])] = &[
@@ -65,12 +76,19 @@ pub(crate) const COMMANDS: &[(&str, &[&str])] = &[
     ("daemon", &["status"]),
     ("evidence", &["export"]),
     ("gain", &["daily", "by-project"]),
-    ("hive", &["status", "presence"]),
-    ("hive.docs", &["list", "show"]),
+    ("cloud", &["status", "presence", "usage", "cpao"]),
     (
-        "hive.tasks",
+        "cloud.computer",
+        &["list", "show", "add", "create", "start", "stop"],
+    ),
+    ("cloud.exchange", &["audit"]),
+    ("cloud.gateway", &["key"]),
+    ("cloud.docs", &["list", "show"]),
+    (
+        "cloud.tasks",
         &[
-            "list", "show", "claim", "update", "submit", "release", "propose", "priority", "labels",
+            "list", "show", "claim", "update", "submit", "release", "propose", "decide", "stop",
+            "priority", "labels",
         ],
     ),
     (
@@ -81,6 +99,7 @@ pub(crate) const COMMANDS: &[(&str, &[&str])] = &[
     ("policy", &["list"]),
     ("presence", &["list"]),
     ("provider", &["list", "check"]),
+    ("run", &["list", "status", "events", "stop", "fetch"]),
     ("session", &["stats", "cost"]),
     ("spend", &["by-project"]),
 ];
@@ -287,11 +306,11 @@ mod tests {
     #[test]
     fn every_verb_is_listed_with_the_transports_that_answer_it() {
         let routes = json!([
-            {"command": "hive.tasks", "verb": "list", "method": "GET", "path": "/v1/local/hive/tasks"},
+            {"command": "cloud.tasks", "verb": "list", "method": "GET", "path": "/v1/local/cloud/tasks"},
             {"command": "docs", "verb": "list", "method": "GET", "path": "/v1/local/docs"},
         ]);
         let commands = commands_of(&routes);
-        let tasks = commands["hive.tasks"].as_array().unwrap();
+        let tasks = commands["cloud.tasks"].as_array().unwrap();
         assert_eq!(tasks[0], json!({"verb": "list", "via": ["cli", "socket"]}));
         assert!(
             tasks.contains(&json!({"verb": "claim", "via": ["cli"]})),
@@ -303,7 +322,7 @@ mod tests {
         );
         let cli_only = commands_of(&Value::Null);
         assert!(
-            cli_only["hive.tasks"]
+            cli_only["cloud.tasks"]
                 .as_array()
                 .unwrap()
                 .iter()

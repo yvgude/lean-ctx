@@ -66,14 +66,15 @@ COUPLED_SOURCE_CONSTANTS = [
 # hold on a lockstep crate (`version = "=x.y.z"`) must name that version.
 LOCKSTEP_CRATES = [
     "rust/crates/lean-ctx/Cargo.toml",
-    "rust/crates/lean-ctx-hive/Cargo.toml",
+    "rust/crates/lean-ctx-cloud/Cargo.toml",
     "rust/crates/lean-ctx-proxy/Cargo.toml",
     "rust/crates/lean-ctx-server/Cargo.toml",
     "rust/crates/lean-ctx-hooks/Cargo.toml",
     "rust/crates/lean-ctx-shell-policy/Cargo.toml",
+    "rust/crates/lean-ctx-apps/Cargo.toml",
 ]
-LOCKSTEP_NAMES = ("lean-ctx-engine", "lean-ctx-hive", "lean-ctx-proxy", "lean-ctx-server", "lean-ctx-hooks",
-                 "lean-ctx-shell-policy")
+LOCKSTEP_NAMES = ("lean-ctx-engine", "lean-ctx-cloud", "lean-ctx-proxy", "lean-ctx-server", "lean-ctx-hooks",
+                 "lean-ctx-shell-policy", "lean-ctx-apps")
 LOCKSTEP_PIN = re.compile(
     r'^(' + "|".join(map(re.escape, LOCKSTEP_NAMES)) + r')\s*=\s*\{[^}\n]*version\s*=\s*"=([^"]+)"',
     re.M,

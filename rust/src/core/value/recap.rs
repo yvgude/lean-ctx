@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::{ValueDisplayConfig, ValueDisplayMode};
@@ -25,12 +25,12 @@ use super::snapshot::{ValueSnapshot, read_path};
 const TURN_STATE_TTL: Duration = Duration::from_hours(24 * 7);
 /// A last-session recap is only offered for a session active this recently.
 const RECAP_MAX_AGE: Duration = Duration::from_hours(24 * 7);
-const DIGEST_EVERY: chrono::TimeDelta = chrono::TimeDelta::days(7);
+const DIGEST_EVERY: lean_ctx_time::Duration = lean_ctx_time::Duration::days(7);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TurnState {
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<UtcDateTime>,
     /// The lean-ctx session the baseline below belongs to.
     pub lean_session: String,
     pub turns: u32,
@@ -42,7 +42,7 @@ pub struct TurnState {
 impl TurnState {
     /// A new host session, baselined at `snap` so nothing that happened before
     /// it is attributed to its turns.
-    pub fn start(now: DateTime<Utc>, snap: Option<&ValueSnapshot>) -> Self {
+    pub fn start(now: UtcDateTime, snap: Option<&ValueSnapshot>) -> Self {
         let mut state = Self {
             created_at: Some(now),
             ..Self::default()
@@ -179,7 +179,7 @@ pub fn on_turn_end(
     host_session: &str,
     snap: Option<&ValueSnapshot>,
     cfg: &ValueDisplayConfig,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
     style: Style,
 ) -> Option<String> {
     let path = turn_state_path(dir, host_session)?;
@@ -197,7 +197,7 @@ pub fn on_turn_end(
 pub struct RecapState {
     /// The lean-ctx session that already got its "last session" recap.
     pub last_session_recapped: String,
-    pub last_digest_at: Option<DateTime<Utc>>,
+    pub last_digest_at: Option<UtcDateTime>,
 }
 
 fn recap_state_path(dir: &Path) -> PathBuf {
@@ -214,7 +214,7 @@ pub fn on_session_start(
     source: &str,
     snap: Option<&ValueSnapshot>,
     cfg: &ValueDisplayConfig,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
     style: Style,
 ) -> Option<String> {
     prune_turn_states(dir);
@@ -270,7 +270,7 @@ pub struct Digest {
     pub security: SecurityCounts,
 }
 
-pub fn weekly_digest(dir: &Path, now: DateTime<Utc>) -> Option<Digest> {
+pub fn weekly_digest(dir: &Path, now: UtcDateTime) -> Option<Digest> {
     let since = now - DIGEST_EVERY;
     let window = DIGEST_EVERY.to_std().unwrap_or_default();
     let mut digest = Digest::default();

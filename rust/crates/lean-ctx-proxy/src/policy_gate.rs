@@ -216,15 +216,14 @@ pub fn downgrade_forbidden(rules: &GateRules, project: Option<&str>) -> bool {
 // ── Budget ledger ────────────────────────────────────────────────────────────
 
 /// UTC day (`yyyymmdd`) and month (`yyyymm`) window keys.
-fn window_keys_at(now: chrono::DateTime<chrono::Utc>) -> (u32, u32) {
-    use chrono::Datelike;
+fn window_keys_at(now: lean_ctx_time::UtcDateTime) -> (u32, u32) {
     let day = now.year() as u32 * 10_000 + now.month() * 100 + now.day();
     let month = now.year() as u32 * 100 + now.month();
     (day, month)
 }
 
 fn window_keys() -> (u32, u32) {
-    window_keys_at(chrono::Utc::now())
+    window_keys_at(lean_ctx_time::UtcDateTime::now())
 }
 
 /// In-memory measured-spend accumulators for the two budget windows.

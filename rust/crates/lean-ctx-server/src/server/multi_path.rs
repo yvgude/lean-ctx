@@ -4,11 +4,14 @@ use serde_json::{Map, Value};
 use crate::server::tool_trait::{ToolContext, get_str, get_str_array};
 
 /// Refusal for a walk without `path` while the session has no project: the
-/// host started lean-ctx in a broad directory and reported none.
-const NO_PROJECT_GUIDANCE: &str = "lean-ctx has no project for this session yet: the host \
-     started it outside a project (often the home directory) and reported no project \
-     directory. Pass the absolute path of the project directory as `path`, e.g. \
-     path=\"/home/me/code/my-app\"; any path inside a project then stays the session project.";
+/// host started lean-ctx in a broad directory and reported none. Opens with
+/// the agent's next step, the same text as `pathjail_scope::AGENT_BIND_ACTION`.
+const NO_PROJECT_GUIDANCE: &str = "Agent: pass the project directory as path=<abs project \
+     dir>, e.g. path=\"/home/me/code/my-app\"; any path inside a project then stays the \
+     session project. lean-ctx has no project for this session yet: the host started it \
+     outside a project (often the home directory) and reported no project directory. A \
+     relative path cannot bind it; the absolute path of the project directory (or of a \
+     file inside it) does.";
 
 #[derive(Debug)]
 pub struct ResolvedPaths {

@@ -21,6 +21,16 @@ pub(crate) fn cmd_policy(args: &[String]) {
         Some("list") if crate::cli::local_read::wants_json(args) => {
             crate::cli::local_read::kinds::run("policies.list", &args[1..]);
         }
+        // Local Read v1: the layered policy editor (cloud > project > personal).
+        Some(verb @ ("layers" | "change" | "history"))
+            if crate::cli::local_read::wants_json(args) =>
+        {
+            crate::cli::local_read::policy_layers::run(verb, &args[1..]);
+        }
+        Some(verb @ ("layers" | "change" | "history")) => {
+            eprintln!("policy {verb}: only the Local Read document exists; add --json");
+            std::process::exit(2);
+        }
         Some("list") => cmd_list(),
         Some("show") => cmd_show(&args[1..]),
         Some("validate") => cmd_validate(&args[1..]),
@@ -52,9 +62,18 @@ USAGE:\n\
                                        Evaluate a tool call against the active\n\
                                        policy (deny/egress/redact/filter) and\n\
                                        record audit evidence — no server needed\n\
+  lean-ctx policy layers --json [--project-root P]\n\
+                                       Cloud, project and personal rules with\n\
+                                       origin, lock state and layer revisions\n\
+  lean-ctx policy change --json --level project|personal\n\
+                         --expected-revision R [--op add|edit|remove --rule '<json>']\n\
+                                       Tighten-only change of one rule (body\n\
+                                       {{op, rule}} on stdin when no --op)\n\
+  lean-ctx policy history --json [--project-root P] [--limit N]\n\
+                                       Recorded policy changes, newest first\n\
   lean-ctx policy personal <status|preview|apply>\n\
-                                       Prepare and publish personal Hive rules;\n\
-                                       see 'policy personal --help'\n\
+                                       Prepare and apply your personal rules\n\
+                                       (local, free); see 'policy personal --help'\n\
   lean-ctx policy org <key|sign|verify|trust|install|status>\n\
                                        Central, signed org policy distribution\n\
                                        (un-bypassable floor); see `policy org -h`\n\n\

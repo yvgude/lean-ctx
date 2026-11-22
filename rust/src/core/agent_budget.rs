@@ -67,7 +67,7 @@ fn ensure_entry<'a>(
             token_limit: usize::MAX,
             tokens_consumed: 0,
             reads_count: 0,
-            last_reset: chrono::Utc::now().to_rfc3339(),
+            last_reset: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         })
 }
 
@@ -224,7 +224,7 @@ pub fn reset(agent_id: &str) {
         let budget = ensure_entry(map, agent_id);
         budget.tokens_consumed = 0;
         budget.reads_count = 0;
-        budget.last_reset = chrono::Utc::now().to_rfc3339();
+        budget.last_reset = lean_ctx_time::UtcDateTime::now().to_rfc3339();
     });
 }
 

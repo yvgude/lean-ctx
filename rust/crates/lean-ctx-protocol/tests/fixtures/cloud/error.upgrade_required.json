@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "upgrade_required",
+    "message": "This instance is too old for Cloud.",
+    "min_instance": "3.12.0"
+  }
+}

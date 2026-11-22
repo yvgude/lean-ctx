@@ -1,0 +1,8 @@
+{
+  "duration_ms": 600000,
+  "owner_agent_id": "claude-3e",
+  "resource_kind": "file",
+  "resource_ref": "651d994b4f77299a2431561a08a7fd23f0b640370586cdb7a9068a9844525997",
+  "schema": "leanctx.cloud.bus-lease-request/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

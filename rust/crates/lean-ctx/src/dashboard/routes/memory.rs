@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -127,14 +127,14 @@ fn today_metering_summary(
 ) -> lean_ctx::core::metering::DayTotals {
     use lean_ctx::core::metering::{DayTotals, MeterStore};
     use std::sync::Mutex;
-    static CACHE: Mutex<Option<(u64, chrono::NaiveDate, DayTotals)>> = Mutex::new(None);
+    static CACHE: Mutex<Option<(u64, lean_ctx_time::Date, DayTotals)>> = Mutex::new(None);
 
     if let Some(scope) = scope {
         let Ok(store) = MeterStore::from_data_dir() else {
             return DayTotals::default();
         };
         let keys = scope.repo_hashes();
-        return store.day_totals_where(Utc::now().date_naive(), |key| {
+        return store.day_totals_where(UtcDateTime::now().date_naive(), |key| {
             key.is_some_and(|key| keys.iter().any(|k| k == key))
         });
     }
@@ -145,7 +145,7 @@ fn today_metering_summary(
     let len = std::fs::metadata(store.path())
         .map(|m| m.len())
         .unwrap_or(0);
-    let today = Utc::now().date_naive();
+    let today = UtcDateTime::now().date_naive();
     if let Ok(guard) = CACHE.lock()
         && let Some((cached_len, cached_day, totals)) = *guard
         && cached_len == len
@@ -208,7 +208,9 @@ fn get_routes(path: &str) -> Option<(&'static str, &'static str, String)> {
             let summary = lean_ctx::core::savings_ledger::summary_for(
                 super::helpers::request_ledger_scope().as_ref(),
             );
-            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let today = lean_ctx_time::UtcDateTime::now()
+                .format("%Y-%m-%d")
+                .to_string();
             let (today_saved, today_usd, today_baseline) = summary
                 .by_day
                 .iter()
@@ -266,9 +268,9 @@ fn get_routes(path: &str) -> Option<(&'static str, &'static str, String)> {
                 session.stats.total_tokens_input = g_input;
             }
             if let Some(lu) = &global.last_use
-                && let Ok(ts) = chrono::DateTime::parse_from_rfc3339(lu)
+                && let Ok(ts) = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(lu)
             {
-                let utc = ts.with_timezone(&chrono::Utc);
+                let utc = ts.to_utc();
                 if utc > session.updated_at {
                     session.updated_at = utc;
                 }
@@ -290,10 +292,10 @@ fn get_routes(path: &str) -> Option<(&'static str, &'static str, String)> {
             let last_use = lean_ctx::core::stats::load_for_display()
                 .last_use
                 .as_deref()
-                .and_then(|lu| chrono::DateTime::parse_from_rfc3339(lu).ok())
-                .map(|ts| ts.with_timezone(&Utc));
+                .and_then(|lu| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(lu).ok())
+                .map(lean_ctx_time::OffsetDateTime::to_utc);
             let workspaces = collect_workspaces(
-                Utc::now(),
+                UtcDateTime::now(),
                 lean_ctx::core::session::SessionState::list_sessions(),
                 last_use,
             );
@@ -407,7 +409,7 @@ fn append_session_note(root: &str, note: &str) -> Result<bool, String> {
         };
         let note = lean_ctx::core::session::admission::admit_store_text(admission, note)
             .ok_or_else(|| "session note withheld by current policy".to_string())?;
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         session.updated_at = now;
         session
             .progress
@@ -448,13 +450,13 @@ fn workspace_canonical_key(root: &str) -> String {
 /// "active session shown as idle" gap from the report. Same heuristic as
 /// `/api/session`.
 fn collect_workspaces(
-    now: chrono::DateTime<Utc>,
+    now: lean_ctx_time::UtcDateTime,
     sessions: Vec<lean_ctx::core::session::SessionSummary>,
-    last_use: Option<chrono::DateTime<Utc>>,
+    last_use: Option<lean_ctx_time::UtcDateTime>,
 ) -> Vec<serde_json::Value> {
     struct Group {
         root: String,
-        updated_at: chrono::DateTime<Utc>,
+        updated_at: lean_ctx_time::UtcDateTime,
         task: Option<String>,
         tool_calls: u32,
         tokens_saved: u64,
@@ -536,11 +538,11 @@ fn collect_workspaces(
 #[cfg(test)]
 mod workspace_tests {
     use super::*;
-    use chrono::Duration;
     use lean_ctx::core::session::SessionSummary;
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     fn summary(root: &str, updated_min_ago: i64, calls: u32, task: Option<&str>) -> SessionSummary {
-        let ts = Utc::now() - Duration::minutes(updated_min_ago);
+        let ts = UtcDateTime::now() - Duration::minutes(updated_min_ago);
         SessionSummary {
             id: format!("s-{root}-{updated_min_ago}"),
             started_at: ts,
@@ -583,7 +585,7 @@ mod workspace_tests {
             summary("c:/Users/dev/proj", 60, 10, Some("older task")),
             summary("C:/Users/dev/proj", 2, 25, Some("current task")),
         ];
-        let out = collect_workspaces(Utc::now(), sessions, None);
+        let out = collect_workspaces(UtcDateTime::now(), sessions, None);
         assert_eq!(out.len(), 1, "expected dedupe to one entry: {out:?}");
         let ws = &out[0];
         assert_eq!(ws["status"], "active");
@@ -600,7 +602,11 @@ mod workspace_tests {
             summary("/home/dev/alpha", 30, 5, None),
             summary("/home/dev/beta", 90, 3, None),
         ];
-        let out = collect_workspaces(Utc::now(), sessions.clone(), Some(Utc::now()));
+        let out = collect_workspaces(
+            UtcDateTime::now(),
+            sessions.clone(),
+            Some(UtcDateTime::now()),
+        );
         assert_eq!(out[0]["root"], "/home/dev/alpha");
         assert_eq!(
             out[0]["status"], "active",
@@ -609,7 +615,7 @@ mod workspace_tests {
         // Second workspace keeps its own (idle) freshness.
         assert_eq!(out[1]["status"], "idle");
         // Without last_use the same input stays idle.
-        let out = collect_workspaces(Utc::now(), sessions, None);
+        let out = collect_workspaces(UtcDateTime::now(), sessions, None);
         assert_eq!(out[0]["status"], "idle");
     }
 
@@ -619,7 +625,7 @@ mod workspace_tests {
         no_root.project_root = None;
         let sessions = vec![no_root, summary("/", 5, 1, None)];
         {
-            let found = &collect_workspaces(Utc::now(), sessions, None);
+            let found = &collect_workspaces(UtcDateTime::now(), sessions, None);
             assert!(found.is_empty(), "{found:?}");
         }
     }

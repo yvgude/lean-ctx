@@ -2,7 +2,7 @@
 
 3.12 makes the local Engine and the whole Cockpit free and local: no account, no
 sign-in, every view on your machine. The hosted services that needed an account close.
-LeanCTX Hive (shared knowledge for teams and your own machines) follows with 3.12.1.
+LeanCTX Cloud (shared knowledge for teams and your own machines) follows with 3.12.1.
 This guide says what changes for you, depending on how you use LeanCTX today. The full list of changes is in the [CHANGELOG](../../CHANGELOG.md); the
 focus changes that ship in the same release (removed MCP tools, the Cockpit replacing the
 built-in dashboard and more) are described in
@@ -183,11 +183,14 @@ security tallies). Your data is unaffected: the segments stay in place, and the 
 verifies again once you are back on 3.12. Back up the data directory before you try a
 downgrade.
 
-## Telemetry is unchanged
+## Telemetry in 3.12
 
-3.12 sends exactly the same telemetry as 3.11, to the same endpoint, at the same cadence,
-under the same consent. The code moved out of the removed cloud client without a change in
-behaviour. Check or change it with:
+LeanCTX sends pseudonymous product telemetry: cumulative daily counts tagged with a random
+installation identifier, never code, paths or prompts. It is on by default, CI jobs do
+not send it by default, and you can turn it off at any time. 3.12 keeps the 3.11 settings and endpoint; the
+code moved out of the removed cloud client. 3.12.7 adds daily counts of agent sessions and
+tool calls handled by your AI client's hooks and of LeanCTX Code detection by
+`lean-ctx doctor`. Check or change it with:
 
 ```shell
 lean-ctx telemetry status

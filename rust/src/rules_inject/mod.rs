@@ -24,7 +24,8 @@ mod write;
 
 pub use content::cursor_mdc_document;
 pub use content::{
-    GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
+    GEMINI_DEDICATED_CONTEXT_FILENAME, antigravity_dedicated_rules_path,
+    gemini_dedicated_rules_path, opencode_dedicated_rules_path,
 };
 pub use skills::{
     install_all_skills, install_skill_for_agent, install_skills_where, planned_skill_files,
@@ -89,7 +90,7 @@ pub fn rules_longform_markdown() -> String {
 ///
 /// Drift detection compares against this instead of guessing shared-vs-dedicated
 /// from a target's on-disk contents: a freshly synced `SharedMarkdown` file (e.g.
-/// Copilot CLI, Codex CLI) carries no user text, which a content heuristic
+/// Copilot CLI) carries no user text, which a content heuristic
 /// mistook for the dedicated layout and then flagged as drifted on every sync.
 /// Keying by the real `RulesFormat` keeps `sync` and `diff` in agreement (#548).
 pub fn expected_blocks_by_target(
@@ -97,23 +98,13 @@ pub fn expected_blocks_by_target(
 ) -> std::collections::HashMap<String, String> {
     let injection = crate::core::config::Config::load().rules_injection_effective();
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
-    let level = crate::core::config::CompressionLevel::effective(&cfg);
     build_rules_targets(home, injection)
         .into_iter()
         .map(|target| {
-            // The profile `inject_rules` writes with, so a freshly synced
-            // file never reads as drifted (#1008, #1849).
-            let profile = write::profile_for_target(&cfg, target.name);
-            let wrapper = match target.format {
-                RulesFormat::SharedMarkdown => crate::core::rules_canonical::Wrapper::Shared,
-                RulesFormat::DedicatedMarkdown => crate::core::rules_canonical::Wrapper::Dedicated,
-                // CursorMdc embeds the render verbatim between the markers
-                // (frontmatter lives outside them); the wrapper is dynamic —
-                // HookCovered on hook-covered installs (GL #1153).
-                RulesFormat::CursorMdc => content::cursor_wrapper_for_mdc(&target.path),
-            };
-            let expected = crate::core::rules_canonical::render(shadow, wrapper, level, &profile);
+            // The exact block `inject_rules` writes (profile, wrapper and
+            // host tool names), so a freshly synced file never reads as
+            // drifted (#1008, #1849).
+            let expected = write::fresh_block(&cfg, &target);
             (target.name.to_string(), expected)
         })
         .collect()
@@ -133,6 +124,9 @@ enum RulesFormat {
     SharedMarkdown,
     DedicatedMarkdown,
     CursorMdc,
+    /// A lean-ctx-owned Antigravity modular rule: dedicated body behind the
+    /// `trigger: always_on` frontmatter Antigravity requires.
+    AntigravityRule,
 }
 
 #[derive(Debug, Default)]
@@ -188,7 +182,6 @@ fn rules_agent_key(target_name: &str) -> Option<&'static str> {
         "Crush" => "crush",
         "Augment" => "augment",
         "OpenClaw" => "openclaw",
-        "Codex CLI" => "codex",
         "Grok" => "grok",
         "Oh My Pi" => "omp",
         "Hermes Agent" => "hermes",
@@ -270,6 +263,7 @@ pub fn inject_rules_where(home: &std::path::Path, allows: &dyn Fn(&str) -> bool)
             continue;
         }
 
+        remove_legacy_rules_file(target.name, home);
         let bak_path = target.path.with_extension(format!(
             "{}.bak",
             target
@@ -287,7 +281,15 @@ pub fn inject_rules_where(home: &std::path::Path, allows: &dyn Fn(&str) -> bool)
             })
             .flatten();
 
-        match inject_rules(target) {
+        let injected = inject_rules(target);
+        // Retire the old shared block only once the dedicated file holds the
+        // rules, so a failed write never leaves the host without them.
+        if injected.is_ok()
+            && cfg.rules_injection_effective() == crate::core::config::RulesInjection::Dedicated
+        {
+            retire_shared_block(target, home);
+        }
+        match injected {
             Ok(RulesResult::Updated) => {
                 result.updated.push(target.name.to_string());
                 let bak_is_new = if bak_existed_before {
@@ -341,6 +343,7 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
             continue;
         }
 
+        remove_legacy_rules_file(target.name, home);
         let bak_path = target.path.with_extension(format!(
             "{}.bak",
             target
@@ -351,7 +354,15 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
         ));
         let bak_existed_before = bak_path.exists();
 
-        match inject_rules(target) {
+        let injected = inject_rules(target);
+        // Retire the old shared block only once the dedicated file holds the
+        // rules, so a failed write never leaves the host without them.
+        if injected.is_ok()
+            && cfg.rules_injection_effective() == crate::core::config::RulesInjection::Dedicated
+        {
+            retire_shared_block(target, home);
+        }
+        match injected {
             Ok(RulesResult::Updated) => {
                 result.updated.push(target.name.to_string());
                 if !bak_existed_before && bak_path.exists() {
@@ -366,6 +377,72 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
     }
 
     result
+}
+
+/// lean-ctx-owned rules files older releases wrote at paths the client never
+/// loads. They are removed when the target is (re)written, so setup and
+/// uninstall leave the same state; only a file carrying our block goes.
+fn legacy_rules_path(target_name: &str, home: &std::path::Path) -> Option<PathBuf> {
+    match target_name {
+        "Antigravity" => Some(home.join(".gemini/antigravity/rules/lean-ctx.md")),
+        "Pi Coding Agent" => Some(home.join(".pi/rules/lean-ctx.md")),
+        _ => None,
+    }
+}
+
+fn remove_legacy_rules_file(target_name: &str, home: &std::path::Path) {
+    let Some(path) = legacy_rules_path(target_name, home) else {
+        return;
+    };
+    let ours = std::fs::read_to_string(&path).is_ok_and(|content| {
+        crate::marked_block::contains_marker_line(
+            &content,
+            crate::core::rules_canonical::START_MARK,
+        )
+    });
+    if ours {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+/// After a switch from shared to dedicated mode, the host still loads its
+/// shared file (`~/.gemini/AGENTS.md` for Antigravity, `GEMINI.md`, OpenCode's
+/// `AGENTS.md`), so an old lean-ctx block there would deliver the rules twice.
+/// Only that marked block goes; the user's text stays, and a file that held
+/// nothing else is removed. An unterminated block is left alone.
+fn retire_shared_block(target: &RulesTarget, home: &std::path::Path) {
+    let shared = build_rules_targets(home, crate::core::config::RulesInjection::Shared);
+    let Some(path) = shared
+        .iter()
+        .find(|t| t.name == target.name && t.path != target.path)
+        .filter(|t| matches!(t.format, RulesFormat::SharedMarkdown))
+        .map(|t| t.path.clone())
+    else {
+        return;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let file = RulesFile::parse(&content);
+    if !file.has_content() || file.is_unterminated() {
+        return;
+    }
+    let cleaned = file.without_section();
+    let outcome = if cleaned.trim().is_empty() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())
+    } else {
+        let cleaned = crate::marked_block::with_line_endings_of(
+            &content,
+            format!("{}\n", cleaned.trim_end()),
+        );
+        crate::config_io::write_atomic_with_backup(&path, &cleaned)
+    };
+    if let Err(e) = outcome {
+        tracing::warn!(
+            "could not remove the lean-ctx block from {}: {e}",
+            path.display()
+        );
+    }
 }
 
 fn is_claude_agent_key(agent_key: &str) -> bool {

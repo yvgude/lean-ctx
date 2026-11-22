@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::{AgentDiary, AgentEntry, AgentRegistry, AgentStatus, DiaryEntryType, ScratchpadEntry};
 use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
@@ -243,9 +243,9 @@ fn read_unread_scoped_consumes_each_message_once() {
         message: "expired handoff".to_string(),
         metadata: HashMap::new(),
         project_root: Some("/project-a".to_string()),
-        timestamp: Utc::now(),
+        timestamp: UtcDateTime::now(),
         read_by: vec![],
-        expires_at: Some(Utc::now() - chrono::Duration::hours(1)),
+        expires_at: Some(UtcDateTime::now() - lean_ctx_time::Duration::hours(1)),
     });
 
     let first: Vec<String> = reg
@@ -407,9 +407,9 @@ fn expired_messages_are_skipped_in_read_unread() {
         message: "I am expired".to_string(),
         metadata: HashMap::new(),
         project_root: None,
-        timestamp: Utc::now(),
+        timestamp: UtcDateTime::now(),
         read_by: vec![],
-        expires_at: Some(Utc::now() - chrono::Duration::hours(1)),
+        expires_at: Some(UtcDateTime::now() - lean_ctx_time::Duration::hours(1)),
     });
     reg.post_message("agent-a", None, "test", "I am fresh")
         .expect("message");
@@ -435,9 +435,9 @@ fn cleanup_stale_removes_expired_scratchpad() {
         message: "expired".to_string(),
         metadata: HashMap::new(),
         project_root: None,
-        timestamp: Utc::now(),
+        timestamp: UtcDateTime::now(),
         read_by: vec![],
-        expires_at: Some(Utc::now() - chrono::Duration::hours(1)),
+        expires_at: Some(UtcDateTime::now() - lean_ctx_time::Duration::hours(1)),
     });
 
     reg.cleanup_stale(super::presence_ttl());
@@ -471,6 +471,34 @@ fn set_status() {
         reg.agents[0].status_message,
         Some("waiting for review".to_string())
     );
+}
+
+/// h7b: only a status line the agent wrote itself counts as its own; a
+/// lifecycle note LeanCTX writes afterwards (by `set_status` or straight
+/// into `status_message`) is never read as one.
+#[test]
+fn h7b_agent_status_line_is_only_what_the_agent_wrote() {
+    let mut reg = AgentRegistry::new();
+    let id = reg
+        .register("claude", None, "/tmp/project", None)
+        .expect("current process can be registered");
+    assert_eq!(reg.agents[0].agent_status_line(), None);
+    reg.set_status_by_agent(&id, AgentStatus::Active, Some("Fix the login page"))
+        .expect("registered agent exists");
+    assert_eq!(
+        reg.agents[0].agent_status_line(),
+        Some("Fix the login page")
+    );
+    reg.agents[0].status_message = Some(super::TRANSPORT_IDLE.to_string());
+    assert_eq!(reg.agents[0].agent_status_line(), None);
+    reg.set_status_by_agent(&id, AgentStatus::Active, Some("Review !42"))
+        .expect("registered agent exists");
+    reg.set_status(&id, AgentStatus::Idle, Some(super::WORKER_LEASE_EXPIRED))
+        .expect("registered agent exists");
+    assert_eq!(reg.agents[0].agent_status_line(), None);
+    reg.set_status_by_agent(&id, AgentStatus::Active, None)
+        .expect("registered agent exists");
+    assert_eq!(reg.agents[0].agent_status_line(), None);
 }
 
 #[test]
@@ -659,7 +687,7 @@ fn an_app_session_keeps_its_bus_id_per_role_across_mcp_restarts() {
 }
 
 fn test_entry(agent_id: &str, project_root: &str, pid: u32) -> AgentEntry {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     AgentEntry {
         agent_id: agent_id.to_string(),
         agent_type: "cursor".to_string(),
@@ -672,6 +700,7 @@ fn test_entry(agent_id: &str, project_root: &str, pid: u32) -> AgentEntry {
         durable_identity_id: None,
         status: AgentStatus::Active,
         status_message: None,
+        agent_status_message: None,
         transport: None,
         role_source: None,
         parent: None,
@@ -684,7 +713,7 @@ fn test_entry(agent_id: &str, project_root: &str, pid: u32) -> AgentEntry {
 fn cleanup_stale_caps_recent_finished_history() {
     let _isolated = crate::core::data_dir::isolated_data_dir();
     let mut reg = AgentRegistry::new();
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     reg.agents = (0..(super::MAX_RETAINED_FINISHED_AGENTS + 2))
         .map(|offset| {
             let mut agent = test_entry(
@@ -693,7 +722,7 @@ fn cleanup_stale_caps_recent_finished_history() {
                 std::process::id(),
             );
             agent.status = AgentStatus::Finished;
-            agent.last_active = now - chrono::Duration::seconds(offset as i64);
+            agent.last_active = now - lean_ctx_time::Duration::seconds(offset as i64);
             agent
         })
         .collect();
@@ -777,8 +806,8 @@ fn cleanup_stale_prunes_dead_pid_from_active_list() {
 fn cleanup_stale_expires_quiet_active_worker_even_when_process_lives() {
     let _isolated = crate::core::data_dir::isolated_data_dir();
     let mut quiet = test_entry("quiet", "/proj/a", std::process::id());
-    quiet.last_active =
-        Utc::now() - chrono::Duration::seconds(super::active_worker_lease_seconds() + 1);
+    quiet.last_active = UtcDateTime::now()
+        - lean_ctx_time::Duration::seconds(super::active_worker_lease_seconds() + 1);
     let mut registry = AgentRegistry::new();
     registry.agents.push(quiet);
 
@@ -816,7 +845,7 @@ fn cleanup_stale_rejects_a_reused_pid_with_the_wrong_identity() {
 
 #[test]
 fn legacy_identity_recovery_requires_the_original_lean_ctx_process() {
-    let started_at = Utc::now();
+    let started_at = UtcDateTime::now();
     let agent = AgentEntry {
         agent_id: "legacy".to_string(),
         agent_type: "mcp".to_string(),
@@ -829,6 +858,7 @@ fn legacy_identity_recovery_requires_the_original_lean_ctx_process() {
         durable_identity_id: None,
         status: AgentStatus::Active,
         status_message: None,
+        agent_status_message: None,
         transport: None,
         role_source: None,
         parent: None,
@@ -866,7 +896,7 @@ fn legacy_identity_recovery_requires_the_original_lean_ctx_process() {
 
 #[test]
 fn only_the_known_legacy_false_positive_is_recoverable() {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let mut agent = AgentEntry {
         agent_id: "legacy".to_string(),
         agent_type: "mcp".to_string(),
@@ -879,6 +909,7 @@ fn only_the_known_legacy_false_positive_is_recoverable() {
         durable_identity_id: None,
         status: AgentStatus::Finished,
         status_message: Some("process identity no longer matches".to_string()),
+        agent_status_message: None,
         transport: None,
         role_source: None,
         parent: None,
@@ -921,13 +952,14 @@ fn mutate_locked_survives_concurrent_writers() {
                             agent_type: "test".to_string(),
                             role: None,
                             project_root: "/tmp/project".to_string(),
-                            started_at: Utc::now(),
-                            last_active: Utc::now(),
+                            started_at: UtcDateTime::now(),
+                            last_active: UtcDateTime::now(),
                             pid: 10_000 + i,
                             process_identity: None,
                             durable_identity_id: None,
                             status: AgentStatus::Active,
                             status_message: None,
+                            agent_status_message: None,
                             transport: None,
                             role_source: None,
                             parent: None,
@@ -980,7 +1012,7 @@ fn bus_message_is_admitted_on_post_and_reauthorized_under_the_current_policy() {
         message,
         metadata,
         project_root: Some("/project".into()),
-        timestamp: Utc::now(),
+        timestamp: UtcDateTime::now(),
         read_by: Vec::new(),
         expires_at: None,
     };
@@ -1061,8 +1093,8 @@ fn worker_lease_idles_a_live_transport_instead_of_finishing_it() {
             claude_transport(),
         )
         .expect("current process has an identity");
-    registry.agents[0].last_active =
-        Utc::now() - chrono::Duration::seconds(super::active_worker_lease_seconds() + 1);
+    registry.agents[0].last_active = UtcDateTime::now()
+        - lean_ctx_time::Duration::seconds(super::active_worker_lease_seconds() + 1);
 
     registry.cleanup_stale(super::presence_ttl());
 
@@ -1338,7 +1370,7 @@ fn a_new_agent_gets_no_backlog_of_old_broadcasts() {
         )
         .expect("message");
         let last = reg.scratchpad.last_mut().expect("posted");
-        last.timestamp = Utc::now() - chrono::Duration::minutes(minutes_ago);
+        last.timestamp = UtcDateTime::now() - lean_ctx_time::Duration::minutes(minutes_ago);
     };
     let me = reg
         .register("claude", Some("improver"), "/project", None)

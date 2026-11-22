@@ -18,6 +18,7 @@ lean-ctx-engine (rust/: the engine library, lib name `lean_ctx`; tools,
    │ depends on, through thin facades (engine paths stay stable)
    ▼
 L1  lean-ctx-fs          (foundation: paths, data dir, atomic fs, hashing)
+L0  lean-ctx-time        (UTC instants, durations, chrono's RFC 3339 formats over jiff)
 L0  lean-ctx-patterns · lean-ctx-compress · lean-ctx-syntax ·
     lean-ctx-workgraph · lean-ctx-doc · lean-ctx-protocol · lean-ctx-ocla
 ```
@@ -36,12 +37,13 @@ L0  lean-ctx-patterns · lean-ctx-compress · lean-ctx-syntax ·
 |---|---|---|---|
 | `lean-ctx-workgraph` 0.1.0 | `core/work_graph.rs` (+ control_ops, graph_ops, tests), `core/outcome/*`, `core/a2a/budget_cascade.rs` | `core/work_graph.rs`, `core/outcome/mod.rs` re-export the crate | Engine paths unchanged; `MAX_DELIVERY_ATTEMPTS` now lives in the crate |
 | `lean-ctx-compress` 0.1.0 (→ patterns) | `core/{compressor,html_crush,markdown_compact,structured_compact,tabular_crush,yaml_crush}.rs`, `core/extractors/csv.rs` | `core/compressor.rs` (keeps `task_aware_compress`), re-exports in `core/mod.rs` and `extractors/mod.rs` | |
+| `lean-ctx-time` 0.1.0 | new, replaces chrono (RUSTSEC-2026-0543) | `UtcDateTime`, `Duration`, `OffsetDateTime`, `LocalDateTime` keep chrono's text formats byte for byte (serde, RFC 3339, Display, strftime, strict and relaxed parsing) | leaf crate over jiff |
 | `lean-ctx-fs` 0.1.0 | `core/{atomic_fs,error,file_lock,hasher,home,jsonc}.rs`, `ipc::process::is_alive`, the test env lock | one-line re-exports at the old `core::` paths; `data_dir`/`test_env` re-export the env lock (one lock per process) | Half of L1; see below |
 | `lean-ctx-syntax` 0.1.0 (→ patterns, dev only) | `core/{ast_walk,syntax_validate}.rs`, `core/{deep_queries,import_resolver,signatures_ts}/**`, signature extraction, chunk grammar map | `pub use` in `core/mod.rs`; `core/signatures.rs` keeps telemetry + `extract_file_map` | tree-sitter grammars only in this crate, behind its features |
 | `lean-ctx-patterns` 0.1.0 | `core/patterns`, `core/tokens.rs`, `core/json_crush.rs`, `core/safety_needles.rs`, `compressor::strip_ansi` | `core/patterns/mod.rs`: policy gate, `cd` unwrap, user filters, `EngineEnv` (curl passthrough URLs). Re-export shims for `core::{tokens, json_crush, safety_needles}` | Extraction #1 (B07 experiment, measured) |
-| `lean-ctx-doc` 0.1.0 | new (no engine module moved) | `core/hive/docs.rs`: replica events in, signed C0 2.2 doc writes out | Docs in Hive (lean-ctx-38) |
+| `lean-ctx-doc` 0.1.0 | new (no engine module moved) | `core/cloud/docs.rs`: replica events in, signed C0 2.2 doc writes out | Docs in Cloud (lean-ctx-38) |
 | `lean-ctx-activity` 0.1.0 (→ fs) | new (no engine module moved) | `core/activity.rs`: data dir + `core::redaction` for `record` | Activity stream, `activity list` (Local Read v1) |
-| `lean-ctx-tasks` 0.1.0 (→ fs) | new (no engine module moved) | lean-ctx-hive `tasks/local.rs`: store directory, linked check, bus notices | Local tasks (O1/O2, 04.11.) |
+| `lean-ctx-tasks` 0.1.0 (→ fs) | new (no engine module moved) | lean-ctx-cloud `tasks/local.rs`: store directory, linked check, bus notices | Local tasks (O1/O2, 04.11.) |
 
 ## Scheduled (outbound edges frozen)
 
@@ -49,7 +51,7 @@ L0  lean-ctx-patterns · lean-ctx-compress · lean-ctx-syntax ·
 |---|---|---|---|
 | L0 | `lean-ctx-syntax` (rest) | chunks_ts, grammar_usage, signatures facade | chunks_ts needs bm25_index's chunk model; grammar_usage writes the engine cache |
 | L1 | `lean-ctx-fs` (second half) | agent_identity, canonical, data_dir, paths, pathutil, project_hash | needs a test sandbox that does not rely on the engine's `cfg(test)` (GL #512) |
-| L2 | inversion first | config (in-degree 108), hive | config→cli/hive; hive via a replica crate on protocol + fs |
+| L2 | inversion first | config (in-degree 108), cloud | config→cli/cloud; cloud via a replica crate on protocol + fs |
 
 The engine's composition root moves up, out of the engine (see "Upward
 split" below); it never moves down into a leaf crate.
@@ -81,11 +83,11 @@ crate still re-checks the whole engine.
   proxy only in its tests. The engine reaches it only through
   registrations (tool catalog, conformance renderer, shell runner, idle
   clock). Its unit-test harness is in `UNIT_TEST_HARNESSES`.
-- `lean-ctx-hive` (crates/lean-ctx-hive, lib `lean_ctx_hive`): the
-  LeanCTX | Hive connector (enrollment, bus, knowledge sync, tasks, policy
+- `lean-ctx-cloud` (crates/lean-ctx-cloud, lib `lean_ctx_cloud`): the
+  LeanCTX Cloud connector (enrollment, bus, knowledge sync, tasks, policy
   pull), between the engine and the server. The server, the composition
   root and lean-ctx-embed depend on it. The engine reaches it only through
-  hooks the connector registers (`lean_ctx_hive::register_hooks`, called by
+  hooks the connector registers (`lean_ctx_cloud::register_hooks`, called by
   every entry point); the policy floor's read side, the vault map, the
   availability gate and the untrusted-content fence live in the engine. Its
   unit-test harness is in `UNIT_TEST_HARNESSES`.
@@ -98,6 +100,14 @@ crate still re-checks the whole engine.
   `lean_ctx_shell_policy::install()` registers the policy (the composition
   root calls it at dispatch). Hooks, server and the composition root depend
   on it. Its unit-test harness is in `UNIT_TEST_HARNESSES`.
+- `lean-ctx-apps` (crates/lean-ctx-apps, lib `lean_ctx_apps`): engine
+  modules that nothing in the engine uses at runtime (crate split step 1,
+  zero inversions). First slice: `core::dashboard_pro` (cockpit analysis).
+  The crate root glob-imports the engine and its `core` re-exports
+  `lean_ctx::core::*` next to the moved modules, so `crate::core::X` and
+  `super::X` paths resolve unchanged and each move is a pure rename. Cloud
+  and the composition root depend on it; engine items it uses are `pub` +
+  `#[doc(hidden)]`. Its unit-test harness is in `UNIT_TEST_HARNESSES`.
 - Moving: hooks/hook_handlers, above the engine.
 
 ## Edit loop by area
@@ -110,7 +120,7 @@ you edit; add `--all-targets` when tests changed. Run from `rust/`.
 | cli, dashboard, doctor, http_server, setup, proxy_setup, uninstall, status, token_report (`crates/lean-ctx`) | `lean-ctx` | `cargo check --locked -p lean-ctx` | ≈ 2 s (was 20 s) | ≈ 4 s (was 28 s) |
 | proxy (`crates/lean-ctx-proxy`) | `lean-ctx-proxy` | `cargo check --locked -p lean-ctx-proxy` | ≈ 3 s (was 17 s) | ≈ 6 s (was 27 s) |
 | server + tools (`crates/lean-ctx-server`) | `lean-ctx-server` | `cargo check --locked -p lean-ctx-server` | ≈ 5 s (was 22 s) | ≈ 9 s (was 32 s) |
-| Hive connector (`crates/lean-ctx-hive`) | `lean-ctx-hive` | `cargo check --locked -p lean-ctx-hive` | ≈ 1.5 s (was 17 s) | ≈ 8 s (was 25 s) |
+| Cloud connector (`crates/lean-ctx-cloud`) | `lean-ctx-cloud` | `cargo check --locked -p lean-ctx-cloud` | ≈ 1.5 s (was 17 s) | ≈ 8 s (was 25 s) |
 | engine: core, hooks (`src/`) | `lean-ctx-engine` | `cargo check --locked -p lean-ctx-engine` | ≈ 19 s | ≈ 28 s |
 | leaf crates (patterns, workgraph, compress, fs, syntax, protocol, ocla, …) | the crate | `cargo check --locked -p <crate>` | no gain: the engine above re-checks | no gain |
 

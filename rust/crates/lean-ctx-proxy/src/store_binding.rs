@@ -384,7 +384,7 @@ pub(crate) fn engine_on_record(
     identity: lean_ctx::ipc::process::ProcessIdentity,
     project: &Path,
 ) {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let entry = lean_ctx::core::agents::AgentEntry {
         agent_id: format!("mcp-{pid}-test"),
         agent_type: MCP_ENGINE.to_owned(),
@@ -397,6 +397,7 @@ pub(crate) fn engine_on_record(
         durable_identity_id: None,
         status: lean_ctx::core::agents::AgentStatus::Active,
         status_message: None,
+        agent_status_message: None,
         transport: None,
         role_source: None,
         parent: None,

@@ -263,6 +263,40 @@ jobs:
           path: ${{ runner.temp }}/ip-provenance-release-report.json
           if-no-files-found: ignore
 
+  agent-bench-gate:
+    # rel12 WP4: the fixed agent task suite (scripts/benchmark/agent-suite)
+    # must not regress. It scores the committed, content-free traces
+    # against the stored baseline; no agent runs here. While no
+    # agent-suite/baseline.json is committed the gate is report-only: it
+    # prints "no baseline recorded yet — report only" and exits 0. Once the
+    # baseline exists it blocks: missing or invalid traces or baseline, a
+    # failed task or a drop of more than 5 percentage points on any metric
+    # refuse the release. The mode is decided by the scorer from the file's
+    # presence, not by continue-on-error, so real failures stay visible. The
+    # traces need not match the tag's Engine version (owner decision):
+    # recording is a separate manual step.
+    name: Release gates (agent benchmark suite)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - name: Verify agent benchmark scorer contract
+        run: python3 -m unittest discover -s scripts/tests -p test_agent_suite.py -v
+      - name: Score the recorded agent suite against its baseline
+        run: >-
+          python3 -I scripts/benchmark/agent_suite.py gate
+          --output "$RUNNER_TEMP/agent-suite-gate.json"
+      - name: Upload agent suite report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-suite-gate-report
+          path: ${{ runner.temp }}/agent-suite-gate.json
+          if-no-files-found: ignore
+
   build:
     name: Build ${{ matrix.artifact || matrix.target }}
     # A main prebuild, or a tag without a verified prebuild (fallback). It
@@ -830,7 +864,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [plan, resolve-prebuild, sdk-gate, delivery-gate, ip-provenance-gate, build, build-windows]
+    needs: [plan, resolve-prebuild, sdk-gate, delivery-gate, ip-provenance-gate, agent-bench-gate, build, build-windows]
     # Tag pushes only, after every gate, with exactly one artifact source:
     # this run's build, or the verified main prebuild of the same commit.
     if: >-
@@ -838,6 +872,7 @@ jobs:
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
       needs.plan.outputs.mode == 'release' &&
       needs.sdk-gate.result == 'success' && needs.delivery-gate.result == 'success' &&
+      needs.agent-bench-gate.result == 'success' &&
       needs.ip-provenance-gate.result == 'success' && needs.resolve-prebuild.result == 'success' &&
       ((needs.resolve-prebuild.outputs.reuse == 'true' &&
         needs.build.result == 'skipped' && needs.build-windows.result == 'skipped') ||
@@ -1314,6 +1349,14 @@ jobs:
             exit 0
           fi
           # Publish the dependency graph from leaves to the engine.
+          TIME_VERSION="$(grep -m1 '^version' crates/lean-ctx-time/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-time/${TIME_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-time ${TIME_VERSION} to crates.io first..."
+            publish lean-ctx-time
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
           PROTO_VERSION="$(grep -m1 '^version' crates/lean-ctx-protocol/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-protocol/${PROTO_VERSION}" >/dev/null 2>&1; then
@@ -1387,7 +1430,7 @@ jobs:
             sleep 30
           fi
           # lean-ctx-activity (used by the Engine) and lean-ctx-tasks (used by the
-          # Hive connector, the MCP server and the binary) build on lean-ctx-fs and
+          # Cloud connector, the MCP server and the binary) build on lean-ctx-fs and
           # lean-ctx-protocol, so they go after those and before the Engine.
           ACTIVITY_VERSION="$(grep -m1 '^version' crates/lean-ctx-activity/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
@@ -1411,11 +1454,11 @@ jobs:
           # Engine library (lean-ctx-engine) together with the `lean-ctx`
           # binary crate verifies the binary against the just-packaged Engine.
           # This must pass before we promise that `cargo install lean-ctx` works.
-          cargo package --locked -p lean-ctx-engine -p lean-ctx-shell-policy -p lean-ctx-hooks -p lean-ctx-hive -p lean-ctx-server -p lean-ctx-proxy -p lean-ctx
+          cargo package --locked -p lean-ctx-engine -p lean-ctx-apps -p lean-ctx-shell-policy -p lean-ctx-hooks -p lean-ctx-cloud -p lean-ctx-server -p lean-ctx-proxy -p lean-ctx
           # Verification is intentionally mandatory: source packages cannot rely
           # on this repository's local `[patch.crates-io]` entries.
           # Release order: the Engine first, then the shell-allowlist policy above
-          # it, then the agent hooks and the Hive
+          # it, then the agent hooks, the OSS apps crate (lean-ctx-apps) and the Cloud
           # connector above it, the MCP server (which uses both) and the proxy
           # (whose tests use the server), then the binary crate on top of all.
           ENGINE_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
@@ -1442,11 +1485,19 @@ jobs:
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
-          HIVE_VERSION="$(grep -m1 '^version' crates/lean-ctx-hive/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          APPS_VERSION="$(grep -m1 '^version' crates/lean-ctx-apps/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
-               "https://crates.io/api/v1/crates/lean-ctx-hive/${HIVE_VERSION}" >/dev/null 2>&1; then
-            echo "Publishing lean-ctx-hive ${HIVE_VERSION} to crates.io..."
-            publish lean-ctx-hive
+               "https://crates.io/api/v1/crates/lean-ctx-apps/${APPS_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-apps ${APPS_VERSION} to crates.io..."
+            publish lean-ctx-apps
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          CLOUD_VERSION="$(grep -m1 '^version' crates/lean-ctx-cloud/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-cloud/${CLOUD_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-cloud ${CLOUD_VERSION} to crates.io..."
+            publish lean-ctx-cloud
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi

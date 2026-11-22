@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 
 use super::types::{COGNITION_SYNTHESIS_SOURCE, FidelityScore, KnowledgeArchetype, KnowledgeFact};
 
@@ -33,7 +33,7 @@ impl KnowledgeFact {
         (0.8 * confidence + 0.2 * confirmations_norm + feedback_effect).clamp(0.0, 1.0)
     }
 
-    pub fn was_valid_at(&self, at: DateTime<Utc>) -> bool {
+    pub fn was_valid_at(&self, at: UtcDateTime) -> bool {
         let after_start = self.valid_from.is_none_or(|from| at >= from);
         let before_end = self.valid_until.is_none_or(|until| at <= until);
         after_start && before_end
@@ -52,7 +52,7 @@ impl KnowledgeFact {
         if self.confidence > 0.7 {
             score += 0.2;
         }
-        let days_since_confirmed = Utc::now()
+        let days_since_confirmed = UtcDateTime::now()
             .signed_duration_since(self.last_confirmed)
             .num_days();
         if days_since_confirmed < 14 {
@@ -73,7 +73,7 @@ impl KnowledgeFact {
         self.fidelity = Some(FidelityScore {
             structural,
             semantic: structural,
-            computed_at: Utc::now(),
+            computed_at: UtcDateTime::now(),
         });
     }
 }

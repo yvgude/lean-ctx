@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::{AgentRegistry, AgentStatus};
 
@@ -236,7 +236,8 @@ fn persistent_logical_session_presence_validates_and_roundtrips() {
 fn logical_session_expiry_is_bounded_by_heartbeat_not_tool_activity() {
     let mut registry = AgentRegistry::new();
     registry.open_or_heartbeat_logical_session("vscode", "/project", "chat-a");
-    registry.logical_sessions[0].last_heartbeat = Utc::now() - chrono::Duration::seconds(181);
+    registry.logical_sessions[0].last_heartbeat =
+        UtcDateTime::now() - lean_ctx_time::Duration::seconds(181);
 
     registry.cleanup_stale_logical_sessions(180);
 
@@ -273,7 +274,7 @@ fn an_expired_worker_registration_is_renewed_and_reported_once() {
     let id = registry
         .register("claude", Some("server"), "/project", None)
         .expect("register");
-    registry.agents[0].last_active = Utc::now() - chrono::Duration::hours(1);
+    registry.agents[0].last_active = UtcDateTime::now() - lean_ctx_time::Duration::hours(1);
     registry.cleanup_stale(super::presence_ttl());
     assert_eq!(registry.agents[0].status, AgentStatus::Finished);
     registry.save().expect("save");

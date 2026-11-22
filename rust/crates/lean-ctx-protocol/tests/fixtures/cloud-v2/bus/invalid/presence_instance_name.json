@@ -1,0 +1,14 @@
+{
+  "case": "presence_instance_name",
+  "base": "bus/frame.presence_update.names.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/instance_name",
+      "value": "Ada's laptop"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -414,7 +414,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "usize",
             serde_json::json!(cfg.cache_max_tokens),
-            "Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL",
+            "Token budget for the in-memory ctx_read cache (0 = built-in default 2M). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL",
             "LEAN_CTX_CACHE_MAX_TOKENS",
         ),
     );
@@ -1248,8 +1248,9 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     sections.insert(
         "cross_agent".into(),
         SectionSchema {
-            description: "Cross-agent memory sharing and semantic retrieval (Hive adaptation)"
-                .into(),
+            description:
+                "Cross-agent memory sharing and semantic retrieval (LeanCTX Cloud adaptation)"
+                    .into(),
             keys: cross_agent,
         },
     );

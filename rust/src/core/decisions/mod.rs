@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub use check::{OtherFiles, Violation, evaluate_change, evaluate_change_with};
-pub use parse::{id_from_slug, parse_decision, scaffold};
+pub use parse::{NewRecord, id_from_slug, parse_decision, render_record, scaffold};
 
 /// Directory, relative to the project root, that holds one record per file.
 pub const DECISIONS_DIR: &str = ".leanctx/decisions";
@@ -35,7 +35,7 @@ const MAX_SUFFIX_LINE_CHARS: usize = 200;
 /// Files beyond this many are reported as an error, not parsed.
 const MAX_DECISION_FILES: usize = 512;
 /// A record larger than this is an error (records are short by design).
-const MAX_DECISION_BYTES: u64 = 64 * 1024;
+pub const MAX_DECISION_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Status {
@@ -100,8 +100,24 @@ pub struct Decision {
     path_globs: Vec<glob::Pattern>,
     pub symbols: Vec<String>,
     pub checks: Vec<Check>,
+    /// `[evidence]`: the history line the record was confirmed from (§38).
+    pub evidence: Option<RecordEvidence>,
     /// Record file, relative to the project root (forward slashes).
     pub file: String,
+}
+
+/// The verbatim history line behind a record (`[evidence]`, contract §38).
+/// `lean-ctx decisions suggest` re-reads it: a commit that left the history or
+/// a message that no longer holds `quote` turns the record's trust to
+/// `re-check`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordEvidence {
+    /// Commit id (lower-case hex, 7 to 64 digits).
+    pub commit: String,
+    /// The message line, verbatim.
+    pub quote: String,
+    /// `confirmed` (explicit statement) or `reconstructed` (policy wording).
+    pub trust: String,
 }
 
 /// Every record of one project, sorted by id, plus the files that failed.
@@ -259,24 +275,127 @@ type Signature = Vec<(String, u64, u128)>;
 
 static CACHE: Mutex<Option<HashMap<PathBuf, (Signature, Arc<DecisionSet>)>>> = Mutex::new(None);
 
-fn record_files(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "toml") && p.is_file())
-        .collect();
-    files.sort();
-    files
+/// Most project roots the record cache holds; a full cache is cleared before
+/// a new root is inserted (bounded state in a long-lived server).
+pub(crate) const MAX_CACHED_ROOTS: usize = 16;
+
+/// One `*.toml` entry directly in a project's [`DECISIONS_DIR`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordEntry {
+    /// `<root>/.leanctx/decisions/<name>`, under the root as given.
+    pub path: PathBuf,
+    /// Root-relative path with `/` separators (`.leanctx/decisions/<name>`).
+    pub rel: String,
+    /// A regular file. A symlink (to anything) or other entry is `false` and
+    /// must not be read: [`read_record`] refuses it too.
+    pub regular: bool,
 }
 
-fn signature(files: &[PathBuf]) -> Signature {
-    files
+/// The shared record collector: the `*.toml` entries directly in
+/// `<root>/.leanctx/decisions`, sorted by name, never following a symlink.
+///
+/// `Ok(None)`: the project has no such directory. `Err`: it is not a
+/// directory, or it (or a parent) resolves outside the project, e.g. a
+/// symlinked directory. Used by the local loader ([`load`]) and by
+/// `lean-ctx cloud decisions push`, so both refuse the same entries.
+pub fn list_records(root: &Path) -> Result<Option<Vec<RecordEntry>>, String> {
+    let dir = root.join(DECISIONS_DIR);
+    let meta = match std::fs::symlink_metadata(&dir) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{DECISIONS_DIR}: {e}")),
+    };
+    if !meta.is_dir() {
+        return Err(format!(
+            "{DECISIONS_DIR} is not a directory inside the project"
+        ));
+    }
+    // The directory (and each parent) must resolve inside the project.
+    let real_root =
+        std::fs::canonicalize(root).map_err(|e| format!("project root {}: {e}", root.display()))?;
+    let real = std::fs::canonicalize(&dir).map_err(|e| format!("{DECISIONS_DIR}: {e}"))?;
+    // Joined per component: a verbatim Windows path (`\\?\`) takes no `/`.
+    let expected = DECISIONS_DIR
+        .split('/')
+        .fold(real_root, |p, part| p.join(part));
+    if real != expected {
+        return Err(format!("{DECISIONS_DIR} leads outside the project"));
+    }
+    let mut entries: Vec<RecordEntry> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("{DECISIONS_DIR}: {e}"))?
+        .filter_map(Result::ok)
+        .filter(|e| {
+            Path::new(&e.file_name())
+                .extension()
+                .is_some_and(|x| x == "toml")
+        })
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            // `DirEntry::file_type` does not follow symlinks.
+            let regular = e.file_type().is_ok_and(|t| t.is_file());
+            RecordEntry {
+                path: dir.join(e.file_name()),
+                rel: format!("{DECISIONS_DIR}/{name}"),
+                regular,
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(Some(entries))
+}
+
+/// Read one record: opened once without following a symlink, checked on
+/// that handle and read with a bound ([`MAX_DECISION_BYTES`]), so a file
+/// swapped or grown after the directory scan cannot get through.
+pub fn read_record(file: &Path) -> Result<String, &'static str> {
+    use std::io::Read;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+    }
+    #[cfg(not(unix))]
+    {
+        if std::fs::symlink_metadata(file).is_ok_and(|m| !m.file_type().is_file()) {
+            return Err("not a regular file");
+        }
+    }
+    let handle = options.open(file).map_err(|e| {
+        #[cfg(unix)]
+        {
+            if e.raw_os_error() == Some(libc::ELOOP) {
+                return "not a regular file";
+            }
+        }
+        let _ = e;
+        "unreadable"
+    })?;
+    let meta = handle.metadata().map_err(|_| "unreadable")?;
+    if !meta.is_file() {
+        return Err("not a regular file");
+    }
+    if meta.len() > MAX_DECISION_BYTES {
+        return Err("larger than 64 KiB");
+    }
+    let mut bytes = Vec::new();
+    handle
+        .take(MAX_DECISION_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "unreadable")?;
+    if bytes.len() as u64 > MAX_DECISION_BYTES {
+        return Err("larger than 64 KiB");
+    }
+    String::from_utf8(bytes).map_err(|_| "not UTF-8 text")
+}
+
+fn signature(entries: &[RecordEntry]) -> Signature {
+    entries
         .iter()
-        .map(|p| {
-            let meta = std::fs::metadata(p).ok();
+        .map(|e| {
+            let p = &e.path;
+            let meta = std::fs::symlink_metadata(p).ok();
             let len = meta.as_ref().map_or(0, std::fs::Metadata::len);
             let mtime = meta
                 .and_then(|m| m.modified().ok())
@@ -289,12 +408,19 @@ fn signature(files: &[PathBuf]) -> Signature {
 
 /// Load (cached by file list, sizes and mtimes) the records under `root`.
 /// A project without `.leanctx/decisions` yields an empty set.
+/// A record directory that resolves outside the project, or entries that
+/// are not regular files, are reported as errors and never read.
 pub fn load(root: &Path) -> Arc<DecisionSet> {
-    let dir = root.join(DECISIONS_DIR);
-    let files = record_files(&dir);
-    if files.is_empty() {
-        return Arc::new(DecisionSet::default());
-    }
+    let files = match list_records(root) {
+        Ok(Some(entries)) if !entries.is_empty() => entries,
+        Ok(_) => return Arc::new(DecisionSet::default()),
+        Err(e) => {
+            return Arc::new(from_records(
+                root,
+                vec![(DECISIONS_DIR.to_string(), Err(e))],
+            ));
+        }
+    };
     let sig = signature(&files);
     {
         let guard = CACHE
@@ -310,33 +436,34 @@ pub fn load(root: &Path) -> Arc<DecisionSet> {
     let mut guard = CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    guard
-        .get_or_insert_with(HashMap::new)
-        .insert(root.to_path_buf(), (sig, Arc::clone(&set)));
+    let cache = guard.get_or_insert_with(HashMap::new);
+    if !cache.contains_key(root) && cache.len() >= MAX_CACHED_ROOTS {
+        cache.clear();
+    }
+    cache.insert(root.to_path_buf(), (sig, Arc::clone(&set)));
     set
 }
 
-fn rel_display(root: &Path, file: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+#[cfg(test)]
+pub(crate) fn cached_roots() -> usize {
+    CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .map_or(0, HashMap::len)
 }
 
-fn load_uncached(root: &Path, files: &[PathBuf]) -> DecisionSet {
+fn load_uncached(root: &Path, files: &[RecordEntry]) -> DecisionSet {
     let records: Vec<(String, Result<String, String>)> = files
         .iter()
         .take(MAX_DECISION_FILES + 1)
-        .map(|file| {
-            let rel = rel_display(root, file);
-            let text = match std::fs::metadata(file) {
-                Ok(m) if m.len() > MAX_DECISION_BYTES => Err(format!(
-                    "{} bytes, more than the limit of {MAX_DECISION_BYTES}",
-                    m.len()
-                )),
-                _ => std::fs::read_to_string(file).map_err(|e| format!("unreadable: {e}")),
+        .map(|entry| {
+            let text = if entry.regular {
+                read_record(&entry.path).map_err(str::to_string)
+            } else {
+                Err("not a regular file (symlinks are not followed)".to_string())
             };
-            (rel, text)
+            (entry.rel.clone(), text)
         })
         .collect();
     let mut set = from_records(root, records);
@@ -618,6 +745,14 @@ pub fn describe(set: &DecisionSet, d: &Decision) -> String {
     if let (Some(kind), Some(r)) = (&d.source_kind, &d.source_ref) {
         out.push_str(&format!("  source: {kind} {r}\n"));
     }
+    if let Some(ev) = &d.evidence {
+        out.push_str(&format!(
+            "  evidence ({}): {} \"{}\"\n",
+            ev.trust,
+            &ev.commit[..ev.commit.len().min(12)],
+            ev.quote
+        ));
+    }
     if !d.supersedes.is_empty() {
         out.push_str(&format!("  supersedes: {}\n", d.supersedes.join(", ")));
     }
@@ -650,7 +785,30 @@ pub fn describe(set: &DecisionSet, d: &Decision) -> String {
         ));
     }
     out.push_str(&format!("  file: {}\n", d.file));
-    out
+    // Records may quote git history: no escape sequence reaches a terminal.
+    out.split('\n')
+        .map(terminal_safe)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Text for a terminal: control characters (C0, DEL, C1, so no escape
+/// sequences, also newlines) and bidi controls become `?`.
+pub fn terminal_safe(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_control()
+                || matches!(
+                    c,
+                    '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+                )
+            {
+                '?'
+            } else {
+                c
+            }
+        })
+        .collect()
 }
 
 /// The decision query of `ctx_knowledge action=decisions` and `lean-ctx
@@ -681,7 +839,8 @@ pub fn query_text(project_root: &Path, path: Option<&str>, symbol: Option<&str>)
     if !set.errors.is_empty() {
         out.push_str("Invalid records (not applied):\n");
         for e in &set.errors {
-            out.push_str(&format!("  {e}\n"));
+            // Parse errors may quote record files: no terminal escapes.
+            out.push_str(&format!("  {}\n", terminal_safe(e)));
         }
     }
     out.trim_end().to_string()

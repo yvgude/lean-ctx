@@ -80,10 +80,19 @@ pub enum AuditEventType {
     /// naming its evidence. Only this event clears the sticky drift mark —
     /// resuming a suspended identity does not (GL #433 / Phase 18 S3).
     AgentDriftAcknowledged,
+    /// An unbound session adopted the project of its first absolute path.
+    /// Not a refusal: never counted as a block or cross-project access.
+    /// Written in the `x-` extension namespace, so older readers keep
+    /// parsing the trail (as an additive unknown event).
+    ProjectAdopted,
     /// Forward-compatible additive event emitted by a newer writer. Keep the
     /// exact wire label so reports never silently discard security evidence.
     Unknown(String),
 }
+
+/// Wire label of [`AuditEventType::ProjectAdopted`]: an `x-` extension label,
+/// so a reader that predates it parses it as an additive unknown event.
+pub const PROJECT_ADOPTED_EVENT: &str = "x-project_adopted";
 
 impl AuditEventType {
     fn wire_label(&self) -> &str {
@@ -103,6 +112,7 @@ impl AuditEventType {
             Self::AgentDecommissioned => "agent_decommissioned",
             Self::AgentDriftDetected => "agent_drift_detected",
             Self::AgentDriftAcknowledged => "agent_drift_acknowledged",
+            Self::ProjectAdopted => PROJECT_ADOPTED_EVENT,
             Self::Unknown(label) => label,
         }
     }
@@ -146,6 +156,7 @@ impl<'de> Deserialize<'de> for AuditEventType {
             "agent_decommissioned" => Self::AgentDecommissioned,
             "agent_drift_detected" => Self::AgentDriftDetected,
             "agent_drift_acknowledged" => Self::AgentDriftAcknowledged,
+            PROJECT_ADOPTED_EVENT => Self::ProjectAdopted,
             _ if valid_extension_event_label(&label) => Self::Unknown(label),
             _ => {
                 return Err(serde::de::Error::custom(
@@ -397,7 +408,11 @@ pub fn record_at(path: &Path, data: AuditEntryData) {
 }
 
 fn try_record_at(path: &Path, data: AuditEntryData) -> Result<AuditEntry, String> {
-    try_record_at_time(path, Record { data, facts: None }, chrono::Utc::now())
+    try_record_at_time(
+        path,
+        Record { data, facts: None },
+        lean_ctx_time::UtcDateTime::now(),
+    )
 }
 
 /// Fire-and-forget append of a call of a session (see [`record`]).
@@ -426,7 +441,7 @@ pub fn try_record_v2_at(
         data,
         facts: Some(facts),
     };
-    try_record_at_time(path, record, chrono::Utc::now())
+    try_record_at_time(path, record, lean_ctx_time::UtcDateTime::now())
 }
 
 /// One entry to append: the v1 data and, for a call of a session, its facts.
@@ -439,7 +454,7 @@ struct Record {
 fn try_record_at_time(
     path: &Path,
     record: Record,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> Result<AuditEntry, String> {
     // At most one seal per append: after it the next file is fresh.
     let mut record = record;
@@ -508,7 +523,7 @@ fn append_or_seal(
     path: &Path,
     file: &mut fs::File,
     record: Record,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> Result<Appended, String> {
     let Some(last) = read_tail_entry(file)? else {
         // A fresh active file continues the chain of the newest segment.
@@ -643,7 +658,7 @@ fn append_locked(file: &mut fs::File, record: Record, tail: Tail) -> Result<Audi
         None => (None, None, None, None, None, None),
     };
     let mut entry = AuditEntry {
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         agent_id: data.agent_id,
         tool: data.tool,
         action: data.action,
@@ -778,7 +793,7 @@ pub fn load_all_at(path: &Path) -> Vec<AuditEntry> {
 /// Returns the number of entries visited.
 pub fn for_each_entry_at(
     path: &Path,
-    since: Option<chrono::DateTime<chrono::Utc>>,
+    since: Option<lean_ctx_time::UtcDateTime>,
     needle: Option<&str>,
     mut visit: impl FnMut(&AuditEntry),
 ) -> usize {
@@ -820,10 +835,7 @@ pub fn for_each_entry_at(
 /// segment whose last entry (its seal) is older than `since` is left out;
 /// that takes one tail read per segment. Lines keep the trail's format and
 /// run in time order across the files.
-pub fn trail_files_since(
-    trail: &Path,
-    since: Option<chrono::DateTime<chrono::Utc>>,
-) -> Vec<PathBuf> {
+pub fn trail_files_since(trail: &Path, since: Option<lean_ctx_time::UtcDateTime>) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = segments::sealed(trail)
         .into_iter()
         .map(|(_, path)| path)
@@ -849,7 +861,7 @@ pub fn trail_files_since(
 /// still across it.
 pub fn read_trail_since(
     trail: &Path,
-    since: Option<chrono::DateTime<chrono::Utc>>,
+    since: Option<lean_ctx_time::UtcDateTime>,
 ) -> std::io::Result<Option<String>> {
     for _ in 0..SNAPSHOT_ATTEMPTS {
         let before = segments::sealed(trail);
@@ -882,9 +894,13 @@ pub fn read_trail_since(
 /// How often a reader retries when a seal moved the active trail under it.
 const SNAPSHOT_ATTEMPTS: usize = 3;
 
-fn entry_time(entry: &serde_json::Value) -> Option<chrono::DateTime<chrono::Utc>> {
+fn entry_time(entry: &serde_json::Value) -> Option<lean_ctx_time::UtcDateTime> {
     let stamp = entry.get("timestamp")?.as_str()?;
-    Some(chrono::DateTime::parse_from_rfc3339(stamp).ok()?.to_utc())
+    Some(
+        lean_ctx_time::OffsetDateTime::parse_from_rfc3339(stamp)
+            .ok()?
+            .to_utc(),
+    )
 }
 
 /// Open the trail at `path` for a listing, with its length taken under the
@@ -1230,7 +1246,12 @@ fn verify_chain_mode(
     agent_id: Option<&str>,
     force_full: bool,
 ) -> (ChainVerifyResult, Option<(String, String)>) {
-    verify_chain_mode_at(path, agent_id, force_full, chrono::Utc::now().timestamp())
+    verify_chain_mode_at(
+        path,
+        agent_id,
+        force_full,
+        lean_ctx_time::UtcDateTime::now().timestamp(),
+    )
 }
 
 /// [`verify_chain_mode`] at an explicit wall-clock `now` (Unix seconds).
@@ -1433,7 +1454,7 @@ impl SignedTallyEvidence {
 /// (incremental) pass that verifies the chain. `None` when the trail fails
 /// verification or is unavailable; a missing trail is an empty tally.
 pub fn verified_signed_tally_at(path: &Path) -> Option<SignedTallyEvidence> {
-    match verify_state_at(path, false, chrono::Utc::now().timestamp()) {
+    match verify_state_at(path, false, lean_ctx_time::UtcDateTime::now().timestamp()) {
         Verified::Missing => Some(SignedTallyEvidence::default()),
         Verified::Valid(state) => Some(state.tally),
         Verified::Unavailable | Verified::Invalid(_) => None,
@@ -1446,7 +1467,7 @@ pub fn verified_signed_tally_at(path: &Path) -> Option<SignedTallyEvidence> {
 /// The evidence is `None` unless the chain verifies; a missing trail is an
 /// empty, intact chain.
 pub fn verified_security_at(path: &Path) -> (ChainVerifyResult, Option<SignedTallyEvidence>) {
-    match verify_state_at(path, false, chrono::Utc::now().timestamp()) {
+    match verify_state_at(path, false, lean_ctx_time::UtcDateTime::now().timestamp()) {
         Verified::Missing => (
             ChainVerifyResult {
                 total_entries: 0,

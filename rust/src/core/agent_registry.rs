@@ -461,7 +461,7 @@ pub(crate) fn attest(role: &str) -> Attestation {
     Attestation {
         binary_sha256,
         config_sha256,
-        attested_at: chrono::Utc::now().to_rfc3339(),
+        attested_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         drift: None,
     }
 }
@@ -664,7 +664,7 @@ pub fn register(agent_id: &str, role: &str, owner: &str) -> Result<AgentRecord, 
         role: role.to_string(),
         owner: owner.trim().to_string(),
         status: AgentStatus::Active,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         public_key,
         attestation: Some(attest(role)),
         last_heartbeat: None,
@@ -854,7 +854,7 @@ pub fn acknowledge_drift(
             agent_id: agent_id.to_string(),
             evidence: mark.evidence,
             detected_at: mark.detected_at,
-            acknowledged_at: chrono::Utc::now().to_rfc3339(),
+            acknowledged_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         })
     })
 }
@@ -867,7 +867,7 @@ pub fn decommission(agent_id: &str) -> Result<(), String> {
             .get_mut(agent_id)
             .ok_or_else(|| format!("agent '{agent_id}' is not registered"))?;
         record.status = AgentStatus::Decommissioned;
-        record.decommissioned_at = Some(chrono::Utc::now().to_rfc3339());
+        record.decommissioned_at = Some(lean_ctx_time::UtcDateTime::now().to_rfc3339());
         Ok(record.role.clone())
     })?;
     audit(

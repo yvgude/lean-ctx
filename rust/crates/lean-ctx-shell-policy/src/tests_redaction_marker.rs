@@ -6,8 +6,8 @@ use super::{
     refuse_redaction_marker_in_command, refuse_redaction_marker_in_file,
 };
 
-const COPIED: &str = "sed -i 's#url=.*#url=postgres://[REDACTED:Database credentials]@db:5432/hive#' \
-                      /opt/hive/.env";
+const COPIED: &str = "sed -i 's#url=.*#url=postgres://[REDACTED:Database credentials]@db:5432/cloud#' \
+                      /opt/cloud/.env";
 
 /// 24.10.: an agent copied a marker out of its redacted view into a `sed`;
 /// the marker landed in a remote config. It never runs, in any mode.
@@ -104,7 +104,7 @@ fn config_data_and_smuggled_markers_stay_blocked() {
     let into = |target: &str| RUST_TEST.replace("rust/src/core/redact_tests.rs", target);
     let refused = [
         into(".env"),
-        into("/opt/hive/.env"),
+        into("/opt/cloud/.env"),
         into("config.toml"),
         into("Cargo.toml"),
         into("deploy/values.yaml"),
@@ -112,7 +112,7 @@ fn config_data_and_smuggled_markers_stay_blocked() {
         into("settings.py"),
         into("app/config.js"),
         into("tests/../settings.py"),
-        into("/opt/hive/tests/../app/config.js"),
+        into("/opt/cloud/tests/../app/config.js"),
         into("./tests/settings_test.py"),
         into("scripts/deploy.sh"),
         into("tests/fixture.env"),

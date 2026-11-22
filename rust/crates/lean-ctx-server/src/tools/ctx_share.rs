@@ -280,7 +280,7 @@ fn handle_push(
         to_agent: to_agent.map(String::from),
         files: shared_files.clone(),
         message: admitted_message.flatten(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         project_root: Some(project_root.to_string()),
     };
 
@@ -290,7 +290,7 @@ fn handle_push(
     let filename = format!(
         "{}_{}.json",
         sanitize_for_filename(from),
-        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+        lean_ctx_time::UtcDateTime::now().format("%Y%m%d_%H%M%S")
     );
     let path = dir.join(&filename);
 

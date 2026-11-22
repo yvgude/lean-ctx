@@ -666,7 +666,7 @@ pub(in crate::server) async fn reversible_post_process(
     if firewalled {
         result_text = crate::server::execute::keep_notice(shell_notice, result_text);
         // K10: served truncated, by output class (never the command).
-        use lean_ctx_hive::metrics_v2::signals;
+        use lean_ctx_cloud::metrics_v2::signals;
         signals::truncated(&signals::output_filter(name));
     }
 
@@ -1223,6 +1223,18 @@ pub(in crate::server) async fn reversible_post_process(
     {
         result_text.push_str("\n\n");
         result_text.push_str(&hint);
+    }
+
+    // §37: an unanswered Cloud directive (plan update, changed team
+    // decision) rides on every answer until the agent acks it. State-
+    // triggered and byte-stable per #498; `ctx_agent` shows it in read/wait.
+    if !skip_checkpoint
+        && lean_ctx::core::protocol::meta_visible()
+        && let Some(agent_id) = server.agent_id.read().await.clone()
+        && let Some(lines) = lean_ctx::core::agents::pending_suffix_for(&agent_id)
+    {
+        result_text.push_str("\n\n");
+        result_text.push_str(&lines);
     }
 
     // #1020: tool-calls.log is now written on the dispatch path

@@ -119,8 +119,8 @@ fn evaluate_pack_rules(text: &str, active: &ActivePolicy, filters: &FilterConfig
     if active.redaction.len() + active.blocked_patterns.len()
         > MAX_REDACTION_RULES
             + active
-                .hive_rules
-                .min(crate::core::policy::hive_filters::HIVE_MAX_RULES)
+                .cloud_rules
+                .min(crate::core::policy::cloud_filters::CLOUD_MAX_RULES)
         || active
             .redaction
             .iter()

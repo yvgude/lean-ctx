@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "feature_disabled",
+    "message": "this feature is switched off on this Cloud",
+    "feature": "instance_metrics"
+  }
+}

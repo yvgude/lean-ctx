@@ -109,7 +109,7 @@ pub mod test_support {
     /// A real run whose only state allows `ctx_overview`. Shared with the
     /// tests of the two server gates.
     pub fn review() -> WorkflowRun {
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         WorkflowRun {
             spec: WorkflowSpec {
                 name: "review".to_string(),
@@ -170,7 +170,8 @@ pub(crate) mod tests {
             .expect("a withheld workflow is still a workflow");
         assert!(is_withheld_sentinel(&closed));
         // Older than the stale threshold: still not stale, still closed.
-        closed.updated_at = chrono::Utc::now() - chrono::Duration::minutes(45);
+        closed.updated_at =
+            lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(45);
         assert!(!is_run_stale(&closed));
         for tool in [
             "ctx_read",
@@ -221,7 +222,7 @@ pub(crate) mod tests {
         let (_directory, root) = project();
         let (_other_directory, other) = project();
         let mut old = review();
-        old.updated_at = chrono::Utc::now() - chrono::Duration::minutes(45);
+        old.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(45);
         scoped(&root, || save_active(&old)).expect("saved in its project");
         let stored = std::fs::read(workflow_file()).expect("stored workflow");
 
@@ -254,13 +255,13 @@ pub(crate) mod tests {
             )
         );
 
-        run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(31);
+        run.updated_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(31);
         assert!(is_run_stale(&run));
         assert_eq!(tool_gate(&run, "ctx_shell", PASSTHROUGH), ToolGate::Expired);
         assert_eq!(tool_gate(&run, "ctx_read", PASSTHROUGH), ToolGate::Expired);
         assert_eq!(tool_gate(&run, "ctx_workflow", PASSTHROUGH), ToolGate::Pass);
 
-        run.updated_at = chrono::Utc::now();
+        run.updated_at = lean_ctx_time::UtcDateTime::now();
         run.current = "done".to_string();
         assert_eq!(tool_gate(&run, "ctx_shell", PASSTHROUGH), ToolGate::Expired);
     }

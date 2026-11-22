@@ -1,0 +1,11 @@
+{
+ "engine_version": "0.0.0-fixture",
+ "metrics": {
+  "compose_first": 83.33,
+  "step_share.acp": 65.0,
+  "step_share.claude": 85.0,
+  "tokens_saved_median": 50.0
+ },
+ "schema": "leanctx.agent-suite-baseline/v1",
+ "suite": "fixture-suite"
+}

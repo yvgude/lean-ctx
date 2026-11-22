@@ -4,7 +4,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-server"
-version = "3.12.6"
+version = "3.12.7"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX MCP server and its tools on top of LeanCTX | OSS."
@@ -29,11 +29,6 @@ path = "src/lib.rs"
 name = "server"
 path = "tests/main.rs"
 
-# Needs a process of its own (see tests/main.rs).
-[[test]]
-name = "quality_loop_golden"
-path = "tests/quality_loop_golden.rs"
-
 # The pz21 locked acceptance target (locked command:
 # `cargo test -p lean-ctx-server --test input_check`). Its own binary: the
 # Spec Writer owns the file, and CI sets INPUT_CHECK_SPEC_COMMIT and
@@ -57,7 +52,7 @@ default = [
   "wasm",
 ]
 embeddings = ["lean-ctx-engine/embeddings"]
-http-server = ["lean-ctx-hive/http-server", "lean-ctx-engine/http-server"]
+http-server = ["lean-ctx-cloud/http-server", "lean-ctx-engine/http-server"]
 no-jail = ["lean-ctx-hooks/no-jail", "lean-ctx-engine/no-jail"]
 tree-sitter = ["lean-ctx-hooks/tree-sitter", "lean-ctx-engine/tree-sitter", "dep:tree-sitter"]
 enterprise = ["lean-ctx-engine/enterprise"]
@@ -79,17 +74,17 @@ grammar-haskell = ["lean-ctx-engine/grammar-haskell"]
 grammar-julia = ["lean-ctx-engine/grammar-julia"]
 wasm = ["lean-ctx-engine/wasm"]
 # Test fixtures for the crates above (never enabled outside dev-dependencies).
-test-support = ["lean-ctx-engine/test-support", "lean-ctx-hive/test-support"]
+test-support = ["lean-ctx-engine/test-support", "lean-ctx-cloud/test-support"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.6", default-features = false }
-lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.6", default-features = false }
-lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.6", default-features = false }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.6", default-features = false }
-lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "7.0.0" }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.7.0" }
-lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.0" }
-lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.2.0" }
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false }
+lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.7", default-features = false }
+lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.7", default-features = false }
+lean-ctx-cloud = { path = "../lean-ctx-cloud", version = "=3.12.7", default-features = false }
+lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "8.0.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.8.0" }
+lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.1" }
+lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.3.0" }
 rmcp = { version = "3", features = [
   "server",
   "client",
@@ -126,7 +121,7 @@ tracing = "0.1"
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["codec"] }
 dirs = "6.0"
-chrono = { version = "0.4", features = ["serde"] }
+lean-ctx-time = { path = "../lean-ctx-time", version = "0.1.0" }
 toml = "1.1"
 similar = "3.1"
 rusqlite = { version = "0.41", features = ["bundled"] }
@@ -167,8 +162,8 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.6", default-features = false, features = ["test-support"] }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.6", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false, features = ["test-support"] }
+lean-ctx-cloud = { path = "../lean-ctx-cloud", version = "=3.12.7", default-features = false, features = ["test-support"] }
 jsonschema = { version = "0.46", default-features = false }
 serial_test = "3.5"
 axum = { version = "0.8", features = ["ws"] }

@@ -132,6 +132,11 @@ pub struct LeanCtxServer {
     /// Current IDE interaction mode (Agent/Plan). Updated from `_meta.interactionMode`
     /// on each tool call; controls tool visibility and destructive-tool guards.
     pub(crate) interaction_mode: Arc<std::sync::atomic::AtomicU8>,
+    /// Serializes project adoption from a tool path (`pathjail_autobind`);
+    /// `true` once this session adopted a project, which an unbound session
+    /// does at most once. An async mutex: no poisoning, so it cannot fail
+    /// open, and a queued call re-resolves against the root the winner bound.
+    pub(crate) autobind: Arc<tokio::sync::Mutex<bool>>,
 }
 
 pub use lean_ctx::core::protocol::ToolCallRecord;

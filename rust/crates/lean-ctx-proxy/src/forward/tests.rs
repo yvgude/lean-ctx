@@ -712,6 +712,65 @@ async fn invalid_org_policy_refuses_forwarding_without_upstream_connection() {
     );
 }
 
+/// ent2-4 at the enforcement point: with a Cloud floor allowing only
+/// `openai`, a request labelled "OpenAI" whose configured upstream is
+/// another host (`proxy.openai_upstream` override) is refused by host,
+/// typed, and never opens the upstream connection.
+#[tokio::test(flavor = "current_thread")]
+async fn cloud_allowed_providers_refuses_by_upstream_host_not_by_label() {
+    use lean_ctx::core::policy::cloud_floor;
+    let data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    let floor_dir = data.path().join("cloud").join("policy").join("effective");
+    std::fs::create_dir_all(&floor_dir).unwrap();
+    let floor = serde_json::json!({
+        "schema": cloud_floor::FLOOR_SCHEMA, "version": 3,
+        "digest": format!("sha256:{}", "a".repeat(64)),
+        "not_after": "2099-01-01T00:00:00Z",
+        "policy": {"effective": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {"allowed_providers": ["openai"]},
+            "context": {}, "sharing": {}
+        }, "vaults": []}
+    });
+    std::fs::write(floor_dir.join(cloud_floor::FLOOR_FILE), floor.to_string()).unwrap();
+    std::fs::write(
+        floor_dir.join(cloud_floor::REQUIRED_FILE),
+        r#"{"version":3}"#,
+    )
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"model":"gpt-test","messages":[]}"#))
+        .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        forward_request(
+            State(proxy_test_state(&upstream)),
+            request,
+            &upstream,
+            "/v1/chat/completions",
+            add_test_marker,
+            "OpenAI",
+            &[],
+        ),
+    )
+    .await
+    .expect("a provider refusal must not wait on upstream");
+    assert_typed_refusal(result, PROVIDER_NOT_ALLOWED).await;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+            .await
+            .is_err(),
+        "a refused provider must not open an upstream connection"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial(cache_telemetry)]
 async fn required_receipt_failure_never_connects_to_http_upstream() {
@@ -1362,6 +1421,71 @@ fn wire_context_without_tags_still_carries_baseline() {
     assert_eq!(wire.project, None);
     assert_eq!(wire.uncompressed_input_tokens, 100);
     assert!(wire.is_local);
+}
+
+/// Session token ledger (`session-usage-v1`): a turn whose request carried
+/// `x-leanctx-session-id` is booked under that id — tokens, requests, model
+/// and the wire saving — and one without the header lands in the
+/// unattributed bucket, never in a session. Both survive the file round trip.
+#[test]
+fn session_usage_ledger_books_header_turns_per_session_and_the_rest_unattributed() {
+    let _dir = lean_ctx::core::data_dir::isolated_data_dir();
+    let session = format!("ledger-{}", std::process::id());
+    let model = format!("session-usage-model-{}", std::process::id());
+    let stray = format!("session-usage-stray-{}", std::process::id());
+    let turn =
+        |parts: &axum::http::request::Parts, model: &str, saved: u64| crate::usage::RealUsage {
+            model: model.to_owned(),
+            input_tokens: 1_000,
+            output_tokens: 50,
+            cache_read_tokens: 200,
+            cache_write_tokens: 30,
+            wire: Some(wire_context(
+                parts,
+                "Anthropic",
+                "https://api.anthropic.com",
+                saved,
+                4_000,
+                None,
+            )),
+            ..Default::default()
+        };
+    let tagged = Request::builder()
+        .header(lean_ctx::core::activity::SESSION_HEADER, session.as_str())
+        .body(())
+        .unwrap()
+        .into_parts()
+        .0;
+    let untagged = Request::builder().body(()).unwrap().into_parts().0;
+
+    crate::usage_meter::record(&turn(&tagged, &model, 120));
+    crate::usage_meter::record(&turn(&tagged, &model, 80));
+    crate::usage_meter::record(&turn(&untagged, &stray, 40));
+
+    let persisted = crate::usage_meter::load_persisted().expect("ledger persisted");
+    let mine = &persisted.sessions[&session];
+    assert!(mine.last_seen > 0);
+    let booked = &mine.models[&model];
+    assert_eq!(booked.requests, 2);
+    assert_eq!(booked.input_tokens, 2_000);
+    assert_eq!(booked.output_tokens, 100);
+    assert_eq!(booked.cache_read_tokens, 400);
+    assert_eq!(booked.cache_write_tokens, 60);
+    assert_eq!(booked.saved_tokens, 200);
+    assert!(
+        !mine.models.contains_key(&stray),
+        "a headerless turn is never booked on a session"
+    );
+    let rest = &persisted.unattributed.models[&stray];
+    assert_eq!(rest.requests, 1);
+    assert_eq!(rest.saved_tokens, 40);
+    assert!(persisted.unattributed.last_seen > 0);
+    assert!(
+        persisted
+            .sessions
+            .values()
+            .all(|s| !s.models.contains_key(&stray))
+    );
 }
 
 #[test]

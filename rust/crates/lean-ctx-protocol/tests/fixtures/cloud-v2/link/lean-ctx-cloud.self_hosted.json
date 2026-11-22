@@ -1,0 +1,4 @@
+{
+  "schema": "leanctx.cloud.link/v2",
+  "vault": "acme/payments@cloud.acme.example:8443"
+}

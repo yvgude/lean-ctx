@@ -4,7 +4,7 @@
 # composition root (crates/lean-ctx). Published after lean-ctx-engine.
 [package]
 name = "lean-ctx-proxy"
-version = "3.12.6"
+version = "3.12.7"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX model-API proxy: provider adapters, compression and accounting on top of LeanCTX | OSS."
@@ -13,6 +13,9 @@ homepage = "https://leanctx.com"
 readme = "../../README.md"
 keywords = ["lean-ctx", "llm", "proxy", "context"]
 categories = ["development-tools"]
+# tests/*.rs compile into the unit-test binary (end of src/lib.rs), not into a
+# binary each: every extra test binary links the whole Engine again.
+autotests = false
 
 [lib]
 name = "lean_ctx_proxy"
@@ -25,8 +28,8 @@ http-server = ["lean-ctx-engine/http-server", "dep:axum", "dep:tokio-tungstenite
 shape-xlat = ["lean-ctx-engine/shape-xlat"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.6", default-features = false }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.7.0" }
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.8.0" }
 rmcp = { version = "3", features = [
   "server",
   "client",
@@ -62,7 +65,7 @@ regex = "1.12"
 tracing = "0.1"
 futures = "0.3"
 dirs = "6.0"
-chrono = { version = "0.4", features = ["serde"] }
+lean-ctx-time = { path = "../lean-ctx-time", version = "0.1.0" }
 toml = "1.1"
 flate2 = "1.1"
 axum = { version = "0.8", optional = true, features = ["ws"] }
@@ -110,9 +113,9 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 # The proxy's CCR tests follow handles through the server's ctx_expand tool.
-lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.6", default-features = false, features = ["http-server"] }
+lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.7", default-features = false, features = ["http-server"] }
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.6", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false, features = ["test-support"] }
 serial_test = "3.5"
 
 [lints]

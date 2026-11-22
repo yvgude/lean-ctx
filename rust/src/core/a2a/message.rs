@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 pub use lean_ctx_ocla::{MessagePriority, PrivacyLevel};
@@ -16,9 +16,9 @@ pub struct A2AMessage {
     pub metadata: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub project_root: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub read_by: Vec<String>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<UtcDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -76,7 +76,7 @@ impl A2AMessage {
             content: content.to_string(),
             metadata: std::collections::HashMap::new(),
             project_root: None,
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             read_by: vec![from.to_string()],
             expires_at: None,
         }
@@ -98,12 +98,12 @@ impl A2AMessage {
     }
 
     pub fn with_ttl_hours(mut self, hours: u64) -> Self {
-        self.expires_at = Some(Utc::now() + chrono::Duration::hours(hours as i64));
+        self.expires_at = Some(UtcDateTime::now() + lean_ctx_time::Duration::hours(hours as i64));
         self
     }
 
     pub fn is_expired(&self) -> bool {
-        self.expires_at.is_some_and(|exp| Utc::now() > exp)
+        self.expires_at.is_some_and(|exp| UtcDateTime::now() > exp)
     }
 
     pub fn is_visible_to(&self, agent_id: &str) -> bool {
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn message_expiry() {
         let mut msg = A2AMessage::new("a", None, MessageCategory::Notification, "tmp");
-        msg.expires_at = Some(Utc::now() - chrono::Duration::hours(1));
+        msg.expires_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::hours(1));
         assert!(msg.is_expired());
         assert!(!msg.is_visible_to("a"));
     }

@@ -1,4 +1,3 @@
-use chrono::TimeZone;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,10 +20,8 @@ pub(crate) fn proof_stats_snapshot() -> ProofStatsSnapshot {
     let last_written_at = if last_ms == 0 {
         None
     } else {
-        chrono::Utc
-            .timestamp_millis_opt(last_ms as i64)
-            .single()
-            .map(|t| t.to_rfc3339())
+        lean_ctx_time::UtcDateTime::from_timestamp_millis(last_ms as i64)
+            .map(lean_ctx_time::UtcDateTime::to_rfc3339)
     };
     ProofStatsSnapshot {
         collected,
@@ -116,7 +113,7 @@ pub struct ProofSources {
 
 pub fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextProofV1 {
     PROOFS_COLLECTED.fetch_add(1, Ordering::Relaxed);
-    let created_at = chrono::Utc::now().to_rfc3339();
+    let created_at = lean_ctx_time::UtcDateTime::now().to_rfc3339();
 
     let role_name = crate::core::roles::active_role_name();
     let role = crate::core::roles::active_role();
@@ -286,7 +283,7 @@ pub fn write_project_proof(
     proof: &ContextProofV1,
     filename: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
+    let ts = lean_ctx_time::UtcDateTime::now().format("%Y-%m-%d_%H%M%S");
     let name = filename.map_or_else(|| format!("context-proof-v1_{ts}.json"), str::to_string);
     let destination = proof_destination(project_root, &name)?;
 

@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# LeanCTX | OSS apps: the engine modules that nothing in the engine uses at
+# runtime (crate split step 1, rust/CRATE_MAP.md). Split upward out of the
+# Engine: it depends on the Engine library (package lean-ctx-engine, lib
+# `lean_ctx`); cloud and the `lean-ctx` binary package depend on it.
+# Published in lockstep with the Engine.
+[package]
+name = "lean-ctx-apps"
+version = "3.12.7"
+edition = "2024"
+license = "Apache-2.0"
+description = "LeanCTX | OSS apps on top of the Engine: the cockpit analysis (dashboard_pro)."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+readme = "../../README.md"
+keywords = ["lean-ctx", "llm", "mcp", "context"]
+categories = ["development-tools"]
+
+[lib]
+name = "lean_ctx_apps"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Test helpers for crates above, dev-dependency only.
+test-support = ["lean-ctx-engine/test-support"]
+
+[dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false }
+base64 = "0.22"
+blake3 = "1.8"
+lean-ctx-time = { path = "../lean-ctx-time", version = "0.1.0" }
+dirs = "6.0"
+getrandom = "0.4"
+hex = "0.4"
+regex = "1.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+sha2 = "0.11"
+tempfile = "3.27"
+toml = "1.1"
+zstd = "0.14.3"
+
+[dev-dependencies]
+# The Engine's test helpers (test_env, the data sandbox; see core::data_dir
+# UNIT_TEST_HARNESSES) for the moved unit tests.
+lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false, features = ["test-support"] }
+
+[lints]
+workspace = true

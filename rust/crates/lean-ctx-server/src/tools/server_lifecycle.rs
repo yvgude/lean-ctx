@@ -410,6 +410,7 @@ impl LeanCtxServer {
             interaction_mode: Arc::new(std::sync::atomic::AtomicU8::new(
                 InteractionMode::Agent as u8,
             )),
+            autobind: Arc::default(),
         }
     }
 
@@ -536,7 +537,7 @@ impl LeanCtxServer {
             let session = self.session.read().await;
             let has_insights = !session.findings.is_empty() || !session.decisions.is_empty();
             let root = session.project_root.clone();
-            let hive_target = root.clone().map(|root| (root, session.id.clone()));
+            let cloud_target = root.clone().map(|root| (root, session.id.clone()));
             drop(session);
 
             if last_state_durable
@@ -561,19 +562,19 @@ impl LeanCtxServer {
                 })
                 .await;
             }
-            // Queue this session's learnings for Hive (local only, no network).
-            if last_state_durable && let Some((root, session_id)) = hive_target {
-                lean_ctx_hive::knowledge::draft::on_session_event(
+            // Queue this session's learnings for Cloud (local only, no network).
+            if last_state_durable && let Some((root, session_id)) = cloud_target {
+                lean_ctx_cloud::knowledge::draft::on_session_event(
                     &root,
                     &session_id,
-                    lean_ctx_hive::knowledge::draft::Trigger::Shutdown,
+                    lean_ctx_cloud::knowledge::draft::Trigger::Shutdown,
                 );
             }
         }
-        // Give back this process's Hive task claims (each bounded; one
-        // Hive cannot be reached for ends at its expiry there).
-        within_shutdown("hive task claims", enrichment_ends, || {
-            lean_ctx_hive::tasks::release_own_claims("the agent session ended")
+        // Give back this process's Cloud task claims (each bounded; one
+        // Cloud cannot be reached for ends at its expiry there).
+        within_shutdown("cloud task claims", enrichment_ends, || {
+            lean_ctx_cloud::tasks::release_own_claims("the agent session ended")
         })
         .await;
         shutdown_stage("knowledge consolidation", stage);

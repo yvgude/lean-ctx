@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/common.schema.json",
+  "title": "Shared model v1: building blocks every entity uses",
+  "x-model-version": "1.0",
+  "$defs": {
+    "time": {
+      "description": "RFC 3339 in UTC with a Z suffix (server: time::ts, seconds; core: UtcTimestamp)",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
+    "vault_id": {
+      "description": "repos::project_id: the repo uuid without hyphens",
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/common.schema.json#/$defs/hex32"
+    },
+    "sha256_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "priority": {
+      "enum": ["high", "normal"]
+    },
+    "actor": {
+      "description": "Who did something on a task: a person or an Instance (TaskActor / TaskActorV1)",
+      "type": "object",
+      "required": ["kind", "label", "mine"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["person", "instance"],
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskActor.kind", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.kind"]
+        },
+        "label": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskActor.label", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.label"]
+        },
+        "agent": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskActor.agent", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.agent"]
+        },
+        "owner": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskActor.owner", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.owner"]
+        },
+        "model": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskActor.model", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.model"]
+        },
+        "mine": {
+          "type": "boolean",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskActor.mine", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.mine"]
+        },
+        "profile_id": {
+          "description": "core-local tasks only; the server does not send it yet",
+          "type": "string",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskActorV1.profile_id"]
+        }
+      }
+    },
+    "code_anchor": {
+      "description": "Where in the code something applies (CodeAnchor / CodeAnchorV1)",
+      "type": "object",
+      "required": ["path", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs CodeAnchor.path", "p5 rust/crates/lean-ctx-protocol/src/cloud/anchor.rs CodeAnchorV1.path"]
+        },
+        "symbol": {
+          "type": "string",
+          "maxLength": 256,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs CodeAnchor.symbol", "p5 rust/crates/lean-ctx-protocol/src/cloud/anchor.rs CodeAnchorV1.symbol"]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256_digest",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs CodeAnchor.digest", "p5 rust/crates/lean-ctx-protocol/src/cloud/anchor.rs CodeAnchorV1.digest"]
+        },
+        "lang": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs CodeAnchor.lang", "p5 rust/crates/lean-ctx-protocol/src/cloud/anchor.rs CodeAnchorV1.lang"]
+        }
+      }
+    },
+    "usage": {
+      "description": "Tokens and cost an agent run reported (Usage / UsageV1)",
+      "type": "object",
+      "required": ["tokens"],
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Usage.tokens", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs UsageV1.tokens"]
+        },
+        "usd_micros": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Usage.usd_micros", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs UsageV1.usd_micros"]
+        }
+      }
+    },
+    "claim_ref": {
+      "description": "The lease a claim holds (ClaimRef / ClaimRefV1)",
+      "type": "object",
+      "required": ["lease_id", "fencing_token"],
+      "additionalProperties": false,
+      "properties": {
+        "lease_id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs ClaimRef.lease_id", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs ClaimRefV1.lease_id"]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs ClaimRef.fencing_token", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs ClaimRefV1.fencing_token"]
+        }
+      }
+    }
+  }
+}

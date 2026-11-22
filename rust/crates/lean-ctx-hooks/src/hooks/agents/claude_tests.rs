@@ -79,6 +79,52 @@ fn migrates_legacy_script_hook() {
 }
 
 #[test]
+fn pre_tool_hooks_fail_open_in_code_mode() {
+    // Code Mode refuses a tool call whose PreToolUse hook fails unless the
+    // hook says `continue`; lean-ctx's own hooks must, a foreign one keeps
+    // its choice.
+    let mut pre = vec![json!({
+        "matcher": BASH,
+        "hooks": [
+            { "type": "command", "command": "policy-check", "onFailure": "block" },
+            { "type": "command", "command": "/abs/lean-ctx hook rewrite" }
+        ]
+    })];
+    ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
+    ensure_command_hook(&mut pre, REDIRECT_MATCHER, "lean-ctx hook redirect");
+    ensure_command_hook(&mut pre, "Bash|Read", "lean-ctx hook rewrite-enforce");
+    // doctor's Code Mode line: an install from before this change blocks...
+    assert!(has_blocking_pre_hook(
+        &json!({ "hooks": { "PreToolUse": pre.clone() } })
+    ));
+    fail_open_pre_hooks(&mut pre);
+    // ...a refreshed one does not, though the foreign hook still says block.
+    assert!(!has_blocking_pre_hook(
+        &json!({ "hooks": { "PreToolUse": pre.clone() } })
+    ));
+    let on_failure = |command: &str| {
+        pre.iter()
+            .filter_map(|g| g.get("hooks").and_then(|h| h.as_array()))
+            .flatten()
+            .find(|h| h["command"] == command)
+            .map(|h| h["onFailure"].clone())
+    };
+    for ours in [
+        "lean-ctx hook rewrite",
+        "lean-ctx hook redirect",
+        "lean-ctx hook rewrite-enforce",
+    ] {
+        assert_eq!(on_failure(ours), Some(json!("continue")), "{ours}");
+    }
+    assert_eq!(on_failure("policy-check"), Some(json!("block")));
+    assert_eq!(
+        desired_pretooluse(BASH, "lean-ctx hook rewrite", "lean-ctx hook redirect")[1]["hooks"][0]
+            ["onFailure"],
+        "continue"
+    );
+}
+
+#[test]
 fn preserves_foreign_hooks() {
     let mut pre = vec![json!({
         "matcher": BASH,

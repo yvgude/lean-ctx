@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -22,8 +22,8 @@ pub struct SessionState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_session_id: Option<String>,
     pub version: u32,
-    pub started_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub updated_at: UtcDateTime,
     pub project_root: Option<String>,
     #[serde(default)]
     pub shell_cwd: Option<String>,
@@ -51,7 +51,7 @@ pub struct SessionState {
     pub compression_level: String,
     /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
     #[serde(default)]
-    pub last_consolidate_ts: Option<DateTime<Utc>>,
+    pub last_consolidate_ts: Option<UtcDateTime>,
     /// Retired, kept so stored sessions keep their shape: no delivery path
     /// reads or writes it. The project memory in the initialize instructions
     /// is always given in full (see `instructions.rs`).
@@ -115,7 +115,7 @@ pub struct Finding {
     pub file: Option<String>,
     pub line: Option<u32>,
     pub summary: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 /// A design or implementation decision made during the session.
@@ -123,7 +123,7 @@ pub struct Finding {
 pub struct Decision {
     pub summary: String,
     pub rationale: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 /// A file that was read or modified during the session.
@@ -151,7 +151,7 @@ pub struct TestSnapshot {
     pub passed: u32,
     pub failed: u32,
     pub total: u32,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 /// A timestamped progress entry describing an action taken.
@@ -159,7 +159,7 @@ pub struct TestSnapshot {
 pub struct ProgressEntry {
     pub action: String,
     pub detail: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 /// Source of an evidence record: automatic tool call or manual agent entry.
@@ -184,7 +184,7 @@ pub struct EvidenceRecord {
     /// Task lineage identifier for MCP-ingress evidence.
     #[serde(default)]
     pub task_id: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 /// Aggregate counters for the session: tool calls, token savings, cache hits.
@@ -212,6 +212,21 @@ pub struct SessionStats {
     /// `claude-code`); `None` until the first call of a known client.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client: Option<String>,
+    /// `ctx_compose` calls, including those routed through `ctx_call`
+    /// (`session.stats` `tools.compose`). Left out of the record while zero,
+    /// so a session without one keeps the bytes it had before the counter.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub compose_calls: u64,
+    /// `ctx_knowledge` remembers that stored or reinforced a fact
+    /// (`session.stats` `knowledge.written`); a refused remember is not one.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub knowledge_written: u64,
+}
+
+/// `serde` skip predicate for the additive counters.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Days of [`SessionStats::daily`] a session keeps.
@@ -228,7 +243,7 @@ pub struct SessionDayCounts {
 impl SessionStats {
     /// The counters of `now`'s UTC day, dropping the oldest day once more
     /// than `SESSION_DAYS_KEPT` (120) are held.
-    pub fn day_mut(&mut self, now: DateTime<Utc>) -> &mut SessionDayCounts {
+    pub fn day_mut(&mut self, now: UtcDateTime) -> &mut SessionDayCounts {
         let day = now.format("%Y-%m-%d").to_string();
         if !self.daily.contains_key(&day) && self.daily.len() >= SESSION_DAYS_KEPT {
             self.daily.pop_first();
@@ -328,8 +343,8 @@ impl From<SaveError> for String {
 #[derive(Debug, Clone)]
 pub struct SessionSummary {
     pub id: String,
-    pub started_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub updated_at: UtcDateTime,
     pub version: u32,
     pub task: Option<String>,
     pub tool_calls: u32,

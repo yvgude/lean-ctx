@@ -6,7 +6,10 @@ use lean_ctx::core::graph_provider;
 
 #[test]
 fn non_project_root_does_not_consume_lazy_build_trigger() {
-    // This is a standalone integration-test binary, so the process-global
+    if !crate::fresh_process::enter() {
+        return;
+    }
+    // This test runs in a process of its own (fresh_process), so the process-global
     // GRAPH_BUILD_TRIGGERED latch starts fresh for this test.
     let isolated = tempfile::tempdir().expect("isolated state tempdir");
     let data = isolated.path().join("data");
@@ -20,7 +23,7 @@ fn non_project_root_does_not_consume_lazy_build_trigger() {
 
     let _env_lock = lean_ctx::core::data_dir::test_env_lock();
 
-    // SAFETY: this integration-test binary contains only this test, and the
+    // SAFETY: this test runs in a process of its own (fresh_process), and the
     // shared test_env_lock serializes LeanCTX tests that mutate these variables.
     unsafe {
         std::env::set_var("LEAN_CTX_DATA_DIR", &data);

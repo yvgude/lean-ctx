@@ -428,7 +428,7 @@ fn admitted_save_is_refused_at_commit_after_the_gateway_is_tightened() {
         file: None,
         line: None,
         summary: format!("key is {AWS_KEY}"),
-        timestamp: chrono::Utc::now(),
+        timestamp: lean_ctx_time::UtcDateTime::now(),
     });
 
     let admitted = session

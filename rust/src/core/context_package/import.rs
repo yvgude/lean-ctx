@@ -196,7 +196,7 @@ mod tests {
     use super::*;
     use crate::core::context_package::save_package;
     use crate::core::session::{Decision, FileTouched, Finding, TaskInfo};
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn sample_session() -> SessionState {
         let mut s = SessionState::new();
@@ -209,12 +209,12 @@ mod tests {
             file: Some("src/main.rs".to_string()),
             line: Some(10),
             summary: "entry point uses tokio".to_string(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
         s.decisions.push(Decision {
             summary: "use bounded_lock for cache".to_string(),
             rationale: Some("avoid nested block_in_place".to_string()),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
         s.files_touched.push(FileTouched {
             path: "src/lib.rs".to_string(),
@@ -321,7 +321,7 @@ mod tests {
             .map(|index| {
                 let package = ContextPackage {
                     format_version: super::super::bundle::FORMAT_VERSION,
-                    created_at: Utc::now(),
+                    created_at: UtcDateTime::now(),
                     project_root: project_root.clone(),
                     session_id: format!("session-{index}"),
                     metadata: super::super::bundle::PackageMetadata {
@@ -345,7 +345,7 @@ mod tests {
                         key: format!("fact-{index}"),
                         value: format!("parallel import number {index}"),
                         confidence: 0.9,
-                        created_at: Utc::now(),
+                        created_at: UtcDateTime::now(),
                     }],
                 };
                 let barrier = Arc::clone(&barrier);

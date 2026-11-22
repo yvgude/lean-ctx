@@ -70,6 +70,14 @@ export interface PiLeanCtxFileConfig {
    * Env `LEAN_CTX_PI_TOOL_PROFILE` overrides this; `full`/`all` alias `power`.
    */
   toolProfile?: string;
+  /**
+   * Default prompt guidance that steers the agent toward the ctx_* tools: a
+   * "prefer ctx_X over the built-in X" bullet in each tool's prompt guidelines
+   * plus a one-time session-start note. Additive only — builtins stay
+   * registered. Default `true`; set `false` (or `LEAN_CTX_PI_GUIDANCE=0`) to
+   * turn both off.
+   */
+  guidance?: boolean;
 }
 
 export type PiMode = "additive" | "replace";
@@ -93,6 +101,8 @@ export interface ResolvedPiConfig {
   toolPrefix?: string;
   /** Tool surface the embedded bridge advertises (maps to LEAN_CTX_TOOL_PROFILE). */
   toolProfile: PiToolProfile;
+  /** Prefer-ctx_* prompt guidelines and the session-start note (default on). */
+  guidance: boolean;
   /** Absolute path the loader looked at (whether or not it existed). */
   configPath: string;
   /** True when the file existed and parsed into a JSON object. */
@@ -337,6 +347,10 @@ export function loadPiConfig(): ResolvedPiConfig {
     disabledTools: resolveDisabledTools(cfg.disableTools),
     toolPrefix: resolveToolPrefix(cfg.toolPrefix),
     toolProfile,
+    guidance:
+      process.env.LEAN_CTX_PI_GUIDANCE !== undefined
+        ? envFlag("LEAN_CTX_PI_GUIDANCE")
+        : cfg.guidance !== false,
     configPath,
     loaded,
   };

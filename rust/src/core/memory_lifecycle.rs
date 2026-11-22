@@ -6,7 +6,7 @@
 //! - Compaction when limits are exceeded
 //! - Archival of old/unused facts
 
-use chrono::{Duration, Utc};
+use lean_ctx_time::{Duration, UtcDateTime};
 use std::path::PathBuf;
 
 use super::knowledge::KnowledgeFact;
@@ -138,7 +138,7 @@ pub struct LifecycleReport {
 }
 
 pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleConfig) -> usize {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let mut count = 0;
 
     for fact in facts.iter_mut() {
@@ -309,7 +309,7 @@ pub fn compact(
     config: &LifecycleConfig,
 ) -> (usize, Vec<KnowledgeFact>) {
     let mut archived: Vec<KnowledgeFact> = Vec::new();
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let stale_threshold = now - Duration::days(config.stale_days);
 
     let mut to_archive: Vec<usize> = Vec::new();
@@ -468,7 +468,7 @@ pub mod tests {
         let dir = std::env::temp_dir().join(format!(
             "lctx-lifecycle-{}-{}",
             std::process::id(),
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            UtcDateTime::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
@@ -489,11 +489,11 @@ pub mod tests {
             value: value.to_string(),
             source_session: "s1".to_string(),
             confidence,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
+            created_at: UtcDateTime::now(),
+            last_confirmed: UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
-            valid_from: Some(Utc::now()),
+            valid_from: Some(UtcDateTime::now()),
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
@@ -518,7 +518,7 @@ pub mod tests {
         confidence: f32,
         days_old: i64,
     ) -> KnowledgeFact {
-        let past = Utc::now() - Duration::days(days_old);
+        let past = UtcDateTime::now() - Duration::days(days_old);
         KnowledgeFact {
             anchors: Vec::new(),
             review: None,
@@ -760,7 +760,7 @@ pub mod tests {
                     )
                 })
                 .collect();
-            facts[0].valid_until = Some(Utc::now() - Duration::seconds(1));
+            facts[0].valid_until = Some(UtcDateTime::now() - Duration::seconds(1));
 
             let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
 

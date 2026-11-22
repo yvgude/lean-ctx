@@ -14,7 +14,7 @@
 use super::AgentRegistry;
 use super::persistence::{agents_dir, create_agents_dir};
 use crate::core::context_admission::stored::{self, Lineage, StoredBinding};
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -28,7 +28,7 @@ pub struct SharedFact {
     pub category: String,
     /// The admitted `key=value` text.
     pub text: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     #[serde(default)]
     pub received_by: Vec<String>,
     #[serde(default)]
@@ -93,7 +93,7 @@ impl AgentRegistry {
                 from_agent: from.to_string(),
                 category: category.to_string(),
                 text,
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
                 received_by: Vec::new(),
                 binding: Some(binding),
             });
@@ -108,7 +108,7 @@ impl AgentRegistry {
             file.facts.drain(..excess);
         }
         save_project_file(&file)?;
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         Ok(facts.len())
     }
 

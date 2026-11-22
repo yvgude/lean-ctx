@@ -10,6 +10,10 @@ use tokio::sync::RwLock;
 // Scenario 1: bounded_lock returns None when lock is held
 // ---------------------------------------------------------------------------
 
+/// `read`/`write` take this path with a 10 s base; a short base keeps the
+/// contended wait from costing each test 10 s.
+const SHORT_BASE: Duration = Duration::from_millis(300);
+
 #[tokio::test]
 async fn bounded_read_returns_none_when_write_held() {
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(42));
@@ -21,7 +25,13 @@ async fn bounded_read_returns_none_when_write_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx_server::server::bounded_lock::read(&lock, "test:write_held")
+        move || {
+            lean_ctx_server::server::bounded_lock::read_adaptive(
+                &lock,
+                "test:write_held",
+                SHORT_BASE,
+            )
+        }
     })
     .await
     .unwrap();
@@ -31,6 +41,10 @@ async fn bounded_read_returns_none_when_write_held() {
         "should return None when write lock is held"
     );
     let elapsed = start.elapsed();
+    assert!(
+        elapsed >= SHORT_BASE,
+        "gave up before its budget: {elapsed:?}"
+    );
     // adaptive_timeout may increase base 10s up to 2x in degraded mode
     assert!(
         elapsed < Duration::from_secs(25),
@@ -48,7 +62,13 @@ async fn bounded_write_returns_none_when_read_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx_server::server::bounded_lock::write(&lock, "test:read_held")
+        move || {
+            lean_ctx_server::server::bounded_lock::write_adaptive(
+                &lock,
+                "test:read_held",
+                SHORT_BASE,
+            )
+        }
     })
     .await
     .unwrap();
@@ -58,6 +78,10 @@ async fn bounded_write_returns_none_when_read_held() {
         "should return None when read lock is held"
     );
     let elapsed = start.elapsed();
+    assert!(
+        elapsed >= SHORT_BASE,
+        "gave up before its budget: {elapsed:?}"
+    );
     // adaptive_timeout may increase base 10s up to 2x in degraded mode
     assert!(
         elapsed < Duration::from_secs(25),

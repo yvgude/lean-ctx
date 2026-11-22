@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -516,7 +516,7 @@ impl SessionState {
     /// Counts locally recorded decisions from the trailing seven days.
     #[must_use]
     pub fn decision_count_this_week() -> u64 {
-        let cutoff = Utc::now() - chrono::Duration::days(7);
+        let cutoff = UtcDateTime::now() - lean_ctx_time::Duration::days(7);
         Self::list_sessions()
             .into_iter()
             .filter_map(|summary| Self::load_by_id(&summary.id))
@@ -839,12 +839,20 @@ impl SessionState {
     /// session opened under the app session id `id` (`app_session_id`),
     /// oldest first (then by id).
     pub fn load_attributed(id: &str) -> Vec<Self> {
+        Self::load_attributed_all(&[id.to_owned()])
+    }
+
+    /// [`Self::load_attributed`] for several ids with one read of the
+    /// sessions directory: every saved session one of `ids` names, oldest
+    /// first (then by id), each once.
+    pub fn load_attributed_all(ids: &[String]) -> Vec<Self> {
         let Some(dir) = sessions_dir() else {
             return Vec::new();
         };
         let Ok(entries) = std::fs::read_dir(&dir) else {
             return Vec::new();
         };
+        let named = |id: &str| ids.iter().any(|wanted| wanted == id);
         let mut out: Vec<Self> = entries
             .flatten()
             .map(|entry| entry.path())
@@ -852,7 +860,7 @@ impl SessionState {
             .filter(|path| path.file_name().and_then(|n| n.to_str()) != Some("latest.json"))
             .filter_map(|path| std::fs::read_to_string(path).ok())
             .filter_map(|json| Self::from_storage_json(&json).ok())
-            .filter(|s| s.id == id || s.app_session_id.as_deref() == Some(id))
+            .filter(|s| named(&s.id) || s.app_session_id.as_deref().is_some_and(named))
             .collect();
         out.sort_by(|a, b| {
             a.started_at
@@ -919,7 +927,7 @@ impl SessionState {
     /// off the command hot path.
     pub fn cleanup_old_sessions(max_age_days: i64) -> u32 {
         let Some(dir) = sessions_dir() else { return 0 };
-        let cutoff = Utc::now() - chrono::Duration::days(max_age_days);
+        let cutoff = UtcDateTime::now() - lean_ctx_time::Duration::days(max_age_days);
         let global_latest = Self::load_global_latest_pointer().map(|session| session.id);
         let mut sessions = Vec::new();
 
@@ -993,7 +1001,7 @@ mod tests {
         ProjectSessionIndex, SessionState, normalized_safe_project_root, project_index_path,
         write_project_index,
     };
-    use chrono::{Duration, Utc};
+    use lean_ctx_time::{Duration, UtcDateTime};
     use sha2::{Digest as _, Sha256};
 
     #[test]
@@ -1098,7 +1106,7 @@ mod tests {
         let mut indexed = SessionState::new();
         indexed.id = "indexed".to_string();
         indexed.project_root = Some(root.clone());
-        indexed.updated_at = Utc::now() - Duration::hours(1);
+        indexed.updated_at = UtcDateTime::now() - Duration::hours(1);
         indexed.save().expect("save indexed session");
 
         // This valid but unindexed legacy file is newer. The nominal path must
@@ -1106,7 +1114,7 @@ mod tests {
         let mut unindexed = SessionState::new();
         unindexed.id = "unindexed".to_string();
         unindexed.project_root = Some(root.clone());
-        unindexed.updated_at = Utc::now();
+        unindexed.updated_at = UtcDateTime::now();
         let sessions = crate::core::session::paths::sessions_dir().expect("sessions dir");
         std::fs::write(
             sessions.join("unindexed.json"),
@@ -1300,7 +1308,7 @@ mod tests {
         let mut older = SessionState::new();
         older.id = "repair-older".to_string();
         older.project_root = Some(root.clone());
-        older.updated_at = Utc::now() - Duration::hours(1);
+        older.updated_at = UtcDateTime::now() - Duration::hours(1);
         older.save().expect("save older session");
 
         let mut missing = SessionState::new();
@@ -1345,7 +1353,7 @@ mod tests {
             let mut session = SessionState::new();
             session.id = id.to_string();
             session.project_root = Some(root.to_string());
-            session.updated_at = Utc::now() - Duration::days(age_days);
+            session.updated_at = UtcDateTime::now() - Duration::days(age_days);
             session.save().expect("save session");
         }
 

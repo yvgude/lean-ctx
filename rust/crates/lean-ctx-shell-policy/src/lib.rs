@@ -16,9 +16,11 @@
 //! and every test harness that runs commands through the Engine calls it.
 
 mod approval;
+mod command_word;
 mod config;
 mod dataflow;
 mod enforcement;
+mod exec_options;
 mod groups;
 mod operand_eval;
 mod partial;
@@ -89,7 +91,19 @@ pub fn install() {
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_alias_body;
+#[cfg(test)]
+mod tests_case_arm;
+#[cfg(test)]
+mod tests_command_word;
+#[cfg(test)]
+mod tests_comment_quotes;
+#[cfg(test)]
 mod tests_conditionals;
+#[cfg(test)]
+mod tests_exe_suffix;
+#[cfg(test)]
+mod tests_exec_options;
 #[cfg(test)]
 mod tests_ghsa_3124;
 #[cfg(test)]

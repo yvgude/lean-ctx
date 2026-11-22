@@ -4,10 +4,13 @@ use lean_ctx::{core, heatmap, report, shell};
 use lean_ctx_hooks::hook_handlers;
 
 pub mod analytics;
+mod app_hint;
 mod cmd_help;
 mod cockpit_hint;
+mod decisions_suggest;
 mod evidence;
 pub(crate) mod evidence_cost;
+mod evidence_landing;
 pub(crate) mod evidence_realworld;
 pub(crate) mod evidence_report;
 pub(crate) mod evidence_workflow;
@@ -53,7 +56,7 @@ pub fn run() {
     // gate refuses every command until it is registered (fail closed).
     lean_ctx_shell_policy::install();
     lean_ctx_proxy::register_shapers();
-    lean_ctx_hive::register_hooks();
+    lean_ctx_cloud::register_hooks();
     // Manifests, overhead, discovery cards and docs read the tool catalog
     // from the engine; the tools themselves live in the server layer.
     lean_ctx_server::server::registry::register_tool_catalog();
@@ -126,6 +129,62 @@ pub fn run() {
         if super::local_read::context_part::try_run(&args[1], &rest) {
             return;
         }
+        if super::local_read::task_receipt::try_run(&args[1], &rest) {
+            return;
+        }
+        // The team chat for LeanCTX Code (`cloud chat <verb> --json`).
+        if super::local_read::chat_part::try_run(&args[1], &rest) {
+            return;
+        }
+        if super::local_read::lease_part::try_run(&args[1], &rest) {
+            return;
+        }
+        if super::local_read::decisions_part::try_run(&args[1], &rest) {
+            return;
+        }
+        if super::local_read::members_part::try_run(&args[1], &rest) {
+            return;
+        }
+        // A top-up of credit (`cloud billing topup [--json]`), before
+        // the other billing verbs, which need `--json`.
+        if super::local_read::billing_topup::try_run(&args[1], &rest) {
+            return;
+        }
+        // The team's Stripe links for LeanCTX Code (`cloud billing <verb> --json`).
+        if super::local_read::billing_part::try_run(&args[1], &rest) {
+            return;
+        }
+        // The Cloud model catalog for LeanCTX Code (`cloud models catalog --json`,
+        // `models --json`).
+        if super::local_read::cloud_models::try_run(&args[1], &rest) {
+            return;
+        }
+        if super::local_read::team_stop_part::try_run(&args[1], &rest) {
+            return;
+        }
+        // The plan versions applied here (`cloud plan updates --json`).
+        if super::local_read::plan_part::try_run(&args[1], &rest) {
+            return;
+        }
+
+        // `decisions suggest|confirm` are routed before the match: the rest
+        // of `decisions` is the D1 command and keeps its own arm.
+        if args[1] == "decisions"
+            && matches!(
+                rest.first().map(String::as_str),
+                Some("suggest" | "confirm")
+            )
+        {
+            let code = if rest[0] == "confirm" {
+                decisions_suggest::run_confirm(&rest[1..])
+            } else {
+                decisions_suggest::run(&rest[1..])
+            };
+            if code != 0 {
+                std::process::exit(code);
+            }
+            return;
+        }
 
         match args[1].as_str() {
             "-c" | "exec" => handle_exec(&args, &rest),
@@ -192,7 +251,7 @@ pub fn run() {
                 return;
             }
             "roi" => {
-                // Local ROI is individual + free; team views live in LeanCTX | Hive.
+                // Local ROI is individual + free; team views live in LeanCTX | Cloud.
                 super::cmd_roi(&rest);
                 cockpit_hint::print_footer("report", &rest);
                 return;
@@ -388,7 +447,15 @@ pub fn run() {
                 return;
             }
             "agent" => {
+                if rest.first().map(String::as_str) == Some("diaries") {
+                    super::local_read::engine_files::run_diaries(&rest[1..]);
+                    return;
+                }
                 crate::cli::cmd_agent(&rest);
+                return;
+            }
+            "archive" => {
+                super::local_read::engine_files::run_archive(&rest);
                 return;
             }
             "client" => {
@@ -831,7 +898,7 @@ pub fn run() {
             }
             "doctor" => {
                 let code = doctor::run_cli(&rest);
-                cockpit_hint::print_footer("diagnosis", &rest);
+                app_hint::after_doctor(&rest);
                 if code != 0 {
                     std::process::exit(code);
                 }
@@ -964,7 +1031,16 @@ pub fn run() {
                 return;
             }
             "report-issue" | "report" => {
-                report::run(&rest);
+                // `report sign|verify --json`: the signed savings report (hc23).
+                // Routed inside this arm (not a guarded arm of its own) so the
+                // `--help` classification in `cmd_help` keeps one entry per arm.
+                if args[1] == "report"
+                    && matches!(rest.first().map(String::as_str), Some("sign" | "verify"))
+                {
+                    crate::cli::local_read::report_sign::run(&rest);
+                } else {
+                    report::run(&rest);
+                }
                 return;
             }
             "uninstall" => {
@@ -1002,8 +1078,12 @@ pub fn run() {
                 super::telemetry_cmd::cmd_telemetry(&rest);
                 return;
             }
-            "hive" => {
-                super::hive_cmd::cmd_hive(&rest);
+            "cloud" => {
+                super::cloud_cmd::cmd_cloud(&rest);
+                return;
+            }
+            "run" => {
+                super::run_cmd::cmd_run(&rest);
                 return;
             }
             "models" => {
@@ -1360,13 +1440,24 @@ fn passthrough(command: &str) -> ! {
     if let Some(code) = shell::exec::allowlist_gate(command) {
         std::process::exit(code);
     }
+    let status = passthrough_command(command)
+        .status()
+        .map_or(127, shell::exit_status::exit_code);
+    std::process::exit(status);
+}
+
+/// The shell child a passthrough runs `command` in, with the same
+/// environment cleanup as every other command lean-ctx runs: no startup file
+/// (`BASH_ENV`, `ENV`) and none of the variables tools read extra options
+/// or startup commands from.
+fn passthrough_command(command: &str) -> std::process::Command {
     let (shell, flag) = shell::shell_and_flag();
     let mut cmd = std::process::Command::new(&shell);
     cmd.arg(&flag).arg(command);
     shell::reentry::mark_child(&mut cmd);
     shell::platform::apply_utf8_locale(&mut cmd);
-    let status = cmd.status().map_or(127, shell::exit_status::exit_code);
-    std::process::exit(status);
+    shell::platform::apply_profile_free_env(&mut cmd);
+    cmd
 }
 
 pub(super) fn run_async<F: std::future::Future>(future: F) -> F::Output {

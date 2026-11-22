@@ -1,6 +1,6 @@
 # Welcome to LeanCTX — the Context Gateway for AI Systems
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
 
 LeanCTX helps existing AI tools select task-relevant context, apply supported
 controls, retain local knowledge and inspect the evidence their integration can

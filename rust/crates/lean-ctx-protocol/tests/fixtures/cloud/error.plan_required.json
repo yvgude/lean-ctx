@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "plan_required",
+    "message": "Cloud is part of Personal, Team and Enterprise."
+  }
+}

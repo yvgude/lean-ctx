@@ -1,0 +1,6 @@
+{
+  "agent": "claude",
+  "minutes": 15,
+  "schema": "leanctx.cloud.task-claim-request/v1",
+  "session_ref": "s-01"
+}

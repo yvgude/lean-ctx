@@ -1,0 +1,17 @@
+{
+  "case": "session_ref_path",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/session_ref",
+      "value": "/Users/me/.claude/projects/x.jsonl"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/session_ref"
+  }
+}

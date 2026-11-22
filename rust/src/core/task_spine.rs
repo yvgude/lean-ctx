@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Canonical task lineage with immutable async/blocking execution scopes.
 
-use chrono::Utc;
 use lean_ctx_protocol::{
     AgentId, ProjectId, SessionId, TaskComplexity, TaskEnvelopeV1, TaskId, TaskProfileV1, TenantId,
     TraceId,
 };
+use lean_ctx_time::UtcDateTime;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -92,7 +92,7 @@ impl TaskSpine {
                 .expect("MCP session id is valid"),
             agent_id: AgentId::try_from(agent_id.to_owned()).expect("MCP agent id is valid"),
             complexity: TaskComplexity::Unknown,
-            created_at: Utc::now().to_rfc3339(),
+            created_at: UtcDateTime::now().to_rfc3339(),
             parent_task_id: spine
                 .parent_id
                 .clone()

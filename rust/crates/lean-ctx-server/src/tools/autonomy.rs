@@ -112,8 +112,8 @@ pub fn session_wakeup_briefing(
     }
     let packages = (!loaded.is_empty())
         .then(|| format!("CONTEXT PACKAGES AUTO-LOADED: {}", loaded.join(", ")));
-    // Hive tasks (H2): the claims this machine holds here, then open tasks.
-    let tasks = lean_ctx_hive::tasks::briefing(std::path::Path::new(root));
+    // Cloud tasks (H2): the claims this machine holds here, then open tasks.
+    let tasks = lean_ctx_cloud::tasks::briefing(std::path::Path::new(root));
     let frame = |briefing: &str| format!("{AUTO_CONTEXT_OPEN}\n{briefing}\n{AUTO_CONTEXT_CLOSE}");
     let briefing = if lean_ctx::core::config::Config::load().enable_wakeup_ctx {
         let reserved = count_tokens(&frame(&format!(

@@ -3,12 +3,12 @@ use std::{collections::HashMap, sync::Arc};
 use super::memory_policy::MemoryPolicy;
 use super::{error, persona, tool_profiles};
 
+pub mod cloud;
 mod defaults;
 mod defaults_allowlist;
 mod enterprise;
 mod enums;
 pub mod governor;
-pub mod hive;
 mod intelligence;
 mod loader;
 mod logic;
@@ -80,10 +80,10 @@ pub use merge::is_project_key;
 pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
     BaselineConfig, CacheShareConfig, CredentialSource, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK,
-    HistoryMode, PipelineConfig, ProseRanker, ProseRole, ProviderEntry, ProxyConfig, ProxyMode,
-    ProxyProvider, ResolvedProvider, RoleAggressiveness, RoutingRules, UpstreamDrift, Upstreams,
-    WireShape, diagnose_drift, env_upstream_override, is_local_proxy_url, normalize_url,
-    normalize_url_opt, parse_route_target,
+    HistoryMode, LEANCTX_PROVIDER_ID, PipelineConfig, ProseRanker, ProseRole, ProviderEntry,
+    ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider, RoleAggressiveness, RoutingRules,
+    UpstreamDrift, Upstreams, WireShape, diagnose_drift, env_upstream_override, is_local_proxy_url,
+    normalize_url, normalize_url_opt, parse_route_target,
 };
 pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;

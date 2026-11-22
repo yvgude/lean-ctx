@@ -44,7 +44,7 @@ impl McpTool for CtxArtifactsTool {
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Max results (default depends on action, capped at 1000)"
+                        "description": "Max search results (default 10, capped at 50)"
                     },
                     "format": {
                         "type": "string",

@@ -1,0 +1,22 @@
+{
+  "action": "org.created",
+  "actor": {
+    "instance": null,
+    "kind": "system",
+    "label": null,
+    "user": null
+  },
+  "at": "2026-11-15T09:00:00Z",
+  "details": {},
+  "ip": null,
+  "org": "7d1e4c2a-9b3f-4e6a-8c0d-2b4f6e8a1c3e",
+  "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+  "schema": "leanctx.cloud.audit/v1",
+  "seq": 1,
+  "target": {
+    "id": null,
+    "kind": "org",
+    "label": null
+  },
+  "user_agent": null
+}

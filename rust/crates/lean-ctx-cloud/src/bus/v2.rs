@@ -1,0 +1,981 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Bus v2 wire shapes the engine sends and reads (C0 2.0 section 3,
+//! `bus.schema.json`; SPEC-ENGINE §3.7): typed messages on vault buses,
+//! Cloud-signed controls and presence.
+//!
+//! Network-free: the relay builds and checks these, the socket moves them.
+
+use std::collections::BTreeMap;
+
+use ed25519_dalek::{Signature, Verifier as _, VerifyingKey};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use super::address::{is_wire_address, is_worker_id};
+
+pub const BUS_SCHEMA: &str = "leanctx.cloud.bus/v2";
+pub const CONTROL_DOMAIN: &str = "leanctx.cloud.control.v1\n";
+/// The most characters of a question's or an answer's text.
+pub const TEXT_MAX: usize = 4000;
+/// The most characters of an offer's `what` and a handoff's `note`.
+pub const SHORT_TEXT_MAX: usize = 1000;
+const REFS_MAX: usize = 10;
+
+/// The most characters of the field a sending tool puts its text in for
+/// `kind` (question and answer `text`, offer `what`, handoff `note`); `None`
+/// for a finding or progress, whose text is not the sender's free text.
+pub fn text_max(kind: MessageType) -> Option<usize> {
+    match kind {
+        MessageType::Question | MessageType::Answer => Some(TEXT_MAX),
+        MessageType::Offer | MessageType::Handoff => Some(SHORT_TEXT_MAX),
+        MessageType::Finding | MessageType::Progress => None,
+    }
+}
+/// A syntactically valid worker id, used only to validate the other fields
+/// of a person's publish; it is removed before the frame is sent
+/// ([`super::relay_v2`]). The person rules do not apply under it.
+pub(crate) const PERSON_VALIDATION_WORKER: &str = "wkr_personpublishpending";
+
+/// The six message types (C0 2.2): the conversation types and `progress`
+/// as a status line. Work is a task (`ctx_tasks`), never a bus message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageType {
+    Question,
+    Offer,
+    Handoff,
+    Finding,
+    Answer,
+    Progress,
+}
+
+impl MessageType {
+    pub fn parse(s: &str) -> Option<Self> {
+        serde_json::from_value(Value::String(s.to_string())).ok()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ref {
+    pub kind: RefKind,
+    #[serde(rename = "ref")]
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefKind {
+    Node,
+    Msg,
+    File,
+    Commit,
+    Url,
+    Test,
+}
+
+/// E17 body and `place.publish` frame body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Publish {
+    pub schema: String,
+    pub client_msg_id: String,
+    pub to: String,
+    #[serde(rename = "type")]
+    pub kind: MessageType,
+    pub worker_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<Ref>,
+    pub body: Value,
+    /// Key material of a sealed place: a publish that carries it is
+    /// refused (engines publish to plain places only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ck_wrapped: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch: Option<u32>,
+    /// `collaboration` marks a friction finding (C0 d072c29): it carries
+    /// plaintext `counts` and a `window` and may have no refs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub about: Option<About>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counts: Option<CollabCounts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<Window>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum About {
+    Collaboration,
+}
+
+/// The friction signals of a collaboration finding (`enums/friction-signals.json`);
+/// every key optional, unknown keys refused.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CollabCounts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration_renewed: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait_timeout: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_conflict: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_refused: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_expired: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_reruns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_seconds: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Window {
+    pub from_ms: u64,
+    pub to_ms: u64,
+}
+
+/// Why a message may not be published (local refusal, before the wire).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invalid(pub String);
+
+impl Invalid {
+    /// The named rule of a person-rule refusal (`approval_on_behalf`, …;
+    /// [`super::person_rules`]), `None` for a shape refusal.
+    pub fn rule(&self) -> Option<&str> {
+        let rest = self.0.split_once("reason: ")?.1;
+        rest.split(':').next()
+    }
+}
+
+impl std::fmt::Display for Invalid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid_message: {}", self.0)
+    }
+}
+
+/// The C0 `sender` of a stored message. The web-only `place_role` (W36)
+/// never reaches an engine, so a sender carrying it is refused like any
+/// other unknown member.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Sender {
+    Worker {
+        worker_id: String,
+        name: String,
+        owner_handle: String,
+        host_app: String,
+    },
+    Person {
+        handle: String,
+    },
+    System,
+}
+
+/// The sender of a stored message, refused when it is not the C0 shape.
+pub fn sender_of(message: &Value) -> Result<Sender, Invalid> {
+    let sender = message.get("sender").ok_or(Invalid("sender".into()))?;
+    let parsed: Sender =
+        serde_json::from_value(sender.clone()).map_err(|e| Invalid(format!("sender: {e}")))?;
+    if let Sender::Worker { worker_id, .. } = &parsed
+        && !is_worker_id(worker_id)
+    {
+        return Err(Invalid("sender.worker_id".into()));
+    }
+    // Only a worker's message names a worker; a person's or Cloud's never.
+    if !matches!(parsed, Sender::Worker { .. }) && message.get("worker_id").is_some() {
+        return Err(Invalid("worker_id on a message no worker sent".into()));
+    }
+    Ok(parsed)
+}
+
+fn bad(why: impl Into<String>) -> Invalid {
+    Invalid(why.into())
+}
+
+fn chars(value: &Value, field: &str, min: usize, max: usize) -> Result<(), Invalid> {
+    let n = value[field]
+        .as_str()
+        .ok_or_else(|| bad(format!("{field} is required")))?
+        .chars()
+        .count();
+    if (min..=max).contains(&n) {
+        Ok(())
+    } else {
+        Err(bad(format!("{field} must be {min} to {max} characters")))
+    }
+}
+
+fn opt_chars(value: &Value, field: &str, min: usize, max: usize) -> Result<(), Invalid> {
+    if value.get(field).is_some() {
+        chars(value, field, min, max)
+    } else {
+        Ok(())
+    }
+}
+
+fn int(value: &Value, field: &str, min: u64, max: u64, required: bool) -> Result<(), Invalid> {
+    match value.get(field) {
+        None if !required => Ok(()),
+        None => Err(bad(format!("{field} is required"))),
+        Some(v) => v
+            .as_u64()
+            .filter(|n| (min..=max).contains(n))
+            .map(|_| ())
+            .ok_or_else(|| bad(format!("{field} must be an integer {min} to {max}"))),
+    }
+}
+
+fn worker(value: &Value, field: &str, required: bool) -> Result<(), Invalid> {
+    match value.get(field) {
+        None if !required => Ok(()),
+        Some(Value::String(id)) if is_worker_id(id) => Ok(()),
+        _ => Err(bad(format!("{field} must be a worker id"))),
+    }
+}
+
+fn only(body: &Map<String, Value>, allowed: &[&str]) -> Result<(), Invalid> {
+    match body.keys().find(|k| !allowed.contains(&k.as_str())) {
+        Some(extra) => Err(bad(format!("unknown body field {extra}"))),
+        None => Ok(()),
+    }
+}
+
+/// The engine-sent body of each type (server-set fields are refused).
+fn check_body(kind: MessageType, body: &Value) -> Result<(), Invalid> {
+    let map = body
+        .as_object()
+        .ok_or_else(|| bad("body must be an object"))?;
+    match kind {
+        MessageType::Question => {
+            only(map, &["text", "to_worker", "deadline"])?;
+            chars(body, "text", 1, TEXT_MAX)?;
+            worker(body, "to_worker", false)?;
+            int(body, "deadline", 0, u64::MAX, false)
+        }
+        MessageType::Offer => {
+            only(map, &["what", "capability", "eta_minutes", "withdraw"])?;
+            chars(body, "what", 1, SHORT_TEXT_MAX)?;
+            chars(body, "capability", 1, 64)?;
+            int(body, "eta_minutes", 1, 10_080, true)?;
+            match body.get("withdraw") {
+                None | Some(Value::Bool(_)) => Ok(()),
+                _ => Err(bad("withdraw must be true or false")),
+            }
+        }
+        MessageType::Handoff => {
+            only(map, &["to_worker", "resource", "note", "lease_id"])?;
+            worker(body, "to_worker", true)?;
+            chars(body, "resource", 1, 200)?;
+            opt_chars(body, "note", 1, SHORT_TEXT_MAX)?;
+            lease(body, false)
+        }
+        MessageType::Finding => {
+            only(map, &["statement", "evidence"])?;
+            chars(body, "statement", 24, 300)?;
+            match body["evidence"].as_str() {
+                Some("observed" | "stated" | "imported") => Ok(()),
+                _ => Err(bad("evidence must be observed, stated or imported")),
+            }
+        }
+        MessageType::Answer => {
+            only(map, &["text", "accept"])?;
+            chars(body, "text", 1, TEXT_MAX)?;
+            match body.get("accept") {
+                None | Some(Value::Bool(_)) => Ok(()),
+                _ => Err(bad("accept must be true or false")),
+            }
+        }
+        MessageType::Progress => {
+            only(map, &["percentage", "step", "usage"])?;
+            if map.get("percentage").is_none() && map.get("step").is_none() {
+                return Err(bad("progress needs percentage or step"));
+            }
+            int(body, "percentage", 0, 100, false)?;
+            opt_chars(body, "step", 1, 300)
+        }
+    }
+}
+
+fn lease(body: &Value, required: bool) -> Result<(), Invalid> {
+    match body.get("lease_id") {
+        None if !required => Ok(()),
+        Some(Value::String(id))
+            if id.strip_prefix("bl_").is_some_and(|r| {
+                (1..=40).contains(&r.len())
+                    && r.bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            }) =>
+        {
+            Ok(())
+        }
+        _ => Err(bad("lease_id must be bl_<id>")),
+    }
+}
+
+fn is_msg_id(s: &str) -> bool {
+    s.strip_prefix("msg_").is_some_and(|r| {
+        r.len() == 16
+            && r.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
+impl Publish {
+    /// The C0 2.0 rules for an engine publish, plain places only.
+    pub fn validate(&self) -> Result<(), Invalid> {
+        if self.schema != BUS_SCHEMA {
+            return Err(bad("schema"));
+        }
+        if !is_ulid(&self.client_msg_id) {
+            return Err(bad("client_msg_id must be a ULID"));
+        }
+        if !is_wire_address(&self.to) {
+            return Err(bad("to must be #<ws>/<vault>, ~<slug> or @wkr_<id>"));
+        }
+        if !is_worker_id(&self.worker_id) {
+            return Err(bad("worker_id"));
+        }
+        for id in [&self.thread_id, &self.reply_to].into_iter().flatten() {
+            if !is_msg_id(id) {
+                return Err(bad("thread_id and reply_to must be msg_ ids"));
+            }
+        }
+        if self.refs.len() > REFS_MAX
+            || self
+                .refs
+                .iter()
+                .any(|r| r.target.is_empty() || r.target.chars().count() > 500)
+        {
+            return Err(bad("refs: at most 10, each 1 to 500 characters"));
+        }
+        if self.body.get("sealed").is_some() {
+            return Err(bad("sealed bodies are not supported"));
+        }
+        let collaboration = self.about.is_some();
+        if collaboration {
+            if self.kind != MessageType::Finding {
+                return Err(bad("about: collaboration is for findings only"));
+            }
+            if self.counts.is_none() || self.window.is_none() {
+                return Err(bad("a collaboration finding needs counts and window"));
+            }
+        } else if self.counts.is_some() || self.window.is_some() {
+            return Err(bad("counts and window need about: collaboration"));
+        }
+        if self.kind == MessageType::Finding && self.refs.is_empty() && !collaboration {
+            return Err(bad("a finding needs at least one ref"));
+        }
+        if self.kind == MessageType::Answer && self.reply_to.is_none() {
+            return Err(bad("an answer needs reply_to"));
+        }
+        if self.ck_wrapped.is_some() || self.epoch.is_some() {
+            return Err(bad("key material on a plain place"));
+        }
+        // An agent's message never speaks for a person (process v1 §7); a
+        // person's own post (validated under the placeholder worker) may.
+        if self.worker_id != PERSON_VALIDATION_WORKER {
+            super::person_rules::check_agent_body(self.kind, &self.body)?;
+        }
+        check_body(self.kind, &self.body)
+    }
+}
+
+/// Crockford base32 upper, 26 characters (ULID layout).
+pub fn is_ulid(s: &str) -> bool {
+    s.len() == 26
+        && s.bytes().all(|b| {
+            b.is_ascii_digit()
+                || (b.is_ascii_uppercase() && !matches!(b, b'I' | b'L' | b'O' | b'U'))
+        })
+}
+
+/// A new ULID: 48-bit ms time, 80 random bits.
+pub fn new_ulid(now_ms: u64) -> String {
+    let mut random = [0u8; 10];
+    let _ = getrandom::fill(&mut random);
+    ulid_of(now_ms, random)
+}
+
+/// The ULID of one local message: its time and 80 bits of
+/// `blake3(seed)`, so a resend after a reconnect keeps its `client_msg_id`
+/// and Cloud deduplicates it.
+pub fn ulid_for(at_ms: u64, seed: &str) -> String {
+    let digest = blake3::hash(seed.as_bytes());
+    let mut bits = [0u8; 10];
+    bits.copy_from_slice(&digest.as_bytes()[..10]);
+    ulid_of(at_ms, bits)
+}
+
+fn ulid_of(ms: u64, low: [u8; 10]) -> String {
+    const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    let mut value: u128 = u128::from(ms & 0xFFFF_FFFF_FFFF) << 80;
+    for (i, byte) in low.iter().enumerate() {
+        value |= u128::from(*byte) << (8 * (9 - i));
+    }
+    (0..26)
+        .rev()
+        .map(|i| ALPHABET[((value >> (5 * i)) & 31) as usize] as char)
+        .collect()
+}
+
+/// Cloud-signed Control (R8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Control {
+    pub id: String,
+    pub place: String,
+    pub target: ControlTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub target_ref: Option<ControlRef>,
+    pub action: ControlAction,
+    pub reason: String,
+    pub issued_by: IssuedBy,
+    pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifted_at: Option<u64>,
+    pub key_id: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlTarget {
+    Worker,
+    Bus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlAction {
+    Hold,
+    Stop,
+    Resume,
+    Veto,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlRef {
+    pub kind: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssuedBy {
+    pub kind: String,
+    pub user_id: String,
+    /// Display name of the issuer (≤ 64; C0 b000ffd), covered by the
+    /// signature like every other member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// Why a control frame is ignored (counted `sig_invalid` or `invalid`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlRejection {
+    /// Shape breaks the contract (target/worker_id, veto without ref,
+    /// issued/lifted mismatch).
+    Invalid,
+    /// Unknown key, a key without purpose `control`, or a bad signature.
+    SigInvalid,
+}
+
+/// Cloud keys a control may be signed with: `key_id` → public key of
+/// purpose `control` (from the E13 key set).
+pub type ControlKeys = BTreeMap<String, VerifyingKey>;
+
+impl Control {
+    /// Check shape and signature (`domain ‖ canonical_json(control without
+    /// signature)`, vector `control.vectors.json`). `lifted` is the frame's
+    /// `state == lifted`.
+    pub fn verify(&self, lifted: bool, keys: &ControlKeys) -> Result<(), ControlRejection> {
+        let shape_ok = (self.target == ControlTarget::Worker) == self.worker_id.is_some()
+            && (self.action != ControlAction::Veto || self.target_ref.is_some())
+            && lifted == self.lifted_at.is_some()
+            && (2..=500).contains(&self.reason.chars().count())
+            && self.issued_by.kind == "person";
+        if !shape_ok {
+            return Err(ControlRejection::Invalid);
+        }
+        let key = keys.get(&self.key_id).ok_or(ControlRejection::SigInvalid)?;
+        let value = serde_json::to_value(self).map_err(|_| ControlRejection::Invalid)?;
+        let input =
+            lean_ctx_protocol::cloud::signing_input_without_signature(CONTROL_DOMAIN, &value)
+                .map_err(|_| ControlRejection::Invalid)?;
+        let mut sig = [0u8; 64];
+        hex::decode_to_slice(&self.signature, &mut sig)
+            .map_err(|_| ControlRejection::SigInvalid)?;
+        key.verify(&input, &Signature::from_bytes(&sig))
+            .map_err(|_| ControlRejection::SigInvalid)
+    }
+}
+
+/// Presence of a local worker on one place (SPEC-ENGINE §3.7.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PresenceState {
+    Active,
+    Idle,
+    Held,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresenceEntry {
+    pub worker_id: String,
+    pub role: String,
+    pub state: PresenceState,
+    /// QN0: the worker's name and its Instance, so another Instance can
+    /// show who is working (display only, never used to authorize).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_name: Option<String>,
+}
+
+/// The names a `presence.update` may carry besides the worker id (all
+/// optional; a Cloud that does not send them leaves every one `None`).
+/// Display only: bounded single lines, never used to address or authorize.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresenceNames {
+    /// `agent` | `person`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_name: Option<String>,
+    /// h7b team presence: the linked account's name of the person the
+    /// worker belongs to (set by Cloud, never by an Instance), the short
+    /// name of the machine and what the worker is working on. Cloud relays
+    /// them to members of the same team only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_on: Option<String>,
+}
+
+/// What a worker's `presence.update` adds for its team (h7b), sent only
+/// after the `hello.ack` names `presence_identity` and while
+/// `[cloud] presence_names` is on. Display only. Both members are always
+/// sent (`null` when unknown), so a status that was cleared replaces the
+/// old line whether Cloud replaces or merges the entry.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresenceIdentity {
+    #[serde(default)]
+    pub machine_name: Option<String>,
+    #[serde(default)]
+    pub working_on: Option<String>,
+}
+
+/// The machine name a team sees for an Instance label: the label as it is
+/// when it reads like a name ("Yves's laptop") or is an IP address (never
+/// cut into a meaningless first octet), else only the first part of a host
+/// name, so `build-01.corp.example.com` and `yves-mac.local` become
+/// `build-01` and `yves-mac` and no domain leaves the machine. Used for
+/// every name an Instance sends about itself (`instance_name` in the
+/// hello and in `presence.update`, and `machine_name`).
+pub fn machine_name(label: &str) -> Option<String> {
+    let label = label.trim();
+    let short =
+        if label.chars().any(char::is_whitespace) || label.parse::<std::net::IpAddr>().is_ok() {
+            label
+        } else {
+            label.split('.').next().unwrap_or_default()
+        };
+    bounded_line(short, PRESENCE_NAME_CHARS).map(str::to_owned)
+}
+
+/// `value` trimmed when it is a non-empty single line of at most `max`
+/// characters, else none.
+pub fn bounded_line(value: &str, max: usize) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty() && value.chars().count() <= max && !value.chars().any(char::is_control))
+        .then_some(value)
+}
+
+/// What a worker is working on, as its team sees it: the first line of
+/// the status the agent wrote itself, with every absolute path cut to its
+/// last part (`/Users/ada/src/acme/login.rs` → `login.rs`) and secrets
+/// replaced by `redact_text` (the same redaction `ctx_agent` exports use),
+/// then cut to `PRESENCE_NAME_CHARS` characters without an ellipsis.
+/// Redaction runs on the whole line before the cut, so a secret that
+/// straddles the cut is never sent half.
+pub fn working_on(status: &str) -> Option<String> {
+    let first = status.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let redacted = lean_ctx::core::redaction::redact_text(&without_paths(first));
+    let cut: String = redacted.chars().take(PRESENCE_NAME_CHARS).collect();
+    bounded_line(&cut, PRESENCE_NAME_CHARS).map(str::to_owned)
+}
+
+/// `line` with each absolute path or `file:` URL cut to its last part; words
+/// are rejoined with single spaces.
+///
+/// Privacy first: a path starts at a `/`, `\`, `~/`, `~user/`, `$NAME/`, `\\` or a
+/// drive (`C:\`, `C:/`) anywhere in a word, whatever stands before it, as
+/// long as that is no name character (`--set=a=/…`, `path:/…`, `grün=/…`,
+/// `"/…`, `(/…`) or only a short flag (`-v/…`, `-I/…`). Relative paths
+/// (`src/main.rs`, `./x`), ratios (`1/2`), a lone `/` and URLs start none.
+/// From the start of a path everything through the last separator in the
+/// rest of its segment goes, and only the final part stays. The segment ends
+/// before the next word that starts a path, flag or URL of its own or a shell
+/// operator, so folder names with any number of spaces
+/// (`C:\Users\ada\OneDrive - Acme Bank\proj\x.rs` → `x.rs`) and quotes inside
+/// a quoted path leave nothing behind. A relative word in the same segment
+/// goes too (`/repo/a.md src/b.rs` → `b.rs`): cutting too much is the safe
+/// side for a line the whole team sees.
+fn without_paths(line: &str) -> String {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let mut out = Vec::with_capacity(words.len());
+    let mut next = 0;
+    while let Some(&word) = words.get(next) {
+        next += 1;
+        let Some((prefix, start)) = path_start(word) else {
+            out.push(word.to_owned());
+            continue;
+        };
+        let segment_end = words[next..]
+            .iter()
+            .position(|more| ends_segment(more))
+            .map_or(words.len(), |at| next + at);
+        let through = words[next..segment_end]
+            .iter()
+            .rposition(|more| more.contains(['/', '\\']))
+            .map_or(next, |at| next + at + 1);
+        let mut path = word[start..].to_owned();
+        for more in &words[next..through] {
+            path.push(' ');
+            path.push_str(more);
+        }
+        next = through;
+        out.push(format!("{prefix}{}", last_part(&path)));
+    }
+    out.join(" ")
+}
+
+/// Where the first absolute path in `word` starts, with what stands before
+/// it (a `file://` scheme is dropped from that prefix, and all after it is
+/// the path, host form `file://nas/share/…` too); none for a word
+/// without one and for a URL of any other scheme.
+fn path_start(word: &str) -> Option<(&str, usize)> {
+    if let Some(scheme) = word.find("://") {
+        let name = &word[..scheme];
+        if !name.to_ascii_lowercase().ends_with("file") {
+            return None;
+        }
+        let path = scheme + "://".len();
+        return (path < word.len()).then_some((&word[..scheme - "file".len()], path));
+    }
+    let mut before: Option<char> = None;
+    for (at, c) in word.char_indices() {
+        let free = before.is_none_or(|b| !is_name_char(b) || is_short_flag(&word[..at]));
+        if free && starts_path(&word[at..]) {
+            return Some((&word[..at], at));
+        }
+        before = Some(c);
+    }
+    None
+}
+
+/// Whether `rest` begins with an absolute Unix, home (`~/`, `~user/`),
+/// Windows root, UNC or drive-letter path.
+fn starts_path(rest: &str) -> bool {
+    let bytes = rest.as_bytes();
+    if matches!(bytes.first(), Some(b'/' | b'\\')) {
+        return bytes.len() > 1;
+    }
+    if let Some(var) = rest.strip_prefix('$') {
+        let name = var
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(var.len());
+        return name > 0 && matches!(var.as_bytes().get(name), Some(b'/' | b'\\'));
+    }
+    if let Some(home) = rest.strip_prefix('~') {
+        return home
+            .find('/')
+            .is_some_and(|slash| home[..slash].chars().all(is_name_char));
+    }
+    bytes.len() > 2
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+}
+
+/// A character of a name or relative path: a path never starts right
+/// after one (`src/main.rs`, `./x`, `1/2`).
+fn is_name_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '~')
+}
+
+/// A short flag such as `-v` or `-I` that a path may follow directly.
+fn is_short_flag(prefix: &str) -> bool {
+    prefix
+        .strip_prefix('-')
+        .is_some_and(|name| !name.is_empty() && name.chars().all(|c| c.is_ascii_alphabetic()))
+}
+
+/// Whether `word` begins something new after a path: a path, flag or URL of
+/// its own, or a shell operator.
+fn ends_segment(word: &str) -> bool {
+    let flag = word
+        .strip_prefix('-')
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|c| c == '-' || c.is_alphanumeric());
+    flag || word.contains("://")
+        || matches!(word, "|" | "||" | "&&" | ";" | ">" | ">>")
+        || path_start(word).is_some()
+}
+
+/// The part of `path` after its last separator; when only closing quotes or
+/// punctuation follow that separator (`acme\`, `acme/"`), the last named
+/// part before it with them.
+fn last_part(path: &str) -> String {
+    let closes = |c: char| {
+        matches!(
+            c,
+            '"' | '\'' | '`' | ')' | ']' | '>' | '}' | ',' | '.' | ';' | ':' | '!' | '?'
+        )
+    };
+    let mut parts = path.rsplit(['/', '\\']);
+    let last = parts.next().unwrap_or_default();
+    if !last.trim_matches(closes).is_empty() {
+        return last.to_owned();
+    }
+    let name = parts
+        .find(|part| !part.trim_matches(closes).is_empty())
+        .unwrap_or("…");
+    format!("{name}{last}")
+}
+
+/// Longest name kept from a presence frame, in characters.
+const PRESENCE_NAME_CHARS: usize = 128;
+
+/// The optional names of a `presence.update` frame; a field that is no
+/// bounded single line is dropped, an unknown `kind` too.
+pub fn presence_names(value: &Value) -> PresenceNames {
+    let line = |field: &str| {
+        value[field]
+            .as_str()
+            .map(str::trim)
+            .filter(|v| {
+                !v.is_empty()
+                    && v.chars().count() <= PRESENCE_NAME_CHARS
+                    && !v.chars().any(char::is_control)
+            })
+            .map(str::to_owned)
+    };
+    PresenceNames {
+        kind: line("kind").filter(|k| matches!(k.as_str(), "agent" | "person")),
+        display_name: line("display_name"),
+        session_name: line("session_name"),
+        instance_id: line("instance_id"),
+        instance_name: line("instance_name"),
+        person_name: line("person_name"),
+        machine_name: line("machine_name"),
+        working_on: line("working_on"),
+    }
+}
+
+/// The frames the engine reads; others are ignored by the relay.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Inbound {
+    HelloAck(Value),
+    Stored {
+        client_msg_id: String,
+        id: String,
+        seq: u64,
+        thread_id: String,
+    },
+    Deliver(Value),
+    Presence {
+        address: String,
+        worker_id: String,
+        role: String,
+        state: PresenceState,
+        at: u64,
+        /// The optional names a Cloud relays with the presence.
+        names: PresenceNames,
+    },
+    Control {
+        lifted: bool,
+        control: Box<Control>,
+    },
+    PlaceDenied {
+        place: String,
+        code: String,
+    },
+    Resync {
+        place: String,
+    },
+    Error {
+        client_msg_id: Option<String>,
+        code: String,
+        reason: Option<String>,
+        /// A `quota_exceeded` frame's optional quota fields (`resource`,
+        /// `limit`, `used`, `reset_at`, `retry_after_s`), only those of the
+        /// expected type; `None` when the frame carries none.
+        quota: Option<Box<Value>>,
+    },
+    Ping,
+    /// The person answered a consent in the browser (§3.8.2 step 4).
+    ConsentAnswered {
+        consent_id: String,
+    },
+    /// C0 2.2: a task of a followed vault changed.
+    TaskEvent(Box<super::task_events::TaskEvent>),
+    /// §37: a plan of a followed vault has a new version (`plan.advanced`).
+    /// A hint only: nothing reaches an agent before the version is pulled
+    /// and its signature verified.
+    PlanAdvanced(Box<super::plan_events::PlanAdvanced>),
+    /// §37: a team decision of a followed vault changed (`decision.changed`).
+    DecisionChanged(Box<super::plan_events::DecisionChanged>),
+    /// A place's log grew (`log.advanced`): background sync tails it now.
+    /// `purge` (priority `purge`) skips the local debounce.
+    LogAdvanced {
+        place: String,
+        purge: bool,
+    },
+    /// A place's trust (members, keys) moved (`trust.advanced`).
+    TrustAdvanced {
+        place: String,
+    },
+    /// The effective policy of this instance has a new version
+    /// (`policy.advanced`). A hint only: nothing is applied before the
+    /// signed bundle is pulled and verified.
+    PolicyAdvanced {
+        version: u64,
+    },
+    Other(String),
+}
+
+/// The quota fields of an `error` frame that have their C0 type (strings
+/// `resource`/`reset_at`, unsigned `limit`/`used`/`retry_after_s`); a field
+/// of another type is left out, so an odd one never hides the others.
+fn quota_fields(frame: &Value) -> Option<Box<Value>> {
+    let mut out = serde_json::Map::new();
+    for (field, string) in [
+        ("resource", true),
+        ("reset_at", true),
+        ("limit", false),
+        ("used", false),
+        ("retry_after_s", false),
+    ] {
+        let value = &frame[field];
+        if field == "retry_after_s" {
+            // Capped here as well: a hostile frame never reaches time math.
+            if let Some(s) = value.as_u64() {
+                let capped = s.min(crate::error::RETRY_AFTER_CAP_S);
+                out.insert(field.to_string(), Value::from(capped));
+            }
+        } else if (string && value.is_string()) || (!string && value.is_u64()) {
+            out.insert(field.to_string(), value.clone());
+        }
+    }
+    (!out.is_empty()).then(|| Box::new(Value::Object(out)))
+}
+
+/// Parse one text frame (flat `{t, ...body}`).
+pub fn parse_frame(text: &str) -> Result<Inbound, Invalid> {
+    let value: Value = serde_json::from_str(text).map_err(|e| bad(format!("frame: {e}")))?;
+    let t = value["t"]
+        .as_str()
+        .ok_or_else(|| bad("frame without t"))?
+        .to_string();
+    let s = |field: &str| -> Result<String, Invalid> {
+        value[field]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| bad(format!("{t}: {field}")))
+    };
+    let n = |field: &str| -> Result<u64, Invalid> {
+        value[field]
+            .as_u64()
+            .ok_or_else(|| bad(format!("{t}: {field}")))
+    };
+    Ok(match t.as_str() {
+        "hello.ack" => Inbound::HelloAck(value),
+        "message.stored" => Inbound::Stored {
+            client_msg_id: s("client_msg_id")?,
+            id: s("id")?,
+            seq: n("seq")?,
+            thread_id: s("thread_id")?,
+        },
+        "message.deliver" => Inbound::Deliver(value),
+        "presence.update" => Inbound::Presence {
+            address: s("address")?,
+            worker_id: s("worker_id")?,
+            role: s("role")?,
+            state: serde_json::from_value(value["state"].clone())
+                .map_err(|_| bad("presence.update: state"))?,
+            at: n("at")?,
+            names: presence_names(&value),
+        },
+        "control" => {
+            let lifted = match value["state"].as_str() {
+                Some("issued") => false,
+                Some("lifted") => true,
+                _ => return Err(bad("control: state")),
+            };
+            let control = serde_json::from_value(value["control"].clone())
+                .map_err(|e| bad(format!("control: {e}")))?;
+            Inbound::Control { lifted, control }
+        }
+        "place.denied" => Inbound::PlaceDenied {
+            place: s("place")?,
+            code: s("code")?,
+        },
+        "resync" => Inbound::Resync { place: s("place")? },
+        "error" => Inbound::Error {
+            client_msg_id: value["client_msg_id"].as_str().map(str::to_string),
+            code: s("code")?,
+            reason: value["reason"].as_str().map(str::to_string),
+            quota: quota_fields(&value),
+        },
+        "ping" => Inbound::Ping,
+        "consent.answered" => Inbound::ConsentAnswered {
+            consent_id: s("consent_id")?,
+        },
+        "task.event" => Inbound::TaskEvent(Box::new(
+            super::task_events::TaskEvent::parse(&value).ok_or_else(|| bad("task.event"))?,
+        )),
+        "plan.advanced" => Inbound::PlanAdvanced(Box::new(
+            super::plan_events::PlanAdvanced::parse(&value).ok_or_else(|| bad("plan.advanced"))?,
+        )),
+        "decision.changed" => Inbound::DecisionChanged(Box::new(
+            super::plan_events::DecisionChanged::parse(&value)
+                .ok_or_else(|| bad("decision.changed"))?,
+        )),
+        "log.advanced" => Inbound::LogAdvanced {
+            place: s("place")?,
+            purge: value["priority"].as_str() == Some("purge"),
+        },
+        "trust.advanced" => Inbound::TrustAdvanced { place: s("place")? },
+        "policy.advanced" => Inbound::PolicyAdvanced {
+            version: n("version")?,
+        },
+        _ => Inbound::Other(t),
+    })
+}
+
+#[cfg(test)]
+#[path = "v2_tests.rs"]
+mod tests;

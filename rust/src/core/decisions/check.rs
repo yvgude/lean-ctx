@@ -63,18 +63,40 @@ pub type OtherFiles<'a> = &'a dyn Fn(&Decision, &Check, &str) -> bool;
 /// Most files a working-tree scan reads before it gives up (answering `true`).
 const MAX_SCAN_FILES: usize = 5_000;
 const MAX_SCAN_BYTES: u64 = 1_000_000;
+/// Most walk entries (files and directories, covered or not) a working-tree
+/// scan visits before it gives up (answering `true`).
+pub(crate) const MAX_WALK_ENTRIES: usize = 50_000;
+/// Deepest directory level the working-tree scan descends to.
+const MAX_WALK_DEPTH: usize = 32;
 
 /// [`OtherFiles`] over the working tree at `root` (gitignore respected).
 pub fn worktree_other_files(root: &Path, d: &Decision, check: &Check, exclude: &str) -> bool {
+    worktree_other_files_bounded(root, d, check, exclude, MAX_WALK_ENTRIES)
+}
+
+pub(crate) fn worktree_other_files_bounded(
+    root: &Path,
+    d: &Decision,
+    check: &Check,
+    exclude: &str,
+    max_entries: usize,
+) -> bool {
     let Some(re) = check.regex() else {
         return true;
     };
     let mut seen = 0usize;
+    let mut visited = 0usize;
     for entry in ignore::WalkBuilder::new(root)
         .hidden(false)
+        .follow_links(false)
+        .max_depth(Some(MAX_WALK_DEPTH))
         .build()
         .flatten()
     {
+        visited += 1;
+        if visited > max_entries {
+            return true;
+        }
         if !entry.file_type().is_some_and(|t| t.is_file()) {
             continue;
         }

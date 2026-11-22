@@ -43,7 +43,7 @@ const CATALOG_UNAVAILABLE: &str = "destination.model_catalog_unavailable";
 const POLICY_UNAVAILABLE: &str = "policy.origin_rules_unavailable";
 /// Lifecycle stage reason of a refusal by this gate.
 const ORIGIN_GATE_REFUSED: &str = "model origin gate refused request";
-/// Registry id of the subscription route (T3, `core::hive_models::PROVIDER_ID`).
+/// Registry id of the subscription route (T3, `core::cloud_models::PROVIDER_ID`).
 const SUBSCRIPTION_PROVIDER_ID: &str = "leanctx";
 
 /// Where a request is about to go.
@@ -330,7 +330,7 @@ mod tests {
         let catalog = model_catalog::bundled().expect("bundled catalog");
         let none = RoutingPolicyRules::default();
         let subscription = dest(
-            "https://models.hive.example",
+            "https://models.cloud.example",
             "glm-5.3-flash",
             Some("leanctx"),
         );

@@ -381,8 +381,9 @@ fn stale_index_detected_by_age() {
     idx.files
         .insert("a.rs".to_string(), fe("a.rs", "fn a() {}\n", "rs"));
     // Set last_scan to 100 hours ago (default max_age_hours is 48)
-    let old_time = chrono::Local::now().naive_local() - chrono::Duration::hours(100);
-    idx.last_scan = old_time.format("%Y-%m-%d %H:%M:%S").to_string();
+    let old_time =
+        lean_ctx_time::LocalDateTime::now().naive_local() - lean_ctx_time::Duration::hours(100);
+    idx.last_scan = old_time.strftime("%Y-%m-%d %H:%M:%S").to_string();
 
     assert!(
         index_looks_stale(&idx, &root_s),

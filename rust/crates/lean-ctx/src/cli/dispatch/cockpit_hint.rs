@@ -90,7 +90,7 @@ impl Surroundings {
         }
     }
 
-    fn person(self) -> bool {
+    pub(crate) fn person(self) -> bool {
         self.terminal && !self.ci && !self.opted_out
     }
 }

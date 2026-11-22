@@ -59,6 +59,9 @@ fn record_real_compression(command: &str, raw: &str) -> (usize, usize) {
 
 #[test]
 fn outcome_pricing_golden_path_has_verified_source_integrity() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     // Isolated data dir → the savings ledger AND the Ed25519 keystore both live
     // in a throwaway temp dir (`agent_identity::key_path` resolves via the data
     // dir), so signing is real but touches nothing on the developer machine.
@@ -66,8 +69,8 @@ fn outcome_pricing_golden_path_has_verified_source_integrity() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).expect("mkdir temp data dir");
 
-    // SAFETY: set before any cached resolver runs; this is a single-threaded
-    // integration-test binary and the env is torn down at the end.
+    // SAFETY: set before any cached resolver runs; this test runs alone in a
+    // process of its own (fresh_process) and the env is torn down at the end.
     unsafe {
         std::env::set_var("LEAN_CTX_DATA_DIR", &tmp);
         std::env::set_var("LEAN_CTX_AGENT_ID", AGENT_ID);
@@ -146,7 +149,7 @@ fn outcome_pricing_golden_path_has_verified_source_integrity() {
     );
 
     // ── teardown ──────────────────────────────────────────────────────────────
-    // SAFETY: single-threaded integration-test binary; restores the env set in
+    // SAFETY: alone in a process of its own (fresh_process); restores the env set in
     // the setup block above, at the end of this file's only test.
     unsafe {
         std::env::remove_var("LEAN_CTX_DATA_DIR");

@@ -16,6 +16,13 @@
 //! two worktrees meet on the same unit. A claim lives ten minutes from the
 //! last edit that touched the unit and is released when its agent finishes.
 //!
+//! Agents can also claim units before they edit (`ctx_agent action=claim
+//! units=[path|path#kind:name]`, [`claim_explicit`]): the same leases, with
+//! the unit spelled `kind:name` (`fn:parse`, `impl:A/fn:b`) or `*` for the
+//! whole file, and a caller-chosen TTL. The gate matches such a unit by its
+//! innermost symbol name ([`unit_symbol_name`]), so an explicit claim on
+//! `fn:parse` warns (or refuses) another agent's edit of `parse`.
+//!
 //! This module detects, reports and hints only. Planning a task against the
 //! claims is an optional external planner's job (`weave plan-claims`), fed
 //! the [`snapshot`] in the `leanctx.claims.v1` contract.
@@ -325,12 +332,18 @@ pub fn conflicts_in(
                 if s != scope || path != rel {
                     continue;
                 }
+                // An explicit `kind:name` claim meets the edit by its symbol name.
+                let name = unit_symbol_name(&unit);
                 let hit = unit == WHOLE_FILE
                     || names.contains(&unit)
+                    || names.contains(name)
                     || before_units
                         .get_or_insert_with(|| units_of(rel, before))
                         .iter()
-                        .any(|u| u.name == unit && spans.iter().any(|s| touches(u, *s)));
+                        .any(|u| {
+                            (u.name == unit || u.name == name)
+                                && spans.iter().any(|s| touches(u, *s))
+                        });
                 if !hit {
                     continue;
                 }
@@ -400,7 +413,7 @@ pub fn render_conflicts(conflicts: &[Conflict], refused: bool) -> String {
 
 // ─── Claiming and releasing ──────────────────────────────────────────────────
 
-fn request(agent_id: &str, resource_ref: String) -> AgentLeaseRequestV1 {
+fn request(agent_id: &str, resource_ref: String, duration_ms: u64) -> AgentLeaseRequestV1 {
     AgentLeaseRequestV1 {
         schema_version: AGENT_LEASE_SCHEMA_VERSION,
         lease_request_ref: format!(
@@ -410,8 +423,164 @@ fn request(agent_id: &str, resource_ref: String) -> AgentLeaseRequestV1 {
         resource_kind: AgentLeaseResourceKindV1::Symbol,
         resource_ref,
         owner_agent_id: agent_id.to_string(),
-        duration_ms: CLAIM_TTL_MS,
+        duration_ms,
     }
+}
+
+/// Longest explicit claim: the lease store's maximum lease duration.
+pub const MAX_EXPLICIT_TTL_MS: u64 = 60 * 60 * 1_000;
+
+/// Symbol name an edit reports for a claimed unit. Explicit claims
+/// (`ctx_agent action=claim units=[path#kind:name]`) store `kind:name`, nested
+/// with `/` (`fn:parse`, `impl:A/fn:b`); they name their innermost symbol
+/// (`parse`, `b`). Every other unit (the names edits claim, `*`) is its own name.
+#[must_use]
+pub fn unit_symbol_name(unit: &str) -> &str {
+    fn kinded(segment: &str) -> Option<&str> {
+        let (kind, name) = segment.split_once(':')?;
+        let kind_ok = !kind.is_empty()
+            && kind
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        let name_ok = name
+            .chars()
+            .next()
+            .is_some_and(|c| c != ':' && !c.is_whitespace());
+        (kind_ok && name_ok).then_some(name)
+    }
+    if unit.split('/').all(|segment| kinded(segment).is_some()) {
+        unit.rsplit('/').next().and_then(kinded).unwrap_or(unit)
+    } else {
+        unit
+    }
+}
+
+/// Result of an explicit claim of one unit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExplicitClaim {
+    /// Held by the caller until this epoch ms.
+    Held { expires_ms: u64 },
+    /// Another agent holds the unit (or it is reserved for an agent waiting
+    /// on it); nothing was recorded for the caller.
+    HeldBy { holder: String, expires_ms: u64 },
+    /// Not claimable (reference too long, store unavailable).
+    Failed(String),
+}
+
+/// Claims unit `unit` (`*`, or the `kind:name` spelling of an explicit claim)
+/// of `rel` for `agent_id` for `ttl_ms` (at most [`MAX_EXPLICIT_TTL_MS`]),
+/// in the same lease store the edit tools claim in, so the edit gate of every
+/// other agent sees it. Claiming a unit the caller already holds renews it
+/// to `ttl_ms` from now.
+pub fn claim_explicit(
+    scope: &str,
+    agent_id: &str,
+    rel: &str,
+    unit: &str,
+    ttl_ms: u64,
+) -> ExplicitClaim {
+    let ttl_ms = ttl_ms.clamp(1, MAX_EXPLICIT_TTL_MS);
+    let Some(resource) = unit_resource(scope, rel, unit) else {
+        return ExplicitClaim::Failed(format!(
+            "{rel}#{unit}: unit reference exceeds {MAX_REF_BYTES} bytes"
+        ));
+    };
+    // The same symbol under its other spelling (`fn:parse` against the
+    // edit-made `parse`) is the same unit: one holder per unit.
+    if let Some((holder, expires_ms)) = same_symbol_holder(scope, agent_id, rel, unit) {
+        return ExplicitClaim::HeldBy { holder, expires_ms };
+    }
+    match crate::core::agent_lease::acquire_shared(request(agent_id, resource.clone(), ttl_ms)) {
+        Ok(AgentLeaseAcquireV1::Granted(lease)) => {
+            // A fresh grant already runs `ttl_ms`; an existing one is renewed.
+            if lease.expires_at_epoch_ms.saturating_add(1_000) < now_ms().saturating_add(ttl_ms) {
+                if let Ok(renewed) = crate::core::agent_lease::renew_shared(
+                    AgentLeaseResourceKindV1::Symbol,
+                    &resource,
+                    agent_id,
+                    &lease.lease_ref,
+                    ttl_ms,
+                ) {
+                    return ExplicitClaim::Held {
+                        expires_ms: renewed.expires_at_epoch_ms,
+                    };
+                }
+            }
+            ExplicitClaim::Held {
+                expires_ms: lease.expires_at_epoch_ms,
+            }
+        }
+        Ok(AgentLeaseAcquireV1::HeldBy {
+            owner_agent_id,
+            expires_at_epoch_ms,
+            ..
+        }) => ExplicitClaim::HeldBy {
+            holder: owner_agent_id,
+            expires_ms: expires_at_epoch_ms,
+        },
+        Err(error) => ExplicitClaim::Failed(format!("{rel}#{unit}: {error}")),
+    }
+}
+
+/// Another agent's live claim on `unit` of `rel` under a different spelling
+/// of the same symbol: a kinded unit (`fn:parse`) against a bare edit-made
+/// name (`parse`) or the reverse. Two kinded units (`fn:parse`,
+/// `struct:parse`) stay distinct; the exact spelling is the lease store's.
+fn same_symbol_holder(scope: &str, agent_id: &str, rel: &str, unit: &str) -> Option<(String, u64)> {
+    if unit == WHOLE_FILE {
+        return None;
+    }
+    let name = unit_symbol_name(unit);
+    let bare = name == unit;
+    let leases = crate::core::agent_lease::active_shared().ok()?;
+    other_live(leases, agent_id).find_map(|lease| {
+        if lease.request.resource_kind != AgentLeaseResourceKindV1::Symbol {
+            return None;
+        }
+        let (s, path, held) = parse_unit_resource(&lease.request.resource_ref)?;
+        let held_name = unit_symbol_name(&held);
+        let meets = s == scope
+            && path == rel
+            && held != unit
+            && held != WHOLE_FILE
+            && held_name == name
+            && (bare || held_name == held);
+        meets.then(|| {
+            (
+                lease.request.owner_agent_id.clone(),
+                lease.expires_at_epoch_ms,
+            )
+        })
+    })
+}
+
+/// Releases `agent_id`'s unit claims in repository `scope` (explicit and
+/// edit-made alike): those on the `(rel, unit)` pairs named, or all of them
+/// when `units` is empty. Returns how many.
+pub fn release_units(scope: &str, agent_id: &str, units: &[(String, String)]) -> usize {
+    let Ok(leases) = crate::core::agent_lease::active_shared() else {
+        return 0;
+    };
+    leases
+        .into_iter()
+        .filter(|l| {
+            l.request.owner_agent_id == agent_id
+                && l.request.resource_kind == AgentLeaseResourceKindV1::Symbol
+                && parse_unit_resource(&l.request.resource_ref).is_some_and(|(s, rel, unit)| {
+                    s == scope
+                        && (units.is_empty() || units.iter().any(|(r, u)| *r == rel && *u == unit))
+                })
+        })
+        .filter(|l| {
+            crate::core::agent_lease::release_shared(
+                AgentLeaseResourceKindV1::Symbol,
+                &l.request.resource_ref,
+                agent_id,
+                &l.lease_ref,
+            )
+            .unwrap_or(false)
+        })
+        .count()
 }
 
 /// Claims `units` of `rel` for `agent_id` (or extends its own claims to a
@@ -423,7 +592,11 @@ pub fn claim(scope: &str, agent_id: &str, rel: &str, units: &BTreeSet<String>) -
         let Some(resource) = unit_resource(scope, rel, unit) else {
             continue;
         };
-        match crate::core::agent_lease::acquire_shared(request(agent_id, resource.clone())) {
+        match crate::core::agent_lease::acquire_shared(request(
+            agent_id,
+            resource.clone(),
+            CLAIM_TTL_MS,
+        )) {
             Ok(AgentLeaseAcquireV1::Granted(lease)) => {
                 if lease.expires_at_epoch_ms.saturating_sub(now_ms()) < CLAIM_TTL_MS / 2 {
                     let _ = crate::core::agent_lease::renew_shared(
@@ -756,6 +929,86 @@ mod tests {
         assert_eq!(found[0].unit, WHOLE_FILE);
         let none = conflicts_in(leases, root, "s", "me", "srcx/x.rs", "", &names, &[]);
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn explicit_kind_name_claim_is_seen_by_the_edit_gate() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_string_lossy().into_owned();
+        let file = dir.path().join("x.rs");
+        let a = format!("explicit-a-{}", std::process::id());
+        let b = format!("explicit-b-{}", std::process::id());
+        let scope = repo_scope(&root);
+        let beta = RUST.replace("let b = 2;", "let b = 3;");
+        let alpha = RUST.replace("let a = 1;", "let a = 5;");
+
+        assert!(matches!(
+            claim_explicit(&scope, &a, "x.rs", "fn:beta", 5 * 60 * 1_000),
+            ExplicitClaim::Held { .. }
+        ));
+        // The second agent cannot take the same unit; it is told who holds it.
+        match claim_explicit(&scope, &b, "x.rs", "fn:beta", 60_000) {
+            ExplicitClaim::HeldBy { holder, .. } => assert_eq!(holder, a),
+            other => panic!("expected HeldBy, got {other:?}"),
+        }
+        match gate_with(ClaimMode::Strict, &root, &b, &file, RUST, &beta) {
+            Gate::Refuse(text) => {
+                assert!(text.contains(&a) && text.contains("fn:beta"), "{text}");
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+        assert_eq!(
+            gate_with(ClaimMode::Strict, &root, &b, &file, RUST, &alpha),
+            Gate::Clear
+        );
+        assert_eq!(release_units(&scope, &a, &[]), 1);
+        assert_eq!(
+            gate_with(ClaimMode::Strict, &root, &b, &file, RUST, &beta),
+            Gate::Clear
+        );
+        assert_eq!(release_agent(&b), 2);
+    }
+
+    /// A long session keeps its claim: re-claiming at the maximum TTL renews
+    /// the claim the agent already holds to the full TTL from now, without a
+    /// second lease and without handing the unit to anyone else.
+    #[test]
+    fn explicit_claim_at_max_ttl_is_renewed_by_a_reclaim() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_string_lossy().into_owned();
+        let scope = repo_scope(&root);
+        let a = format!("renew-a-{}", std::process::id());
+        let first = match claim_explicit(&scope, &a, "x.rs", "fn:alpha", MAX_EXPLICIT_TTL_MS) {
+            ExplicitClaim::Held { expires_ms } => expires_ms,
+            other => panic!("expected Held, got {other:?}"),
+        };
+        assert!(first <= now_ms() + MAX_EXPLICIT_TTL_MS);
+        // Past the renewal slack of one second.
+        std::thread::sleep(std::time::Duration::from_millis(1_200));
+        let renewed = match claim_explicit(&scope, &a, "x.rs", "fn:alpha", MAX_EXPLICIT_TTL_MS) {
+            ExplicitClaim::Held { expires_ms } => expires_ms,
+            other => panic!("expected the renewal to hold, got {other:?}"),
+        };
+        assert!(
+            renewed > first,
+            "re-claim at the maximum TTL renews: {renewed} <= {first}"
+        );
+        assert!(renewed + 5_000 >= now_ms() + MAX_EXPLICIT_TTL_MS);
+        let held = snapshot(&root).claims;
+        assert_eq!(held.len(), 1, "a renewal never adds a second claim");
+        assert_eq!(held[0].expires_ms, Some(renewed));
+        assert_eq!(release_units(&scope, &a, &[]), 1);
+    }
+
+    #[test]
+    fn unit_symbol_name_strips_kinds_only_from_kind_name_units() {
+        assert_eq!(unit_symbol_name("fn:parse"), "parse");
+        assert_eq!(unit_symbol_name("impl:A/fn:b"), "b");
+        assert_eq!(unit_symbol_name("impl:A"), "A");
+        assert_eq!(unit_symbol_name("parse"), "parse");
+        assert_eq!(unit_symbol_name("Foo::bar"), "Foo::bar");
+        assert_eq!(unit_symbol_name("Note: x"), "Note: x");
+        assert_eq!(unit_symbol_name(WHOLE_FILE), WHOLE_FILE);
     }
 
     #[test]

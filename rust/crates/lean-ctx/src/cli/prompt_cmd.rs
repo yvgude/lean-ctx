@@ -303,7 +303,7 @@ mod tests {
 
     fn fresh() -> snapshot::ValueSnapshot {
         let mut s = snap();
-        s.updated_at = Some(chrono::Utc::now());
+        s.updated_at = Some(lean_ctx_time::UtcDateTime::now());
         s.cache_hits = 41;
         s
     }

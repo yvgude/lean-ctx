@@ -164,12 +164,12 @@ fn assert_sealed_refusal(response: &Response, code: &str, case: &str) {
     assert!(codes.contains(code), "{case}: {codes}");
 }
 
-/// A Personal Hive enrollment with no rules must not lock an existing
+/// A Personal Cloud enrollment with no rules must not lock an existing
 /// Developer-mode conversation out merely because the proxy forgot its origin.
 /// Real restrictions and missing required policy still fail closed.
 #[tokio::test]
 #[serial_test::serial(cache_telemetry)]
-async fn empty_hive_floor_preserves_existing_developer_conversations() {
+async fn empty_cloud_floor_preserves_existing_developer_conversations() {
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     let _mode = proxy_mode("cache");
     let _live = LivePolicy {
@@ -178,16 +178,16 @@ async fn empty_hive_floor_preserves_existing_developer_conversations() {
     let project = tempfile::tempdir().expect("project");
     let config = format!("[proxy]\nproject_root = '{}'\n", project.path().display());
     write_gateway_config(&config);
-    let directory = lean_ctx::core::policy::hive_floor::floor_dir().expect("floor directory");
+    let directory = lean_ctx::core::policy::cloud_floor::floor_dir().expect("floor directory");
     std::fs::create_dir_all(&directory).unwrap();
     let install = |version: u64, security: serde_json::Value| {
         let floor = serde_json::json!({
-            "schema": "leanctx.hive.policy-floor/v1",
+            "schema": "leanctx.cloud.policy-floor/v1",
             "version": version,
             "digest": format!("sha256:{version:064x}"),
             "not_after": "2099-01-01T00:00:00Z",
             "policy": {"effective": {
-                "schema": "leanctx.hive.policy/v1",
+                "schema": "leanctx.cloud.policy/v1",
                 "security": security, "context": {}, "sharing": {}
             }, "vaults": []}
         });
@@ -207,7 +207,11 @@ async fn empty_hive_floor_preserves_existing_developer_conversations() {
 
     install(2, serde_json::json!({"pii": "redact"}));
     let protected = anthropic_turn(&upstream, &returning_turn(SEALED_B), None).await;
-    assert_sealed_refusal(&protected, "egress.sealed_origin_unknown", "real Hive rule");
+    assert_sealed_refusal(
+        &protected,
+        "egress.sealed_origin_unknown",
+        "real Cloud rule",
+    );
 
     install(3, serde_json::json!({}));
     write_gateway_config(&format!("{GOVERNED}\n{config}"));

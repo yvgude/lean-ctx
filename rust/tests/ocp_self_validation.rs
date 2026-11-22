@@ -36,8 +36,11 @@ fn assert_valid(v: &jsonschema::Validator, instance: &serde_json::Value, what: &
 
 #[test]
 fn engine_output_validates_against_ocp_schemas() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     let tmp = tempfile::tempdir().expect("tempdir");
-    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+    // SAFETY: this test runs in a process of its own (fresh_process), so no
 
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
@@ -48,7 +51,7 @@ fn engine_output_validates_against_ocp_schemas() {
     part4_evidence_chain();
     part5_events();
 
-    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+    // SAFETY: this test runs in a process of its own (fresh_process), so no
 
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
@@ -223,7 +226,7 @@ fn part4_evidence_chain() {
 
 fn part5_events() {
     let v = validator("event.schema.json");
-    let ts = chrono::Utc::now().to_rfc3339();
+    let ts = lean_ctx_time::UtcDateTime::now().to_rfc3339();
 
     let governance_kinds = vec![
         EventKind::ToolCall {

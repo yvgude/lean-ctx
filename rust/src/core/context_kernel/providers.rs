@@ -610,8 +610,8 @@ fn ledger_candidates(entries: &[LedgerEntry], max_candidates: usize) -> Vec<Cont
                     entry.path.clone(),
                     None,
                     freshness(
-                        chrono::DateTime::from_timestamp(entry.timestamp, 0)
-                            .map(|timestamp| timestamp.to_rfc3339())
+                        lean_ctx_time::UtcDateTime::from_timestamp(entry.timestamp, 0)
+                            .map(lean_ctx_time::UtcDateTime::to_rfc3339)
                             .unwrap_or_default(),
                         entry.state == Some(ContextState::Stale),
                     ),
@@ -789,8 +789,10 @@ mod tests {
             retention_days: Some(1),
             ..Default::default()
         };
-        let fresh = chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:01Z").unwrap();
-        let expired = chrono::DateTime::parse_from_rfc3339("1970-01-02T00:00:00Z").unwrap();
+        let fresh =
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339("1970-01-01T00:00:01Z").unwrap();
+        let expired =
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339("1970-01-02T00:00:00Z").unwrap();
         assert!(
             policy
                 .candidate_violation_at(&candidates[0], Some(&fresh))

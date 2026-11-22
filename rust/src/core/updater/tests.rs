@@ -734,3 +734,435 @@ fn filesystem_lock_rejects_concurrent_writer() {
     first.unlock().expect("unlock");
     second.try_lock_exclusive().expect("lock after release");
 }
+
+/// A daemon double for the post-update restart on a fake clock: records
+/// restarts, pauses and probe timeouts, and answers with the given versions in
+/// turn (the last one repeats). A probe takes `probe_cost`; when that exceeds
+/// the probe's timeout, the probe gives up at the timeout without an answer.
+struct FakeDaemon {
+    supervised: bool,
+    restart_result: Result<(), String>,
+    answers: Vec<Option<&'static str>>,
+    probe_cost: std::time::Duration,
+    epoch: std::time::Instant,
+    elapsed: std::time::Duration,
+    restarts: usize,
+    checks: usize,
+    probe_timeouts: Vec<std::time::Duration>,
+    pauses: Vec<std::time::Duration>,
+}
+
+impl FakeDaemon {
+    fn answering(answers: Vec<Option<&'static str>>) -> Self {
+        Self {
+            supervised: false,
+            restart_result: Ok(()),
+            answers,
+            probe_cost: std::time::Duration::ZERO,
+            epoch: std::time::Instant::now(),
+            elapsed: std::time::Duration::ZERO,
+            restarts: 0,
+            checks: 0,
+            probe_timeouts: Vec::new(),
+            pauses: Vec::new(),
+        }
+    }
+}
+
+impl rewire::DaemonControl for FakeDaemon {
+    fn supervised(&self) -> bool {
+        self.supervised
+    }
+
+    fn restart(&mut self) -> Result<(), String> {
+        self.restarts += 1;
+        self.restart_result.clone()
+    }
+
+    fn reported_version(&mut self, timeout: std::time::Duration) -> Option<String> {
+        self.probe_timeouts.push(timeout);
+        let index = self.checks.min(self.answers.len().saturating_sub(1));
+        self.checks += 1;
+        if self.probe_cost > timeout {
+            self.elapsed += timeout;
+            return None;
+        }
+        self.elapsed += self.probe_cost;
+        self.answers
+            .get(index)
+            .copied()
+            .flatten()
+            .map(str::to_string)
+    }
+
+    fn now(&self) -> std::time::Instant {
+        self.epoch + self.elapsed
+    }
+
+    fn pause(&mut self, duration: std::time::Duration) {
+        self.elapsed += duration;
+        self.pauses.push(duration);
+    }
+}
+
+/// A daemon that ran before an attended update whose new binary is in place.
+fn ran_before() -> rewire::RestartContext {
+    rewire::RestartContext {
+        was_running: true,
+        swap_landed: true,
+        ..rewire::RestartContext::default()
+    }
+}
+
+/// A daemon that ran before the update is restarted once and confirmed on
+/// the new version, also when it needs a few checks to come back.
+#[test]
+fn update_restarts_a_running_daemon_and_verifies_the_new_version() {
+    let mut daemon = FakeDaemon::answering(vec![None, None, Some("v3.12.7")]);
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        ran_before(),
+        "3.12.7",
+        std::time::Duration::from_secs(10),
+    );
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::Verified("3.12.7".to_string())
+    );
+    assert_eq!(daemon.restarts, 1);
+    assert_eq!(daemon.checks, 3);
+    assert_eq!(daemon.pauses, vec![rewire::DAEMON_POLL; 2]);
+    let (warning, lines) = rewire::daemon_restart_report(&outcome).expect("a line");
+    assert!(!warning);
+    assert!(lines[0].contains("Daemon running on the new binary (v3.12.7)"));
+}
+
+/// A daemon that did not run before the update stays stopped.
+#[test]
+fn update_leaves_a_stopped_daemon_stopped() {
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        rewire::RestartContext {
+            was_running: false,
+            ..ran_before()
+        },
+        "3.12.7",
+        std::time::Duration::from_secs(10),
+    );
+    assert_eq!(outcome, rewire::DaemonRestart::NotRunningBefore);
+    assert_eq!(daemon.restarts, 0);
+    assert_eq!(daemon.checks, 0);
+    assert!(rewire::daemon_restart_report(&outcome).is_none());
+}
+
+/// A daemon that still reports the old version after the bounded wait is
+/// reported as a warning naming both versions; the rollback stays available.
+#[test]
+fn update_reports_a_daemon_on_the_wrong_version_after_restart() {
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.6")]);
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        ran_before(),
+        "v3.12.7",
+        std::time::Duration::from_secs(2),
+    );
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::VersionMismatch {
+            expected: "3.12.7".to_string(),
+            reported: Some("3.12.6".to_string()),
+            waited_secs: 2,
+        }
+    );
+    assert_eq!(daemon.restarts, 1);
+    // Bounded: one check right after the restart, then one per poll interval.
+    assert_eq!(daemon.pauses.len(), 4);
+    assert_eq!(daemon.checks, 5);
+    let (warning, lines) = rewire::daemon_restart_report(&outcome).expect("a warning");
+    assert!(warning);
+    let text = lines.join("\n");
+    assert!(text.contains("reports v3.12.6, not v3.12.7"), "{text}");
+    assert!(text.contains("lean-ctx daemon status"), "{text}");
+    assert!(text.contains("lean-ctx update --rollback"), "{text}");
+}
+
+/// A daemon that never answers after the restart is reported with the wait.
+#[test]
+fn update_reports_a_daemon_that_does_not_come_back() {
+    let mut daemon = FakeDaemon::answering(vec![None]);
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        ran_before(),
+        "3.12.7",
+        std::time::Duration::from_secs(1),
+    );
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::VersionMismatch {
+            expected: "3.12.7".to_string(),
+            reported: None,
+            waited_secs: 1,
+        }
+    );
+    let (warning, lines) = rewire::daemon_restart_report(&outcome).expect("a warning");
+    assert!(warning);
+    assert!(lines[0].contains("did not come back on v3.12.7 within 1s"));
+}
+
+/// A deferred swap (Windows, locked binary) and a failed restart never poll.
+#[test]
+fn update_skips_the_wait_when_the_swap_is_deferred_or_the_restart_fails() {
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    let wait = std::time::Duration::from_secs(10);
+    let deferred = rewire::RestartContext {
+        swap_landed: false,
+        ..ran_before()
+    };
+    let outcome = rewire::restart_and_verify(&mut daemon, deferred, "3.12.7", wait);
+    assert_eq!(outcome, rewire::DaemonRestart::SwapDeferred);
+    assert_eq!((daemon.restarts, daemon.checks), (0, 0));
+    assert!(
+        rewire::daemon_restart_report(&outcome)
+            .expect("a warning")
+            .0
+    );
+
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    daemon.restart_result = Err("start: spawn failed".to_string());
+    let outcome = rewire::restart_and_verify(&mut daemon, ran_before(), "3.12.7", wait);
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::RestartFailed("start: spawn failed".to_string())
+    );
+    assert_eq!((daemon.restarts, daemon.checks), (1, 0));
+    let (warning, lines) = rewire::daemon_restart_report(&outcome).expect("a warning");
+    assert!(warning);
+    assert!(lines[0].contains("start: spawn failed"));
+}
+
+/// A daemon that accepts the connection but answers slower than the time
+/// left (index still loading) never stretches the wait: every probe is cut
+/// to what remains before the deadline, so the whole wait ends by it.
+#[test]
+fn update_wait_ends_by_the_deadline_when_the_daemon_answers_slowly() {
+    use std::time::Duration;
+    let wait = Duration::from_secs(10);
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    daemon.probe_cost = Duration::from_secs(3);
+    let outcome = rewire::restart_and_verify(&mut daemon, ran_before(), "3.12.7", wait);
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::VersionMismatch {
+            expected: "3.12.7".to_string(),
+            reported: None,
+            waited_secs: 10,
+        }
+    );
+    assert!(
+        daemon.elapsed <= wait + rewire::DAEMON_POLL,
+        "waited {:?} for a {wait:?} budget",
+        daemon.elapsed
+    );
+    assert!(
+        daemon
+            .probe_timeouts
+            .iter()
+            .all(|timeout| *timeout <= rewire::DAEMON_PROBE_TIMEOUT),
+        "{:?}",
+        daemon.probe_timeouts
+    );
+
+    // A wait of 0 s still asks once, within one poll interval.
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    daemon.probe_cost = Duration::from_secs(3);
+    rewire::restart_and_verify(&mut daemon, ran_before(), "3.12.7", Duration::ZERO);
+    assert_eq!(daemon.checks, 1);
+    assert!(
+        daemon.elapsed <= rewire::DAEMON_POLL,
+        "{:?}",
+        daemon.elapsed
+    );
+}
+
+/// macOS seatbelt guard: an unattended update (scheduled, or launchd-
+/// standalone) without an autostart unit never stops or starts the daemon —
+/// a directly started daemon would inherit the deny-~/Documents sandbox —
+/// and tells the user to restart it. With a unit it restarts through it.
+#[test]
+fn unattended_update_without_a_unit_leaves_the_restart_to_the_user() {
+    let unattended = rewire::RestartContext {
+        unattended: true,
+        ..ran_before()
+    };
+    let wait = std::time::Duration::from_secs(10);
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    let outcome = rewire::restart_and_verify(&mut daemon, unattended, "3.12.7", wait);
+    assert_eq!(outcome, rewire::DaemonRestart::ManualRestartNeeded);
+    assert_eq!((daemon.restarts, daemon.checks), (0, 0));
+    let (warning, lines) = rewire::daemon_restart_report(&outcome).expect("a warning");
+    assert!(warning);
+    assert!(
+        lines.join("\n").contains("run: lean-ctx daemon restart"),
+        "{lines:?}"
+    );
+
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    daemon.supervised = true;
+    let outcome = rewire::restart_and_verify(&mut daemon, unattended, "3.12.7", wait);
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::Verified("3.12.7".to_string())
+    );
+    assert_eq!(daemon.restarts, 1);
+}
+
+/// When the setup refresh already restarted the daemon through its unit
+/// (macOS LaunchAgent re-wrap), it is not restarted a second time; the
+/// version is still verified.
+#[test]
+fn update_does_not_restart_a_daemon_the_refresh_already_restarted() {
+    let mut daemon = FakeDaemon::answering(vec![None, Some("3.12.7")]);
+    daemon.supervised = true;
+    let context = rewire::RestartContext {
+        already_restarted: true,
+        unattended: true,
+        ..ran_before()
+    };
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        context,
+        "3.12.7",
+        std::time::Duration::from_secs(10),
+    );
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::Verified("3.12.7".to_string())
+    );
+    assert_eq!((daemon.restarts, daemon.checks), (0, 2));
+}
+
+/// Linux legacy schedulers (timer units and cron entries written before
+/// #335) run `update --quiet` without `--scheduled`; such a run is
+/// unattended too, or a hand-started daemon would be spawned inside the
+/// oneshot timer unit and killed with its cgroup. Windows has no unit.
+#[test]
+fn quiet_update_from_a_legacy_scheduler_counts_as_unattended() {
+    assert!(rewire::unattended_run("linux", false, true, false));
+    assert!(rewire::unattended_run("linux", true, false, false));
+    assert!(rewire::unattended_run("macos", false, false, true));
+    assert!(rewire::unattended_run("macos", false, true, false));
+    assert!(!rewire::unattended_run("linux", false, false, false));
+    assert!(!rewire::unattended_run("windows", true, true, false));
+
+    let context = rewire::RestartContext {
+        unattended: rewire::unattended_run("linux", false, true, false),
+        ..ran_before()
+    };
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        context,
+        "3.12.7",
+        std::time::Duration::from_secs(10),
+    );
+    assert_eq!(outcome, rewire::DaemonRestart::ManualRestartNeeded);
+    assert_eq!(daemon.restarts, 0);
+    assert!(!outcome.waited(), "no wait-value warning without a wait");
+}
+
+/// macOS: the LaunchAgent re-wrap restarts only the daemon launchd runs. A
+/// daemon started by hand next to an installed plist (another PID, or no
+/// launchd job) is still stopped and restarted explicitly.
+#[test]
+fn a_hand_started_daemon_next_to_the_launch_agent_is_restarted() {
+    assert!(rewire::restarted_by_rewrap(
+        "macos",
+        true,
+        Some(42),
+        Some(42)
+    ));
+    assert!(!rewire::restarted_by_rewrap(
+        "macos",
+        true,
+        Some(42),
+        Some(7)
+    ));
+    assert!(!rewire::restarted_by_rewrap("macos", true, Some(42), None));
+    assert!(!rewire::restarted_by_rewrap("macos", true, None, None));
+    assert!(!rewire::restarted_by_rewrap(
+        "macos",
+        false,
+        Some(42),
+        Some(42)
+    ));
+    assert!(!rewire::restarted_by_rewrap(
+        "linux",
+        true,
+        Some(42),
+        Some(42)
+    ));
+
+    let mut daemon = FakeDaemon::answering(vec![Some("3.12.7")]);
+    daemon.supervised = true;
+    let context = rewire::RestartContext {
+        already_restarted: rewire::restarted_by_rewrap("macos", true, Some(42), Some(7)),
+        ..ran_before()
+    };
+    let outcome = rewire::restart_and_verify(
+        &mut daemon,
+        context,
+        "3.12.7",
+        std::time::Duration::from_secs(10),
+    );
+    assert_eq!(
+        outcome,
+        rewire::DaemonRestart::Verified("3.12.7".to_string())
+    );
+    assert_eq!(daemon.restarts, 1);
+    assert!(outcome.waited());
+}
+
+/// `LEAN_CTX_DAEMON_WAIT_SECS` as the installers read it: whole seconds,
+/// default 10, bounded; an invalid or capped value comes with a warning.
+#[test]
+fn daemon_wait_follows_the_installer_variable() {
+    use std::time::Duration;
+    let secs = |raw: Option<&str>| rewire::daemon_wait(raw).0;
+    let warns = |raw: Option<&str>| rewire::daemon_wait(raw).1.is_some();
+    assert_eq!(secs(None), Duration::from_secs(10));
+    assert_eq!(secs(Some("")), Duration::from_secs(10));
+    assert_eq!(secs(Some("abc")), Duration::from_secs(10));
+    assert_eq!(secs(Some("-3")), Duration::from_secs(10));
+    assert_eq!(secs(Some("1.5")), Duration::from_secs(10));
+    assert_eq!(secs(Some("08")), Duration::from_secs(8));
+    assert_eq!(secs(Some("0")), Duration::from_secs(0));
+    assert_eq!(secs(Some("300")), Duration::from_secs(300));
+    assert_eq!(secs(Some("301")), Duration::from_secs(300));
+    assert_eq!(
+        secs(Some("99999999999999999999999")),
+        Duration::from_secs(300)
+    );
+    assert!(!warns(None) && !warns(Some(" ")) && !warns(Some("08")) && !warns(Some("300")));
+    assert!(warns(Some("abc")) && warns(Some("1.5")) && warns(Some("-3")));
+    assert!(warns(Some("301")) && warns(Some("99999999999999999999999")));
+    let text = rewire::daemon_wait(Some("1.5")).1.unwrap_or_default();
+    assert!(text.contains("LEAN_CTX_DAEMON_WAIT_SECS=\"1.5\""), "{text}");
+}
+
+/// The daemon's version comes from its capabilities document.
+#[test]
+fn daemon_version_is_read_from_the_capabilities_document() {
+    assert_eq!(
+        rewire::version_from_capabilities(
+            r#"{"contract":"local-read/1","kind":"capabilities","version":"3.12.7"}"#
+        )
+        .as_deref(),
+        Some("3.12.7")
+    );
+    assert_eq!(
+        rewire::version_from_capabilities(r#"{"kind":"error"}"#),
+        None
+    );
+    assert_eq!(rewire::version_from_capabilities("ok\n"), None);
+}

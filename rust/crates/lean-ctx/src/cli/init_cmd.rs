@@ -109,6 +109,9 @@ pub fn cmd_init(args: &[String]) {
             };
             if reverted {
                 qprintln!("  ✓ governor setup reverted for {}", host.name);
+                if host.key == "claude" {
+                    note_claude_mod_left_disabled();
+                }
             }
         }
     }
@@ -324,9 +327,70 @@ fn init_governor(
             lean_ctx_hooks::hooks::governor_default::pin(host, Some(arm.label()));
         }
         qprintln!("  ✓ Claude Code governor setup installed (revert: --mode hybrid)");
+        if arm == lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::McpDeferred {
+            disable_claude_mod_for_governor();
+        }
         if let Err(e) = crate::setup::agent_selection::remember_connected_agent(agent) {
             eprintln!("  ✗ {agent}: {e}");
         }
+    }
+}
+
+/// governor-mcp keeps lean-ctx tool schemas deferred; an enabled LeanCTX
+/// plugin would front-load them again. Only this explicit init disables it
+/// (never uninstalls), once: setup and the post-update rewire leave a plugin
+/// the user re-enabled alone.
+fn disable_claude_mod_for_governor() {
+    use lean_ctx_hooks::hooks::agents::claude_mod::{self, ModStatus};
+    // Ran once already: skip `claude --version` / `plugin list` entirely.
+    if claude_mod::governor_disabled_marker().is_ok_and(|m| m.exists()) {
+        return;
+    }
+    if !matches!(
+        claude_mod::status(),
+        ModStatus::Current(_) | ModStatus::Stale(_)
+    ) {
+        return;
+    }
+    let outcome = claude_mod::disable_for_governor();
+    // Printed under --quiet too: it changes a setting outside lean-ctx.
+    if !outcome.disabled.is_empty() {
+        println!(
+            "  ✓ Disabled {} in your user settings — it would front-load lean-ctx tool schemas (undo: claude plugin enable {} --scope user; stays as you set it)",
+            claude_mod::PLUGIN_ID,
+            claude_mod::PLUGIN_ID
+        );
+    }
+    if let Some(e) = &outcome.error {
+        eprintln!("  ✗ disabling the LeanCTX Claude plugin failed: {e}");
+    }
+    if !outcome.left.is_empty() {
+        // A failed user-scope disable is retried in the user scope; a local or
+        // checked-in project enable is overridden for this user in local.
+        let scope = if outcome.left.iter().any(|s| s == "user") {
+            "user"
+        } else {
+            "local"
+        };
+        eprintln!(
+            "  ! {} stays enabled in {} settings — it front-loads lean-ctx tool schemas under governor-mcp (disable for you only: claude plugin disable {} --scope {scope})",
+            claude_mod::PLUGIN_ID,
+            outcome.left.join(" and "),
+            claude_mod::PLUGIN_ID
+        );
+    }
+}
+
+/// Leaving governor-mcp does not re-enable the plugin it disabled: that was
+/// a settings change outside lean-ctx, and the user may have kept it. Say so.
+fn note_claude_mod_left_disabled() {
+    use lean_ctx_hooks::hooks::agents::claude_mod;
+    if claude_mod::governor_disabled_marker().is_ok_and(|m| m.exists()) {
+        qprintln!(
+            "  · {} stays as governor-mcp left it in your user settings (enable: claude plugin enable {} --scope user)",
+            claude_mod::PLUGIN_ID,
+            claude_mod::PLUGIN_ID
+        );
     }
 }
 

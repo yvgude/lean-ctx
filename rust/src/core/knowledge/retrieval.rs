@@ -60,7 +60,7 @@ impl LocalKnowledgeStore {
         policy: &RetrievalPolicy,
     ) -> RetrievalResult {
         let now_query = if policy.required_validity {
-            Some(KnowledgeQuery::valid_at(chrono::Utc::now()))
+            Some(KnowledgeQuery::valid_at(lean_ctx_time::UtcDateTime::now()))
         } else {
             None
         };
@@ -134,14 +134,14 @@ impl KnowledgeRetriever for LocalKnowledgeStore {
 mod tests {
     use super::*;
     use crate::core::knowledge::store::KnowledgeStore;
-    use chrono::{Duration, Utc};
     use lean_ctx_protocol::knowledge::{
         ClassificationLevel, DataClassification, KnowledgeSourceType, SourceReference,
         ValidityWindow,
     };
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     fn object(id: &str, level: ClassificationLevel, valid: bool) -> KnowledgeObjectV1 {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         KnowledgeObjectV1 {
             schema_version: 1,
             source_ref: Some(SourceReference {

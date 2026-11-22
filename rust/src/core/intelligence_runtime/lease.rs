@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The seam through which the optional runtime is licensed.
 //!
-//! A lease is opaque bytes signed by LeanCTX | Hive: this engine never parses a
+//! A lease is opaque bytes signed by LeanCTX | Cloud: this engine never parses a
 //! plan, a seat count or an expiry from it, it only hands the bytes to the
-//! runtime, which verifies them against its own Hive key. The Hive
+//! runtime, which verifies them against its own Cloud key. The Cloud
 //! connector registers the one process-wide [`LeaseSource`] at start-up,
 //! before the first tool call; without a registered source there is no
 //! lease.
 
 use std::sync::{Arc, RwLock};
 
-/// One Hive-signed runtime lease, kept as the exact bytes Hive issued.
+/// One Cloud-signed runtime lease, kept as the exact bytes Cloud issued.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RuntimeLeaseV1(Vec<u8>);
 

@@ -58,7 +58,7 @@ use crate::core::secret_detection;
 /// however many of its lines matched (the matched lines stay the evidence).
 ///
 /// 2.0.0: the PII detector finds email, phone and payment cards only; Swiss
-/// AHV, IBAN and US SSN left the built-in set (Hive filter packs carry
+/// AHV, IBAN and US SSN left the built-in set (Cloud filter packs carry
 /// them).
 ///
 /// 1.2.0: what the detectors FIND changed — an AHV number or a classification

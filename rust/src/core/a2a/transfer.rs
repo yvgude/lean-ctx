@@ -59,9 +59,9 @@ mod tests {
         ledger.content_md5 = "abcdef0123456789".to_string();
         HandoffTransferBundleV1 {
             schema_version: 1,
-            exported_at: chrono::DateTime::parse_from_rfc3339("2026-06-01T12:00:00Z")
+            exported_at: lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-06-01T12:00:00Z")
                 .unwrap()
-                .with_timezone(&chrono::Utc),
+                .to_utc(),
             privacy: "redacted".to_string(),
             project: ProjectIdentityV1 {
                 project_root_hash: None,

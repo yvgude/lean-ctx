@@ -14,7 +14,7 @@ fn args(action: &'static str) -> Args<'static> {
     }
 }
 
-/// A space built by applying planned writes as if Hive accepted them.
+/// A space built by applying planned writes as if Cloud accepted them.
 fn apply(log: &mut Vec<LogEvent>, specs: &[write::EventSpec]) -> DocSpace {
     let first = log.len() as u64 + 1;
     for (i, s) in specs.iter().enumerate() {
@@ -107,7 +107,7 @@ fn links_are_stored_by_id_and_kept_as_edges() {
     assert!(
         index
             .markdown()
-            .contains(&format!("hive:{}#budget", retry.page.id))
+            .contains(&format!("cloud:{}#budget", retry.page.id))
     );
     assert_eq!(space.links[&index.page.id].len(), 1);
     assert_eq!(space.links[&index.page.id][0].1, retry.page.id);

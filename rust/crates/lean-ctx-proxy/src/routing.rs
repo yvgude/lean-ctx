@@ -171,9 +171,9 @@ fn resolve_provider(
         // The subscription models (mz6) are reached at `/providers/leanctx/…`
         // only: an alias would need the instance-token admission on the
         // shared forward path, and serving Anthropic-shaped agents through
-        // translation is the owner-open Q3 (`[hive] models_anthropic_agents`,
+        // translation is the owner-open Q3 (`[cloud] models_anthropic_agents`,
         // docs/model-access-subscription.md §9). Until then: passthrough.
-        id if id == lean_ctx::core::hive_models::PROVIDER_ID => {
+        id if id == lean_ctx::core::cloud_models::PROVIDER_ID => {
             tracing::warn!(
                 "[proxy.routing] target '{id}' is served at /providers/{id}/ only; \
                  routing aliases to it are not supported yet (Q3) — passthrough"

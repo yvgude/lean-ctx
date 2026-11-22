@@ -1,0 +1,14 @@
+{
+  "case": "via_instance_label_bidi",
+  "base": "bus/frame.message_deliver.person_via_instance.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/sender/via_instance/label",
+      "value": "mara-pc⁧"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

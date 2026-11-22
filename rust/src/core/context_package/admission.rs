@@ -244,7 +244,7 @@ fn blobs(layer: &'static str, blobs: &[DocumentBlob]) -> Result<(), PackageRefus
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support {
     //! Package fixtures shared by these tests and the composition root's tests.
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
     use sha2::{Digest, Sha256};
 
     use super::super::content::{PackageContent, SessionFinding, SessionLayer};
@@ -267,7 +267,7 @@ pub mod test_support {
                 decisions: Vec::new(),
                 next_steps: vec!["publish".to_string()],
                 files_touched: vec!["docs/notes.md".to_string()],
-                exported_at: Utc::now(),
+                exported_at: UtcDateTime::now(),
             }),
             ..PackageContent::default()
         }
@@ -292,7 +292,7 @@ pub mod test_support {
             description: "test".to_string(),
             author: None,
             scope: None,
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
             updated_at: None,
             layers: vec![PackageLayer::Session],
             dependencies: Vec::new(),

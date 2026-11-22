@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Local docs: the Local Read v1 shapes Hive Desktop builds against, and the
+//! Local docs: the Local Read v1 shapes Cloud Desktop builds against, and the
 //! revision history behind them.
 
 use serde_json::{Value, json};
@@ -156,10 +156,10 @@ fn local_pages_print_list_page_history_and_saved_documents() {
     assert_eq!(bad.code, Code::InvalidArgument);
 }
 
-/// Writes `body` as this machine's vault map (`<hive data>/projects.json`).
+/// Writes `body` as this machine's vault map (`<cloud data>/projects.json`).
 fn write_vault_map(body: &[u8]) {
-    let store = lean_ctx_hive::HiveStore::open().expect("hive store");
-    std::fs::create_dir_all(store.data_dir()).expect("hive dir");
+    let store = lean_ctx_cloud::CloudStore::open().expect("cloud store");
+    std::fs::create_dir_all(store.data_dir()).expect("cloud dir");
     std::fs::write(
         store
             .data_dir()
@@ -169,7 +169,7 @@ fn write_vault_map(body: &[u8]) {
     .expect("a vault map");
 }
 
-/// What `docs`, `hive docs` and `ctx_doc` answer for `root`, and whether
+/// What `docs`, `cloud docs` and `ctx_doc` answer for `root`, and whether
 /// a local doc store was created for it.
 fn refusals(root: &str) -> (Vec<(&'static str, Option<Code>)>, bool, String) {
     let mut out = Vec::new();

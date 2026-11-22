@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! A project's docs without Hive: an append-only journal of the same C0 2.2
+//! A project's docs without Cloud: an append-only journal of the same C0 2.2
 //! doc events a vault holds (`node.add`, `field.set`, `edge.add`,
 //! `retract`), folded with [`crate::replica::assemble`], so a local page reads
 //! exactly like a vault page.
@@ -194,7 +194,7 @@ impl LocalDocs {
 
     /// The live pages as [`Page`] values, by slug: what a vault takes on
     /// link ([`crate::write::create_page`]). Section bodies keep their
-    /// storage form (`hive:` links name local page ids).
+    /// storage form (`cloud:` links name local page ids).
     ///
     /// # Errors
     /// As [`Self::entries`].

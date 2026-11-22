@@ -2,7 +2,13 @@
 
 **Context Gateway for AI Systems**
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
+
+**Make every agent more effective.**
+
+Vision: a world where intelligence never works in isolation. Mission: build the
+infrastructure for collective intelligence. The claim is a stance, not a
+measured promise, until a cost-per-accepted-outcome study exists.
 
 LeanCTX sits between AI and the systems it reads. It selects task-relevant
 context, applies supported access and content controls before delivery, and
@@ -14,8 +20,8 @@ Give AI useful context. Decide what may cross the boundary. Connect local
 knowledge across sessions. Inspect what happened. These are four complementary
 responsibilities; Learn means context continuity, not model training.
 
-**LeanCTX | OSS** implements the runtime capabilities. The **LeanCTX SDK**
-connects applications to supported Engine interfaces. **Context Intelligence**
+**LeanCTX | OSS** implements the runtime capabilities. The **LeanCTX | SDK**
+connects applications to supported LeanCTX | OSS interfaces. **Context Intelligence**
 describes the retrieval, structural understanding and preparation inside the
 Gateway; it is not a separate product category.
 
@@ -32,9 +38,9 @@ Coding agents are an important adoption path alongside embedded applications.
 
 | Surface | Status and scope |
 |---|---|
-| Community Engine | **Available:** local CLI, MCP, supported hooks/proxy integrations, retrieval, structural views, compression, cache, recovery, configured controls and local evidence. Apache-2.0. |
-| Pro | **Available:** optional Personal Cloud sync/backup and hosted personal index within the selected plan's limits. This existing commercial plan does not make newer intelligence features available without a named release. |
-| Standalone LeanCTX SDK | **Available** Stable lifecycle and Agent Tools within its published compatibility contract. Separate source-available license; production/OEM rights require a commercial agreement. |
+| LeanCTX \| OSS and LeanCTX Code | **Available. LeanCTX \| OSS: free · LeanCTX Code: included with LeanCTX Cloud (login required):** local CLI, MCP, supported hooks/proxy integrations, retrieval, structural views, compression, cache, recovery, configured controls and local evidence (Apache-2.0), and the LeanCTX Code desktop app. LeanCTX \| OSS needs no licence or plan; LeanCTX Code requires a LeanCTX login. |
+| LeanCTX Cloud | **Available, paid:** hosted in Switzerland. **Personal** ($19/month) adds hosted vaults and the Cloud-delivered runtime capabilities of that plan; **Team** ($49 per seat/month) adds shared team state, team rules, audit log and retention, SSO and SCIM; **Enterprise** (From CHF 12k) adds company administration over several teams, governed agent identity, attestation and agent bus, execution policy and the organization policy verifier. A Cloud plan only adds capabilities; it never removes a local one. |
+| Standalone LeanCTX \| SDK | **Available** Stable lifecycle and Agent Tools within its published compatibility contract. Separate source-available license; production/OEM rights require a commercial agreement. |
 | SDK Preview | **Preview:** workspace, checkpoint, delta, handoff and other interfaces explicitly placed in the SDK Preview namespace. |
 | Enterprise | Commercial organization controls and deployment under a licensed release and agreement. Its availability is established by Enterprise contracts, not by this OSS repository. |
 | Research directions | First-class Context Kits, universal workspace/coordination contracts, Performance Profiles as a promoted product, Performance Benchmark, AutoTune and marketplace directions remain **Research** unless individually promoted through a release gate. |

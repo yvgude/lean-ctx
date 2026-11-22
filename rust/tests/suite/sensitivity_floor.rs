@@ -118,7 +118,7 @@ fn classification_vectors_are_precise() {
         classify_content("card 4111 1111 1111 1111"),
         SensitivityLevel::Confidential
     );
-    // A valid IBAN is screened by the Hive filter pack (CH/AHV/IBAN/US-SSN),
+    // A valid IBAN is screened by the Cloud filter pack (CH/AHV/IBAN/US-SSN),
     // not by the built-in detector set (2.1.0): the Engine alone leaves it.
     assert_eq!(
         classify_content("iban DE89370400440532013000"),

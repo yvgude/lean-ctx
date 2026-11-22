@@ -204,24 +204,30 @@ pub fn stop() {
     }
 }
 
-/// Start the autostart service; a no-op for another instance.
-pub fn start() {
+/// Start the autostart service; a no-op for another instance. Returns whether
+/// the service manager accepted the start (`false` for another instance, a
+/// missing unit or a platform without one); callers may ignore it.
+pub fn start() -> bool {
     if !controls_user_services() {
-        return;
+        return false;
     }
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();
-        if plist_path.exists() {
-            crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path);
-        }
+        plist_path.exists() && crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path)
     }
 
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("systemctl")
+        std::process::Command::new("systemctl")
             .args(["--user", "start", SYSTEMD_SERVICE])
-            .output();
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
     }
 }
 
@@ -258,7 +264,7 @@ pub enum Supervision {
 
 /// Make sure the daemon runs under the platform's supervisor (systemd user
 /// unit, LaunchAgent): it starts at login and restarts after a crash, so
-/// work that lives in the daemon (Hive's background sync, the outbox) never
+/// work that lives in the daemon (Cloud's background sync, the outbox) never
 /// depends on someone starting it by hand. A daemon started by hand is
 /// stopped first so the supervised one can take its socket. `restart`: a
 /// supervised daemon already running is restarted (a new connection or a

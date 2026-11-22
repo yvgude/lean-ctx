@@ -166,10 +166,14 @@ pub fn handle(
     } else {
         // No task context: show project structure overview
         let last_scan = gp.last_scan();
-        let scan_age = chrono::NaiveDateTime::parse_from_str(&last_scan, "%Y-%m-%d %H:%M:%S")
+        let scan_age = lean_ctx_time::parse_civil_datetime(&last_scan, "%Y-%m-%d %H:%M:%S")
             .ok()
             .map(|t| {
-                let elapsed = chrono::Local::now().naive_local().signed_duration_since(t);
+                let elapsed = lean_ctx_time::Duration::from_jiff(
+                    lean_ctx_time::LocalDateTime::now()
+                        .naive_local()
+                        .duration_since(t),
+                );
                 if elapsed.num_hours() < 1 {
                     format!("{}m ago", elapsed.num_minutes())
                 } else if elapsed.num_hours() < 24 {
@@ -303,8 +307,8 @@ fn compact_fact_phrase(f: &lean_ctx::core::knowledge::KnowledgeFact) -> String {
     const MAX: usize = 100;
     let delivered = f.as_delivered(f.value.trim().to_string());
     // Foreign content (X5) stays one whole wrapper; only its body is cut.
-    if lean_ctx_hive::untrusted::is_wrapped(&delivered) {
-        return lean_ctx_hive::untrusted::shorten(
+    if lean_ctx_cloud::untrusted::is_wrapped(&delivered) {
+        return lean_ctx_cloud::untrusted::shorten(
             &lean_ctx::core::sanitize::neutralize_metadata(&delivered),
             MAX,
         );
@@ -680,8 +684,8 @@ fn knowledge_doc_for_file(
     }
     let delivered = fact.as_delivered(val.to_string());
     // Foreign content (X5) stays one whole wrapper; only its body is cut.
-    if lean_ctx_hive::untrusted::is_wrapped(&delivered) {
-        return Some(lean_ctx_hive::untrusted::shorten(&delivered, 80));
+    if lean_ctx_cloud::untrusted::is_wrapped(&delivered) {
+        return Some(lean_ctx_cloud::untrusted::shorten(&delivered, 80));
     }
     Some(truncate_doc(val))
 }
@@ -758,8 +762,8 @@ fn partial_overview(project_root: &str) -> String {
             for f in facts.iter().take(5) {
                 // Foreign content (X5) stays one whole wrapper; only its body is cut.
                 let delivered = f.as_delivered(f.value.clone());
-                let val: String = if lean_ctx_hive::untrusted::is_wrapped(&delivered) {
-                    lean_ctx_hive::untrusted::shorten(&delivered, 80)
+                let val: String = if lean_ctx_cloud::untrusted::is_wrapped(&delivered) {
+                    lean_ctx_cloud::untrusted::shorten(&delivered, 80)
                 } else {
                     f.value.chars().take(80).collect()
                 };
@@ -867,7 +871,7 @@ mod tests {
     fn the_overview_cuts_pulled_facts_without_breaking_the_fence() {
         use lean_ctx::core::context_admission::stored::lineage_support::project;
         use lean_ctx::core::policy::runtime::TestPolicyOverride;
-        use lean_ctx_hive::untrusted::{every_occurrence_wrapped, is_wrapped};
+        use lean_ctx_cloud::untrusted::{every_occurrence_wrapped, is_wrapped};
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let _community = TestPolicyOverride::set(None);
         let (_directory, root) = project();
@@ -876,14 +880,14 @@ mod tests {
             "retry.rs sets the budget. {injection}. {}",
             "padding ".repeat(40)
         );
-        let document: lean_ctx_protocol::hive::knowledge::ResearchContextDocumentV1 =
+        let document: lean_ctx_protocol::cloud::knowledge::ResearchContextDocumentV1 =
             serde_json::from_value(serde_json::json!({
-                "format": lean_ctx_protocol::hive::knowledge::RESEARCH_CONTEXT_FORMAT,
-                "facts": [{"id": "hive.retry-budget", "kind": "decision", "statement": statement, "appliesTo": []}],
+                "format": lean_ctx_protocol::cloud::knowledge::RESEARCH_CONTEXT_FORMAT,
+                "facts": [{"id": "cloud.retry-budget", "kind": "decision", "statement": statement, "appliesTo": []}],
                 "relations": [], "open_gaps": []
             }))
             .unwrap();
-        lean_ctx_hive::knowledge::learn::sync_into_knowledge(
+        lean_ctx_cloud::knowledge::learn::sync_into_knowledge(
             &root, "acme", "billing", 4, &document,
         )
         .unwrap();
@@ -891,7 +895,7 @@ mod tests {
         let fact = knowledge
             .facts
             .iter()
-            .find(|f| f.hive_origin().is_some())
+            .find(|f| f.cloud_origin().is_some())
             .unwrap();
         let phrase = compact_fact_phrase(fact);
         assert!(is_wrapped(&phrase), "{phrase}");

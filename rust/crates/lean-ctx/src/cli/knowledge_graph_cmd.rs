@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx knowledge related <id> --json` and `lean-ctx knowledge graph
 //! --json` (Local Read v1, `docs/contracts/local-read-v1.md`): the project's
-//! knowledge as nodes and typed edges, for Hive Desktop.
+//! knowledge as nodes and typed edges, for Cloud Desktop.
 //!
 //! Nodes use the ids `knowledge list` prints (`category/key`, vault knowledge
-//! `hive/<address>/<node>`), the same read-noise rule and timestamps; code
-//! nodes use the Hive graph's ids (`code:<path>`, `code:<path>#<symbol>`).
-//! Edge kinds are the Hive relation and graph types: recorded relations as
+//! `cloud/<address>/<node>`), the same read-noise rule and timestamps; code
+//! nodes use the Cloud graph's ids (`code:<path>`, `code:<path>#<symbol>`).
+//! Edge kinds are the Cloud relation and graph types: recorded relations as
 //! stored in `relations.json`, plus edges derived from the store on every
 //! read (never stored, so they cannot go stale): `supersedes` along a key's
 //! archived versions, `contradicts` between disagreeing current facts on one
@@ -33,10 +33,10 @@ const GRAPH_LIMIT_MAX: usize = 2000;
 /// (the threshold `ProjectKnowledge::check_contradiction` uses).
 const SAME_CLAIM_SIMILARITY: f32 = 0.8;
 /// Category prefix of a relation end that names a vault node by vault id
-/// (`lean_ctx_hive::migrate::REPLICA_NODE_CATEGORY`).
+/// (`lean_ctx_cloud::migrate::REPLICA_NODE_CATEGORY`).
 const REPLICA_CATEGORY: &str = "vault:";
 
-/// Derived edge kinds of the Hive graph view (`hive::graph::GRAPH_EDGE_TYPES`).
+/// Derived edge kinds of the Cloud graph view (`cloud::graph::GRAPH_EDGE_TYPES`).
 const APPLIES_TO: &str = "applies_to";
 const CONTAINS: &str = "contains";
 
@@ -334,7 +334,7 @@ fn build_view(
             }
             let id = match (category.strip_prefix(REPLICA_CATEGORY), vault) {
                 (Some(vault_id), Some(v)) if vault_id == v.vault_id => {
-                    format!("hive/{}/{key}", v.address)
+                    format!("cloud/{}/{key}", v.address)
                 }
                 _ => format!("{category}/{key}"),
             };
@@ -560,13 +560,13 @@ fn related_body<'a>(
 /// without one the local knowledge stands alone (as in `knowledge list`).
 fn linked_vault(project_root: &str) -> Option<Vault> {
     let linked = local_read::docs::open_linked(project_root).ok()?;
-    let store = lean_ctx_hive::HiveStore::open().ok()?;
-    let vault_id = lean_ctx_hive::vault::VaultMap::load(store.data_dir())
+    let store = lean_ctx_cloud::CloudStore::open().ok()?;
+    let vault_id = lean_ctx_cloud::vault::VaultMap::load(store.data_dir())
         .for_root(project_root)?
         .vault_id
         .clone();
     let events = linked.replica.fold_events().ok()?;
-    let mut graph = lean_ctx_hive::replica::fold::Graph::default();
+    let mut graph = lean_ctx_cloud::replica::fold::Graph::default();
     graph.fold(&events).ok()?;
     let states = local_read::knowledge::vault_states(&graph, &linked.replica);
     Some(Vault {
@@ -827,7 +827,7 @@ mod tests {
             .clone();
         other.origin = FactOrigin::Unverified;
         other.value = "Unlimited for internal callers".into();
-        other.created_at += chrono::Duration::seconds(5);
+        other.created_at += lean_ctx_time::Duration::seconds(5);
         k.facts.push(other);
         let auth = k
             .facts
@@ -887,7 +887,7 @@ mod tests {
                 e(
                     "api/rate-limit",
                     "supports",
-                    "hive/acme/app/n_limits",
+                    "cloud/acme/app/n_limits",
                     "recorded"
                 ),
                 e(&second, "contradicts", "api/rate-limit", "derived"),
@@ -920,7 +920,7 @@ mod tests {
         );
         let node = |id: &str| view.nodes[id].clone();
         assert_eq!(node(&old).state, Some("superseded"));
-        assert_eq!(node("hive/acme/app/n_limits").state, Some("missing"));
+        assert_eq!(node("cloud/acme/app/n_limits").state, Some("missing"));
         assert_eq!(node("code:src/auth/mw.rs#validate").node_kind, "code");
         assert_eq!(
             node("code:src/auth/mw.rs#validate").path.as_deref(),

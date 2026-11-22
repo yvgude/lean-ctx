@@ -1,0 +1,13 @@
+{
+  "case": "person_publish_unsigned",
+  "base": "bus/frame.place_publish.person.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/presence_signature"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

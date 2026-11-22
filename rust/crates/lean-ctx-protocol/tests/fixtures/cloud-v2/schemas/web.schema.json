@@ -1,0 +1,6561 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/cloud-v2/schemas/web.schema.json",
+  "title": "Web route fixtures (/api/v1, SPEC-CONTRACT-SERVER §4.2, SPEC-WEB-UX §4.3); RFC 3339 UTC times (S17)",
+  "$defs": {
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,3})?Z$"
+    },
+    "totp_code": {
+      "type": "string",
+      "pattern": "^([0-9]{6}|[0-9a-fA-F]{4}-[0-9a-fA-F]{4})$",
+      "description": "6-digit TOTP or a recovery code like 3f9a-07bc"
+    },
+    "handle": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "fixture": {
+      "description": "one file per web route: route id, method, concrete path, request body (or null), the success response and the error examples; bodies are validated against the route's own definitions by the gate",
+      "type": "object",
+      "required": [
+        "route",
+        "method",
+        "path",
+        "request",
+        "response",
+        "errors"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^W[0-9]{1,3}[a-z]?$"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/api/v1/[A-Za-z0-9_./?=&%:-]*$"
+        },
+        "request": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "response": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "status",
+                "body"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    200,
+                    201,
+                    202,
+                    204
+                  ]
+                },
+                "body": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "description": "a file download (C0 2.2 W109 text/markdown, W109b application/zip): the content type, the attachment header and the file (body: its text; entries: the archive's files in order)",
+              "type": "object",
+              "required": [
+                "status",
+                "content_type",
+                "content_disposition"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "const": 200
+                },
+                "content_type": {
+                  "type": "string"
+                },
+                "content_disposition": {
+                  "type": "string",
+                  "pattern": "^attachment; filename=\"[^\"/]+\"$"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "body"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9-]+(/[a-z0-9-]+)*\\.md$"
+                      },
+                      "body": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "body"
+                  ]
+                },
+                {
+                  "required": [
+                    "entries"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null",
+              "description": "error-only fixture (e.g. purge-create.error.action_code_required)"
+            }
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "status",
+              "body"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "integer",
+                "minimum": 400,
+                "maximum": 599
+              },
+              "body": {
+                "$ref": "worker.schema.json#/$defs/error"
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "response": {
+                "properties": {
+                  "status": {
+                    "const": 204
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "response": {
+                "properties": {
+                  "body": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "place": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ws",
+        "id",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "vault",
+            "workspace"
+          ]
+        },
+        "ws": {
+          "$ref": "#/$defs/slug"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,64}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "ids_var": {
+      "description": "ids and counts only, resolved at read time; a purged id renders as null (R35)",
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 300
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "purged"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "purged": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "waiting_kind": {
+      "enum": [
+        "instruction_signal",
+        "consent_request",
+        "binding_frozen",
+        "purge_pending",
+        "instance_revoked_events",
+        "contradiction_open",
+        "retention_pending",
+        "invite",
+        "claim_lapsed_silent"
+      ]
+    },
+    "logbook_kind": {
+      "enum": [
+        "knowledge.added",
+        "knowledge.retracted",
+        "knowledge.restored",
+        "knowledge.reverted",
+        "bus.thread",
+        "purge.done",
+        "vault.transferred",
+        "retention.scheduled",
+        "worker.joined",
+        "instance.connected",
+        "instance.revoked",
+        "vault.visibility",
+        "vault.released"
+      ]
+    },
+    "me_overview_response": {
+      "description": "GET /api/v1/me/overview (C line, the /app/ cockpit): every workspace of the signed-in person in one request; each part is the body of its per-workspace route (instances W96 state=all limit=200, enforcement W79, pilot_metrics W95 for admins, billing for admins) or an error part.",
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": [
+              "slug",
+              "name",
+              "kind",
+              "role",
+              "instances",
+              "enforcement",
+              "pilot_metrics",
+              "billing"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "slug": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "personal",
+                  "team"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "instances": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/w96_response"
+                  },
+                  {
+                    "$ref": "#/$defs/overview_part_error"
+                  }
+                ]
+              },
+              "enforcement": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/w79_response"
+                  },
+                  {
+                    "$ref": "#/$defs/overview_part_error"
+                  }
+                ]
+              },
+              "pilot_metrics": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/w95_response"
+                  },
+                  {
+                    "$ref": "#/$defs/overview_part_error"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "billing": {
+                "anyOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "insights": {
+                "description": "instance metrics v2 KPIs of the workspace (GET …/insights/summary), or an overview_part_error",
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "overview_part_error": {
+      "description": "A part the person may not read, or that failed: the route's code and status.",
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "status": {
+              "type": "integer",
+              "minimum": 400,
+              "maximum": 599
+            }
+          }
+        }
+      }
+    },
+    "w7o_request": {
+      "description": "W7o POST /api/v1/orgs/{o}/ownership (danger zone)",
+      "type": "object",
+      "required": [
+        "to",
+        "confirm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "to": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "confirm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "w7o_response": {
+      "description": "W7o: the new owner and the caller's role now",
+      "type": "object",
+      "required": [
+        "owner",
+        "you"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "you": {
+          "enum": [
+            "owner",
+            "admin",
+            "maintainer",
+            "contributor",
+            "reader"
+          ]
+        }
+      }
+    },
+    "w7d_request": {
+      "description": "W7d POST /api/v1/orgs/{o}/delete: the workspace's slug typed back",
+      "type": "object",
+      "required": [
+        "confirm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "confirm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "w14t_response": {
+      "description": "W14t GET …/vaults/{r}/nodes/titles?ids= (C line): the title and knowledge state of each known node id, in the order asked; unknown ids left out; title null once purged",
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "title",
+              "knowledge_state"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^n_[a-z2-7]{26}$"
+              },
+              "type": {
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "knowledge_state": {
+                "enum": [
+                  "verified",
+                  "provisional",
+                  "outdated",
+                  "conflicting",
+                  "rejected"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "vault_knowledge_states": {
+      "description": "The W24 knowledge_states, also on each vault of the vault list (C line)",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "verified",
+            "provisional",
+            "outdated",
+            "conflicting",
+            "rejected",
+            "to_verify"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "verified": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "provisional": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outdated": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "conflicting": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "to_verify": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "w1_response": {
+      "description": "W1 GET /api/v1/me/waiting?limit=; W1i GET /v1/me/waiting (an instance, for its owner) answers the same document",
+      "type": "object",
+      "required": [
+        "items",
+        "total"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "severity",
+              "title_vars",
+              "place",
+              "due_at",
+              "created_at",
+              "action"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^wt_[a-z2-7]{26}$"
+              },
+              "kind": {
+                "$ref": "#/$defs/waiting_kind"
+              },
+              "severity": {
+                "enum": [
+                  "stop",
+                  "warn",
+                  "info"
+                ]
+              },
+              "title_vars": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/ids_var"
+                }
+              },
+              "place": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/place"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "due_at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "$ref": "#/$defs/time"
+              },
+              "action": {
+                "type": "object",
+                "required": [
+                  "href"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "href": {
+                    "type": "string",
+                    "pattern": "^/[A-Za-z0-9_./?=&%:-]*$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "w3_response": {
+      "description": "W3 GET /api/v1/orgs/{o}/logbook?place=&kind=&mine=&cursor= (one id per worker × place × kind × 15-min window, R88)",
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "actor",
+              "place",
+              "counts",
+              "provenance",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^lg_[a-z2-7]{26}$"
+              },
+              "kind": {
+                "$ref": "#/$defs/logbook_kind"
+              },
+              "actor": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "person",
+                          "worker",
+                          "server",
+                          "system"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "place": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/place"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "counts": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "text_vars": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/ids_var"
+                },
+                "description": "only for own/workspace provenance"
+              },
+              "provenance": {
+                "$ref": "common.schema.json#/$defs/provenance"
+              },
+              "at": {
+                "$ref": "#/$defs/time"
+              }
+            }
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "opaque (R137): send it back unchanged as ?cursor=; pages run over (at, id) newest first, never over the random line id alone"
+        }
+      }
+    },
+    "w7_response": {
+      "description": "W7 GET /api/v1/orgs/{o}: the existing org fields plus the v4 members (required here); company = the company the team belongs to (API.md §2.5; `organisation` is its B-line name, kept), null for a personal workspace or a standalone team; plan_inherited = the plan in force is the company's Business plan",
+      "type": "object",
+      "required": [
+        "slug",
+        "name",
+        "retention_class",
+        "data_region_label",
+        "time_zone",
+        "organisation"
+      ],
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "retention_class": {
+          "enum": [
+            "standard",
+            "government"
+          ]
+        },
+        "data_region_label": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        },
+        "time_zone": {
+          "type": "string",
+          "pattern": "^([A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}|UTC)$"
+        },
+        "organisation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "slug",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "slug": {
+                  "$ref": "#/$defs/slug"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "company": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "slug",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "slug": {
+                  "$ref": "#/$defs/slug"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_inherited": {
+          "type": "boolean"
+        }
+      }
+    },
+    "w9_response": {
+      "description": "W9 GET /api/v1/orgs/{o}/vaults/{r}",
+      "type": "object",
+      "required": [
+        "vault"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vault": {
+          "type": "object",
+          "required": [
+            "name",
+            "title",
+            "description",
+            "visibility",
+            "presence_public",
+            "frozen",
+            "license",
+            "forge",
+            "viewer",
+            "counts",
+            "stars",
+            "followers"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{2,40}$"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "visibility": {
+              "enum": [
+                "private",
+                "internal",
+                "public"
+              ]
+            },
+            "presence_public": {
+              "type": "boolean",
+              "description": "W25 owner switch: presence of this vault's workers shown to people outside the workspace (public vaults)"
+            },
+            "frozen": {
+              "type": "boolean"
+            },
+            "license": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9.+-]{1,64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "forge": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "host",
+                    "repo",
+                    "state"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9.-]{1,253}(:[0-9]{1,5})?$"
+                    },
+                    "repo": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "state": {
+                      "enum": [
+                        "unbound",
+                        "unverified",
+                        "verified",
+                        "frozen"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "viewer": {
+              "type": "object",
+              "required": [
+                "role"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "enum": [
+                    "owner",
+                    "maintainer",
+                    "writer",
+                    "reader",
+                    null
+                  ]
+                }
+              }
+            },
+            "counts": {
+              "type": "object",
+              "required": [
+                "nodes",
+                "workers"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "nodes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "workers": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "stars": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "followers": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "w11_request": {
+      "description": "W11 POST /api/v1/orgs/{o}/vaults/{r}/transfer (owner of both workspaces, human-only class H, 5 per user; R142, R143): vaults with 1.x content → 409 invalid_state reason legacy_content; the target must not be the vault's workspace (409 invalid_state reason same_org) nor hold a vault of the same name (409 slug_taken); a Community target at its vault limit → 402 plan_required feature: repos; one transfer of a vault at a time (409 invalid_state reason transfer_running)",
+      "type": "object",
+      "required": [
+        "target_org"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "target_org": {
+          "$ref": "#/$defs/slug"
+        }
+      }
+    },
+    "w11_response": {
+      "description": "W11 answer = the W9 v4 vault in its new workspace; a public vault's binding is unverified (read-only until verified again)",
+      "$ref": "#/$defs/w9_response"
+    },
+    "anchors": {
+      "$ref": "event.schema.json#/$defs/anchors"
+    },
+    "node_body": {
+      "description": "W12 body by Node.type (no type member inside the body): exactly the SPEC-WEB-UX §4.3 fields, plus anchors on fact/gotcha/procedure (lead addition) and on decision (C0 2.2)",
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "fact",
+          "required": [
+            "statement",
+            "applies_to"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "type": "string"
+            },
+            "applies_to": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "anchors": {
+              "$ref": "#/$defs/anchors"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "decision",
+          "required": [
+            "statement",
+            "chosen",
+            "alternatives",
+            "rationale",
+            "status",
+            "deferred"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "type": "string"
+            },
+            "chosen": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "alternatives": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "rationale": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "active",
+                "superseded",
+                "reverted"
+              ]
+            },
+            "deferred": {
+              "type": "boolean"
+            },
+            "anchors": {
+              "$ref": "#/$defs/anchors"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "gotcha",
+          "required": [
+            "statement",
+            "trigger",
+            "avoid"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "type": "string"
+            },
+            "trigger": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "avoid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "anchors": {
+              "$ref": "#/$defs/anchors"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "procedure",
+          "required": [
+            "title",
+            "steps",
+            "commands",
+            "preconditions"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "commands": {
+              "type": "array",
+              "items": {
+                "$ref": "event.schema.json#/$defs/command"
+              }
+            },
+            "preconditions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "anchors": {
+              "$ref": "#/$defs/anchors"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "finding",
+          "required": [
+            "statement"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "type": "string"
+            },
+            "thread_ref": {
+              "$ref": "common.schema.json#/$defs/msg_id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "episode",
+          "required": [
+            "summary",
+            "goal",
+            "outcome",
+            "dead_ends",
+            "started_at",
+            "ended_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "summary": {
+              "type": "string"
+            },
+            "goal": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": [
+                "succeeded",
+                "failed",
+                "abandoned",
+                "partial"
+              ]
+            },
+            "outcome_note": {
+              "type": "string"
+            },
+            "dead_ends": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "started_at": {
+              "$ref": "#/$defs/time"
+            },
+            "ended_at": {
+              "$ref": "#/$defs/time"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "reference",
+          "required": [
+            "kind",
+            "target",
+            "anchor_state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "file",
+                "symbol",
+                "commit",
+                "url",
+                "test"
+              ]
+            },
+            "target": {
+              "type": "string"
+            },
+            "anchor_state": {
+              "enum": [
+                "fresh",
+                "to_verify",
+                "gone"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "body",
+        "derived_from_count",
+        "evidence",
+        "provenance",
+        "trust_bucket",
+        "state",
+        "knowledge_state",
+        "knowledge_reason",
+        "updated_at",
+        "worker",
+        "refs",
+        "written_by",
+        "sources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        "type": {
+          "enum": [
+            "fact",
+            "decision",
+            "gotcha",
+            "procedure",
+            "finding",
+            "episode",
+            "reference"
+          ]
+        },
+        "body": {
+          "$ref": "#/$defs/node_body"
+        },
+        "derived_from_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "provenance": {
+          "$ref": "common.schema.json#/$defs/provenance"
+        },
+        "trust_bucket": {
+          "enum": [
+            "high",
+            "normal",
+            "low"
+          ]
+        },
+        "state": {
+          "enum": [
+            "active",
+            "stale",
+            "retracted",
+            "contradicted"
+          ]
+        },
+        "knowledge_state": {
+          "$ref": "common.schema.json#/$defs/knowledge_state"
+        },
+        "knowledge_reason": {
+          "$ref": "common.schema.json#/$defs/knowledge_reason"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "worker": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/worker_id"
+                },
+                "name": {
+                  "$ref": "worker.schema.json#/$defs/name"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "written_by": {
+          "$ref": "#/$defs/writer"
+        },
+        "sources": {
+          "$ref": "#/$defs/sources"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {}
+          },
+          "then": {
+            "properties": {
+              "trust_bucket": {
+                "enum": [
+                  "high",
+                  "normal",
+                  "low"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "trust_bucket": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "w12_response": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w14_response": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "body",
+        "derived_from_count",
+        "evidence",
+        "provenance",
+        "trust_bucket",
+        "state",
+        "knowledge_state",
+        "knowledge_reason",
+        "updated_at",
+        "worker",
+        "refs",
+        "relations",
+        "history",
+        "derived_count",
+        "written_by",
+        "sources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        "type": {
+          "enum": [
+            "fact",
+            "decision",
+            "gotcha",
+            "procedure",
+            "finding",
+            "episode",
+            "reference"
+          ]
+        },
+        "body": {
+          "$ref": "#/$defs/node_body"
+        },
+        "derived_from_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "provenance": {
+          "$ref": "common.schema.json#/$defs/provenance"
+        },
+        "trust_bucket": {
+          "enum": [
+            "high",
+            "normal",
+            "low"
+          ]
+        },
+        "state": {
+          "enum": [
+            "active",
+            "stale",
+            "retracted",
+            "contradicted"
+          ]
+        },
+        "knowledge_state": {
+          "$ref": "common.schema.json#/$defs/knowledge_state"
+        },
+        "knowledge_reason": {
+          "$ref": "common.schema.json#/$defs/knowledge_reason"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "worker": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/worker_id"
+                },
+                "name": {
+                  "$ref": "worker.schema.json#/$defs/name"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "direction",
+              "node_id",
+              "type"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "references",
+                  "depends_on",
+                  "supersedes",
+                  "contradicts",
+                  "derived_from",
+                  "part_of",
+                  "answers",
+                  "child_of",
+                  "result_of",
+                  "blocked_by"
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "out",
+                  "in"
+                ]
+              },
+              "node_id": {
+                "anyOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/node_id"
+                  },
+                  {
+                    "$ref": "common.schema.json#/$defs/msg_id"
+                  }
+                ]
+              },
+              "type": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "seq",
+              "op",
+              "at",
+              "actor"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "op": {
+                "enum": [
+                  "node.add",
+                  "field.set",
+                  "edge.add",
+                  "retract",
+                  "restore",
+                  "purge"
+                ]
+              },
+              "field": {
+                "type": "string"
+              },
+              "at": {
+                "$ref": "#/$defs/time"
+              },
+              "actor": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name",
+                  "worker",
+                  "instance",
+                  "session"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "worker",
+                      "person",
+                      "server",
+                      "legacy_import",
+                      "unknown"
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "worker": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "$ref": "common.schema.json#/$defs/worker_id"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "$ref": "worker.schema.json#/$defs/name"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "instance": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/instance_ref"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "session": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "description": "The HC2 Writer of the event plus name (the worker's name, kept for the web)"
+              }
+            }
+          }
+        },
+        "derived_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "written_by": {
+          "$ref": "#/$defs/writer"
+        },
+        "sources": {
+          "$ref": "#/$defs/sources"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {}
+          },
+          "then": {
+            "properties": {
+              "trust_bucket": {
+                "enum": [
+                  "high",
+                  "normal",
+                  "low"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "trust_bucket": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "web_worker": {
+      "description": "W33 Worker: the roster items (and Worker in place contexts with place_role, R87); USD amounts in cents like C0 (decision 8).",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "instance",
+        "owner_handle",
+        "host_app",
+        "role",
+        "model",
+        "model_source",
+        "status",
+        "now",
+        "capabilities",
+        "budget",
+        "history",
+        "card_visibility"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "name": {
+          "$ref": "worker.schema.json#/$defs/name"
+        },
+        "instance": {
+          "type": "object",
+          "required": [
+            "id",
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        },
+        "owner_handle": {
+          "$ref": "#/$defs/handle"
+        },
+        "host_app": {
+          "$ref": "worker.schema.json#/$defs/host_app"
+        },
+        "role": {
+          "$ref": "worker.schema.json#/$defs/role"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "model_source": {
+          "enum": [
+            "self_reported",
+            "unknown"
+          ]
+        },
+        "status": {
+          "enum": [
+            "revoked",
+            "stopped",
+            "held",
+            "working",
+            "online",
+            "idle",
+            "offline"
+          ]
+        },
+        "now": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 300
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "what the worker does now, display text from ids"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "budget": {
+          "type": "object",
+          "required": [
+            "tasks_used",
+            "tasks_cap"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "tasks_used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tasks_cap": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "usd_cents_used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "usd_cents_cap": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokens_used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokens_cap": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "usage_source": {
+              "$ref": "common.schema.json#/$defs/usage/properties/source"
+            }
+          }
+        },
+        "history": {
+          "$ref": "worker.schema.json#/$defs/card_with_history/properties/history"
+        },
+        "card_visibility": {
+          "enum": [
+            "workspace",
+            "public"
+          ],
+          "description": "card per place opt-in; off (workspace only) by default in public places"
+        },
+        "place_role": {
+          "enum": [
+            "owner",
+            "maintainer",
+            null
+          ]
+        },
+        "events_30d": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "W21 only: events this worker wrote in the place in the last 30 days"
+        },
+        "items_written": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "W21 only (V8): knowledge items this worker first wrote in the place (W12 `worker=` lists them)"
+        }
+      }
+    },
+    "w33_list": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/web_worker"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w21_response": {
+      "type": "object",
+      "required": [
+        "people",
+        "workers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "handle",
+              "role",
+              "events_30d"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "handle": {
+                "$ref": "#/$defs/handle"
+              },
+              "role": {
+                "enum": [
+                  "owner",
+                  "maintainer",
+                  "writer",
+                  "reader"
+                ]
+              },
+              "events_30d": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "events this person wrote in the place in the last 30 days (SPEC-WEB-UX 3.4.5)"
+              },
+              "items_written": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "V8: knowledge items the workers of this person's Hosts first wrote in the place"
+              }
+            }
+          }
+        },
+        "workers": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/web_worker"
+              }
+            ],
+            "required": [
+              "place_role",
+              "events_30d"
+            ]
+          }
+        }
+      }
+    },
+    "w24_response": {
+      "description": "W24 GET …/vaults/{r}/health (§3.25)",
+      "type": "object",
+      "required": [
+        "active_nodes",
+        "knowledge_states",
+        "evidenced_pct",
+        "stale_pct",
+        "contradicted_pct",
+        "trust",
+        "capture_gate",
+        "replicas"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "active_nodes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "knowledge_states": {
+          "description": "C0 2.0 (C line): how many items of the vault (every W12 node) are in each knowledge state, by the W12 `knowledge_state` rule; `to_verify` counts the `outdated` ones whose own code anchor changed or is gone",
+          "type": "object",
+          "required": [
+            "verified",
+            "provisional",
+            "outdated",
+            "conflicting",
+            "rejected",
+            "to_verify"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "verified": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "provisional": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outdated": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "conflicting": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "to_verify": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "evidenced_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "exact share in percent"
+        },
+        "stale_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "exact share in percent"
+        },
+        "contradicted_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "exact share in percent"
+        },
+        "trust": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "high",
+                "normal",
+                "low"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "high": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "normal": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "low": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture_gate": {
+          "type": "object",
+          "required": [
+            "instances",
+            "considered",
+            "captured",
+            "rejected"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "instances": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "considered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "captured": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "replicas": {
+          "type": "object",
+          "required": [
+            "count",
+            "last_sync",
+            "oldest_sync"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_sync": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "oldest_sync": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "w35_response": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "ws",
+          "id",
+          "address",
+          "name",
+          "unread",
+          "present",
+          "control"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "v",
+              "dm"
+            ]
+          },
+          "ws": {
+            "$ref": "#/$defs/slug"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,64}$"
+          },
+          "address": {
+            "$ref": "bus.schema.json#/$defs/address"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "unread": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "present": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "control": {
+            "enum": [
+              "none",
+              "held",
+              "stopped"
+            ]
+          }
+        }
+      }
+    },
+    "w36_message": {
+      "description": "W36 message: the C0 §3.19 message (ms times, like E16), worker senders with place_role; a purged message keeps only ids and purge {reason, at}",
+      "anyOf": [
+        {
+          "$ref": "bus.schema.json#/$defs/message_web"
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "seq",
+            "thread_id",
+            "type",
+            "purged",
+            "purge"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/msg_id"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "thread_id": {
+              "$ref": "common.schema.json#/$defs/msg_id"
+            },
+            "type": {
+              "$ref": "bus.schema.json#/$defs/type"
+            },
+            "reply_to": {
+              "$ref": "common.schema.json#/$defs/msg_id"
+            },
+            "purged": {
+              "const": true
+            },
+            "purge": {
+              "type": "object",
+              "required": [
+                "reason",
+                "at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "reason": {
+                  "enum": [
+                    "secret",
+                    "erasure",
+                    "retention",
+                    "moderation"
+                  ]
+                },
+                "at": {
+                  "$ref": "#/$defs/time"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "w36_messages": {
+      "description": "W36 GET …/messages?tail=&before_seq=&after_seq=: last_seq = the highest seq of the bus visible to the reader (for after_seq paging); next_before only when older messages exist (for before_seq paging)",
+      "type": "object",
+      "required": [
+        "items",
+        "last_seq"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/w36_message"
+          }
+        },
+        "last_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_before": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "w36_presence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "worker_id",
+          "role",
+          "state",
+          "at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "worker_id": {
+            "$ref": "common.schema.json#/$defs/worker_id"
+          },
+          "role": {
+            "$ref": "worker.schema.json#/$defs/role"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "idle",
+              "held"
+            ]
+          },
+          "at": {
+            "$ref": "#/$defs/time"
+          }
+        }
+      }
+    },
+    "w36_locks": {
+      "type": "array",
+      "items": {
+        "$ref": "bus.schema.json#/$defs/lease"
+      }
+    },
+    "w37_request": {
+      "type": "object",
+      "required": [
+        "target",
+        "action",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "enum": [
+            "worker",
+            "bus"
+          ]
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "ref": {
+          "$ref": "bus.schema.json#/$defs/control/properties/ref"
+        },
+        "action": {
+          "enum": [
+            "hold",
+            "stop",
+            "resume",
+            "veto"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 500
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "veto"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "ref"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "const": "worker"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "worker_id"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "worker_id"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "w37_list": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "bus.schema.json#/$defs/control"
+      }
+    },
+    "w51_request": {
+      "type": "object",
+      "required": [
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "enum": [
+            "off",
+            "daily",
+            "immediate_stop"
+          ]
+        }
+      }
+    },
+    "w67_response": {
+      "description": "W67 GET /api/v1/orgs/{o}/fleet/collaboration?days=1..90&place= (R128): per-day counts from collab_daily; gate_reruns counts as friction",
+      "type": "object",
+      "required": [
+        "days",
+        "retros"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "type": "array",
+          "maxItems": 90,
+          "items": {
+            "type": "object",
+            "required": [
+              "day",
+              "workers",
+              "agent_hours",
+              "idle_hours",
+              "claims",
+              "time_to_claim_p50_s",
+              "claim_refused",
+              "claim_expired",
+              "registration_renewed",
+              "wait_timeout",
+              "merge_conflict",
+              "gate_reruns",
+              "friction_per_agent_hour"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "day": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              "workers": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "agent_hours": {
+                "type": "number",
+                "minimum": 0
+              },
+              "idle_hours": {
+                "type": "number",
+                "minimum": 0
+              },
+              "claims": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "time_to_claim_p50_s": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "claim_refused": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "claim_expired": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "registration_renewed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "wait_timeout": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "merge_conflict": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gate_reruns": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "friction_per_agent_hour": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "null without agent time"
+              }
+            }
+          }
+        },
+        "retros": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "day",
+              "number",
+              "rate"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "day": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              "number": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "rate": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "retention_row": {
+      "type": "object",
+      "required": [
+        "subject",
+        "keep"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "enum": [
+            "node:fact",
+            "node:decision",
+            "node:gotcha",
+            "node:procedure",
+            "node:finding",
+            "node:episode",
+            "node:reference",
+            "bus_messages"
+          ]
+        },
+        "keep": {
+          "anyOf": [
+            {
+              "const": "forever"
+            },
+            {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3650
+            }
+          ],
+          "description": "days, or forever"
+        }
+      }
+    },
+    "retention_rows": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/retention_row"
+      },
+      "description": "each subject at most once (else 400 invalid_body field: rows; checked by the server and the gate)"
+    },
+    "w29_request": {
+      "description": "W29 PUT …/vaults/{r}/retention (owner, H): government workspaces only (403 retention_not_allowed); the change takes effect after 7 days",
+      "type": "object",
+      "required": [
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "$ref": "#/$defs/retention_rows"
+        }
+      }
+    },
+    "w29_response": {
+      "type": "object",
+      "required": [
+        "effective_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "effective_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "w62_response": {
+      "description": "W62 GET …/vaults/{r}/retention (maintainer+)",
+      "type": "object",
+      "required": [
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "$ref": "#/$defs/retention_rows"
+        },
+        "effective_at": {
+          "$ref": "#/$defs/time"
+        },
+        "pending": {
+          "type": "object",
+          "required": [
+            "rows",
+            "effective_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rows": {
+              "$ref": "#/$defs/retention_rows"
+            },
+            "effective_at": {
+              "$ref": "#/$defs/time"
+            }
+          }
+        }
+      }
+    },
+    "preview_id": {
+      "type": "string",
+      "pattern": "^pv_[a-z2-7]{26}$"
+    },
+    "me_response": {
+      "description": "GET /api/v1/me: the signed-in person, their workspaces and the CSRF tag; `user.handle` is the public handle (null until set)",
+      "type": "object",
+      "required": [
+        "user",
+        "orgs",
+        "csrf"
+      ],
+      "properties": {
+        "user": {
+          "type": "object",
+          "required": [
+            "id",
+            "email",
+            "name",
+            "email_verified",
+            "has_password",
+            "totp_enabled",
+            "created_at",
+            "notices",
+            "handle"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "email": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 254
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "email_verified": {
+              "type": "boolean"
+            },
+            "has_password": {
+              "type": "boolean"
+            },
+            "totp_enabled": {
+              "type": "boolean"
+            },
+            "created_at": {
+              "type": "string"
+            },
+            "migrated_from": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "notices": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "handle": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/handle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "orgs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "csrf": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "w25_request": {
+      "description": "W25 PATCH /api/v1/orgs/{o}/vaults/{r} (maintainer; license: owner): title, description, license; any other member answers 400 invalid_body",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "w25_response": {
+      "description": "W25 answer = the W9 v4 vault",
+      "$ref": "#/$defs/w9_response"
+    },
+    "w26_request": {
+      "description": "W26 POST /api/v1/orgs/{o}/vaults/{r}/visibility (owner, class F, R80): to public needs a verified forge binding (409 forge_unverified), and the workspace policy allow_public_vaults (403 forbidden reason: policy); to internal needs Team or Enterprise (402 plan_required feature: internal_vaults)",
+      "type": "object",
+      "required": [
+        "visibility",
+        "totp_code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "visibility": {
+          "enum": [
+            "private",
+            "internal",
+            "public"
+          ]
+        },
+        "totp_code": {
+          "$ref": "#/$defs/totp_code"
+        }
+      }
+    },
+    "w26_response": {
+      "description": "W26 answer = the W9 v4 vault",
+      "$ref": "#/$defs/w9_response"
+    },
+    "w68_response": {
+      "description": "W68 GET /api/v1/orgs/{o}/knowledge/reuse?weeks=1..26 (v5 2.2.2, 2.6.1, plan v1.1 §5.3): per ISO week two separate figures, both derived on the server, never from instance telemetry. delivery: the server served instance B (E4 tail or E3 segment, first time per node and instance) a knowledge node another instance A wrote; it says the knowledge arrived, not that it was used. reuse: verified cross-instance reuse, only with a usage reference: B's own claim names A's node (node:<id> in its signed body) and B linked it with a live derived_from, references or depends_on edge; links without that citation never count. Oldest week first, the current ISO week last; evidence lists the newest usage references of the range",
+      "type": "object",
+      "required": [
+        "weeks",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "weeks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 26,
+          "items": {
+            "type": "object",
+            "required": [
+              "week",
+              "from",
+              "to",
+              "delivery",
+              "reuse"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "week": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-W[0-9]{2}$",
+                "description": "ISO week-numbering year and week"
+              },
+              "from": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+                "description": "Monday 00:00 UTC, inclusive"
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+                "description": "the next Monday 00:00 UTC, exclusive"
+              },
+              "delivery": {
+                "type": "object",
+                "required": [
+                  "pairs",
+                  "nodes",
+                  "instances"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "pairs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "distinct (node, receiving instance) pairs first delivered this week: the Home headline"
+                  },
+                  "nodes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "distinct nodes delivered to another instance"
+                  },
+                  "instances": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "distinct receiving instances"
+                  }
+                }
+              },
+              "reuse": {
+                "type": "object",
+                "required": [
+                  "pairs",
+                  "nodes",
+                  "instances",
+                  "verified_knowledge_pairs"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "pairs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "distinct (node, using instance) pairs with a usage reference this week; shown only when > 0"
+                  },
+                  "nodes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "distinct nodes another instance used"
+                  },
+                  "instances": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "distinct using instances"
+                  },
+                  "verified_knowledge_pairs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "the pairs whose used node's knowledge_state is verified now"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 10,
+          "description": "the newest usage references of the whole range, newest first: ids, workers and a time, never text",
+          "items": {
+            "type": "object",
+            "required": [
+              "node_id",
+              "cited_by",
+              "edge_id",
+              "source_worker",
+              "user_worker",
+              "vault",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "node_id": {
+                "$ref": "common.schema.json#/$defs/node_id",
+                "description": "the used node (instance A's)"
+              },
+              "cited_by": {
+                "$ref": "common.schema.json#/$defs/node_id",
+                "description": "instance B's claim that names it"
+              },
+              "edge_id": {
+                "$ref": "common.schema.json#/$defs/edge_id"
+              },
+              "source_worker": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "common.schema.json#/$defs/worker_id"
+                  },
+                  "name": {
+                    "$ref": "worker.schema.json#/$defs/name"
+                  }
+                }
+              },
+              "user_worker": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "common.schema.json#/$defs/worker_id"
+                  },
+                  "name": {
+                    "$ref": "worker.schema.json#/$defs/name"
+                  }
+                }
+              },
+              "vault": {
+                "type": "object",
+                "description": "the vault the use lives in, for the node link: the caller's workspace slug and the vault name",
+                "required": [
+                  "ws",
+                  "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "ws": {
+                    "$ref": "#/$defs/slug"
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]{2,40}$"
+                  }
+                }
+              },
+              "at": {
+                "$ref": "#/$defs/time",
+                "description": "when the server received the edge"
+              }
+            }
+          }
+        }
+      }
+    },
+    "w97_response": {
+      "description": "W97 GET /api/v1/orgs/{o}/knowledge/flow?days=1..180 (the overview of all workspaces, /app/): the workspace's knowledge flow per UTC day, oldest first, today (UTC) last. captured: knowledge nodes the workspace's instances added that day; delivered: W68's delivery (first deliveries of a node to another instance) of that day; reused: W68's verified reuse, distinct (node, instance B) pairs whose usage-reference edge arrived that day. Derived on the server, never from instance telemetry; counts only, no names",
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "days"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "the first UTC day of the range"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "the last UTC day of the range (today), inclusive"
+        },
+        "days": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 180,
+          "items": {
+            "type": "object",
+            "required": [
+              "day",
+              "captured",
+              "delivered",
+              "reused"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "day": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                "description": "the UTC day"
+              },
+              "captured": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "knowledge nodes (fact, decision, gotcha, procedure, finding, reference) added that day"
+              },
+              "delivered": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "first deliveries (node, receiving instance) of that day"
+              },
+              "reused": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "distinct verified-reuse pairs (node, using instance) of that day"
+              }
+            }
+          }
+        }
+      }
+    },
+    "policy_actor": {
+      "description": "who saved a policy version (repos::actor_json)",
+      "type": "object",
+      "required": [
+        "kind",
+        "user",
+        "instance",
+        "agent"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "user",
+            "instance",
+            "system"
+          ]
+        },
+        "user": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/uuid"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "label"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/uuid"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent": {
+          "type": "null"
+        }
+      }
+    },
+    "policy_document": {
+      "description": "PolicyDocument (docs/API.md §7.1): one saved version of a scope's document; document null = removed at this version",
+      "type": "object",
+      "required": [
+        "level",
+        "scope",
+        "version",
+        "document",
+        "digest",
+        "updated_by",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "$ref": "policy.schema.json#/$defs/level"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^(org_[0-9a-f]{32}|orgn_[0-9a-f]{32}|inst_[0-9a-f]{32}|[0-9a-f]{32})$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "document": {
+          "anyOf": [
+            {
+              "$ref": "policy.schema.json#/$defs/document"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "$ref": "policy.schema.json#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_by": {
+          "$ref": "#/$defs/policy_actor"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "hash": {
+          "description": "K22: this version's link in the scope's hash chain (sha256 hex); verify with …/history/verify",
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "description": "K22: why a rule got looser (required on a loosening)",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 280
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loosened": {
+          "type": "boolean"
+        }
+      }
+    },
+    "policy_field": {
+      "description": "one member of the policy table: merge rule and who enforces it (x-merge, x-enforcement, x-instance, x-server)",
+      "type": "object",
+      "required": [
+        "path",
+        "merge",
+        "enforcement",
+        "instance_field",
+        "server_point"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(security|context|sharing|agents|orchestrator)\\.[a-z_]+$"
+        },
+        "merge": {
+          "enum": [
+            "union",
+            "intersection",
+            "groups",
+            "min",
+            "true_wins",
+            "false_wins",
+            "rank",
+            "equal"
+          ]
+        },
+        "enforcement": {
+          "enum": [
+            "instance",
+            "server",
+            "advisory"
+          ]
+        },
+        "instance_field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "server_point": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enforcement": {
+                "const": "instance"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "instance_field": {
+                "type": "string"
+              },
+              "server_point": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "enforcement": {
+                "const": "server"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "instance_field": {
+                "type": "null"
+              },
+              "server_point": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "enforcement": {
+                "const": "advisory"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "instance_field": {
+                "type": "null"
+              },
+              "server_point": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "w77_response": {
+      "description": "W77 GET /api/v1/orgs/{o}/policies (reader): current documents (org -> instance, removed scopes left out) and the member table",
+      "type": "object",
+      "required": [
+        "items",
+        "fields"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/policy_document"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/policy_field"
+          }
+        }
+      }
+    },
+    "w78_response": {
+      "description": "W78 GET /api/v1/orgs/{o}/policies/effective?instance= (own instance, admin): what that instance gets now; 409 non_mergeable with field",
+      "type": "object",
+      "required": [
+        "instance_id",
+        "policy",
+        "digest",
+        "sources",
+        "advisory"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "instance_id": {
+          "$ref": "policy.schema.json#/$defs/instance_id"
+        },
+        "policy": {
+          "$ref": "policy.schema.json#/$defs/bundle/properties/policy"
+        },
+        "digest": {
+          "$ref": "policy.schema.json#/$defs/digest"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "policy.schema.json#/$defs/source"
+          }
+        },
+        "advisory": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(security|context|sharing|agents|orchestrator)\\.[a-z_]+$"
+          }
+        }
+      }
+    },
+    "w79_response": {
+      "description": "W79 GET /api/v1/orgs/{o}/policies/enforcement (reader: own instances; admin: all): acked / refused / outdated / unreachable per live instance; acked.unenforced lists only instance-enforced members; acked.key_id is the key that signed the applied version, delivered the latest bundle issued to it (hc2)",
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "required": [
+              "instance_id",
+              "label",
+              "state",
+              "digest",
+              "conflict",
+              "acked",
+              "delivered",
+              "refused",
+              "last_seen_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "instance_id": {
+                "$ref": "policy.schema.json#/$defs/instance_id"
+              },
+              "label": {
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "acked",
+                  "refused",
+                  "outdated",
+                  "unreachable"
+                ]
+              },
+              "digest": {
+                "anyOf": [
+                  {
+                    "$ref": "policy.schema.json#/$defs/digest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "conflict": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "code",
+                      "field"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "invalid_policy",
+                          "non_mergeable"
+                        ]
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "acked": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "version",
+                      "digest",
+                      "key_id",
+                      "unenforced",
+                      "acked_at"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "digest": {
+                        "$ref": "policy.schema.json#/$defs/digest"
+                      },
+                      "key_id": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$",
+                            "description": "the Cloud key that signed the bundle (key set v3, purpose policy)"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "unenforced": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "acked_at": {
+                        "$ref": "#/$defs/time"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "delivered": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/w79_delivery"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "refused": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/w79_refusal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "last_seen_at": {
+                "$ref": "#/$defs/time"
+              }
+            }
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    },
+    "w79_refusal": {
+      "description": "the instance's last refusal of a bundle issued to it (POST /v1/policy/ack with `refused`); cleared once it applies that version or a newer one",
+      "type": "object",
+      "required": [
+        "version",
+        "digest",
+        "reason_code",
+        "detail",
+        "refused_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "policy.schema.json#/$defs/digest"
+        },
+        "reason_code": {
+          "$ref": "policy.schema.json#/$defs/refusal_reason"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 300
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refused_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "w80_request": {
+      "description": "W80 PUT /api/v1/orgs/{o}/policies/{level} (org, workspace: admin) and …/{level}/{scope} (vault: maintainer; instance: its owner or admin), class H0; loosening and org-level changes need step-up",
+      "type": "object",
+      "required": [
+        "document",
+        "expected_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "$ref": "policy.schema.json#/$defs/document"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "the scope's current version, 0 for none"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 280,
+          "description": "K22: why a rule gets looser; a loosening without it is 422 reason_required"
+        }
+      }
+    },
+    "w80_response": {
+      "description": "W80 201: the saved version",
+      "$ref": "#/$defs/policy_document"
+    },
+    "w81_response": {
+      "description": "W81 DELETE …/policies/{level}[/{scope}]?expected_version= (roles as W80, class H0, step-up: a removal loosens): the removal version, document null",
+      "allOf": [
+        {
+          "$ref": "#/$defs/policy_document"
+        },
+        {
+          "properties": {
+            "document": {
+              "type": "null"
+            },
+            "digest": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "w82_response": {
+      "description": "W82 GET …/policies/{level}[/{scope}]/history (reader): versions newest first, at most 100",
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/policy_document"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    },
+    "w83_response": {
+      "description": "W83 GET /api/v1/companies/{g}/policies (company member): the company's current org-level document (scope orgn_…, none when removed) and the member table; it is the org level of every linked workspace",
+      "$ref": "#/$defs/w77_response"
+    },
+    "w84_request": {
+      "description": "W84 PUT /api/v1/companies/{g}/policies/org (company admin, class H with step-up); 409 non_mergeable when it does not merge in some linked workspace",
+      "$ref": "#/$defs/w80_request"
+    },
+    "w84_response": {
+      "description": "W84 201: the saved version, level org, scope orgn_…",
+      "$ref": "#/$defs/w80_response"
+    },
+    "w85_response": {
+      "description": "W85 DELETE /api/v1/companies/{g}/policies/org?expected_version= (company admin, class H with step-up): the removal version, document null",
+      "$ref": "#/$defs/w81_response"
+    },
+    "w86_response": {
+      "description": "W86 GET /api/v1/companies/{g}/policies/org/history (company member): versions newest first, at most 100",
+      "$ref": "#/$defs/w82_response"
+    },
+    "w87_workspaces_linked": {
+      "description": "W87 DELETE /api/v1/companies/{g} (company owner, class H with step-up): 204 without a body once no workspace is linked, else this 409 (workspaces = how many are still linked); the directory and the org-level policy go with it, the audit chain stays",
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message",
+            "state",
+            "workspaces"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "invalid_state"
+            },
+            "message": {
+              "type": "string"
+            },
+            "state": {
+              "const": "workspaces_linked"
+            },
+            "workspaces": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "w69_organisation": {
+      "type": "object",
+      "required": [
+        "slug",
+        "name",
+        "role",
+        "workspaces",
+        "members",
+        "message_retention_days",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "enum": [
+            "owner",
+            "admin",
+            "member"
+          ]
+        },
+        "workspaces": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "members": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "message_retention_days": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "teams": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/w69_company_plan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "W69 a company (the B-line organisation, API.md §2.5) as seen by the caller: `teams` (= `workspaces`, kept) and its Business `plan` (null while none was granted)"
+    },
+    "w69_list": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/w69_organisation"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    },
+    "w69_create_request": {
+      "type": "object",
+      "required": [
+        "slug",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "w69_patch_request": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "w69_retention_request": {
+      "type": "object",
+      "required": [
+        "message_retention_days"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "message_retention_days": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w70_member": {
+      "type": "object",
+      "required": [
+        "user",
+        "role",
+        "via",
+        "joined_at",
+        "workspaces"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "user": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "email": {
+              "type": "string"
+            }
+          }
+        },
+        "role": {
+          "enum": [
+            "owner",
+            "admin",
+            "member"
+          ]
+        },
+        "via": {
+          "enum": [
+            "owner",
+            "workspace",
+            "admin"
+          ]
+        },
+        "joined_at": {
+          "$ref": "#/$defs/time"
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "slug",
+              "role"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "slug": {
+                "$ref": "#/$defs/slug"
+              },
+              "role": {
+                "enum": [
+                  "reader",
+                  "contributor",
+                  "maintainer",
+                  "admin",
+                  "owner"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "description": "W70 directory entry: company role and the person's linked-workspace roles; email for admins and oneself"
+    },
+    "w70_list": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/w70_member"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    },
+    "w70_role_request": {
+      "type": "object",
+      "required": [
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "owner",
+            "admin",
+            "member"
+          ]
+        }
+      }
+    },
+    "w71_workspace": {
+      "type": "object",
+      "required": [
+        "slug",
+        "name",
+        "plan",
+        "seats",
+        "members",
+        "instances_connected"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "plan": {
+          "enum": [
+            "none",
+            "personal",
+            "team",
+            "enterprise"
+          ]
+        },
+        "seats": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "members": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "instances_connected": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "W71 workspace linked to a company (plan = the effective one)"
+    },
+    "w71_list": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/w71_workspace"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    },
+    "w71_link_request": {
+      "description": "W71 link an existing team workspace the caller owns, or create one under the company",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "workspace"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "workspace": {
+              "$ref": "#/$defs/slug"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "slug",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "slug": {
+              "$ref": "#/$defs/slug"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        }
+      ]
+    },
+    "w72_role_request": {
+      "type": "object",
+      "required": [
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "reader",
+            "contributor",
+            "maintainer",
+            "admin",
+            "owner"
+          ]
+        }
+      }
+    },
+    "w73_instance": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "workspace",
+        "owner",
+        "state",
+        "enrolled_at",
+        "last_seen_at",
+        "revoked_at",
+        "revocation_reason",
+        "policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "label": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/slug"
+        },
+        "owner": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "state": {
+          "enum": [
+            "connected",
+            "offline",
+            "revoked"
+          ]
+        },
+        "enrolled_at": {
+          "$ref": "#/$defs/time"
+        },
+        "last_seen_at": {
+          "$ref": "#/$defs/time"
+        },
+        "revoked_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revocation_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "web_revoke",
+                "admin",
+                "key_compromise"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "state",
+                "digest",
+                "conflict",
+                "refused",
+                "acked"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "acked",
+                    "refused",
+                    "outdated",
+                    "unreachable"
+                  ]
+                },
+                "digest": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "conflict": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "field"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "field": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "refused": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/w79_refusal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "acked": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "version",
+                        "digest",
+                        "acked_at"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "acked_at": {
+                          "$ref": "#/$defs/time"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "W73 instance of a linked workspace with its POLICY-B1 enforcement state (null once revoked)"
+    },
+    "w73_list": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/w73_instance"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w74_request": {
+      "type": "object",
+      "required": [
+        "instance_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "instance_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/uuid"
+              },
+              {
+                "$ref": "policy.schema.json#/$defs/instance_id"
+              }
+            ]
+          },
+          "description": "dashed UUID or wire id inst_<32 hex>, both forms accepted"
+        },
+        "reason": {
+          "enum": [
+            "admin",
+            "key_compromise"
+          ]
+        },
+        "compromised_since": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "w74_response": {
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "workspace",
+              "already_revoked",
+              "reason",
+              "revoked_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              },
+              "workspace": {
+                "$ref": "#/$defs/slug"
+              },
+              "already_revoked": {
+                "type": "boolean"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "web_revoke",
+                      "admin",
+                      "key_compromise"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revoked_at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "w75_audit_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "at",
+        "workspace",
+        "action",
+        "actor",
+        "target",
+        "details"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f-]{36}:[0-9]{19}$"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/slug"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "type": "string",
+          "pattern": "^[a-z_]+\\.[a-z_]+$"
+        },
+        "actor": {
+          "type": "object",
+          "required": [
+            "kind",
+            "user",
+            "instance",
+            "agent"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "user",
+                "instance",
+                "system"
+              ]
+            },
+            "user": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "common.schema.json#/$defs/uuid"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "instance": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "label"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "common.schema.json#/$defs/uuid"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "agent": {
+              "type": "null"
+            }
+          }
+        },
+        "target": {
+          "type": "object",
+          "required": [
+            "kind",
+            "id",
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "integer",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "w75_revocation_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "at",
+        "instance",
+        "workspace",
+        "reason",
+        "compromised_since",
+        "owner"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "instance": {
+          "type": "object",
+          "required": [
+            "id",
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "workspace": {
+          "$ref": "#/$defs/slug"
+        },
+        "reason": {
+          "enum": [
+            "web_revoke",
+            "admin",
+            "key_compromise"
+          ]
+        },
+        "compromised_since": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "w75_handoff_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "at",
+        "workspace",
+        "vault",
+        "from",
+        "to",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "workspace": {
+          "$ref": "#/$defs/slug"
+        },
+        "vault": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z_]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w75_sync_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "at",
+        "kind",
+        "workspace",
+        "vault",
+        "instance",
+        "purge_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "kind": {
+          "enum": [
+            "replica_stale",
+            "purge_unacked"
+          ]
+        },
+        "workspace": {
+          "$ref": "#/$defs/slug"
+        },
+        "vault": {
+          "type": "string"
+        },
+        "instance": {
+          "type": "object",
+          "required": [
+            "id",
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "purge_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^prg_[a-z2-7]{26}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w75_response": {
+      "type": "object",
+      "required": [
+        "view",
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "view": {
+          "enum": [
+            "policy",
+            "revocations",
+            "handoffs",
+            "sync",
+            "admin"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/w75_audit_item"
+              },
+              {
+                "$ref": "#/$defs/w75_revocation_item"
+              },
+              {
+                "$ref": "#/$defs/w75_handoff_item"
+              },
+              {
+                "$ref": "#/$defs/w75_sync_item"
+              }
+            ]
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "W75 GET /api/v1/companies/{g}/activity/{view} and W76 GET /api/v1/orgs/{o}/activity/{view}: paged oversight, no message bodies"
+    },
+    "w95_response": {
+      "description": "W95 GET /api/v1/orgs/{o}/metrics/pilot?weeks=1..26 (admin; Release B commercial gate, CHECKLIST 3.4, plan v1.1 §8.4, §15): a workspace's pilot metrics from the server's own records, never instance telemetry: time to the first and second instance, vaults with active sync, instances on the current policy, per ISO week (oldest first) W68 delivery and reuse, reuse no longer current, coordination and policy-admin counts, and resource usage (bytes per vault, metered transfer and bus messages of the previous and current UTC month). Unit costs and margins are the operator's and never part of this response",
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "activation",
+        "sync",
+        "policy",
+        "weeks",
+        "usage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+          "description": "the first week's Monday"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+          "description": "the end of the current ISO week"
+        },
+        "activation": {
+          "type": "object",
+          "required": [
+            "workspace_created_at",
+            "first_instance_at",
+            "first_instance_s",
+            "second_instance_at",
+            "second_instance_s"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "workspace_created_at": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "first_instance_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+              "description": "first token of the workspace's first instance (revoked ones count)"
+            },
+            "first_instance_s": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "second_instance_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "second_instance_s": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "sync": {
+          "type": "object",
+          "required": [
+            "days",
+            "vaults",
+            "active",
+            "active_share"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "days": {
+              "const": 7
+            },
+            "vaults": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "active": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "vaults an instance pushed into or read the snapshot/tail of within `days`"
+            },
+            "active_share": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "required": [
+            "instances",
+            "acked",
+            "outdated",
+            "refused",
+            "unreachable",
+            "current_share"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "instances": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "acked": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outdated": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "refused": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unreachable": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "current_share": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1,
+              "description": "acked / instances (W79 states)"
+            }
+          }
+        },
+        "weeks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 26,
+          "items": {
+            "type": "object",
+            "required": [
+              "week",
+              "from",
+              "to",
+              "delivery",
+              "reuse",
+              "reuse_not_current",
+              "coordination",
+              "policy_admin"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "week": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-W[0-9]{2}$",
+                "description": "ISO week-numbering year and week"
+              },
+              "from": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+                "description": "Monday 00:00 UTC, inclusive"
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+                "description": "the next Monday 00:00 UTC, exclusive"
+              },
+              "delivery": {
+                "description": "W68 delivery of this week",
+                "type": "object",
+                "required": [
+                  "pairs",
+                  "nodes",
+                  "instances"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "pairs": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "nodes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "instances": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "reuse": {
+                "description": "W68 verified cross-instance reuse of this week",
+                "type": "object",
+                "required": [
+                  "pairs",
+                  "nodes",
+                  "instances",
+                  "verified_knowledge_pairs"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "pairs": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "nodes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "instances": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "verified_knowledge_pairs": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "reuse_not_current": {
+                "description": "of this week's reuse pairs, those whose used node is outdated, conflicting or rejected NOW (state at read time)",
+                "type": "object",
+                "required": [
+                  "pairs",
+                  "outdated",
+                  "conflicting",
+                  "rejected"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "pairs": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "outdated": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "conflicting": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "rejected": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "coordination": {
+                "type": "object",
+                "required": [
+                  "claims",
+                  "refused_held",
+                  "refused_role",
+                  "lapsed",
+                  "released",
+                  "done",
+                  "failed",
+                  "cancelled",
+                  "time_to_first_claim_p50_s"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "claims": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "task claims granted (vault_events task.claimed; a renewal is no claim)"
+                  },
+                  "refused_held": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "claims refused because another agent held the task: a double execution the claim prevented"
+                  },
+                  "refused_role": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "claims refused because the agent had not announced the task's role"
+                  },
+                  "lapsed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "claims whose lease expired before a result"
+                  },
+                  "released": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "done": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cancelled": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "time_to_first_claim_p50_s": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "median seconds from a task's opening to its first claim, for first claims this week"
+                  }
+                }
+              },
+              "policy_admin": {
+                "type": "object",
+                "required": [
+                  "saves",
+                  "removals",
+                  "loosenings"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "saves": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "policy document versions saved in the workspace (org, workspace, vault, instance level)"
+                  },
+                  "removals": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "loosenings": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "versions less strict than the version before them in any member (a removal of a non-empty document counts)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "usage": {
+          "type": "object",
+          "required": [
+            "storage_bytes",
+            "vaults",
+            "instances_registered",
+            "months"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "storage_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "the metered hot + cold bytes (storage_usage, hourly)"
+            },
+            "vaults": {
+              "type": "array",
+              "maxItems": 200,
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "bytes"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "instances_registered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "months": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "required": [
+                  "month",
+                  "complete",
+                  "transfer_bytes",
+                  "bus_messages",
+                  "instances_active",
+                  "transfer_per_instance_bytes"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "month": {
+                    "type": "string",
+                    "pattern": "^[0-9]{4}-[0-9]{2}$"
+                  },
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "transfer_bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bus_messages": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "instances_active": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "transfer_per_instance_bytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "w96_instance": {
+      "description": "W96 instance of the workspace (API.md §3 Instance). slot_free_at: when a revoked instance's registered slot frees (Pro: revoked_at + 7 days, the cool-down); null while it is enrolled, once its slot is free (cool-down over or recovered, P7) and on every other plan",
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "owner",
+        "instance_version",
+        "os",
+        "enrolled_at",
+        "last_seen_at",
+        "connected",
+        "pending",
+        "revoked_at",
+        "lease",
+        "slot_free_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "label": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "instance_version": {
+          "type": "string"
+        },
+        "os": {
+          "type": "string"
+        },
+        "enrolled_at": {
+          "$ref": "#/$defs/time"
+        },
+        "last_seen_at": {
+          "$ref": "#/$defs/time"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "revoked_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lease": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "expires_at",
+                "grace_until"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "expires_at": {
+                  "$ref": "#/$defs/time"
+                },
+                "grace_until": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slot_free_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vaults": {
+          "description": "HC2: on W96 list items (always there; empty for a token without repository scopes), not on other Instance lists",
+          "type": "array",
+          "items": {
+            "description": "HC2: a vault the Instance holds a replica of, with its replica state",
+            "type": "object",
+            "required": [
+              "vault",
+              "first_sync",
+              "last_sync",
+              "synced_seq",
+              "behind",
+              "stale"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "vault": {
+                "type": "string",
+                "minLength": 1
+              },
+              "first_sync": {
+                "$ref": "#/$defs/time"
+              },
+              "last_sync": {
+                "$ref": "#/$defs/time"
+              },
+              "synced_seq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "behind": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "w96_response": {
+      "description": "W96 GET /api/v1/orgs/{o}/instances?state=connected|offline|revoked|all (reader: own instances, admin: all; ≤ 500, not revoked first)",
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor",
+        "limit",
+        "used"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "#/$defs/w96_instance"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "used": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "w69_company_plan": {
+      "description": "The company's Business contract (0073): name, status, contract seats and the seats in use across its teams",
+      "type": "object",
+      "required": [
+        "name",
+        "status",
+        "seats",
+        "seats_used"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "enterprise"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "past_due",
+            "canceled"
+          ]
+        },
+        "seats": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seats_used": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "w69_request_request": {
+      "description": "POST /api/v1/companies/requests and PUT …/requests/{id}: ask for Enterprise (on request; the operator grants it); teams the caller owns move in when the contract starts",
+      "type": "object",
+      "required": [
+        "company_name",
+        "seats"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "company_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "seats": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/slug"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "one release of compatibility: same as teams: [team]"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        }
+      }
+    },
+    "w69_request_response": {
+      "type": "object",
+      "required": [
+        "id",
+        "state",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "open"
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "w69_enterprise_request": {
+      "description": "EnterpriseRequest: the caller's request for Enterprise as a team's Plan page shows it",
+      "type": "object",
+      "required": [
+        "id",
+        "state",
+        "company_name",
+        "seats",
+        "teams",
+        "message",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "granted",
+            "declined"
+          ]
+        },
+        "company_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "seats": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "slug",
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "slug": {
+                "$ref": "#/$defs/slug"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "w69_my_request_response": {
+      "description": "GET /api/v1/companies/requests/mine: the caller's latest request that was not withdrawn",
+      "type": "object",
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/w69_enterprise_request"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w69_billing_response": {
+      "description": "GET /api/v1/companies/{g}/billing (company admin): the Business contract, the pooled usage (Billing.usage of a team: every quota is the company's, counted across its teams; null without a contract in force or without teams), each team's share; changes go through us",
+      "type": "object",
+      "required": [
+        "plan",
+        "status",
+        "seats",
+        "seats_used",
+        "contract_ref",
+        "usage",
+        "teams",
+        "contact"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "enum": [
+            "enterprise"
+          ]
+        },
+        "status": {
+          "enum": [
+            "none",
+            "active",
+            "past_due",
+            "canceled"
+          ]
+        },
+        "seats": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seats_used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contract_ref": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "quotas",
+                "notices",
+                "suggest_team"
+              ],
+              "properties": {
+                "quotas": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "limit",
+                      "used",
+                      "reset_at"
+                    ],
+                    "properties": {
+                      "limit": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reset_at": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/time"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "notices": {
+                  "type": "array"
+                },
+                "suggest_team": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "slug",
+              "name",
+              "members",
+              "connected_instances",
+              "private_vaults",
+              "storage_bytes",
+              "transfer_bytes",
+              "bus_messages"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "slug": {
+                "$ref": "#/$defs/slug"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "members": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "connected_instances": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "private_vaults": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "storage_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "transfer_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bus_messages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "contact": {
+          "const": true
+        }
+      }
+    },
+    "instance_ref": {
+      "description": "HC2: the Instance a worker runs on",
+      "type": "object",
+      "required": [
+        "id",
+        "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "writer": {
+      "description": "HC2 Writer: who wrote an event or node. kind is the actor kind (unknown once a person's or the server's first event is in a cold segment); worker and instance only for a worker; session only where the Instance sends one (an episode's session_ref), else null",
+      "type": "object",
+      "required": [
+        "kind",
+        "worker",
+        "instance",
+        "session"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "worker",
+            "person",
+            "server",
+            "legacy_import",
+            "unknown"
+          ]
+        },
+        "worker": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/worker_id"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "$ref": "worker.schema.json#/$defs/name"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/instance_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "sources": {
+      "description": "HC2: the files (paths of the file:/sym: refs in anchors, applies_to and an episode's touched) and commits (anchor commits and an episode's commits) a node names, sorted and unique",
+      "type": "object",
+      "required": [
+        "files",
+        "commits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "commits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{7,64}$"
+          }
+        }
+      }
+    },
+    "replica_state": {
+      "description": "HC2: where one replica stands. synced_seq: the highest E4 since the Instance tailed from (null before its first tail after 0013); behind = head_seq - synced_seq; stale: not revoked and no sync for 24 h",
+      "type": "object",
+      "required": [
+        "first_sync",
+        "last_sync",
+        "synced_seq",
+        "behind",
+        "stale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "first_sync": {
+          "$ref": "#/$defs/time"
+        },
+        "last_sync": {
+          "$ref": "#/$defs/time"
+        },
+        "synced_seq": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "behind": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      }
+    },
+    "w24r_response": {
+      "description": "HC2 W24r GET /api/v1/orgs/{o}/vaults/{r}/replicas (reader, read only): replica state per Instance, most recently synced first",
+      "type": "object",
+      "required": [
+        "head_seq",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "head_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "description": "HC2: one Instance's replica of the vault",
+            "type": "object",
+            "required": [
+              "instance",
+              "first_sync",
+              "last_sync",
+              "synced_seq",
+              "behind",
+              "stale"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "instance": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "label",
+                  "connected",
+                  "revoked"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "common.schema.json#/$defs/uuid"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "connected": {
+                    "type": "boolean"
+                  },
+                  "revoked": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "first_sync": {
+                "$ref": "#/$defs/time"
+              },
+              "last_sync": {
+                "$ref": "#/$defs/time"
+              },
+              "synced_seq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "behind": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "w13_response": {
+      "description": "W13 GET /api/v1/orgs/{o}/vaults/{r}/graph?focus=&hops=&max= (reader)",
+      "type": "object",
+      "required": [
+        "nodes",
+        "edges",
+        "clusters"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "label",
+              "trust_bucket",
+              "knowledge_state"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "type": {
+                "enum": [
+                  "fact",
+                  "decision",
+                  "gotcha",
+                  "procedure",
+                  "finding",
+                  "episode",
+                  "reference"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "trust_bucket": {
+                "enum": [
+                  "high",
+                  "normal",
+                  "low"
+                ]
+              },
+              "knowledge_state": {
+                "$ref": "common.schema.json#/$defs/knowledge_state"
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "from",
+              "to",
+              "kind"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "to": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "w79_delivery": {
+      "description": "a policy bundle issued to the instance (on its pull of GET /v1/policy/bundle, so issued_at is when version N was delivered)",
+      "type": "object",
+      "required": [
+        "version",
+        "digest",
+        "key_id",
+        "issued_at",
+        "not_after"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "policy.schema.json#/$defs/digest"
+        },
+        "key_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$",
+              "description": "the Cloud key that signed the bundle (key set v3, purpose policy)"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issued_at": {
+          "$ref": "#/$defs/time"
+        },
+        "not_after": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "w110_response": {
+      "description": "W110 GET /api/v1/orgs/{o}/policies/deliveries?instance= (own instance, admin): the policy history of one instance, newest first, at most 100 rows per list",
+      "type": "object",
+      "required": [
+        "instance_id",
+        "label",
+        "items",
+        "acks",
+        "refusals",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "instance_id": {
+          "$ref": "policy.schema.json#/$defs/instance_id"
+        },
+        "label": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/w79_delivery"
+          }
+        },
+        "acks": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "description": "one ack; version and digest null: the instance reported it holds no valid bundle",
+            "type": "object",
+            "required": [
+              "version",
+              "digest",
+              "unenforced",
+              "acked_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "digest": {
+                "anyOf": [
+                  {
+                    "$ref": "policy.schema.json#/$defs/digest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "unenforced": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "acked_at": {
+                "$ref": "#/$defs/time"
+              }
+            }
+          }
+        },
+        "refusals": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "description": "one refusal; settled_at once an ack of that version or a newer one settled it",
+            "type": "object",
+            "required": [
+              "version",
+              "digest",
+              "reason_code",
+              "detail",
+              "refused_at",
+              "settled_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "digest": {
+                "$ref": "policy.schema.json#/$defs/digest"
+              },
+              "reason_code": {
+                "$ref": "policy.schema.json#/$defs/refusal_reason"
+              },
+              "detail": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "refused_at": {
+                "$ref": "#/$defs/time"
+              },
+              "settled_at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    },
+    "w111_response": {
+      "description": "W111 GET /api/v1/orgs/{o}/policies/evidence?instance=&days= (own instance, admin; hc2 P5): one instance's enforcement evidence from the policy_admission of its receipts v2 (receipts.schema.json) of the last days (1-366, default 30), per policy digest, newest activity first, at most 50 digests; V9: receipts carrying an HMAC session_ref are also grouped per session and digest in sessions (at most 50 rows, newest first; empty without such receipts)",
+      "type": "object",
+      "required": [
+        "instance_id",
+        "label",
+        "days",
+        "from",
+        "to",
+        "totals",
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "instance_id": {
+          "$ref": "policy.schema.json#/$defs/instance_id"
+        },
+        "label": {
+          "type": "string"
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 366
+        },
+        "from": {
+          "$ref": "#/$defs/time"
+        },
+        "to": {
+          "$ref": "#/$defs/time"
+        },
+        "totals": {
+          "description": "every receipt of the window: invocations admitted and rejected by the policy in force",
+          "type": "object",
+          "required": [
+            "admitted",
+            "rejected"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "admitted": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "description": "one policy digest the receipts name; digest null: invocations without an issued policy; version = the highest version delivered to this instance with that digest (null: never delivered to it); in_force = the digest of the instance's latest ack",
+            "type": "object",
+            "required": [
+              "version",
+              "digest",
+              "in_force",
+              "admitted",
+              "rejected",
+              "last_admitted_at",
+              "last_rejected_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "digest": {
+                "anyOf": [
+                  {
+                    "$ref": "policy.schema.json#/$defs/digest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "in_force": {
+                "type": "boolean"
+              },
+              "admitted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rejected": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "last_admitted_at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "last_rejected_at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sessions": {
+          "description": "V9 (optional for older servers): per agent session (the receipt's session_ref, an HMAC under the instance-local key, so Cloud never learns the local id) and policy digest: which policy each session ran under",
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "session",
+              "version",
+              "digest",
+              "in_force",
+              "admitted",
+              "rejected",
+              "first_at",
+              "last_at"
+            ],
+            "properties": {
+              "session": {
+                "type": "string",
+                "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "digest": {
+                "anyOf": [
+                  {
+                    "$ref": "policy.schema.json#/$defs/digest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "in_force": {
+                "type": "boolean"
+              },
+              "admitted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rejected": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "first_at": {
+                "$ref": "#/$defs/time"
+              },
+              "last_at": {
+                "$ref": "#/$defs/time"
+              }
+            }
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      }
+    }
+  }
+}

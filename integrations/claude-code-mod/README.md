@@ -23,6 +23,51 @@ Code with your permissions, so removing it is respected as a standing decision:
 `uninstall` leaves a marker (`<data dir>/claude-mod.declined`) that keeps setup
 and update from installing it again, until `lean-ctx claude-mod install` lifts it.
 
+The mod is two plugins from one marketplace, always at the same version:
+
+- **`lean-ctx`** (this directory): cockpit, result rendering, focused tool
+  surface, hook-context dedup, live skill, compaction, `/leanctx`. It hooks no
+  tool calls, so it works with Claude Code's Code Mode.
+- **`lean-ctx-jobs`** (`../claude-code-mod-jobs`): wake on background jobs,
+  answered sleep-polls, native Bash shaping, `/leanctx-jobs`. These need a
+  `tool.call` hook, which makes Claude Code refuse Code Mode.
+
+## Code Mode
+
+Claude Code's experimental [Code Mode](https://code.claude.com/docs/en/code-mode)
+is refused while any enabled plugin hooks `tool.call`, while
+`ANTHROPIC_BASE_URL` points anywhere but Anthropic (the lean-ctx proxy does),
+and with remote control at startup. Start a Code Mode session with:
+
+```sh
+lean-ctx claude-mod code-mode [claude args…]
+```
+
+It runs `claude --settings <overlay>` with `lean-ctx-jobs` off, the proxy
+bypassed and remote control at startup off, for that session only; your
+settings are untouched. The `lean-ctx` plugin and the lean-ctx MCP tools stay
+on. What the session loses: job wakes and Bash shaping (Claude checks jobs
+itself), and the proxy's request-side measurement and compression.
+
+The launcher only bypasses the lean-ctx proxy. If `ANTHROPIC_BASE_URL` (in the
+environment or your Claude settings) points at another gateway, it refuses to
+start rather than send that gateway's credentials to Anthropic. It also refuses
+your own `--settings`, which would replace its overlay.
+
+In Code Mode a `PreToolUse` hook that fails refuses the tool call, so
+lean-ctx's hooks are written with `"onFailure": "continue"` (Claude Code
+2.1.295+). `lean-ctx doctor` shows a `Code Mode` line: ready, or the gateway or
+the hooks from an older install that stand in the way.
+
+In Code Mode Claude calls tools from code, where the lean-ctx tools are only
+reachable as `tools["mcp__lean-ctx__ctx_read"](…)`, since the server name carries a hyphen.
+While `REPL` is offered, the `lean-ctx` plugin adds that call form to the system
+prompt as one session section (`lean-ctx:code-mode`).
+
+Upgrading from a single-plugin install: `wake_on_job_finish` and
+`shape_native_output` now belong to `lean-ctx-jobs`; set them again there in
+`/config` if you had changed them.
+
 ## Why
 
 Measured on 569 Claude Code sessions (30 days): **~19 % of all model requests
@@ -69,7 +114,7 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   Naumenko's [leanctx-colored](https://github.com/ReDev1L/leanctx-colored);
   with both installed, whichever runs first draws the row, never both.
 
-- **Wake, don't poll.** Watches `ctx_shell(run_in_background=true)` jobs in
+- **Wake, don't poll** (`lean-ctx-jobs`). Watches `ctx_shell(run_in_background=true)` jobs in
   Claude Code's process (state from ctx_shell's `structuredContent`, then its
   JSON text, then the `[background:…]` header) and starts one new turn when they
   finish — including failed jobs, which MCP reports as error results — with the
@@ -83,7 +128,7 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   model reads it there, and only what is left wakes once afterwards. The
   **Wake Claude when a lean-ctx background job finishes** option
   (`wake_on_job_finish`) turns watching off; Claude then checks jobs itself.
-- **Shape, don't redirect.** Large native `Bash` stdout (≥ 2,000 chars) is
+- **Shape, don't redirect** (`lean-ctx-jobs`). Large native `Bash` stdout (≥ 2,000 chars) is
   compressed by lean-ctx's command-aware engine via the internal `ctx_shape`
   tool — the same patterns, secret redaction and output filters as `ctx_shell`,
   ending lossy results with a recovery handle. stderr, small output, images,
@@ -105,7 +150,8 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   `keep_hook_context` to `true` to keep the hook context; its default is `false`.
   `/leanctx` reports how many attachments and characters the mod removed.
 - **Live skill.** Prefixes the `lean-ctx` skill with what is true in this
-  session (wake, front-loaded tools, shaping), so it never contradicts the mod.
+  session (front-loaded tools; `lean-ctx-jobs` adds wake and shaping when it
+  is on), so it never contradicts the mod.
 - **Compaction that keeps lean-ctx usable.** Before Claude Code compacts the
   main conversation, lean-ctx saves its session state and the summarizer is
   told to keep what lean-ctx still depends on (recovery handles, ids of jobs
@@ -113,9 +159,10 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   first prompt afterwards carries the lean-ctx session state (task, decisions,
   findings) once, capped at ~500 tokens. Subagent compactions are untouched.
 - **`/leanctx`.** This session's requests, input/output/cache tokens,
-  ToolSearch-only requests, lean-ctx calls, answered sleeps, wakes and shaped
-  Bash outputs, and dropped hook attachments/characters — from Claude Code's
-  own `turn.step` usage and hook text, not estimates.
+  ToolSearch-only requests, lean-ctx calls, dropped hook attachments/characters
+  and compactions — from Claude Code's own `turn.step` usage and hook text, not
+  estimates. `/leanctx-jobs` reports answered sleeps, wakes and shaped Bash
+  outputs.
 
 It keeps nothing after the session, sends no telemetry, sets no gateway policy
 and stays inert when no lean-ctx MCP server is connected.
@@ -130,8 +177,9 @@ it through the listed `ctx_call`, because `$.mcp.call` only calls listed tools.
 
 ## Develop
 
-The sources are canonical in `rust/src/templates/claude_mod/` (embedded in the
-binary); this directory is the development workspace, regenerated with
+The sources are canonical in `rust/src/templates/claude_mod/` and
+`rust/src/templates/claude_mod_jobs/` (embedded in the binary); this directory
+and `../claude-code-mod-jobs` are the development workspaces, regenerated with
 `cargo run --example gen_rules --features dev-tools` and drift-checked in CI.
 Edit the templates, regenerate, then:
 
@@ -141,13 +189,23 @@ claude plugin validate --strict integrations/claude-code-mod
 claude plugin validate --strict integrations/claude-code-mod/.claude-plugin/plugin.json
 claude plugin test integrations/claude-code-mod
 tsc -p integrations/claude-code-mod/tsconfig.json
+# the jobs companion, same commands:
+claude --plugin-dir ./integrations/claude-code-mod --plugin-dir ./integrations/claude-code-mod-jobs
+claude plugin test integrations/claude-code-mod-jobs
 ```
 
 `tsc` needs the version-matched declarations in `.claude-plugin/types/`
 (git-ignored), which Claude Code writes the first time it loads the mod with
-`--plugin-dir`. The validator reports:
+`--plugin-dir`. The validator lists no `tool.call` for `lean-ctx` (its last
+hooks line ends with):
 
 ```text
-  ❯ ./register.ts hooks: tool.describe{tool=/"^mcp__lean[-_]ctx__[A-Za-z0-9_-]+$"/}, skill.prompt{skill=lean-ctx}, prompt.attachment, session.start, tool.call, session.compact, prompt.submit, turn.step, command.run{command=leanctx}
-  ❯ ./register.ts calls: $.clock.every (via startWatcher), $.command.register (via ensureMeterCommand), $.mcp.call (via pollWatchedJobs, shapeBash), $.prompt.submit (via submitWake)
+  ❯ ./register.ts hooks: …, tool.describe{tool=/"^mcp__lean[-_]ctx__[A-Za-z0-9_-]+$"/}, skill.prompt{skill=lean-ctx}, prompt.attachment, session.start, session.compact, prompt.submit, turn.step, command.run{command=leanctx}
+```
+
+and for `lean-ctx-jobs`:
+
+```text
+  ❯ ./register.ts hooks: tool.describe{tool=/"^mcp__lean[-_]ctx__[A-Za-z0-9_-]+$"/}, skill.prompt{skill=lean-ctx}, session.start, turn.start, turn.complete, tool.call, session.compact, command.run{command=leanctx-jobs}
+  ❯ ./register.ts calls: $.clock.every (via startWatcher), $.command.register (via ensureCommand), $.mcp.call (via pollWatchedJobs, shapeBash), $.prompt.submit (via submitWake), $.tool.list
 ```

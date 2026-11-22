@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/agent_run.schema.json",
+  "title": "Agent run: one agent working on one task under a claim, from claim to result",
+  "description": "An agent run is a claim (lease + fencing token) held by an agent of an Instance, its progress updates and its result (task.schema.json#/$defs/result_request). The agent itself is a profile; the Instance session it runs in is a worker (C0 2.x). The app's local agent processes (src-tauri agents.rs AgentProfile, StartResult) are launch settings, not part of the shared model.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "(vault_id, number, claim.lease_id); the agent: profile_id; its session: worker id",
+    "views": {
+      "claim_request": "POST .../tasks/{number}/claim body",
+      "claim_ack": "claim and renew answer",
+      "claim": "the claim as a task shows it",
+      "usage": "tokens and cost of the run",
+      "worker": "the Instance session the run lives in (C0 2.x)",
+      "profile": "the agent, as GET /v1/agents/profiles lists it"
+    }
+  },
+  "$defs": {
+    "claim_request": {
+      "type": "object",
+      "required": ["schema", "agent", "session_ref", "minutes"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.task-claim-request/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimRequest.schema", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimRequestV1.schema"]
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimRequest.agent", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimRequestV1.agent"]
+        },
+        "session_ref": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimRequest.session_ref", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimRequestV1.session_ref"]
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 15,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimRequest.minutes", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimRequestV1.minutes"]
+        },
+        "optin_id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimRequest.optin_id", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimRequestV1.optin_id"]
+        }
+      }
+    },
+    "claim_ack": {
+      "type": "object",
+      "required": ["schema", "number", "claim", "until"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.task-claim/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimAck.schema", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimAckV1.schema"]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimAck.number", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimAckV1.number"]
+        },
+        "claim": {
+          "$ref": "common.schema.json#/$defs/claim_ref",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimAck.claim", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimAckV1.claim"]
+        },
+        "until": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaimAck.until", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimAckV1.until"]
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": ["holder", "since", "until"],
+      "additionalProperties": false,
+      "properties": {
+        "holder": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaim.holder", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimV1.holder"]
+        },
+        "since": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaim.since", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimV1.since"]
+        },
+        "until": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskClaim.until", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskClaimV1.until"]
+        }
+      }
+    },
+    "usage": {
+      "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Usage", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs UsageV1"],
+      "$ref": "common.schema.json#/$defs/usage"
+    },
+    "worker": {
+      "description": "C0 2.x worker: one agent session of an Instance (id, host_app, role, name, place, card, status)",
+      "x-producers": ["p37 crates/cloud-server/src/routes/workers.rs \"host_app\""],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/worker.schema.json#/$defs/worker"
+    },
+    "reputation": {
+      "type": "object",
+      "required": ["contributions", "score", "weight_pct"],
+      "additionalProperties": false,
+      "properties": {
+        "contributions": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-server/src/reputation.rs \"contributions\""]
+        },
+        "score": {
+          "type": "integer",
+          "x-producers": ["p37 crates/cloud-server/src/reputation.rs \"score\""]
+        },
+        "weight_pct": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "x-producers": ["p37 crates/cloud-server/src/reputation.rs \"weight_pct\""]
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "required": ["profile_id", "agent", "instance_label", "owner", "display_name", "roles", "strengths", "reputation", "mine"],
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "pattern": "^prof_[0-9a-z]+$",
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"profile_id\""]
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"agent\""]
+        },
+        "instance_label": {
+          "type": "string",
+          "maxLength": 100,
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"instance_label\""]
+        },
+        "owner": {
+          "type": "string",
+          "maxLength": 100,
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"owner\""]
+        },
+        "display_name": {
+          "type": "string",
+          "maxLength": 64,
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"display_name\""]
+        },
+        "roles": {
+          "description": "sorted, without repeats",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"roles\""]
+        },
+        "strengths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"strengths\""]
+        },
+        "reputation": {
+          "$ref": "#/$defs/reputation",
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"reputation\""]
+        },
+        "mine": {
+          "type": "boolean",
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"mine\""]
+        },
+        "last_seen": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"last_seen\""]
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 80,
+          "x-producers": ["p37 crates/cloud-server/src/routes/agents.rs \"model\""]
+        }
+      }
+    }
+  }
+}

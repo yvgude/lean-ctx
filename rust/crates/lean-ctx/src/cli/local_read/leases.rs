@@ -38,7 +38,7 @@ fn kind_name(kind: AgentLeaseResourceKindV1) -> &'static str {
 
 fn epoch_ms_rfc3339(ms: u64) -> String {
     let ms = i64::try_from(ms).unwrap_or(i64::MAX);
-    chrono::DateTime::from_timestamp_millis(ms)
+    lean_ctx_time::UtcDateTime::from_timestamp_millis(ms)
         .map(super::rfc3339)
         .unwrap_or_default()
 }
@@ -141,7 +141,9 @@ pub(crate) fn build_claim(args: &[String]) -> Result<Claimed, Failure> {
         lease_request_ref: format!(
             "bus-claim:{}-{}",
             std::process::id(),
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+            lean_ctx_time::UtcDateTime::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_default()
         ),
         resource_kind: kind,
         resource_ref,

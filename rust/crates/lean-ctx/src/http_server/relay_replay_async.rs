@@ -52,7 +52,7 @@ impl AsyncRelayReplayStore {
         storage_id: &str,
         record: &RelayRecordV1,
         fingerprint: &str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: lean_ctx_time::UtcDateTime,
     ) -> Result<Reservation, StoreError> {
         let store = self.store().await?;
         let storage_id = storage_id.to_string();
@@ -219,7 +219,7 @@ fn is_delivery_acknowledgement(body: &str) -> bool {
 }
 
 #[cfg(test)]
-pub(super) fn test_record(now: chrono::DateTime<chrono::Utc>) -> RelayRecordV1 {
+pub(super) fn test_record(now: lean_ctx_time::UtcDateTime) -> RelayRecordV1 {
     RelayRecordV1::new_signed(
         "delivery",
         "origin",
@@ -228,7 +228,7 @@ pub(super) fn test_record(now: chrono::DateTime<chrono::Utc>) -> RelayRecordV1 {
         "project",
         lean_ctx::core::a2a_transport::TransportContentType::EvidenceBundle,
         lean_ctx_protocol::DataClassification::Internal,
-        now + chrono::Duration::hours(24),
+        now + lean_ctx_time::Duration::hours(24),
         4,
         now,
         &lean_ctx::core::a2a::relay::test_origin_key("origin"),
@@ -246,7 +246,7 @@ mod tests {
         use lean_ctx::core::a2a::task::{
             TASK_ACTION_GET, TaskControlDescriptorV1, TaskState, TaskStatusV1,
         };
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let mut request = TaskControlDescriptorV1::new(
             "origin",
             "recipient",
@@ -256,7 +256,7 @@ mod tests {
             "task-1",
             &format!("sha256:{}", "a".repeat(64)),
             now,
-            now + chrono::Duration::minutes(5),
+            now + lean_ctx_time::Duration::minutes(5),
             "nonce-1",
             None,
             "grant",
@@ -336,7 +336,7 @@ mod tests {
             root.path().to_str().expect("UTF-8 path"),
             super::super::relay_replay::MIN_RETENTION_SECONDS,
         );
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let record = test_record(now);
         let fingerprint = "f".repeat(64);
         let content =

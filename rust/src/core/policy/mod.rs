@@ -22,14 +22,17 @@
 
 pub mod audit_filter;
 pub mod builtin;
+pub mod cloud_agents;
+pub mod cloud_filters;
+pub mod cloud_floor;
+pub mod cloud_io;
+pub mod cloud_orchestrator;
 pub mod content;
 pub mod coverage;
 pub mod diagnostics;
 pub mod floor;
-pub mod hive_filters;
-pub mod hive_floor;
-pub mod hive_io;
 pub mod org;
+pub mod personal_rules;
 pub mod runtime;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -500,8 +503,13 @@ pub fn parse_file(path: &Path) -> Result<PolicyPack, PolicyError> {
 }
 
 /// Field-level validation of a single (unresolved) pack.
-/// Label prefix of the rules a Hive filter pack adds.
-pub(crate) const HIVE_LABEL_PREFIX: &str = "hive:";
+/// Label prefix of the rules a Cloud filter pack adds.
+pub(crate) const CLOUD_LABEL_PREFIX: &str = "cloud:";
+
+/// Whether `label` is a Cloud filter-pack label.
+pub(crate) fn is_cloud_label(label: &str) -> bool {
+    label.starts_with(CLOUD_LABEL_PREFIX)
+}
 
 pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
     if pack.name.is_empty()
@@ -550,18 +558,18 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
             error: "too many policy patterns".into(),
         });
     }
-    // `hive:` labels belong to the Hive filter packs; a pack using one
-    // could shadow or be shadowed by a Hive rule.
+    // `cloud:` labels belong to the Cloud filter packs; a pack using one
+    // could shadow or be shadowed by a Cloud rule.
     if pack
         .redaction
         .keys()
         .chain(pack.filters.blocked_patterns.keys())
-        .any(|label| label.starts_with(HIVE_LABEL_PREFIX))
+        .any(|label| is_cloud_label(label))
     {
         return Err(PolicyError::BadRegex {
             pattern_name: "policy".into(),
             error: format!(
-                "rule labels starting with `{HIVE_LABEL_PREFIX}` are reserved for Hive filter packs"
+                "rule labels starting with `{CLOUD_LABEL_PREFIX}` or `cloud:` are reserved for Cloud filter packs"
             ),
         });
     }
@@ -641,7 +649,7 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
     ] {
         if let Some(bad) = countries
             .iter()
-            .find(|c| !lean_ctx_protocol::hive::effective_policy::is_country(c))
+            .find(|c| !lean_ctx_protocol::cloud::effective_policy::is_country(c))
         {
             return Err(PolicyError::InvalidCountry {
                 field: field.into(),
@@ -1040,7 +1048,7 @@ alow_tools = ["ctx_read"]
         // A former built-in that moved to a paid tier says so.
         let p = minimal("regulated", Some("healthcare"));
         let err = resolve(&p).expect_err("not bundled");
-        assert!(err.to_string().contains("LeanCTX | Hive"), "{err}");
+        assert!(err.to_string().contains("LeanCTX Cloud"), "{err}");
 
         // Self-reference is the minimal cycle reachable without registering
         // custom packs (built-ins are acyclic by construction + test below).

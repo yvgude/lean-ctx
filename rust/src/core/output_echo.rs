@@ -73,7 +73,8 @@ impl EchoStats {
             if r.recorded_unix < cutoff {
                 continue;
             }
-            let Some(dt) = chrono::DateTime::from_timestamp(r.recorded_unix as i64, 0) else {
+            let Some(dt) = lean_ctx_time::UtcDateTime::from_timestamp(r.recorded_unix as i64, 0)
+            else {
                 continue;
             };
             let day = dt.format("%Y-%m-%d").to_string();
@@ -313,7 +314,7 @@ fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
         note: None,
         ctx_read_last_mode: None,
         ctx_read_modes: modes,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
     };
 
     let _ = crate::core::llm_feedback::LlmFeedbackStore::record(ev);

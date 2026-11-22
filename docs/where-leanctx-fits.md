@@ -2,11 +2,11 @@
 
 **Context Gateway for AI Systems**
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
 
 LeanCTX controls the supported information path from systems and tools into AI:
 **Select → Control → Learn → Prove**. LeanCTX | OSS implements that path; the
-LeanCTX SDK lets you embed its supported capabilities in your application.
+LeanCTX | SDK lets you embed its supported capabilities in your application.
 
 | Category | Primary responsibility | Relationship to LeanCTX |
 |---|---|---|

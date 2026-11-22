@@ -2,7 +2,7 @@
 
 Status: **experimental** (`"contract": "client-calls/1"`).
 
-An ACP client on this machine, such as LeanCTX | Hive Desktop, makes the
+An ACP client on this machine, such as LeanCTX Code, makes the
 calls an agent asks it for — `fs/read_text_file`, `fs/write_text_file`,
 `terminal/*` — through this Instance instead of the plain file system and
 shell. Every call passes the same boundaries as `ctx_read`, `ctx_edit` and

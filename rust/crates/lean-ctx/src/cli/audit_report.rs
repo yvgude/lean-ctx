@@ -76,7 +76,10 @@ pub fn generate_report() -> String {
 
     let mut report = String::new();
     report.push_str("# lean-ctx Compliance Report\n\n");
-    report.push_str(&format!("Generated: {}\n", chrono::Utc::now().to_rfc3339()));
+    report.push_str(&format!(
+        "Generated: {}\n",
+        lean_ctx_time::UtcDateTime::now().to_rfc3339()
+    ));
     report.push_str(&format!("Audit Trail Entries: {}\n", entries.len()));
     report.push_str(&format!(
         "Chain Integrity: {}\n\n",

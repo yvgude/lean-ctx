@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -13,7 +13,7 @@ pub struct AgentRegistry {
     pub logical_sessions: Vec<LogicalSessionPresence>,
     #[serde(default)]
     pub logical_session_telemetry_seen: bool,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -21,8 +21,8 @@ pub struct LogicalSessionPresence {
     pub source: String,
     pub workspace: String,
     pub session_id: String,
-    pub opened_at: DateTime<Utc>,
-    pub last_heartbeat: DateTime<Utc>,
+    pub opened_at: UtcDateTime,
+    pub last_heartbeat: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,8 +31,8 @@ pub struct AgentEntry {
     pub agent_type: String,
     pub role: Option<String>,
     pub project_root: String,
-    pub started_at: DateTime<Utc>,
-    pub last_active: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub last_active: UtcDateTime,
     pub pid: u32,
     /// PID alone is not an identity: operating systems reuse it. The immutable
     /// process start marker prevents a retired MCP record from becoming "live"
@@ -45,6 +45,13 @@ pub struct AgentEntry {
     pub durable_identity_id: Option<String>,
     pub status: AgentStatus,
     pub status_message: Option<String>,
+    /// The status line the agent set itself (`ctx_agent action=status`,
+    /// [`AgentRegistry::set_status_by_agent`]). LeanCTX's own lifecycle
+    /// notes ("connection closed", lease and transport states) are written
+    /// to `status_message` only, so [`AgentEntry::agent_status_line`] tells
+    /// the two apart without matching their text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_status_message: Option<String>,
     /// Present only on the presence an MCP server registers for its own
     /// connection. A transport stays listed while its process lives; worker
     /// leases (`ctx_agent`) expire independently of it.
@@ -69,6 +76,19 @@ pub struct AgentEntry {
     /// (`LEAN_CTX_SESSION_NAME`). Display only, never an address or a role.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+}
+
+impl AgentEntry {
+    /// The current status line when the agent wrote it itself, else none:
+    /// a later lifecycle note from LeanCTX (or a cleared status) replaces
+    /// `status_message` without touching `agent_status_message`, so the
+    /// two differ and nothing is returned.
+    pub fn agent_status_line(&self) -> Option<&str> {
+        match (&self.status_message, &self.agent_status_message) {
+            (Some(current), Some(own)) if current == own => Some(current.as_str()),
+            _ => None,
+        }
+    }
 }
 
 /// The host behind an MCP transport, from the `initialize` handshake.
@@ -173,10 +193,10 @@ pub struct ScratchpadEntry {
     pub metadata: HashMap<String, String>,
     #[serde(default)]
     pub project_root: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub read_by: Vec<String>,
     #[serde(default)]
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<UtcDateTime>,
 }
 
 /// Metadata key under which a bus message carries its admission binding. The
@@ -217,24 +237,26 @@ pub fn request_id_conflict() -> String {
 }
 
 /// Idempotency-key prefix of bus entries another machine's worker delivered
-/// through Hive (the relay writes them with it).
-pub const HIVE_INBOUND_KEY_PREFIX: &str = "hive:";
+/// through Cloud (the relay writes them with it).
+pub const CLOUD_INBOUND_KEY_PREFIX: &str = "cloud:";
 
 impl ScratchpadEntry {
-    /// True for an entry another machine's worker delivered through Hive: it
+    /// True for an entry another machine's worker delivered through Cloud: it
     /// is shown fenced as foreign data and never published again.
-    pub fn is_hive_inbound(&self) -> bool {
+    pub fn is_cloud_inbound(&self) -> bool {
         self.metadata
             .get(REQUEST_ID_METADATA_KEY)
-            .is_some_and(|key| key.starts_with(HIVE_INBOUND_KEY_PREFIX))
+            .is_some_and(|key| key.starts_with(CLOUD_INBOUND_KEY_PREFIX))
     }
 
-    /// The Hive bus address an inbound entry came from (its relay key is
-    /// `hive:<address>:<seq>`); `None` for local entries.
-    pub fn hive_inbound_address(&self) -> Option<&str> {
+    /// The Cloud bus address an inbound entry came from (its relay key is
+    /// `cloud:<address>:<seq>`, or `cloud:<address>:<tag>.<seq>` once the
+    /// bus is bound to a place and epoch, each maybe `@<agent>`; only the
+    /// address may hold ':'); `None` for local entries.
+    pub fn cloud_inbound_address(&self) -> Option<&str> {
         self.metadata
             .get(REQUEST_ID_METADATA_KEY)?
-            .strip_prefix(HIVE_INBOUND_KEY_PREFIX)?
+            .strip_prefix(CLOUD_INBOUND_KEY_PREFIX)?
             .rsplit_once(':')
             .map(|(address, _)| address)
             .filter(|address| !address.is_empty())
@@ -289,13 +311,13 @@ impl ScratchpadEntry {
             }
             Err(withheld) => return withheld.notice(),
         };
-        // X5: a message another instance delivered through Hive is data,
+        // X5: a message another instance delivered through Cloud is data,
         // its sender and kind included (they came with it, M6).
-        if self.is_hive_inbound() {
+        if self.is_cloud_inbound() {
             use crate::core::untrusted::{UntrustedKind, wrap};
             return wrap(
                 UntrustedKind::BusMessage,
-                "hive bus",
+                "cloud bus",
                 &format!(
                     "from: {}\nkind: {}\n\n{served}",
                     self.from_agent, self.category

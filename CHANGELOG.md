@@ -6,6 +6,212 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+## [3.12.7] — 2026-11-22
+
+### Upgrade notes
+
+- **Managed configuration (MDM):** the keys are now `cloud.url`, `cloud.org`, `cloud.require`,
+  `cloud.root_key` (and `cloud.idp_hint`); a profile that still uses the previous key names is
+  refused as a whole and must be updated.
+
+### Added
+
+- **Record team decisions in LeanCTX Cloud from LeanCTX Code.** The local read kind `decisions.create` (and `lean-ctx cloud decisions create --json --decision '<JSON>' [--project-root P]`) records a decision through the connected engine, which acts as the person it is linked to, with that person's role and plan; a project linked to a vault records it in that vault, otherwise it is the team's. LeanCTX Cloud's recorded decision is the answer; a taken id answers `conflict`, a refused field `invalid_argument`. The app still holds no Cloud token.
+
+- **Cloud decisions for the app.** `lean-ctx cloud decisions list --json --project-root P` (and the local read kind `decisions.list`, `GET /v1/local/cloud/decisions`) lists the decisions of the project's LeanCTX Cloud vault, next to the repo's own `.leanctx/decisions` records.
+
+- **Plan lease refresh.** `lean-ctx cloud lease refresh --json` (and the local read kind `cloud.lease.refresh`, `POST /v1/local/cloud/lease/refresh`) renews this computer's plan lease with LeanCTX Cloud right away, so a new plan applies without waiting for the next scheduled renewal. The engine only renews its signed lease; it holds no payment keys and contacts no payment provider.
+
+- **Model credit in LeanCTX Code.** The local read kind `cloud.billing.credit` (and `lean-ctx cloud billing credit --json`) reads the team's model credit for the month from LeanCTX Cloud through the connected engine, as the person it is linked to (an owner or admin): agent-hours used, left and in total, the reset date, the soft or hard state, the credit pack on sale and whether this person may buy it (`manage_billing`: an owner of a team not billed through a company). Only these fields reach the app; buying more happens on the Cloud's billing page in the browser and the engine never talks to Stripe. A Cloud without the engine route answers `unavailable`, so the app opens billing in the browser.
+
+- **Team billing links in LeanCTX Code.** The local read kinds `cloud.billing.checkout` and `cloud.billing.portal` (and `lean-ctx cloud billing checkout|portal --json`) ask LeanCTX Cloud for the team's Stripe checkout or billing portal link through the connected engine, which acts as the person it is linked to (an owner or admin, with that person's two-factor rule). Only a link on Stripe's checkout or billing host reaches the app; the engine never talks to Stripe and the app still holds no Cloud token. Refusals answer `conflict` (already subscribed), `not_found` (no subscription yet), `forbidden` (billed through the company, two-factor or SSO needed in the browser, not an owner or admin) or `unavailable`.
+
+- **Team chat in LeanCTX Code.** The local read kinds `chat.channels`, `chat.messages`, `chat.replies`, `chat.post`, `chat.read`, `chat.dm` and `chat.mentions` (and `lean-ctx cloud chat <verb> --json`) reach the team chat through the connected engine, which acts as the person it is linked to, with that person's membership, plan and limits. LeanCTX Cloud's reasons (`plan_required`, `invalid_state`, `invalid_field`, `forbidden`, `not_found`, `rate_limited`) reach the app unchanged, with the HTTP status of each on the local socket; a machine the Cloud no longer accepts is `forbidden` with what to do. The app still holds no Cloud token.
+
+- **Release benchmark gate for agents (rel12 WP4).** A fixed ten-task agent
+  suite is scored from content-free session traces against a stored baseline;
+  a failed task or a drop of more than 5 percentage points in LeanCTX step
+  share, compose-first or median tokens saved refuses the release, and
+  missing or invalid traces fail closed. Until the first baseline is recorded
+  the gate runs on every release in report-only mode and does not block.
+
+- **LeanCTX knows when LeanCTX Code manages the machine (rel12 WP7).** The
+  free desktop app writes one documented marker file on every start
+  (`docs/contracts/app-presence-v1.md`) and never removes it; the
+  dashboard then answers `GET /api/app` and its start page shows a calm
+  "Managed in LeanCTX Code" state that points to the app instead of
+  install instructions.
+  A plain `lean-ctx doctor` on a terminal shows one constant hint about
+  LeanCTX Code at most once per minor version, in place of its Cockpit
+  line; never for `--json`, piped output, CI, a managed machine or with
+  `LEAN_CTX_NO_APP_HINT` set. Two content-free telemetry feature codes,
+  `app.code.detected` and `app.code_hint.shown`, are documented in the
+  telemetry data dictionary.
+
+- **Task receipts.** `lean-ctx task receipt <task> --json --session <id>…` (and the local read kind `task.receipt`) answers, per session of a board task, which context LeanCTX delivered to which agent under which policy, with the savings-ledger and audit-trail hashes a third person can verify. Content-free, deterministic and free for everyone (contract `docs/contracts/task-receipt-v1.md`).
+
+- **Remote MCP clients connect with OAuth 2.1 instead of a static token (ux16).**
+  `lean-ctx serve --oauth` (and `--oauth-issuer https://<public host>` off loopback)
+  serves the MCP authorization flow: protected resource metadata (RFC 9728) in the
+  `WWW-Authenticate` of a 401, authorization server metadata (RFC 8414), dynamic
+  registration of public clients (RFC 7591), the authorization code flow with PKCE S256
+  only, the `iss` response parameter (RFC 9207) and revocation (RFC 7009). The owner
+  approves each client on a consent page with the instance token, which never reaches the
+  client. Access tokens live one hour, refresh tokens rotate, and a replayed code or refresh
+  token revokes the whole grant. Tokens and the instance-token fingerprint are stored only
+  as HMAC-SHA256 under a per-install secret (`oauth-secret.key`); the secret and the store
+  are owner-only files (0600 on Linux and macOS, a current-user-only ACL on Windows), and
+  losing the secret ends every grant. The secret is created exclusively, so two servers
+  starting at once share one; a secret that others can read or another user owns is
+  replaced, which ends every grant. HMAC comes from the `hmac` crate, and stored hashes
+  are compared in constant time. A client that fails five times in ten minutes at the
+  token endpoint or the consent page is locked out for 30 seconds, doubling with each
+  further failure up to 15 minutes (429 with `Retry-After`); the lockout refuses only
+  invalid attempts, so a valid refresh token, a valid code with its PKCE verifier or the
+  right instance token still succeeds, and the lockout table is bounded and kept in
+  memory only. `serve` warns when OAuth is bound to a non-loopback address
+  (it speaks plain HTTP, so TLS belongs in a reverse proxy in front) and when a public
+  issuer has no explicit `--auth-token`. An OAuth token reaches only the MCP endpoint (`/`
+  and `/mcp`) and the read-only discovery routes (health, manifest, capabilities, OpenAPI,
+  tool list, agent cards); every other route answers 403 and needs the instance token.
+  Changing an explicit `--auth-token` revokes every client and grant. Errors are redirected
+  only to clients the owner approved before. A grant renews while it is used and expires
+  after 30 days unused; the owner lists and revokes clients at `/v1/oauth/clients`.
+
+- **Decide and stop a vault's tasks from LeanCTX Code.** `lean-ctx tasks decide <n> --accept|--decline [--reason R]` and `lean-ctx tasks stop <n> --reason R` (also `cloud tasks decide|stop --json` and `POST /v1/local/tasks/{n}/decide|stop`) now work on a project linked to a LeanCTX Cloud vault: the connected engine calls LeanCTX Cloud, which acts as the person the machine is linked to, with that person's role and plan. A declined proposal answers `declined`, a reason longer than LeanCTX Cloud's 280 characters is cut, a task whose state does not allow it answers `conflict`, and a machine LeanCTX Cloud no longer accepts answers `forbidden` with how to reconnect. `capabilities` lists `decide` and `stop` under `cloud.tasks`. An agent never decides as the linked person.
+
+- **`lean-ctx doctor` and `lean-ctx status` say when an agent connects but
+  never calls LeanCTX.** The MCP server keeps a small private ledger of each
+  client's last five sessions (mode 0600, local only, no telemetry). When all
+  five ran at least a minute and ended without a ctx call, one line names the
+  client and a conditional fix, for example `Pi: connected 5 times without a
+  ctx call; if your agent should use LeanCTX, run lean-ctx init --agent pi`.
+  Health checks and reconnects are not counted, and nothing is shown when you
+  declined rule steering.
+
+- **LeanCTX computers from the CLI.** `lean-ctx cloud computer list|create|start|stop` lists, creates, starts and stops your LeanCTX computers, and `add`, `ssh-config` and `ssh` reach them over SSH with pinned host keys. `create` and `start` can cost money: they ask for you at a terminal or in LeanCTX Code (a script or agent without a terminal is refused before anything is sent; this guards against accidental agent calls and is not a security boundary), and without `--yes` nothing is sent: the command shows who would pay (billed to the top-up, or free hours where LeanCTX Cloud reports them, at the price per hour LeanCTX Cloud reported) and exits with `confirmation_required`. Until LeanCTX Cloud offers computers, the commands say "LeanCTX computers are not available yet." (`computer_not_available`) before any cost is shown. On a machine connected to your Personal account, `create` uses the role `general`; a Weave host is for teams. With `--yes` the request passes the release point first and is sent confirmed. A computer runs, and is billed, until you stop it. `create` uses the team or personal account this machine is connected to. LeanCTX Code reaches the same commands through the local service (`/v1/local/cloud/computers`).
+
+- **`lean-ctx cloud cpao` for people.** The lines mark each period: `(provisional)` while its revert window is open, `(status unknown)` when the cloud did not say; a settled period is not marked. Amounts round to the nearest cent and a change of zero prints `0.0%`. Not connected and connected to a Personal account each get their own line, and neither sends a request. A `403` naming a team role says that only owners and admins of the team see CPAO; any other refusal prints the server's message, or a plain refusal when it sent none. `lean-ctx cloud cpao --json` is unchanged and answers `forbidden` for every `403`.
+
+- **Plan updates reach running agents.** After a person clicks "Send to
+  agents" in LeanCTX Code and confirms, Cloud announces the new plan
+  version. The relay pulls the plan, checks its digest
+  and Cloud signature against the enrolled vault, and gives each local agent
+  a `cloud` directive on the agent bus; nothing is typed into an agent and no
+  agent is restarted. Agents answer with `ctx_agent action=ack`, and the
+  relay reports the answers to Cloud without local agent ids or free text.
+  `lean-ctx cloud plan updates --json` lists the applied versions and
+  answers. Without a Cloud signing key the relay shows "plan updates not
+  available" and applies nothing. The agent shell policy judges reads of the
+  agent records over the whole command line (variables, directory changes,
+  substitutions, pipes and listers).
+
+- **Stop a team's cloud work from the terminal (team kill switch).** `lean-ctx cloud stop --reason <text>` stops the team in LeanCTX Cloud (contributor and up), and `lean-ctx cloud stop --release --confirm <team-slug>` releases it (team or company admin, confirmed with two-factor in the browser; the command prints the page). `lean-ctx cloud stop --status` reads the state. LeanCTX Cloud enforces the stop: while it holds, the team's cloud calls, landings and Code sessions are refused. Nothing on the machine is gated, and local agent tools keep working. The same acts are the Local Read kinds `cloud.stop`, `cloud.stop.release` and `cloud.stop.status`. `cloud status --json` adds `team_stop`, `role`, `org_slug`, `company` and `step_up_url`. It reads them only from the answer the scheduler and these commands keep, never from the Cloud, and names that answer's age (`cache`, `age_s`). `team_stop` is `null` while no answer is kept yet (unknown, never a running team). A Cloud without the team stop answers the new Local Read code `not_offered` (HTTP 501 on the local socket), a refusal that is not retried, unlike `unavailable`.
+
+- **Top-up from LeanCTX Code.** The local read kind `cloud.billing.topup` (`POST /v1/local/cloud/billing/topup`, and `lean-ctx cloud billing topup [--packs N] [--json]`) opens a Stripe checkout for prepaid credit through LeanCTX on this computer, as the person LeanCTX Code is signed in as. A top-up is 1 to 10 packs of $10 (the Cloud sells $20 when no count is given). It pays model use once the plan's model credit is used up, and computer minutes after the free hours; computer minutes beyond the free hours come from the top-up only. A top-up needs no two-factor confirmation. LeanCTX Cloud decides who may buy: no top-up during the trial (`plan_required`), a confirmed email address first (the new error code `email_unverified`, a `403` like `forbidden`), and only an owner of the team (`forbidden`). Only the Stripe link reaches the app. An optional `idempotency_key` (`--idempotency-key UUID`) is passed on as the `Idempotency-Key` header, so a retried top-up opens the same checkout.
+
+- **Model list in LeanCTX Code.** The local read kind `cloud.models.catalog` (and `lean-ctx cloud models catalog --json` or `lean-ctx models --json`) hands LeanCTX Cloud's model catalog to the app unchanged, with `verified` (the catalog's Ed25519 signature checked against the Cloud's policy key; `null` when the Cloud sent none), whether the plan includes the LeanCTX models (`models_subscription`) and the gateway address. Vendors' own APIs stay listed as bring-your-own-key; LeanCTX serves only the models in `models`. No token reaches the output.
+
+- **`lean-ctx run [--cloud]`: a coding agent on a task in a fresh worktree.** `lean-ctx run "<task>"` starts Claude Code or Codex (`--agent`) in a new git worktree on branch `leanctx/run/<id>`, with the agent's own login or the LeanCTX balance (`--model-access`); `run list|status|events|stop|fetch` follow it (contract §35). `--cloud` is for a LeanCTX computer, which is not available yet (until LeanCTX Cloud offers computers it ends with `computer_not_available`, "LeanCTX computers are not available yet.", and nothing is started); then the code goes there only over SSH as a git push, never through LeanCTX Cloud. A run is billed from its first minute and starts only from a terminal: without one nothing is sent ("Starting a paid computer needs you at a terminal or in LeanCTX Code."), and without `--yes` (or a yes at the prompt) the command exits with `confirmation_required` and the price. `run stop` and `--max-minutes` kill the agent's process group 10 s after SIGTERM; `run fetch` fast-forwards the run branch; a run whose computer was stopped for an empty balance ends as `stopped` with `stop_reason: balance_empty`.
+
+### Changed
+
+- **One claims model: explicit `ctx_agent` claims are unit claims.** `claim`/`release` with
+  `units` now record and drop claims in the same agent lease store as the edit tools' unit
+  claims, so the pre-edit gate of every other agent sees them (`fn:parse` covers an edit of
+  `parse`; warn, or refuse under `LEAN_CTX_CLAIM_MODE=strict`), and `claims` lists edit-made
+  and explicit claims once each with their overlaps. Three changes for callers of the explicit
+  claims: a unit another agent already holds is not claimed and the reply names the holder
+  (one holder per unit); `ttl_minutes` is capped at 60 (was 1440), and re-claiming renews a
+  claim, at 60 too; `release units=[]` drops all of the agent's unit claims in the
+  repository, edit-made ones included. The old advisory store `agents/edit_claims.json` is no
+  longer read or written; while it exists, `claims` says so in one line.
+
+- **`lean-ctx init --mode governor-mcp` disables the LeanCTX Claude plugin in your user settings, once.** The core plugin `lean-ctx@lean-ctx` front-loads lean-ctx tool schemas, which the governor-mcp setup keeps deferred. That explicit init now runs `claude plugin disable lean-ctx@lean-ctx --scope user` (never uninstalls) and says so; the jobs plugin stays enabled. Where the core plugin is also enabled in local or checked-in project settings, it is only named with the command to turn it off for you, never changed, since a project change would turn it off for the whole team. `claude plugin enable lean-ctx@lean-ctx --scope user` undoes it, and the choice stays: a marker keeps every later setup, update or init from disabling it again, and leaving governor-mcp says the plugin stays as it was left. Plain setup and the post-update rewire never disable the plugin.
+
+- **Governor R5: a large code file's first whole Read comes as its outline.**
+  With the governor hooks, the first native `Read` without `offset`/`limit` of
+  a code file over 300 lines now returns its symbols with line spans
+  (`fn … @L64-72`) instead of every line, when that outline is at most half
+  the file. The model then reads the parts it needs; a second whole-file Read
+  in the same context returns the full content, so nothing is out of reach.
+  Ranged reads, small files, prose/data formats, instruction files and files
+  without extractable symbols pass through. When the host's Read stops at its
+  line cap (2000 lines in Claude Code), the outline covers only the returned
+  lines and names the rest to read with `offset`/`limit`. R5 is on by default;
+  governor installs also write `[governor] r5 = "on"` (a value you set
+  stays). `[governor] r5 = "shadow"` or `LEAN_CTX_GOVERNOR_R5=shadow` keeps
+  the native Read and logs a receipt; `off` turns it off. As with any Read, an outline Read
+  satisfies Claude Code's read-before-write check, so read the region before
+  rewriting a large file whole.
+- **Governor in Claude Code's Code Mode: scripts get native results, the
+  model gets the governed view.** Tool calls a `REPL` script makes are never
+  rewritten (a collapsed output or an outline would change what the script
+  parses), and they leave no R1 record. When the script hands such a result to
+  the model verbatim (console output, a returned string, JSON), the `REPL`
+  result carries the R2/R4 collapse or R5 outline in its place; anything the
+  script cut or reformatted stays as it is. Governor installs add `REPL` to the
+  PostToolUse matcher.
+
+- **SSO refusals in team billing keep their own code.** When LeanCTX Cloud refuses engine billing because the team requires SSO for the person (`403 sso_required`, also as the reason of a step-up), the local read kinds `cloud.billing.checkout`, `cloud.billing.portal` and `cloud.billing.credit` (and `lean-ctx cloud billing … --json`) now answer the error code `sso_required` instead of `forbidden`. The local socket still answers HTTP `403` and the message stays "sign in with SSO in the browser". LeanCTX Code offers the SSO sign-in in the browser on that code; a reader that does not know it treats it as `forbidden` and still shows the message.
+
+- **Personal rules are free and compiled by the engine.** The personal-rules
+  compiler behind `lean-ctx policy personal <status|preview|apply>` is now part
+  of the free Apache-2.0 engine (`core::policy::personal_rules`). Preview and
+  apply work locally without an account, license or installed runtime, with the
+  same rule format and limits as before; the compiled rules still land in
+  `.lean-ctx/policy.toml`. `policy personal status --json` no longer reports
+  `pro_required_for_changes`. Ready-made industry rule sets stay a LeanCTX Cloud
+  Personal feature in the same format.
+
+- **Pi, Antigravity and Codex get their lean-ctx rules where they actually read them.** Pi rules now go into `AGENTS.md` in the Pi agent directory (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`, where a leading `~` is expanded and a relative value is ignored). Antigravity rules go into `~/.gemini/AGENTS.md`. With `rules_injection = "dedicated"`, Antigravity gets its own `~/.gemini/config/rules/lean-ctx.md` with the `trigger: always_on` header it needs, and Pi is skipped, because dedicated mode never edits shared files. Codex no longer writes `instructions.md`, which Codex does not read. Setup removes the old files and blocks in `~/.pi/rules/`, `~/.gemini/antigravity/rules/` and `instructions.md`, and so does `lean-ctx uninstall`. `lean-ctx doctor` reports a shared rules file without the lean-ctx block as missing.
+
+- **The Pi extension now steers the agent toward the ctx_* tools by default.** In additive mode, `ctx_read`, `ctx_grep`, `ctx_find`, `ctx_ls` and `ctx_shell` each add a "prefer ctx_X over the built-in X" bullet to Pi's prompt guidelines, left out when the builtin is suppressed. A new session also gets one hidden note naming the active pairs, unless Pi's `AGENTS.md` already carries the lean-ctx rules block from `lean-ctx setup`, so Pi keeps one rules channel. Nothing is removed. Turn both off with `LEAN_CTX_PI_GUIDANCE=0` or `"guidance": false` in the extension's `config.json`.
+
+- **In allowlist mode, a few rarely used command forms are refused as a whole.** This is a known, conservative limitation; they are judged more precisely in a later release.
+
+- **The shell policy refuses unlimited-depth listings of the home directory and searches in the LeanCTX data directory.** `tree ~` and `ls -R ~` are refused; a listing with a depth limit such as `tree -L 2 ~` still runs.
+
+- **Pseudonymous telemetry no longer counts governor-only MCP sessions as empty.** When the host's hooks (the governor) handled tool calls during an MCP session without a single MCP tool call, the session ends as `mcp.session.hooked` instead of `mcp.session.empty`, and the day total `mcp.session.hook_calls` carries how many calls those hooks handled. The count is kept per host session, so parallel sessions in one checkout never count each other's calls; LeanCTX's own MCP tools (`mcp__lean-ctx__*`) are not counted twice; nothing is written while telemetry is off; and a session without MCP tool calls whose server knows no host session id gets no outcome instead of `empty`. See `docs/privacy/TELEMETRY-DATA-DICTIONARY.md`.
+
+### Security
+
+- **Nested secrets are masked in knowledge recall, export and CLI export documents.** A
+  secret below a credential's name (`{"token":["S"]}`, `{"auth":{"value":"S"}}`, at any depth,
+  as a number or boolean, or inside JSON kept in a string value, whole or after other text)
+  passed every text rule, which read a secret only as a string right after its name.
+  `ctx_knowledge` recall/export and the CLI's document release now mask the whole value of
+  such a member; a masked value copied elsewhere in the document withholds it, and a `jsonl`
+  export line that carries a value another line masks is left out. Readable documents keep
+  their bytes.
+- **A secret before a closing bracket is masked (#2255).** The value of
+  `(password: <x>?)`, `{token: <x>}` or `[password: <x>?]` was captured with the bracket,
+  and the shared credential baseline (`lean-ctx-protocol`) read the bracket as type syntax
+  and kept the secret visible. Unbalanced trailing `)`, `]`, `}` and `:` are now stripped
+  before the judgement, as core redaction does; `fun f(token: Session?)` and primitive type
+  annotations (`fn f(token: u64)`) stay visible in both layers.
+- **Ported from integration/3.12.3:** the detector skips placeholder URL passwords, and declared nullable
+  types (`private var token: Session? = null`) stay visible while `password: <x>?` outside a
+  declaration stays masked (#2255).
+
+- **Security fix in `lean-ctx decisions check`.** Upgrade is recommended; see advisory
+  GHSA-qmwq-pghf-v5q2.
+
+- **Shell allowlist: stricter parsing of nested expansions (#2258).**
+
+- **A session started without a project adopts its first project through a hardened check, once, and audited.** When a host starts the MCP server in `~`, `/` or an agent config directory, the first absolute path inside a project binds that project as the session's normal, writable project (#580/#649 keep working). The path is resolved first (symlinks, `..`, letter case), and the outermost project marker below home becomes the root, so a submodule or a monorepo package adopts its enclosing repository. A folder directly in home, or directly in `~/Documents`, `~/Desktop` or `~/Downloads`, becomes the root only when it is a git repository, so a stray `~/Documents/package.json` or `~/Documents/Work/package.json` does not make that folder writable. It is never adopted from the home directory or anything above it, another account's home, system directories, protected home zones such as `~/.ssh`, `~/.aws` and `~/.gnupg`, secret-like paths, agent config directories, LeanCTX's own stores, a path inside `.git` or other version-control metadata or an execution hook (`.githooks/`, `.husky/`, `.envrc`, `.vscode/tasks.json`), or (on Linux and macOS) a directory owned by another user. Windows has no ownership check yet. In an adopted project, writes into version-control metadata, those hooks and git's `core.hooksPath` are refused until the user declares the project with `lean-ctx allow-path`. Each adoption writes an `x-project_adopted` event to the local audit trail, naming the tool and the adopted root, before the call can be cancelled; it is not counted as a block or as cross-project access, and older readers accept it as an additive event. The log line names only the tool. A path whose check hangs, for example on a network mount, adopts nothing after two seconds. Calls that race to be first adopt one project, and the other call is judged against that root. With a home of `/`, or a home that does not resolve, the hardened adoption adopts nothing, and the session keeps the previous re-root unchanged, as does a markerless client working directory.
+
+- **Updated the `url` dependency to 2.5.9 (RUSTSEC-2026-0592).** The engine,
+  the Rust client, the Rust SDK, `lean-ctx-ocla-grpc` and the enterprise
+  governance and intelligence crates now lock `url` 2.5.9, which no
+  longer recurses into nested `blob:` URLs in `Url::origin()`.
+
+- **Shell policy: hardened checks for commands that can start other programs or change
+  lean-ctx state.** Update recommended.
+
+- **Shell policy hardening.** Commands are judged more strictly in allowlist
+  and strict mode (covered by the 3.12.7 security advisory).
+
 ### Fixed
 
 - **The write-guard hook runs from an install path with a space.** `lean-ctx init` wrote
@@ -22,6 +228,160 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   file printed "bridge call failed, falling back to CLI: ENOENT" into Pi's editor. The file
   error now reaches the transcript as the tool's error, and bridge fallbacks, transport
   errors and reconnects are no longer written to the console; `/lean-ctx` shows the last one.
+
+- **The presence "working on" line no longer leaks folder names.**
+  `working_on` kept paths behind a flag or key (`--root=/Users/ada/acme-bank`,
+  `-I/…`, `path:/…`) whole and cut only the first word of a path with spaces,
+  so `/Users/ada/My Projects/acme-bank/login.rs` left
+  `Projects/acme-bank/login.rs`. A path now starts at any `/`, `\`, `~/`,
+  `~user/`, UNC or drive spelling that no name character precedes, and
+  everything through the last separator in the rest of its segment is cut,
+  so only the final part stays (`C:\Users\ada\OneDrive - Acme Bank\x.rs` →
+  `x.rs`). The cut is deliberately generous: a relative path that follows an
+  absolute one in the same segment goes too (`read /repo/a.md src/main.rs` →
+  `read main.rs`).
+
+- **`lean-ctx doctor` counts what it lists, and the receipt store is CRIT only when it really refuses.** `--json` `passed`/`total`/`needs_attention` are now counted from the emitted `checks` (each entry carries `needs_attention`; unscored entries that are not ok are counted as `optional`), and the text summary uses the same counts. `Capacity [gateway receipts]` no longer says CRIT far below its ceiling because a maintenance pass under another, smaller ceiling stamped the store full: the stamp records the bytes the pass left and every reader judges them against the one ceiling the write path, the pass and doctor share.
+
+- **The installers confirm that the daemon came back after an upgrade.**
+  `install.sh` and `install.ps1` restarted a daemon that ran before the binary
+  swap and took a zero exit from `lean-ctx daemon restart` as success, although
+  an autostart unit starts the daemon asynchronously and may fail afterwards.
+  Both now poll the new binary's `daemon status` for up to
+  `LEAN_CTX_DAEMON_WAIT_SECS` seconds (default 10), print
+  `Daemon running on the new binary.` once it is up, and warn with the
+  commands to check and start it when it is not. The install itself stays
+  successful; a failed `daemon restart` is reported on stderr without waiting.
+
+- **`lean-ctx restart` and `lean-ctx daemon restart` exit 0 only once the daemon is up.** Both commands used to report success right after asking the autostart service (or the spawner) to start the daemon, without checking that it came up. They now wait up to 10 s for a verified daemon process and its socket in the active data dir, and otherwise print "Daemon did not come up within 10 s …" and exit 1, so LeanCTX Code can roll back an update whose daemon does not start.
+
+- **`lean-ctx update` restarts the daemon on the new binary and checks it.**
+  The self-updater replaced the binary but left a running daemon on the old
+  one until the next login. After a successful update it now restarts the
+  daemon only when it ran before the swap, through the same channel as
+  `lean-ctx daemon restart` (the LaunchAgent on macOS, the systemd user unit on
+  Linux, a direct start by the new binary on Windows or without a unit), and
+  waits until a deadline of `LEAN_CTX_DAEMON_WAIT_SECS` seconds (default 10,
+  as the installers; an invalid value is named and ignored) for the daemon to
+  report the new version. The deadline covers only that check: the restart
+  before it is bounded by the stop sequence and the service manager's own
+  timeouts (`systemctl --user stop/start` waits up to the unit's
+  `TimeoutStopSec`/`TimeoutStartSec`, 90 s by default). A daemon that does
+  not come back, or reports
+  another version, is named on stderr with the commands to check it; the
+  update stays installed and `lean-ctx update --rollback` remains available.
+  A daemon that was stopped stays stopped, and a deferred Windows swap says
+  to restart it afterwards. An unattended update (`--scheduled`, or
+  `--quiet` alone as older timer units and cron entries run it) without an
+  autostart unit does not start the daemon itself (on macOS it would inherit
+  the updater's deny-~/Documents sandbox, on Linux it would die with the
+  timer unit) and says to run `lean-ctx daemon restart`. On macOS the
+  LaunchAgent re-wrap's restart is not repeated, but a daemon started by
+  hand next to the LaunchAgent is still stopped and restarted.
+
+- **Pi replace mode keeps the `<skills>` section in the system prompt
+  (#2260).** Pi renders the section only while its `read` or `bash` tool is
+  active, and replace mode removes both, so the model was never told that a
+  skill exists. pi-lean-ctx now adds the section in `before_agent_start` with
+  Pi's own layout and names `ctx_read` as the tool that loads a skill's
+  `SKILL.md`. Additive mode and hybrid shell routing are unchanged, since Pi
+  renders the section itself there.
+
+- **`ctx_read` and `ctx_patch` say which base a relative path used (#2262).**
+  After a `ctx_shell` call whose `cwd` is in another git checkout (a worktree),
+  relative paths resolve against that `cwd`, not the project root (#707), but
+  the schemas still said "project-relative". The `ctx_read` `path` and
+  `ctx_patch` descriptions now state the rule, and both tools add a
+  `[lean-ctx: path base moved: …]` line naming the base and the project root
+  the first time a session resolves a relative path against a moved base; a
+  refused `ctx_patch` always carries it. A path written relative to the
+  project root that points into the active checkout (the doubled path) is now
+  resolved the same way by both tools: `ctx_read` reads and `ctx_patch`
+  patches that file, when it exists, is a regular file inside the active
+  checkout and the path jail admits it; otherwise `ctx_patch` refuses as
+  before. `ctx_patch` says it patched that file only when it actually rewrote
+  it, never on a dry run, a no-op or a refusal. `ctx_patch` `ops[]` paths now
+  resolve against the same base as a single op; a batch is never substituted,
+  so it never reports a file it did not patch.
+
+- **Team decisions work right after `cloud link`.** On a connected machine
+  the plain `lean-ctx cloud link <ws>/<vault>` now shares the project at
+  once, as `cloud link --json` already did, so `cloud decisions push`,
+  `list` and `create` no longer answer "not linked" until a `cloud sync`.
+  A first share that waits for a yes names the command to answer it.
+- **`cloud status` no longer asks a connected machine to connect again.**
+  A linked project that is not shared yet now says which vault it is
+  linked to and suggests `lean-ctx cloud sync`.
+- **Policy refusals are named as such.** When LeanCTX Cloud's policy
+  refuses a decision (`policy_denied`, a policy chain that does not merge
+  or sharing that is not confirmed), `cloud decisions create --json` and
+  `list --json` answer the new Local Read error `policy_denied` (socket
+  `403`) with `cloud_code`, `member`, `level` and `action`, instead of
+  `forbidden` or `internal`.
+
+- **`ctx_shell` no longer refuses a `gh api` loop as a program run on lean-ctx's own state when a reassigned variable also appears inside single quotes (#2261).** In `c=""; for p in 1; do gh api -f c="$c" -f q='($c)' …; c=$(echo q); done` the state guard also substituted the literal `$c` inside `'($c)'`, so the run-time value of `c` was read as a path into `~/.config/lean-ctx`. A `$` or backtick inside single quotes is now text, as in the shell. A variable that really expands to the state directory is still refused, and segments that may run a word as shell code later (`trap`, `ssh`, `watch`, a shell or a wrapper, `git`) or use `$'…'` or a here-document keep the old reading.
+
+- **Rules setup and uninstall no longer drop user text around the lean-ctx block.**
+  A rules file whose `<!-- /lean-ctx-rules -->` line went missing is now
+  refused with a hint by setup, and left untouched by uninstall, instead of
+  losing everything after the start marker, and
+  a marker quoted inline in your own prose no longer counts as a block.
+  Uninstall removes only the marked block from a lean-ctx rules file and keeps
+  your notes beside it; a file that merely mentions lean-ctx stays, and
+  Antigravity's and Pi's `AGENTS.md` need both marker lines. Antigravity
+  frontmatter saved with CRLF or a byte-order mark is kept, and a CRLF file
+  keeps its line endings when setup or uninstall rewrites it; a setup and
+  uninstall round trip gives a CRLF file back byte for byte. Uninstall
+  rewrites rules files atomically and never through a symlink that leaves your
+  home directory.
+- **Dedicated mode now edits shared rules files once:** with
+  `rules_injection = "dedicated"`, setup removes the lean-ctx block an earlier
+  shared install left in `~/.gemini/GEMINI.md`, `~/.gemini/AGENTS.md` or
+  OpenCode's `AGENTS.md` (your own text stays, a backup is kept), so the rules
+  load once. This happens only after the dedicated rules file was written.
+- **Pi:** the block names the extension's `ctx_grep(pattern, path)`,
+  `ctx_find(pattern, path)` and `ctx_ls(path)` tools, `lean-ctx rules diff` no
+  longer reports a freshly synced Pi block as drifted, setup detects Pi through
+  its `AGENTS.md` (also under `PI_CODING_AGENT_DIR`), and
+  `PI_CODING_AGENT_DIR=~\pi` works on Windows in setup and in the pi-lean-ctx
+  extension, as it does in Pi.
+
+- `lean-ctx savings --period all` reports all recorded savings instead of stopping with an error.
+
+- **Shell policy: `#` comments are read like the shell reads them in nested scripts.**
+  The per-command checks for `trap` actions, alias bodies, inline scripts,
+  command substitutions and PowerShell argument groups now remove comments
+  the way POSIX sh does (a `#` at the start of a word, outside quotes and
+  `${…}`, up to the end of its line) before splitting the script into
+  commands, so a quote, backtick, `$(` or backslash inside a comment no
+  longer changes how the following lines are read. A `#` inside a word
+  (`a#b`, `$#`, `${#x}`, `${x#y}`) or inside quotes keeps its meaning. A
+  script with comments whose quoting the shells read differently is refused.
+- **Shell policy: `case` arms with a comment or here-document.** An arm
+  holding a `#` comment or a here-document (`<<`; a `<<<` here-string stays
+  fine) is refused instead of being split at a `;;` inside it. A `case` in a
+  command substitution is read both as written and without its comments,
+  and the arm bodies of both readings are checked. Without an allowlist,
+  `trap` actions, alias bodies and the commands `watch` or `git --exec` run
+  now get the same substitution and here-document handling as the line itself.
+
+- **Background vault sync no longer retries a `404` or a `401` forever.**
+  A `404` was retried with every backoff, without end (thousands of retries
+  on one machine). It still backs off like any failure, but the third `404`
+  in a row, each at least 10 minutes after the last counted one, pauses the
+  vault (`parked: true`, code `not_found`), so a snapshot that changes during
+  a download or a short proxy error during a LeanCTX Cloud deploy does not
+  pause it. A paused vault is tried again every 6 h, and at once after
+  `lean-ctx cloud connect` or a change of `[cloud] url`. A reconnect clears
+  the old `not_found` code and error text. A `401` now sets
+  `needs_login: true` with code `needs_login` (formerly `unauthorized`): the
+  vault is not paused, but a push on write skips it and the background sync
+  tries it again only after 6 h, then every 24 h, so a short sign-in outage
+  on LeanCTX Cloud heals by itself; a reconnect or a successful
+  `lean-ctx cloud sync` ends it at once.
+  `lean-ctx cloud sync status --json` now always writes `parked` and
+  `needs_login`. The error log gets one line when a vault is paused or needs
+  a login.
 
 ## [3.12.6] — 2026-11-15
 
@@ -151,6 +511,27 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 ## [3.12.4] — 2026-11-12
 
 ### Added
+
+- **Claude Code mod works with Code Mode.** The mod is now two plugins from the same local
+  marketplace and version: `lean-ctx` (cockpit, focused tool surface, compaction, `/leanctx`)
+  hooks no tool calls, and `lean-ctx-jobs` carries job wakes, sleep answers and native Bash
+  shaping (`/leanctx-jobs`). `lean-ctx claude-mod install` adds `lean-ctx-jobs` to existing
+  installs and keeps it disabled if you disabled it. `lean-ctx claude-mod code-mode [claude
+  args…]` starts one Claude Code session in Code Mode with `lean-ctx-jobs` off, the proxy
+  bypassed and remote control at startup off; user settings are not changed. It refuses
+  to start when `ANTHROPIC_BASE_URL` points at a gateway other than the lean-ctx proxy, and
+  when you pass your own `--settings`. Upgrading: the `wake_on_job_finish` and
+  `shape_native_output` options moved to `lean-ctx-jobs`; set them again there in `/config`
+  if you had changed them.
+  lean-ctx's Claude Code `PreToolUse` hooks now carry `"onFailure": "continue"`: in Code
+  Mode a failing hook would otherwise refuse the tool call, and a broken lean-ctx install
+  never blocks tools in either mode (Claude Code before 2.1.295 ignores the field). In Code
+  Mode the per-turn routing reminder skips script-output polls, so it is billed per turn,
+  not per poll. `lean-ctx doctor` shows whether Code Mode is ready (or names the gateway or
+  the outdated hooks in the way), and `lean-ctx proxy status` names the launcher. While
+  Code Mode's `REPL` tool is offered, the mod adds one line to the system prompt with the
+  call form for lean-ctx tools (`tools["mcp__lean-ctx__ctx_read"](…)`): the hyphenated
+  server name made Claude guess wrong names twice per session.
 
 - **Policy enforcement acknowledged to Hive (D4).** The bus hello now names the features
   `policy_advanced` and `policy_applied`, so Hive delivers its `policy.advanced` nudge (it

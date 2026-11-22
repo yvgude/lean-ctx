@@ -130,7 +130,7 @@ fn consolidate_dry_run_previews_without_mutating() {
             .push(lean_ctx::core::knowledge::ConsolidatedInsight {
                 summary: format!("summary {i}"),
                 from_sessions: vec![format!("s{i}")],
-                timestamp: Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
             });
     }
     knowledge.save().unwrap();
@@ -176,7 +176,7 @@ fn consolidation_does_not_capacity_compact_at_twenty_five_percent_free() {
             .push(lean_ctx::core::knowledge::ConsolidatedInsight {
                 summary: format!("summary {i}"),
                 from_sessions: vec![format!("s{i}")],
-                timestamp: Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
             });
     }
     knowledge.save().unwrap();
@@ -581,4 +581,86 @@ fn bridge_pull_keeps_facts_written_in_parallel() {
             "{key} was lost"
         );
     }
+}
+
+/// A fact whose value is a JSON document with a secret below a credential's
+/// name (`{"token":["S"]}`, `{"auth":{"value":"S"}}`) left recall and the
+/// export file unmasked: the text rules see a secret only as a string right
+/// after its name. Every view now masks the whole value of such a member;
+/// a readable fact keeps its text.
+#[test]
+fn nested_secrets_in_a_fact_value_are_masked_in_recall_and_export() {
+    let _env_lock = lean_ctx::core::data_dir::test_env_lock();
+    let data_dir = tempfile::tempdir().unwrap();
+    let _data_dir = DataDirGuard::set(data_dir.path());
+    let _config_dir = ConfigDirGuard::set(&data_dir.path().join("config"));
+    gateway_config("[context_gateway]\nenabled = false\n");
+    // Built at run time: no fixture looks like a real token to a scanner.
+    let secret = ["Hy6", "Qz1", "Vn8", "Bc4", "Jw2", "Xe5"].concat();
+
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+    let mut knowledge = ProjectKnowledge::new(&root);
+    let values = [
+        ("token-list", serde_json::json!({"token": [secret]})),
+        (
+            "auth-object",
+            serde_json::json!({"auth": {"value": secret}}),
+        ),
+        (
+            "deep",
+            serde_json::json!({"a": [{"b": {"c": {"client_secret": {"d": [secret]}}}}]}),
+        ),
+        (
+            "embedded",
+            serde_json::json!({
+                "config": serde_json::json!({"api_key": {"value": secret}}).to_string()
+            }),
+        ),
+    ];
+    for (key, value) in &values {
+        knowledge.remember(
+            "config",
+            key,
+            &value.to_string(),
+            "fixture",
+            0.9,
+            &MemoryPolicy::default(),
+        );
+    }
+    knowledge.remember(
+        "config",
+        "control",
+        r#"{"tokens": 42, "key": "token-type", "note": "rotate daily"}"#,
+        "fixture",
+        0.9,
+        &MemoryPolicy::default(),
+    );
+    knowledge.save().unwrap();
+
+    let recall = |category: Option<&str>| {
+        handle_outcome(
+            &root, "recall", category, None, None, None, "s", None, None, None, None, None,
+        )
+    };
+    let recalled = recall(Some("config")).expect("recall answers");
+    assert!(!recalled.contains(&secret), "{recalled}");
+    assert!(recalled.contains("[REDACTED"), "{recalled}");
+    assert!(
+        recalled.contains(r#"{"tokens": 42, "key": "token-type", "note": "rotate daily"}"#),
+        "control fact readable: {recalled}"
+    );
+    for (key, _) in &values {
+        assert!(recalled.contains(key), "{key} still listed: {recalled}");
+    }
+
+    let exported = handle_export(&root);
+    assert!(exported.starts_with("Export saved:"), "{exported}");
+    let mut file = String::new();
+    append_files(
+        &data_dir.path().join("exports").join("knowledge"),
+        &mut file,
+    );
+    assert!(!file.contains(&secret), "{file}");
+    assert!(file.contains("rotate daily"), "{file}");
 }

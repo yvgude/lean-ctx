@@ -53,7 +53,7 @@ smallest pinned profile that advertises the tool (`M` minimal, `S` standard,
 | `ctx_edit` | Legacy search-and-replace edit with race guards | — | | P |
 | `ctx_shell` | Run shell commands with output compression | `raw`, `inline`, `run_in_background` | ✓ | M |
 | `shell` | Alias of `ctx_shell` for clients whose model prefers a `shell` tool | — | ✓ | P |
-| `ctx_execute` | Sandboxed code execution (11 languages) | code \| batch \| file | | S |
+| `ctx_execute` | Code execution in a restricted subprocess (11 languages; OS sandbox opt-in) | code \| batch \| file | | S |
 | `ctx_expand` | Retrieve archived or withheld tool output | retrieve \| list \| search_all | ✓ | S |
 | `ctx_url_read` | Web page, PDF, feed or YouTube transcript as compressed context; SSRF-guarded | `mode`: auto \| markdown \| text \| links \| facts \| quotes \| transcript | | S |
 | `ctx_git_read` | Read a remote git repo via cached shallow clone | `mode`: overview \| tree \| read \| grep | | P |
@@ -120,7 +120,7 @@ smallest pinned profile that advertises the tool (`M` minimal, `S` standard,
 | `ctx_call` | Invoke any registered tool by name | `name`*, `arguments` | ✓ | P |
 | `ctx_discover_tools` | Keyword search across all tools | `query` | | P |
 | `ctx_load_tools` | Load/unload tool categories at runtime | load \| unload \| list | | P |
-| `ctx_tasks` | From 3.12.1 (hidden in 3.12.0): the project's tasks — Hive's when the checkout is linked to a vault (claim under the opt-in), else kept on this Instance: read, claim, report, submit with evidence, release, propose, verify; local only: decide (accept or decline); a person stops a task with `lean-ctx tasks stop` | list \| show \| claim \| update \| submit \| release \| propose \| verify \| decide | | P |
+| `ctx_tasks` | From 3.12.1 (hidden in 3.12.0): the project's tasks — Cloud's when the checkout is linked to a vault (claim under the opt-in), else kept on this Instance: read, claim, report, submit with evidence, release, propose, verify; local only: decide (accept or decline); a person stops a task with `lean-ctx tasks stop` | list \| show \| claim \| update \| submit \| release \| propose \| verify \| decide | | P |
 | `ctx_work_graph` | Project-scoped local Work Graph for multi-agent coordination; the host launches agents, `start` binds and controls them | create \| delegate \| claim \| start \| consume \| complete \| receipt \| accept \| fuse \| attribution \| value_report \| cancel \| get \| observe \| list | | P |
 
 `*` = required parameter.

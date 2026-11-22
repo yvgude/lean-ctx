@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Knowledge bookkeeping the Hive connector keeps: how often its facts
+//! Knowledge bookkeeping the Cloud connector keeps: how often its facts
 //! reached an agent (M1, M5) and the session learnings it queues for review
 //! at a session's end. The connector registers [`KnowledgeHooks`] at
 //! start-up ([`register_knowledge_hooks`]); without them (library use,
@@ -8,10 +8,10 @@
 
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 
-/// `(project_root, session (id, started_at), hive_facts, asked)`.
-pub type DeliveryHook = fn(&str, Option<(&str, DateTime<Utc>)>, usize, bool);
+/// `(project_root, session (id, started_at), cloud_facts, asked)`.
+pub type DeliveryHook = fn(&str, Option<(&str, UtcDateTime)>, usize, bool);
 /// `(project_root, session_id)`.
 pub type SessionEndHook = fn(&str, &str);
 
@@ -29,17 +29,17 @@ pub fn register_knowledge_hooks(hooks: KnowledgeHooks) {
     let _ = HOOKS.set(hooks);
 }
 
-/// A delivery to an agent in `project_root` handed it `hive_facts` facts
-/// pulled from a Hive vault. `asked`: the agent asked for knowledge (a
+/// A delivery to an agent in `project_root` handed it `cloud_facts` facts
+/// pulled from a Cloud vault. `asked`: the agent asked for knowledge (a
 /// recall).
 pub fn record_delivery(
     project_root: &str,
-    session: Option<(&str, DateTime<Utc>)>,
-    hive_facts: usize,
+    session: Option<(&str, UtcDateTime)>,
+    cloud_facts: usize,
     asked: bool,
 ) {
     if let Some(hooks) = HOOKS.get() {
-        (hooks.record_delivery)(project_root, session, hive_facts, asked);
+        (hooks.record_delivery)(project_root, session, cloud_facts, asked);
     }
 }
 

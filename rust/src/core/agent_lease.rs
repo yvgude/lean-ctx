@@ -587,7 +587,7 @@ pub fn release_shared(
 }
 
 /// Drops the lease `lease_ref` whoever holds it: an organization veto took
-/// it (Hive bus control, SPEC-ENGINE §3.7.4). Returns the dropped lease,
+/// it (Cloud bus control, SPEC-ENGINE §3.7.4). Returns the dropped lease,
 /// `None` when no such lease is held.
 pub fn revoke_shared(lease_ref: &str) -> Result<Option<AgentLeaseV1>, AgentLeaseError> {
     with_shared_registry(|registry, _| {

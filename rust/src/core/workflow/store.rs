@@ -90,7 +90,7 @@ pub fn load_active_for_agent(agent_id: Option<&str>) -> Result<Option<WorkflowRu
 #[must_use]
 pub fn is_run_stale(run: &WorkflowRun) -> bool {
     !is_withheld_sentinel(run)
-        && chrono::Utc::now()
+        && lean_ctx_time::UtcDateTime::now()
             .signed_duration_since(run.updated_at)
             .num_minutes()
             > STALE_MINUTES
@@ -168,7 +168,7 @@ const CLOSED: &str = "gateway-withheld";
 /// The stand-in never goes stale ([`is_run_stale`]) and is never saved.
 fn withheld_sentinel(reason: String) -> WorkflowRun {
     use crate::core::workflow::types::{StateSpec, WorkflowSpec};
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     WorkflowRun {
         spec: WorkflowSpec {
             name: CLOSED.to_string(),
@@ -321,7 +321,7 @@ mod tests {
     use crate::core::workflow::types::{StateSpec, WorkflowSpec};
 
     fn review(description: &str) -> WorkflowRun {
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         WorkflowRun {
             spec: WorkflowSpec {
                 name: "review".to_string(),

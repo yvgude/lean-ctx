@@ -356,7 +356,9 @@ fn generate_benchmark_code(lines: usize) -> String {
         "    pub fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {".to_string(),
     );
     code.push("        let decoded = auth::decode_jwt(token)?;".to_string());
-    code.push("        if decoded.exp < chrono::Utc::now().timestamp() {".to_string());
+    code.push(
+        "        if decoded.exp < lean_ctx_time::UtcDateTime::now().timestamp() {".to_string(),
+    );
     code.push("            return Err(AuthError::Expired);".to_string());
     code.push("        }".to_string());
     code.push("        Ok(decoded.claims)".to_string());

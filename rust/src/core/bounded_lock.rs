@@ -74,16 +74,9 @@ pub fn read_for<T: Send + Sync + 'static>(
     context: &str,
     timeout: Duration,
 ) -> Option<OwnedRwLockReadGuard<T>> {
-    acquire_with_behavior(
-        lock,
-        context,
-        "read",
-        timeout,
-        LockFailBehavior::ReturnDefault,
-        |lock| lock.clone().try_read_owned().ok(),
-    )
-    .ok()
-    .flatten()
+    read_within(lock, context, timeout, LockFailBehavior::ReturnDefault)
+        .ok()
+        .flatten()
 }
 
 /// Acquire a read lock with explicit timeout behavior for this operation.
@@ -92,10 +85,7 @@ pub fn read_with_behavior<T: Send + Sync + 'static>(
     context: &str,
     behavior: LockFailBehavior,
 ) -> Result<Option<OwnedRwLockReadGuard<T>>, LockTimeoutError> {
-    let timeout = crate::core::io_health::adaptive_timeout(BASE_READ_TIMEOUT);
-    acquire_with_behavior(lock, context, "read", timeout, behavior, |lock| {
-        lock.clone().try_read_owned().ok()
-    })
+    read_within(lock, context, read_timeout(), behavior)
 }
 
 /// Acquire a write lock with explicit timeout behavior for this operation.
@@ -104,7 +94,63 @@ pub fn write_with_behavior<T: Send + Sync + 'static>(
     context: &str,
     behavior: LockFailBehavior,
 ) -> Result<Option<OwnedRwLockWriteGuard<T>>, LockTimeoutError> {
-    let timeout = crate::core::io_health::adaptive_timeout(BASE_WRITE_TIMEOUT);
+    write_within(lock, context, write_timeout(), behavior)
+}
+
+/// The adaptive budget [`read`] waits for a contended lock: the 10 s base,
+/// stretched by [`crate::core::io_health::adaptive_timeout`].
+pub fn read_timeout() -> Duration {
+    crate::core::io_health::adaptive_timeout(BASE_READ_TIMEOUT)
+}
+
+/// The adaptive budget [`write()`] waits for a contended lock.
+pub fn write_timeout() -> Duration {
+    crate::core::io_health::adaptive_timeout(BASE_WRITE_TIMEOUT)
+}
+
+/// [`read`] with another base budget, still stretched by the I/O health.
+/// [`read`] is this with the 10 s base; a test uses a short base to take the
+/// same contended path without waiting 10–20 s.
+pub fn read_adaptive<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    base: Duration,
+) -> Option<OwnedRwLockReadGuard<T>> {
+    let timeout = crate::core::io_health::adaptive_timeout(base);
+    read_within(lock, context, timeout, LockFailBehavior::default())
+        .ok()
+        .flatten()
+}
+
+/// [`write()`] with another base budget, still stretched by the I/O health.
+pub fn write_adaptive<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    base: Duration,
+) -> Option<OwnedRwLockWriteGuard<T>> {
+    let timeout = crate::core::io_health::adaptive_timeout(base);
+    write_within(lock, context, timeout, LockFailBehavior::default())
+        .ok()
+        .flatten()
+}
+
+fn read_within<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    timeout: Duration,
+    behavior: LockFailBehavior,
+) -> Result<Option<OwnedRwLockReadGuard<T>>, LockTimeoutError> {
+    acquire_with_behavior(lock, context, "read", timeout, behavior, |lock| {
+        lock.clone().try_read_owned().ok()
+    })
+}
+
+fn write_within<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    timeout: Duration,
+    behavior: LockFailBehavior,
+) -> Result<Option<OwnedRwLockWriteGuard<T>>, LockTimeoutError> {
     acquire_with_behavior(lock, context, "write", timeout, behavior, |lock| {
         lock.clone().try_write_owned().ok()
     })
@@ -187,16 +233,9 @@ pub fn write_for<T: Send + Sync + 'static>(
     context: &str,
     timeout: Duration,
 ) -> Option<OwnedRwLockWriteGuard<T>> {
-    acquire_with_behavior(
-        lock,
-        context,
-        "write",
-        timeout,
-        LockFailBehavior::ReturnDefault,
-        |lock| lock.clone().try_write_owned().ok(),
-    )
-    .ok()
-    .flatten()
+    write_within(lock, context, timeout, LockFailBehavior::ReturnDefault)
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]

@@ -99,8 +99,8 @@ fn retention_rejects_before_content_dedup_and_budget_spend() {
     })]);
     let mut retrieval = context();
     retrieval.budget.total = 50;
-    let evaluation =
-        DateTime::parse_from_rfc3339("2026-09-14T00:00:00Z").expect("valid evaluation time");
+    let evaluation = lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-09-14T00:00:00Z")
+        .expect("valid evaluation time");
     let policy = ContextPolicy {
         retention_days: Some(2),
         ..ContextPolicy::default()
@@ -325,7 +325,8 @@ fn unconfigured_retention_preserves_existing_identity_material() {
     let ctx = context();
     let policy = ContextPolicy::default();
     let kernel = ContextKernel::new(Vec::new());
-    let time = DateTime::parse_from_rfc3339("2026-09-14T00:00:00Z").expect("fixed time");
+    let time = lean_ctx_time::OffsetDateTime::parse_from_rfc3339("2026-09-14T00:00:00Z")
+        .expect("fixed time");
     let (plan, _) = kernel
         .plan_with_policy_at(&ctx, &policy, Some(&time))
         .expect("valid identity plan");

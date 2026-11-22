@@ -2,7 +2,7 @@
   "bomFormat": "CycloneDX",
   "components": [
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-activity#0.1.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-activity#0.2.0",
       "description": "The host-neutral activity stream of LeanCTX | OSS: one bounded, redacted event log per agent session.",
       "externalReferences": [
         {
@@ -20,10 +20,10 @@
         }
       ],
       "name": "lean-ctx-activity",
-      "purl": "pkg:cargo/lean-ctx-activity@0.1.0?download_url=file://crates/lean-ctx-activity",
+      "purl": "pkg:cargo/lean-ctx-activity@0.2.0?download_url=file://crates/lean-ctx-activity",
       "scope": "required",
       "type": "library",
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/lean-ctx-compress#0.1.0",
@@ -50,8 +50,8 @@
       "version": "0.1.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-doc#0.2.0",
-      "description": "The documentation model of lean-ctx: pages, sections, notes and code anchors, replicated through LeanCTX | Hive.",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-doc#0.2.1",
+      "description": "The documentation model of lean-ctx: pages, sections, notes and code anchors, replicated through LeanCTX Cloud.",
       "externalReferences": [
         {
           "type": "vcs",
@@ -64,13 +64,13 @@
         }
       ],
       "name": "lean-ctx-doc",
-      "purl": "pkg:cargo/lean-ctx-doc@0.2.0?download_url=file://crates/lean-ctx-doc",
+      "purl": "pkg:cargo/lean-ctx-doc@0.2.1?download_url=file://crates/lean-ctx-doc",
       "scope": "required",
       "type": "library",
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-fs#0.2.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-fs#0.2.1",
       "description": "Filesystem and environment foundation for LeanCTX | OSS: atomic writes, file locks, hashing, JSONC, home resolution.",
       "externalReferences": [
         {
@@ -88,13 +88,13 @@
         }
       ],
       "name": "lean-ctx-fs",
-      "purl": "pkg:cargo/lean-ctx-fs@0.2.0?download_url=file://crates/lean-ctx-fs",
+      "purl": "pkg:cargo/lean-ctx-fs@0.2.1?download_url=file://crates/lean-ctx-fs",
       "scope": "required",
       "type": "library",
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-ocla#7.0.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-ocla#8.0.0",
       "description": "Open Context & Token Lifecycle Architecture \u2014 the provider-neutral contract boundary (capability traits, canonical types, token envelopes) shared between lean-ctx-core (OSS) and lean-ctx-enterprise (proprietary).",
       "externalReferences": [
         {
@@ -108,10 +108,10 @@
         }
       ],
       "name": "lean-ctx-ocla",
-      "purl": "pkg:cargo/lean-ctx-ocla@7.0.0?download_url=file://crates/lean-ctx-ocla",
+      "purl": "pkg:cargo/lean-ctx-ocla@8.0.0?download_url=file://crates/lean-ctx-ocla",
       "scope": "required",
       "type": "library",
-      "version": "7.0.0"
+      "version": "8.0.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
@@ -138,7 +138,7 @@
       "version": "0.1.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-protocol#0.7.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-protocol#0.8.0",
       "description": "Open wire contracts for lean-ctx: events, observations, assignments, evidence gaps.",
       "externalReferences": [
         {
@@ -152,10 +152,10 @@
         }
       ],
       "name": "lean-ctx-protocol",
-      "purl": "pkg:cargo/lean-ctx-protocol@0.7.0?download_url=file://crates/lean-ctx-protocol",
+      "purl": "pkg:cargo/lean-ctx-protocol@0.8.0?download_url=file://crates/lean-ctx-protocol",
       "scope": "required",
       "type": "library",
-      "version": "0.7.0"
+      "version": "0.8.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.1",
@@ -182,7 +182,27 @@
       "version": "0.1.1"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-workgraph#0.3.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-time#0.1.0",
+      "description": "Time for LeanCTX | OSS: UTC instants, durations and the RFC 3339 formats LeanCTX stores and signs, over jiff.",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-time",
+      "purl": "pkg:cargo/lean-ctx-time@0.1.0?download_url=file://crates/lean-ctx-time",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-workgraph#0.4.0",
       "description": "Bounded multi-agent work graph, budget cascade and outcome evaluation model for LeanCTX | OSS.",
       "externalReferences": [
         {
@@ -200,10 +220,10 @@
         }
       ],
       "name": "lean-ctx-workgraph",
-      "purl": "pkg:cargo/lean-ctx-workgraph@0.3.0?download_url=file://crates/lean-ctx-workgraph",
+      "purl": "pkg:cargo/lean-ctx-workgraph@0.4.0?download_url=file://crates/lean-ctx-workgraph",
       "scope": "required",
       "type": "library",
-      "version": "0.3.0"
+      "version": "0.4.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/leanctx-native-storage#0.1.1",
@@ -224,6 +244,27 @@
       "scope": "required",
       "type": "library",
       "version": "0.1.1"
+    },
+    {
+      "author": "Alex Crichton <alex@alexcrichton.com>, Florin Lipan <florinlipan@gmail.com>, David A. Ramos <ramos@cs.stanford.edu>",
+      "bom-ref": "path+file://./rust/crates/vendor/oauth2#5.0.0",
+      "description": "An extensible, strongly-typed implementation of OAuth2",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/ramosbugs/oauth2-rs"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "name": "oauth2",
+      "purl": "pkg:cargo/oauth2@5.0.0?download_url=file://crates/vendor/oauth2",
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/vendor/rmcp#3.9.0",
@@ -501,41 +542,6 @@
       "scope": "required",
       "type": "library",
       "version": "0.2.21"
-    },
-    {
-      "author": "Nicolas Silva <nical@fastmail.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#android_system_properties@0.1.6",
-      "description": "Minimal Android system properties wrapper",
-      "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://docs.rs/android_system_properties"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/nical/android_system_properties"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/nical/android_system_properties"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "name": "android_system_properties",
-      "purl": "pkg:cargo/android_system_properties@0.1.6",
-      "scope": "required",
-      "type": "library",
-      "version": "0.1.6"
     },
     {
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#anstream@1.0.0",
@@ -1841,40 +1847,6 @@
       "scope": "required",
       "type": "library",
       "version": "0.10.1"
-    },
-    {
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
-      "description": "Date and time library for Rust",
-      "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://docs.rs/chrono/"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/chronotope/chrono"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/chronotope/chrono"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "name": "chrono",
-      "purl": "pkg:cargo/chrono@0.4.45",
-      "scope": "required",
-      "type": "library",
-      "version": "0.4.45"
     },
     {
       "author": "RustCrypto Developers",
@@ -4289,7 +4261,7 @@
     },
     {
       "author": "The rust-url developers",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.2",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.3",
       "description": "Parser and serializer for the application/x-www-form-urlencoded syntax, as used by HTML forms.",
       "externalReferences": [
         {
@@ -4300,7 +4272,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+          "content": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
         }
       ],
       "licenses": [
@@ -4309,10 +4281,10 @@
         }
       ],
       "name": "form_urlencoded",
-      "purl": "pkg:cargo/form_urlencoded@1.2.2",
+      "purl": "pkg:cargo/form_urlencoded@1.2.3",
       "scope": "required",
       "type": "library",
-      "version": "1.2.2"
+      "version": "1.2.3"
     },
     {
       "author": "Dan Burkert <dan@danburkert.com>",
@@ -5515,60 +5487,6 @@
       "version": "1.11.0"
     },
     {
-      "author": "Ren\u00e9 Kijewski <crates.io@k6i.de>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#iana-time-zone-haiku@0.1.2",
-      "description": "iana-time-zone support crate for Haiku OS",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/strawlab/iana-time-zone"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "name": "iana-time-zone-haiku",
-      "purl": "pkg:cargo/iana-time-zone-haiku@0.1.2",
-      "scope": "required",
-      "type": "library",
-      "version": "0.1.2"
-    },
-    {
-      "author": "Andrew Straw <strawman@astraw.com>, Ren\u00e9 Kijewski <rene.kijewski@fu-berlin.de>, Ryan Lopopolo <rjl@hyperbo.la>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#iana-time-zone@0.1.65",
-      "description": "get the IANA time zone for the current system",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/strawlab/iana-time-zone"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "name": "iana-time-zone",
-      "purl": "pkg:cargo/iana-time-zone@0.1.65",
-      "scope": "required",
-      "type": "library",
-      "version": "0.1.65"
-    },
-    {
       "author": "The ICU4X Project Developers",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#icu_collections@2.1.1",
       "description": "Collection of API for use in ICU libraries.",
@@ -6092,6 +6010,177 @@
       "scope": "required",
       "type": "library",
       "version": "1.0.18"
+    },
+    {
+      "author": "Andrew Gallant <jamslam@gmail.com>",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-core@0.1.5",
+      "description": "Low level datetime primitives for the Jiff library.",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/jiff-core"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-core"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/BurntSushi/jiff"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ffe6854081f5ac0a3046a9b223729ccd7a20b1e0e8277e44dc0660eedf67dfe2"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Unlicense OR MIT"
+        }
+      ],
+      "name": "jiff-core",
+      "purl": "pkg:cargo/jiff-core@0.1.5",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.5"
+    },
+    {
+      "author": "Andrew Gallant <jamslam@gmail.com>",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-static@0.2.43",
+      "description": "Create static TimeZone values for Jiff (useful in core-only environments).",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/jiff-tzdb"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-static"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/BurntSushi/jiff"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4b4ff49b2887190c760b86207b55cdcaabbdecaf7a0660d68aa2ed6f652abf0a"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Unlicense OR MIT"
+        }
+      ],
+      "name": "jiff-static",
+      "purl": "pkg:cargo/jiff-static@0.2.43",
+      "scope": "required",
+      "type": "library",
+      "version": "0.2.43"
+    },
+    {
+      "author": "Andrew Gallant <jamslam@gmail.com>",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-tzdb-platform@0.1.3",
+      "description": "The entire Time Zone Database embedded into your binary for specific platforms. ",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/jiff-tzdb-platform"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-tzdb-platform"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/BurntSushi/jiff"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Unlicense OR MIT"
+        }
+      ],
+      "name": "jiff-tzdb-platform",
+      "purl": "pkg:cargo/jiff-tzdb-platform@0.1.3",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.3"
+    },
+    {
+      "author": "Andrew Gallant <jamslam@gmail.com>",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-tzdb@0.1.9",
+      "description": "The entire Time Zone Database embedded into your binary.",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/jiff-tzdb"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-tzdb"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/BurntSushi/jiff"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "fa8377070c6bae868759445e5a77f66d84f0b72f3a054bfb00e6d038b8282da7"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Unlicense OR MIT"
+        }
+      ],
+      "name": "jiff-tzdb",
+      "purl": "pkg:cargo/jiff-tzdb@0.1.9",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.9"
+    },
+    {
+      "author": "Andrew Gallant <jamslam@gmail.com>",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#jiff@0.2.43",
+      "description": "A date-time library that encourages you to jump into the pit of success.  This library is heavily inspired by the Temporal project. ",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/jiff"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/BurntSushi/jiff"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "26699905cc795a23e3949585cc7ba3ee8ade090872a27e4316304a777297894a"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Unlicense OR MIT"
+        }
+      ],
+      "name": "jiff",
+      "purl": "pkg:cargo/jiff@0.2.43",
+      "scope": "required",
+      "type": "library",
+      "version": "0.2.43"
     },
     {
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#jni-macros@0.22.4",
@@ -7518,33 +7607,6 @@
       "version": "0.2.19"
     },
     {
-      "author": "Alex Crichton <alex@alexcrichton.com>, Florin Lipan <florinlipan@gmail.com>, David A. Ramos <ramos@cs.stanford.edu>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#oauth2@5.0.0",
-      "description": "An extensible, strongly-typed implementation of OAuth2",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/ramosbugs/oauth2-rs"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "name": "oauth2",
-      "purl": "pkg:cargo/oauth2@5.0.0",
-      "scope": "required",
-      "type": "library",
-      "version": "5.0.0"
-    },
-    {
       "author": "Aleksey Kladov <aleksey.kladov@gmail.com>",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#once_cell@1.21.4",
       "description": "Single assignment cells and lazy values.",
@@ -8748,7 +8810,7 @@
       "version": "0.11.19"
     },
     {
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.16",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.15",
       "description": "UDP sockets with ECN information for the QUIC transport protocol",
       "externalReferences": [
         {
@@ -8759,7 +8821,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
+          "content": "35a133f956daabe89a61a685c2649f13d82d5aa4bd5d12d1277e1072a21c0694"
         }
       ],
       "licenses": [
@@ -8768,10 +8830,10 @@
         }
       ],
       "name": "quinn-udp",
-      "purl": "pkg:cargo/quinn-udp@0.5.16",
+      "purl": "pkg:cargo/quinn-udp@0.5.15",
       "scope": "required",
       "type": "library",
-      "version": "0.5.16"
+      "version": "0.5.15"
     },
     {
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#quinn@0.11.11",
@@ -14113,7 +14175,7 @@
     },
     {
       "author": "The rust-url developers",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9",
       "description": "URL library for Rust, based on the WHATWG URL Standard",
       "externalReferences": [
         {
@@ -14128,7 +14190,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+          "content": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
         }
       ],
       "licenses": [
@@ -14137,10 +14199,10 @@
         }
       ],
       "name": "url",
-      "purl": "pkg:cargo/url@2.5.8",
+      "purl": "pkg:cargo/url@2.5.9",
       "scope": "required",
       "type": "library",
-      "version": "2.5.8"
+      "version": "2.5.9"
     },
     {
       "author": "Kornel <kornel@geekhood.net>, Bertram Truong <b@bertramtruong.com>",
@@ -16895,7 +16957,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
         "registry+https://github.com/rust-lang/crates.io-index#bytecount@0.6.9",
         "registry+https://github.com/rust-lang/crates.io-index#chacha20poly1305@0.10.1",
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
         "registry+https://github.com/rust-lang/crates.io-index#dashmap@6.2.1",
         "registry+https://github.com/rust-lang/crates.io-index#dirs@6.0.0",
@@ -16912,15 +16973,16 @@
         "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#ignore@0.4.30",
         "registry+https://github.com/rust-lang/crates.io-index#keyring@3.6.3",
-        "path+file://./rust/crates/lean-ctx-activity#0.1.0",
+        "path+file://./rust/crates/lean-ctx-activity#0.2.0",
         "path+file://./rust/crates/lean-ctx-compress#0.1.0",
-        "path+file://./rust/crates/lean-ctx-doc#0.2.0",
-        "path+file://./rust/crates/lean-ctx-fs#0.2.0",
-        "path+file://./rust/crates/lean-ctx-ocla#7.0.0",
+        "path+file://./rust/crates/lean-ctx-doc#0.2.1",
+        "path+file://./rust/crates/lean-ctx-fs#0.2.1",
+        "path+file://./rust/crates/lean-ctx-ocla#8.0.0",
         "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
-        "path+file://./rust/crates/lean-ctx-protocol#0.7.0",
+        "path+file://./rust/crates/lean-ctx-protocol#0.8.0",
         "path+file://./rust/crates/lean-ctx-syntax#0.1.1",
-        "path+file://./rust/crates/lean-ctx-workgraph#0.3.0",
+        "path+file://./rust/crates/lean-ctx-time#0.1.0",
+        "path+file://./rust/crates/lean-ctx-workgraph#0.4.0",
         "path+file://./rust/crates/leanctx-native-storage#0.1.1",
         "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
         "registry+https://github.com/rust-lang/crates.io-index#libloading@0.8.9",
@@ -16977,16 +17039,16 @@
         "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
-      "ref": "path+file://./rust#lean-ctx-engine@3.12.6"
+      "ref": "path+file://./rust#lean-ctx-engine@3.12.7"
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
-        "path+file://./rust/crates/lean-ctx-fs#0.2.0",
+        "path+file://./rust/crates/lean-ctx-fs#0.2.1",
+        "path+file://./rust/crates/lean-ctx-time#0.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-activity#0.1.0"
+      "ref": "path+file://./rust/crates/lean-ctx-activity#0.2.0"
     },
     {
       "dependsOn": [
@@ -17005,7 +17067,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-doc#0.2.0"
+      "ref": "path+file://./rust/crates/lean-ctx-doc#0.2.1"
     },
     {
       "dependsOn": [
@@ -17018,7 +17080,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#toml@1.1.4+spec-1.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-fs#0.2.0"
+      "ref": "path+file://./rust/crates/lean-ctx-fs#0.2.1"
     },
     {
       "dependsOn": [
@@ -17027,14 +17089,14 @@
         "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
         "registry+https://github.com/rust-lang/crates.io-index#ed25519-dalek@2.2.0",
         "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.4.3",
-        "path+file://./rust/crates/lean-ctx-protocol#0.7.0",
+        "path+file://./rust/crates/lean-ctx-protocol#0.8.0",
         "registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-ocla#7.0.0"
+      "ref": "path+file://./rust/crates/lean-ctx-ocla#8.0.0"
     },
     {
       "dependsOn": [
@@ -17050,14 +17112,15 @@
     },
     {
       "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
         "registry+https://github.com/rust-lang/crates.io-index#chacha20poly1305@0.10.1",
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
+        "path+file://./rust/crates/lean-ctx-time#0.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-protocol#0.7.0"
+      "ref": "path+file://./rust/crates/lean-ctx-protocol#0.8.0"
     },
     {
       "dependsOn": [
@@ -17093,14 +17156,22 @@
     },
     {
       "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#jiff@0.2.43",
+        "registry+https://github.com/rust-lang/crates.io-index#schemars@1.2.2",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-time#0.1.0"
+    },
+    {
+      "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
-        "path+file://./rust/crates/lean-ctx-protocol#0.7.0",
+        "path+file://./rust/crates/lean-ctx-protocol#0.8.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-workgraph#0.3.0"
+      "ref": "path+file://./rust/crates/lean-ctx-workgraph#0.4.0"
     },
     {
       "dependsOn": [
@@ -17112,17 +17183,33 @@
     },
     {
       "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
+        "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.2.17",
+        "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
+        "path+file://./rust/crates/lean-ctx-time#0.1.0",
+        "registry+https://github.com/rust-lang/crates.io-index#rand@0.8.8",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_path_to_error@0.1.20",
+        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.10.9",
+        "registry+https://github.com/rust-lang/crates.io-index#thiserror@1.0.69",
+        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9"
+      ],
+      "ref": "path+file://./rust/crates/vendor/oauth2#5.0.0"
+    },
+    {
+      "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
         "registry+https://github.com/rust-lang/crates.io-index#base64@0.23.1",
         "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#futures@0.3.33",
         "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#http-body@1.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#http-body-util@0.1.4",
         "registry+https://github.com/rust-lang/crates.io-index#indexmap@2.14.0",
+        "path+file://./rust/crates/lean-ctx-time#0.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
-        "registry+https://github.com/rust-lang/crates.io-index#oauth2@5.0.0",
+        "path+file://./rust/crates/vendor/oauth2#5.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#pastey@0.2.3",
         "registry+https://github.com/rust-lang/crates.io-index#pin-project-lite@0.2.17",
         "registry+https://github.com/rust-lang/crates.io-index#process-wrap@10.0.1",
@@ -17140,7 +17227,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tokio-util@0.7.19",
         "registry+https://github.com/rust-lang/crates.io-index#tower-service@0.3.3",
         "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44",
-        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8",
+        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.24.0"
       ],
       "ref": "path+file://./rust/crates/vendor/rmcp#3.9.0"
@@ -17195,12 +17282,6 @@
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#allocator-api2@0.2.21"
-    },
-    {
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#android_system_properties@0.1.6"
     },
     {
       "dependsOn": [
@@ -17304,7 +17385,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#axum-core@0.5.6",
         "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
         "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
-        "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.2",
+        "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.3",
         "registry+https://github.com/rust-lang/crates.io-index#futures-util@0.3.33",
         "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#http-body@1.1.0",
@@ -17467,17 +17548,6 @@
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#iana-time-zone@0.1.65",
-        "registry+https://github.com/rust-lang/crates.io-index#js-sys@0.3.104",
-        "registry+https://github.com/rust-lang/crates.io-index#num-traits@0.2.19",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
-        "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.127",
-        "registry+https://github.com/rust-lang/crates.io-index#windows-link@0.2.1"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45"
-    },
-    {
-      "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#crypto-common@0.1.7",
         "registry+https://github.com/rust-lang/crates.io-index#inout@0.1.4",
         "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.0"
@@ -17578,7 +17648,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_derive@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#time@0.3.55",
-        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8"
+        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9"
       ],
       "ref": "registry+https://github.com/rust-lang/crates.io-index#cookie_store@0.22.0"
     },
@@ -17984,7 +18054,7 @@
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#percent-encoding@2.3.2"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.2"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.3"
     },
     {
       "dependsOn": [
@@ -18280,24 +18350,6 @@
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.2"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#iana-time-zone-haiku@0.1.2"
-    },
-    {
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#android_system_properties@0.1.6",
-        "registry+https://github.com/rust-lang/crates.io-index#core-foundation-sys@0.8.7",
-        "registry+https://github.com/rust-lang/crates.io-index#iana-time-zone-haiku@0.1.2",
-        "registry+https://github.com/rust-lang/crates.io-index#js-sys@0.3.104",
-        "registry+https://github.com/rust-lang/crates.io-index#log@0.4.33",
-        "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.127",
-        "registry+https://github.com/rust-lang/crates.io-index#windows-core@0.62.2"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#iana-time-zone@0.1.65"
-    },
-    {
-      "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#displaydoc@0.2.7",
         "registry+https://github.com/rust-lang/crates.io-index#potential_utf@0.1.5",
         "registry+https://github.com/rust-lang/crates.io-index#yoke@0.8.3",
@@ -18417,6 +18469,43 @@
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#log@0.4.33"
+      ],
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-core@0.1.5"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#jiff-core@0.1.5",
+        "registry+https://github.com/rust-lang/crates.io-index#proc-macro2@1.0.107",
+        "registry+https://github.com/rust-lang/crates.io-index#quote@1.0.47",
+        "registry+https://github.com/rust-lang/crates.io-index#syn@2.0.119"
+      ],
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-static@0.2.43"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#jiff-tzdb@0.1.9"
+      ],
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-tzdb-platform@0.1.3"
+    },
+    {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#jiff-tzdb@0.1.9"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#jiff-core@0.1.5",
+        "registry+https://github.com/rust-lang/crates.io-index#jiff-static@0.2.43",
+        "registry+https://github.com/rust-lang/crates.io-index#jiff-tzdb-platform@0.1.3",
+        "registry+https://github.com/rust-lang/crates.io-index#log@0.4.33",
+        "registry+https://github.com/rust-lang/crates.io-index#portable-atomic@1.14.0",
+        "registry+https://github.com/rust-lang/crates.io-index#portable-atomic-util@0.2.7",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_core@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#windows-link@0.2.1"
+      ],
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#jiff@0.2.43"
     },
     {
       "dependsOn": [
@@ -18723,22 +18812,6 @@
       "ref": "registry+https://github.com/rust-lang/crates.io-index#num-traits@0.2.19"
     },
     {
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
-        "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.2.17",
-        "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
-        "registry+https://github.com/rust-lang/crates.io-index#rand@0.8.8",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_path_to_error@0.1.20",
-        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.10.9",
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror@1.0.69",
-        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#oauth2@5.0.0"
-    },
-    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#once_cell@1.21.4"
     },
     {
@@ -19010,7 +19083,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44",
         "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.16"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.15"
     },
     {
       "dependsOn": [
@@ -19018,7 +19091,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#cfg_aliases@0.2.2",
         "registry+https://github.com/rust-lang/crates.io-index#pin-project-lite@0.2.17",
         "registry+https://github.com/rust-lang/crates.io-index#quinn-proto@0.11.19",
-        "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.16",
+        "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.15",
         "registry+https://github.com/rust-lang/crates.io-index#rustc-hash@2.1.3",
         "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5",
@@ -19198,7 +19271,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tower@0.5.3",
         "registry+https://github.com/rust-lang/crates.io-index#tower-http@0.6.11",
         "registry+https://github.com/rust-lang/crates.io-index#tower-service@0.3.3",
-        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8",
+        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9",
         "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.127",
         "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-futures@0.4.77",
         "registry+https://github.com/rust-lang/crates.io-index#wasm-streams@0.5.0",
@@ -19356,7 +19429,6 @@
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#dyn-clone@1.0.20",
         "registry+https://github.com/rust-lang/crates.io-index#ref-cast@1.0.26",
         "registry+https://github.com/rust-lang/crates.io-index#schemars_derive@1.2.2",
@@ -19482,7 +19554,7 @@
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.2",
+        "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.3",
         "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
         "registry+https://github.com/rust-lang/crates.io-index#ryu@1.0.23",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229"
@@ -19928,7 +20000,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tower@0.5.3",
         "registry+https://github.com/rust-lang/crates.io-index#tower-layer@0.3.3",
         "registry+https://github.com/rust-lang/crates.io-index#tower-service@0.3.3",
-        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8"
+        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9"
       ],
       "ref": "registry+https://github.com/rust-lang/crates.io-index#tower-http@0.6.11"
     },
@@ -20282,13 +20354,13 @@
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.2",
+        "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.3",
         "registry+https://github.com/rust-lang/crates.io-index#idna@1.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#percent-encoding@2.3.2",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_derive@1.0.229"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#url@2.5.9"
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#urlencoding@2.1.3"
@@ -20872,14 +20944,14 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.6",
+      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.7",
       "components": [
         {
-          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.6 bin-target-0",
+          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.7 bin-target-0",
           "name": "lean_ctx",
-          "purl": "pkg:cargo/lean-ctx-engine@3.12.6?download_url=file://.#src/lib.rs",
+          "purl": "pkg:cargo/lean-ctx-engine@3.12.7?download_url=file://.#src/lib.rs",
           "type": "library",
-          "version": "3.12.6"
+          "version": "3.12.7"
         }
       ],
       "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations.",
@@ -20899,10 +20971,10 @@
         }
       ],
       "name": "lean-ctx-engine",
-      "purl": "pkg:cargo/lean-ctx-engine@3.12.6?download_url=file://.",
+      "purl": "pkg:cargo/lean-ctx-engine@3.12.7?download_url=file://.",
       "scope": "required",
       "type": "library",
-      "version": "3.12.6"
+      "version": "3.12.7"
     },
     "properties": [
       {
@@ -20911,7 +20983,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "3f36e6edaf70dd16aaa140a76fe27726f6308a93bd31614fe66382db70931a5b"
+        "value": "b73f5ea5ef9e99091d53a4dd440764bd324197fbb9dd42953d1e72b78dd69a81"
       }
     ],
     "tools": [
