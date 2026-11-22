@@ -51,10 +51,15 @@ def resolve_extends(d, name, seen=()):
     j = {k: v for k, v in job.items() if k != 'extends'}
     return deep_merge(base, j)
 
+class MissingReference(KeyError):
+    """A !reference whose target is not defined in the loaded configuration."""
+
 def resolve_refs(d, node):
     if isinstance(node, Ref):
         cur = d
         for p in node:
+            if not isinstance(cur, dict) or p not in cur:
+                raise MissingReference(list(node))
             cur = cur[p]
         return resolve_refs(d, copy.deepcopy(cur))
     if isinstance(node, dict):

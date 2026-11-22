@@ -1246,8 +1246,16 @@ class PipelineExpansionTests(unittest.TestCase):
         except ImportError:
             raise unittest.SkipTest("PyYAML not installed")
         cls.ex = load_expand()
-        cls.cfg = cls.ex.expand(str(ROOT))
         cls.private = (ROOT / "ee/ci/scope-register.yml").exists()
+        try:
+            cls.cfg = cls.ex.expand(str(ROOT))
+        except cls.ex.MissingReference as missing:
+            # The pipeline references jobs of the private include; without it
+            # (the public export) there is no complete pipeline to expand.
+            # In the private checkout a dangling reference stays a failure.
+            if cls.private:
+                raise
+            raise unittest.SkipTest(f"!reference {missing.args[0]} needs the private CI include")
 
     def run_pipeline(self, source, branch, flag=None, jobs=None, extra=None):
         """{job: (tags, resource_group, cache policies)}, or None for no pipeline."""
