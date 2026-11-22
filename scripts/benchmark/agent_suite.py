@@ -66,6 +66,9 @@ COMPOSE = "ctx_compose"
 LOCAL_SHELL = "local_shell_call"
 # The recorder reads local files only; these bound what one manual run may load.
 MAX_TRANSCRIPT_BYTES = 64 * 1024 * 1024
+# Python 3.14 parses arbitrarily nested JSON without a RecursionError, so the
+# nesting bound is explicit: no trace or transcript nests anywhere near this.
+MAX_JSON_DEPTH = 512
 MAX_STATS_BYTES = 1024 * 1024
 
 
@@ -97,7 +100,10 @@ def _load(path: Path, what: str) -> dict:
     if not path.is_file():
         raise Refusal(f"{what} is missing: {path.name}")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        if _too_deep(text):
+            raise ValueError("nested too deeply")
+        data = json.loads(text)
     except (OSError, ValueError, RecursionError) as error:
         raise Refusal(f"{what} is not readable JSON: {error}") from error
     if not isinstance(data, dict):
@@ -355,8 +361,33 @@ def _read_bounded(path: Path, limit: int, what: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _too_deep(text: str) -> bool:
+    """True when arrays/objects nest deeper than MAX_JSON_DEPTH (strings skipped)."""
+    depth = 0
+    in_string = escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                return True
+        elif char in "]}":
+            depth -= 1
+    return False
+
+
 def _json(text: str, what: str) -> object:
     try:
+        if _too_deep(text):
+            raise ValueError("nested too deeply")
         return json.loads(text)
     except (ValueError, RecursionError) as error:
         raise Refusal(f"{what} is not readable JSON") from error

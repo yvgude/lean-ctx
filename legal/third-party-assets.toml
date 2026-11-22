@@ -4,9 +4,9 @@ authority = "THIRD_PARTY_NOTICES"
 
 [inputs]
 cargo_lock = "rust/Cargo.lock"
-cargo_lock_sha256 = "b73f5ea5ef9e99091d53a4dd440764bd324197fbb9dd42953d1e72b78dd69a81"
+cargo_lock_sha256 = "7f3380b0c8e9f867f775c5291284a3835dea2a1a0ea2581d56f27bc197c4317e"
 sbom = "SBOM.cdx.json"
-sbom_sha256 = "b9452e346233fb70d65537291f2b4c2a90a8ed9c0557dad43da11240ff701014"
+sbom_sha256 = "3ad2e6aa56e1478eba0d149eb3b7b3da6a5a76007d40c888bb423392c568bddd"
 npm_lock = "packages/pi-lean-ctx/package-lock.json"
 npm_lock_sha256 = "bc8e29a38ef28bc408567551d1e7cc1469154331f2adaae0f078d55513f2834b"
 

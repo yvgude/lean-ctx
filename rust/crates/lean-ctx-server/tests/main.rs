@@ -8,7 +8,7 @@
 //!
 //! quality_loop_golden sets `LEAN_CTX_DATA_DIR` before the process first
 //! touches the edit-quality store's `OnceLock`, so its test runs in a process
-//! of its own (see rust/tests/fresh_process.rs).
+//! of its own (see rust/crates/lean-ctx-shell-policy/tests/fresh_process.rs).
 //!
 //! Kept as its own binary (see `[[test]]` in Cargo.toml): input_check, the
 //! pz21 locked acceptance target (`cargo test -p lean-ctx-server --test
@@ -48,7 +48,7 @@ mod bazsi_reported_scenarios;
 mod ciso_great_filter_e2e;
 mod ctx_compose_scenarios;
 mod dual_process_rehydrate;
-#[path = "../../../tests/fresh_process.rs"]
+#[path = "../../lean-ctx-shell-policy/tests/fresh_process.rs"]
 mod fresh_process;
 mod intensive_benchmarks;
 mod issue_244_ledger_reset;

@@ -473,9 +473,14 @@ pub fn adoption_fixture_tempdir() -> tempfile::TempDir {
             real.is_dir() && !SYSTEM_DIRS.iter().any(|sys| real.starts_with(sys))
         })
     };
-    let mut candidates = vec![std::env::temp_dir()];
     #[cfg(unix)]
-    candidates.extend([PathBuf::from("/tmp"), PathBuf::from("/var/tmp")]);
+    let candidates = vec![
+        std::env::temp_dir(),
+        PathBuf::from("/tmp"),
+        PathBuf::from("/var/tmp"),
+    ];
+    #[cfg(not(unix))]
+    let candidates = vec![std::env::temp_dir()];
     let base = candidates
         .into_iter()
         .find(|dir| usable(dir))

@@ -29,9 +29,13 @@ class OpenCoreBoundaryTests(unittest.TestCase):
             "rust/crates/lean-ctx-protocol/src/outcome_engine.rs",
             "rust/crates/lean-ctx-protocol/src/rollout.rs",
             "rust/crates/lean-ctx-protocol/src/value_share.rs",
+            # lib.rs files include test modules with #[path]; their targets
+            # must exist for the source-injection check.
+            "rust/crates/lean-ctx-protocol/tests/main.rs",
             "rust/crates/lean-ctx-proxy/src/lib.rs",
             "rust/crates/lean-ctx-proxy/src/auto_routing.rs",
             "rust/crates/lean-ctx-proxy/src/rollout.rs",
+            "rust/crates/lean-ctx-proxy/tests/trace_correlation.rs",
         ):
             destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -473,6 +477,22 @@ class OpenCoreBoundaryTests(unittest.TestCase):
         findings = GATE.check_repo(self.repo)
         for surface in GATE.FROZEN_SURFACES:
             self.assertTrue(any("[new-consumer] %s" % surface in finding for finding in findings), findings)
+
+    def test_extern_self_under_own_name_is_checked_through_that_name(self):
+        consumer = self.repo / "rust/crates/lean-ctx-protocol/src/extern_self_own_name.rs"
+        consumer.write_text(
+            "extern crate self as lean_ctx_protocol;\n"
+            "fn consume(_: lean_ctx_protocol::control_plane::ControlPlaneRequest) {}\n",
+            encoding="utf-8",
+        )
+        relative = "rust/crates/lean-ctx-protocol/src/extern_self_own_name.rs"
+        self.assertEqual(
+            GATE.check_repo(self.repo),
+            [
+                "[new-consumer] control_plane %s:2 references frozen surface: "
+                "lean_ctx_protocol::control_plane::ControlPlaneRequest" % relative
+            ],
+        )
 
     def test_self_and_super_root_symbol_references_are_rejected(self):
         self.assert_new_consumer(

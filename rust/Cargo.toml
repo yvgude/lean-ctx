@@ -56,7 +56,7 @@ name = "lean_ctx"
 path = "src/lib.rs"
 
 # The Engine's integration tests: tests/engine.rs holds them as modules,
-# including those that need a process of their own (tests/fresh_process.rs).
+# including those that need a process of their own (crates/lean-ctx-shell-policy/tests/fresh_process.rs).
 [[test]]
 name = "engine"
 path = "tests/engine.rs"
