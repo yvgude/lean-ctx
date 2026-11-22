@@ -764,13 +764,31 @@ mod tests {
         raw.iter().map(|s| (*s).to_string()).collect()
     }
 
+    /// A repository root with its own data dir for the lease store. The
+    /// data dir guard holds the test env lock: tests that redirect the data
+    /// dir and delete it afterwards would otherwise swap the store under a
+    /// running claims test.
+    struct Fresh {
+        _data: lean_ctx::core::data_dir::IsolatedDataDir,
+        repo: tempfile::TempDir,
+    }
+
+    impl Fresh {
+        fn path(&self) -> &std::path::Path {
+            self.repo.path()
+        }
+    }
+
     /// A fresh repository root (own claim scope) and agent ids unique to
-    /// this test process: the lease store is shared by parallel tests.
-    fn fresh() -> (tempfile::TempDir, String, impl Fn(&str) -> String) {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_string_lossy().into_owned();
+    /// this test process. Call it once per test: the guard is not reentrant.
+    fn fresh() -> (Fresh, String, impl Fn(&str) -> String) {
+        let data = lean_ctx::core::data_dir::isolated_data_dir();
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path().to_string_lossy().into_owned();
         let pid = std::process::id();
-        (dir, root, move |name: &str| format!("{name}-{pid}"))
+        (Fresh { _data: data, repo }, root, move |name: &str| {
+            format!("{name}-{pid}")
+        })
     }
 
     #[test]
@@ -925,7 +943,8 @@ mod tests {
     #[test]
     fn edit_claims_report_same_unit_and_same_file_overlaps() {
         let (_dir, root, id) = fresh();
-        let (_other_dir, other_root, _) = fresh();
+        let other_dir = tempfile::tempdir().unwrap();
+        let other_root = other_dir.path().to_string_lossy().into_owned();
         let (a, b, c) = (id("overlap-a"), id("overlap-b"), id("overlap-c"));
         let first = claim(&root, &a, &units(&["src/lib.rs#fn:parse"]), 30).unwrap();
         assert!(first.overlaps.is_empty());
