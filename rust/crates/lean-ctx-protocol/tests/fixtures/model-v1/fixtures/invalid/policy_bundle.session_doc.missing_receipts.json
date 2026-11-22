@@ -1,0 +1,16 @@
+{
+  "applied": [
+    {
+      "acked": true,
+      "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
+      "first_at": "2026-11-15T09:01:00Z",
+      "key_id": "552e43422b3589fa",
+      "last_at": "2026-11-15T09:20:00Z",
+      "receipts": 2,
+      "signature": "verified",
+      "state": "in_force",
+      "version": 3
+    }
+  ],
+  "session_id": "s-01"
+}

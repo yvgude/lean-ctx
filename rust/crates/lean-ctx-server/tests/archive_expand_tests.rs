@@ -136,7 +136,7 @@ fn archive_cleanup_expired() {
             .join(format!("{id}.meta.json"));
         let mut entry: archive::ArchiveEntry =
             serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-        entry.created_at = chrono::Utc::now() - chrono::Duration::hours(999);
+        entry.created_at = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::hours(999);
         std::fs::write(&meta_path, serde_json::to_string(&entry).unwrap()).unwrap();
 
         let removed = archive::cleanup();

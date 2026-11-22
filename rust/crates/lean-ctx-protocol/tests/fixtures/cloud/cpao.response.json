@@ -1,0 +1,34 @@
+{
+  "schema": "leanctx.cloud.cpao/v1",
+  "periods": [
+    {
+      "period": "7d",
+      "from": "2026-11-11T12:00:00Z",
+      "to": "2026-11-18T12:00:00Z",
+      "settled": false,
+      "cost_usd_micros": 42000000,
+      "accepted_outcomes": 12,
+      "cpao_usd_micros": 3500000,
+      "trend_pct": -12.5,
+      "by_agent": [
+        { "agent": "claude", "cost_usd_micros": null, "accepted_outcomes": 7 },
+        { "agent": "codex", "cost_usd_micros": null, "accepted_outcomes": 4 },
+        { "agent": "unknown", "cost_usd_micros": null, "accepted_outcomes": 1 }
+      ]
+    },
+    {
+      "period": "30d",
+      "from": "2026-10-19T12:00:00Z",
+      "to": "2026-11-18T12:00:00Z",
+      "settled": false,
+      "cost_usd_micros": 150000000,
+      "accepted_outcomes": 40,
+      "cpao_usd_micros": 3750000,
+      "trend_pct": null,
+      "by_agent": [
+        { "agent": "claude", "cost_usd_micros": null, "accepted_outcomes": 25 },
+        { "agent": "codex", "cost_usd_micros": null, "accepted_outcomes": 15 }
+      ]
+    }
+  ]
+}

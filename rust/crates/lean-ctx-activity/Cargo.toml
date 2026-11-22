@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "lean-ctx-activity"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
@@ -15,8 +15,8 @@ publish = true
 # A leaf crate: it never depends on `lean-ctx`. The engine supplies the data
 # directory and the redaction (core::activity, see rust/CRATE_MAP.md).
 [dependencies]
-chrono = { version = "0.4", features = ["serde"] }
-lean-ctx-fs = { path = "../lean-ctx-fs", version = "0.2.0" }
+lean-ctx-time = { path = "../lean-ctx-time", version = "0.1.0" }
+lean-ctx-fs = { path = "../lean-ctx-fs", version = "0.2.1" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

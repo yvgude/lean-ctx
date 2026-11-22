@@ -5,7 +5,7 @@ description: Use LeanCTX Context Gateway tools to select task-relevant code cont
 
 # LeanCTX — Context Gateway for AI agents
 
-Control what your AI can see. LeanCTX provides local context selection,
+Less context. More intelligence. LeanCTX provides local context selection,
 supported access and content controls, and evidence of observed context operations
 for existing agents: Select → Control → Learn → Prove. Learn means local task and
 knowledge continuity, not model training. Recovery depends on source or

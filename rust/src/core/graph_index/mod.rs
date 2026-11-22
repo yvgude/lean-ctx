@@ -334,7 +334,9 @@ impl ProjectIndex {
         Self {
             version: INDEX_VERSION,
             project_root: normalize_project_root(project_root),
-            last_scan: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            last_scan: lean_ctx_time::LocalDateTime::now()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
             files: HashMap::new(),
             edges: Vec::new(),
             symbols: HashMap::new(),
@@ -611,13 +613,13 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
 
     // TTL check: rebuild if index is older than configured max_age_hours
     if let Ok(scan_time) =
-        chrono::NaiveDateTime::parse_from_str(&index.last_scan, "%Y-%m-%d %H:%M:%S")
+        lean_ctx_time::parse_civil_datetime(&index.last_scan, "%Y-%m-%d %H:%M:%S")
     {
         let cfg = crate::core::config::Config::load();
         let effective_hours = cfg.archive_max_age_hours_effective();
-        let max_age = chrono::Duration::hours(effective_hours as i64);
-        let now = chrono::Local::now().naive_local();
-        if now.signed_duration_since(scan_time) > max_age {
+        let max_age = lean_ctx_time::Duration::hours(effective_hours as i64);
+        let now = lean_ctx_time::LocalDateTime::now().naive_local();
+        if lean_ctx_time::Duration::from_jiff(now.duration_since(scan_time)) > max_age {
             tracing::info!(
                 "[graph_index: index is older than {}h — marking stale]",
                 effective_hours

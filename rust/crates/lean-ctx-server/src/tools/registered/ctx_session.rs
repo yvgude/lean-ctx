@@ -434,7 +434,7 @@ impl McpTool for CtxSessionTool {
                         && action == "finding"
                         && let Some(finding) = candidate.findings.last()
                     {
-                        lean_ctx_hive::capture::episode::note_dead_end(
+                        lean_ctx_cloud::capture::episode::note_dead_end(
                             &candidate.id,
                             &finding.summary,
                         );

@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 use serde_json::{Map, Value};
 use walkdir::WalkDir;
 
@@ -409,7 +409,8 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
         .map_or(0.8, |v| v as f32);
     let source_session =
         get_str(fm, "leanctx_source_session").unwrap_or_else(|| "okf-import".to_string());
-    let created_at = get_dt(fm, "leanctx_created_at").unwrap_or_else(Utc::now);
+    let created_at =
+        get_dt(fm, "leanctx_created_at").unwrap_or_else(lean_ctx_time::UtcDateTime::now);
     let last_confirmed = get_dt(fm, "leanctx_last_confirmed")
         .or_else(|| get_dt(fm, "timestamp"))
         .unwrap_or(created_at);
@@ -486,7 +487,8 @@ fn build_pattern(fm: &Map<String, Value>, body: &str) -> Option<ProjectPattern> 
         examples,
         source_session: get_str(fm, "leanctx_source_session")
             .unwrap_or_else(|| "okf-import".to_string()),
-        created_at: get_dt(fm, "leanctx_created_at").unwrap_or_else(Utc::now),
+        created_at: get_dt(fm, "leanctx_created_at")
+            .unwrap_or_else(lean_ctx_time::UtcDateTime::now),
     })
 }
 
@@ -639,11 +641,11 @@ fn get_str_array_first(fm: &Map<String, Value>, key: &str) -> Option<String> {
         .find_map(|v| v.as_str().map(String::from))
 }
 
-fn get_dt(fm: &Map<String, Value>, key: &str) -> Option<DateTime<Utc>> {
+fn get_dt(fm: &Map<String, Value>, key: &str) -> Option<UtcDateTime> {
     let s = fm.get(key).and_then(Value::as_str)?;
-    DateTime::parse_from_rfc3339(s)
+    OffsetDateTime::parse_from_rfc3339(s)
         .ok()
-        .map(|dt| dt.with_timezone(&Utc))
+        .map(lean_ctx_time::OffsetDateTime::to_utc)
 }
 
 // ---------------------------------------------------------------------------
@@ -735,7 +737,7 @@ mod tests {
         value: &str,
         archetype: KnowledgeArchetype,
     ) -> KnowledgeFact {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         KnowledgeFact {
             anchors: Vec::new(),
             review: None,
@@ -927,7 +929,7 @@ mod tests {
             description: "snake_case for functions".into(),
             examples: vec!["get_user()".into()],
             source_session: "s1".into(),
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
         });
         let bundle = to_okf_bundle(&snap);
         let dir = tempfile::tempdir().unwrap();

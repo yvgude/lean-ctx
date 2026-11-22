@@ -379,7 +379,7 @@ fn render_ctx_read_dedup_stub(path: &str, line_count: usize) -> String {
 /// as `{file: {content: "..."}}`, as `{content: "..."}`, or as an MCP-style
 /// content-block array. Anything else is unknown → the caller passes through.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ContentSlot {
+pub(super) enum ContentSlot {
     /// `tool_response` is the string itself.
     WholeString,
     /// A nested string field, addressed by object keys (e.g. `["file","content"]`).
@@ -397,7 +397,7 @@ fn text_block_index(arr: &[serde_json::Value]) -> Option<usize> {
     })
 }
 
-fn locate_content(resp: &serde_json::Value) -> Option<ContentSlot> {
+pub(super) fn locate_content(resp: &serde_json::Value) -> Option<ContentSlot> {
     match resp {
         serde_json::Value::String(_) => Some(ContentSlot::WholeString),
         serde_json::Value::Array(arr) => text_block_index(arr).map(ContentSlot::TextBlock),
@@ -427,7 +427,7 @@ fn locate_content(resp: &serde_json::Value) -> Option<ContentSlot> {
     }
 }
 
-fn slot_text<'a>(resp: &'a serde_json::Value, slot: &ContentSlot) -> Option<&'a str> {
+pub(super) fn slot_text<'a>(resp: &'a serde_json::Value, slot: &ContentSlot) -> Option<&'a str> {
     match slot {
         ContentSlot::WholeString => resp.as_str(),
         ContentSlot::Field(keys) => {
@@ -446,7 +446,7 @@ fn slot_text<'a>(resp: &'a serde_json::Value, slot: &ContentSlot) -> Option<&'a 
 /// field (paths, line counts, flags) is mirrored verbatim so the replacement
 /// matches the tool's output shape (a schema mismatch would make the host drop
 /// the replacement; mirroring makes that fallback unnecessary).
-fn replace_slot(
+pub(super) fn replace_slot(
     resp: &serde_json::Value,
     slot: &ContentSlot,
     stub: &str,
@@ -499,7 +499,7 @@ fn hash_file(path: &str) -> Option<String> {
 /// dir. Session-scoped so [`purge_session`] and the TTL sweep stay O(1) dirs;
 /// the reading context (`agent_id`, empty for the main conversation) is part of
 /// the read key, so a compaction purge still clears every subagent's records.
-fn record_path(
+pub(super) fn record_path(
     session_id: &str,
     agent_id: &str,
     path: &str,
@@ -543,7 +543,7 @@ pub(super) fn parse_record(raw: &str) -> Option<(String, String)> {
     (!hash.is_empty()).then_some((hash, tool_use))
 }
 
-fn write_record(store: &std::path::Path, hash: &str, tool_use_id: &str) {
+pub(super) fn write_record(store: &std::path::Path, hash: &str, tool_use_id: &str) {
     let _ = write_atomic(store, format!("{hash} {tool_use_id}").as_bytes());
 }
 

@@ -1,0 +1,9 @@
+{
+  "features": [
+    "device_setup",
+    "instance_waiting",
+    "session_ref",
+    "usage"
+  ],
+  "schema": "leanctx.cloud.capabilities/v1"
+}

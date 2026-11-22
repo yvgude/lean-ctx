@@ -47,23 +47,23 @@ fn tampering(cmd: &str) -> Option<Tampering> {
 #[test]
 fn an_agent_cannot_delete_or_edit_lean_ctx_state() {
     for cmd in [
-        "rm /home/u/.local/share/lean-ctx/hive/worker.json",
-        "rm -f ~/.local/share/lean-ctx/hive/worker.json",
-        "mv $HOME/.local/share/lean-ctx/hive/worker.json /tmp/x",
-        "cp /tmp/forged.json ${HOME}/.local/share/lean-ctx/hive/commons/claims.json",
-        "dd if=/dev/null of=/home/u/.local/share/lean-ctx/hive/worker.json",
+        "rm /home/u/.local/share/lean-ctx/cloud/worker.json",
+        "rm -f ~/.local/share/lean-ctx/cloud/worker.json",
+        "mv $HOME/.local/share/lean-ctx/cloud/worker.json /tmp/x",
+        "cp /tmp/forged.json ${HOME}/.local/share/lean-ctx/cloud/commons/claims.json",
+        "dd if=/dev/null of=/home/u/.local/share/lean-ctx/cloud/worker.json",
         "truncate -s 0 /home/u/.config/lean-ctx/config.toml",
-        "rm /tmp/../home/u/.local/share/lean-ctx/hive/worker.json",
-        "sed -i s/true/false/ /home/u/.local/share/lean-ctx/hive/worker.json",
+        "rm /tmp/../home/u/.local/share/lean-ctx/cloud/worker.json",
+        "sed -i s/true/false/ /home/u/.local/share/lean-ctx/cloud/worker.json",
     ] {
         assert!(tampering(cmd).is_some(), "{cmd}");
     }
     for cmd in [
-        "cat /home/u/.local/share/lean-ctx/hive/worker.json",
+        "cat /home/u/.local/share/lean-ctx/cloud/worker.json",
         "ls ~/.local/share/lean-ctx",
         "rm /tmp/scratch.txt",
         "rm ./build/out.o",
-        "lean-ctx hive worker status",
+        "lean-ctx cloud worker status",
     ] {
         assert!(tampering(cmd).is_none(), "{cmd}");
     }
@@ -195,14 +195,14 @@ fn widening_commands_are_blocked() {
         "lean-ctx trust",
         "lean-ctx security open --yes",
         "lean-ctx security secrets off --yes",
-        "lean-ctx hive worker resume",
-        "lean-ctx hive connect --url https://hive.example.com",
-        "lean-ctx hive grant --yes",
-        "lean-ctx hive runtime install --yes",
-        "lean-ctx config set hive.worker.max_tasks_per_day 100",
-        "lean-ctx config set hive.sealed_grants auto",
-        "lean-ctx knowledge export-agents-md --include-hive",
-        "lean-ctx knowledge export-agents-md --write --include-hive",
+        "lean-ctx cloud worker resume",
+        "lean-ctx cloud connect --url https://cloud.example.com",
+        "lean-ctx cloud grant --yes",
+        "lean-ctx cloud runtime install --yes",
+        "lean-ctx config set cloud.worker.max_tasks_per_day 100",
+        "lean-ctx config set cloud.sealed_grants auto",
+        "lean-ctx knowledge export-agents-md --include-cloud",
+        "lean-ctx knowledge export-agents-md --write --include-cloud",
         "lean-ctx knowledge dedupe --json --apply --project-root /p",
         "lean-ctx knowledge verify ops/deploy --json",
         "lean-ctx config init",
@@ -228,6 +228,12 @@ fn widening_commands_are_blocked() {
         "lean-ctx addon install x",
         "lean-ctx policy org uninstall",
         "lean-ctx policy org untrust acme",
+        // §37: only the person's "Send to agents" in LeanCTX Code releases
+        // a directive, and only the app reads the release ids.
+        "lean-ctx cloud plan release --release-id 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "lean-ctx cloud plan release --release-id x --help",
+        "lean-ctx cloud decision release --release-id x",
+        "lean-ctx cloud plan updates --json",
     ] {
         let err = check(cmd).expect_err(cmd).to_string();
         assert!(
@@ -237,24 +243,24 @@ fn widening_commands_are_blocked() {
     }
 }
 
-/// Every `[hive]` key is the person's: the widening check matches the
-/// `hive` section name and its `hive.` prefix (security, Hive rename).
+/// Every `[cloud]` key is the person's: the widening check matches the
+/// `cloud` section name and its `cloud.` prefix (security, Cloud rename).
 #[test]
-fn every_hive_config_key_is_blocked_from_an_agent_shell() {
+fn every_cloud_config_key_is_blocked_from_an_agent_shell() {
     for key in [
-        "hive",
-        "hive.enabled",
-        "hive.url",
-        "hive.root_key",
-        "hive.metrics_upload",
-        "hive.receipts_upload",
-        "hive.worker.max_tasks_per_day",
+        "cloud",
+        "cloud.enabled",
+        "cloud.url",
+        "cloud.root_key",
+        "cloud.metrics_upload",
+        "cloud.receipts_upload",
+        "cloud.worker.max_tasks_per_day",
     ] {
         let cmd = format!("lean-ctx config set {key} x");
         let err = check(&cmd).expect_err(&cmd).to_string();
         assert!(err.contains(&format!("lean-ctx config set {key}")), "{err}");
     }
-    assert!(check("lean-ctx config set hiveish.enabled x").is_err());
+    assert!(check("lean-ctx config set cloudish.enabled x").is_err());
 }
 
 #[test]
@@ -276,9 +282,9 @@ fn reading_and_tightening_stay_available() {
         "lean-ctx knowledge export-agents-md --write",
         "lean-ctx knowledge stale --json",
         "lean-ctx knowledge dedupe --json --dry-run",
-        "lean-ctx hive worker pause",
-        "lean-ctx hive worker stop",
-        "lean-ctx hive commons list",
+        "lean-ctx cloud worker pause",
+        "lean-ctx cloud worker stop",
+        "lean-ctx cloud commons list",
         "lean-ctx workspace show",
         "lean-ctx workspace diagnose",
         "lean-ctx workspace remove --file /w.json --expect-revision 2 /opt/src",
@@ -288,5 +294,52 @@ fn reading_and_tightening_stay_available() {
         "git config set user.name x",
     ] {
         assert!(check(cmd).is_ok(), "{cmd}");
+    }
+}
+
+fn reads_records(cmd: &str) -> Option<String> {
+    let tokens: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
+    reads_agent_records(
+        &tokens,
+        &[std::path::PathBuf::from(
+            "/home/u/.local/share/lean-ctx/agents",
+        )],
+        &[std::path::PathBuf::from("/home/u")],
+    )
+}
+
+/// §37.4: a word of a single command that names the agent records
+/// (directives, release ids) in any spelling is refused there too; other
+/// lean-ctx state stays readable. Programs that read or list a directory
+/// are judged over the whole line (`records_guard`).
+#[test]
+fn the_agent_records_are_not_readable_from_an_agent_shell() {
+    for cmd in [
+        "cat /home/u/.local/share/lean-ctx/agents/directive-release-ids.json",
+        "head -c 400 ~/.local/share/lean-ctx/agents/directives.json",
+        "less $HOME/.local/share/lean-ctx/agents/directive-release-ids.json.damaged",
+        "cat ~/.local/share/lean-ctx/agents/*",
+        "cat ~/.local/share/lean-ctx/ag*/d*",
+        "cat ./directive-release-ids.json",
+        "python3 -c print(open('/home/u/.local/share/lean-ctx/agents/x').read())",
+        "timeout 5 cat /home/u/.local/share/lean-ctx/agents/registry.json",
+        "cat /home/u/.local/share/*/agents/directives.json",
+        "cat /home/**/directives.json",
+    ] {
+        assert!(reads_records(cmd).is_some(), "{cmd}");
+    }
+    for cmd in [
+        "cat /home/u/.local/share/lean-ctx/cloud/worker.json",
+        "ls ~/.local/share/lean-ctx",
+        "grep rid_ ~/.local/share/lean-ctx/config.toml",
+        "rg rid_ /home/u/src/project",
+        "lean-ctx agents list",
+        "find ~ -name x",
+        "fd x ~",
+        "ls /*",
+        "ls /home/u/*",
+        "[[ -d scripts ]]",
+    ] {
+        assert!(reads_records(cmd).is_none(), "{cmd}");
     }
 }

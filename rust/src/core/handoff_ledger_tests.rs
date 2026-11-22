@@ -48,7 +48,7 @@ fn sample_tool_calls() -> Vec<ToolCallRecord> {
             saved_tokens: 700,
             mode: Some("map".to_string()),
             duration_ms: 12,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         },
         ToolCallRecord {
             tool: "ctx_shell".to_string(),
@@ -56,7 +56,7 @@ fn sample_tool_calls() -> Vec<ToolCallRecord> {
             saved_tokens: 60,
             mode: None,
             duration_ms: 8,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         },
     ]
 }

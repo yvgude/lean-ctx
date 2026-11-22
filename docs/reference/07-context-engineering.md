@@ -184,7 +184,7 @@ deleted, or inaccessible sources and archives cannot be recovered by this path.
 
 | Tool | What it does |
 |------|--------------|
-| `ctx_execute` | Sandboxed code execution (11 languages); only stdout enters context |
+| `ctx_execute` | Code execution in a restricted subprocess (11 languages; OS sandbox opt-in via `sandbox_level`); only stdout enters context |
 
 ```text
 ctx_execute language=python code="print(sum(range(100)))"

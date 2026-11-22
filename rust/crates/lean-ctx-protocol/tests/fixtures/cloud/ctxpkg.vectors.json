@@ -1,0 +1,59 @@
+{
+  "blobs": [
+    {
+      "blob": "sha256:ffa4087ab3e8b68d4906f4bd63fa7f4a210a324ba232d704e32f27f7b8ff3c26",
+      "fact": "cloud.never-blocks"
+    },
+    {
+      "blob": "sha256:caf15cc22cc2a80f44e6eba01a5d5fa98f4b691609fd9147283a477e46e18621",
+      "fact": "cloud.screening-first"
+    },
+    {
+      "blob": "sha256:27b6d5122a2b07549f8cfd63c86c17208de9a10ce36320ef79eb8734f1cbef84",
+      "fact": "cloud.outbox-order"
+    }
+  ],
+  "commits": [
+    {
+      "commit": "sha256:378365c2f0fbade0e31f46f2352c7c98d89d615af66f254d04dd66f3cc036b56",
+      "merged_proposals": [
+        11
+      ],
+      "parent": null,
+      "revision": 3
+    },
+    {
+      "commit": "sha256:2bd96746bce1c1d87ee26e23de90ae83d306cddc1cf176171d3b6083f33c9d0f",
+      "merged_proposals": [
+        12,
+        13
+      ],
+      "parent": "sha256:378365c2f0fbade0e31f46f2352c7c98d89d615af66f254d04dd66f3cc036b56",
+      "revision": 4
+    }
+  ],
+  "document_tree": "sha256:92f637fdef33302a93f96a6353a523168c2f6d51dac3ac998d4b6ca1818778f2",
+  "import_slugs": [
+    {
+      "heading": "## Retry budget (payments)",
+      "slug": "retry-budget-payments"
+    },
+    {
+      "heading": "Ünïcode — only",
+      "slug": "n-code-only"
+    },
+    {
+      "heading": "!!!",
+      "slug": "section"
+    },
+    {
+      "heading": "Outbox: ordering & retries",
+      "slug": "outbox-ordering-retries"
+    }
+  ],
+  "note": "ids are sha256: + hex of canonical_json of the typed objects in cloud::ctxpkg; the document is knowledge_revision.wiki.response",
+  "page_tree": {
+    "page": "cloud.outbound",
+    "tree": "sha256:4dcebcfbc3cb88353649e55cf84985421b4f805428012b681720bd01b0b2e151"
+  }
+}

@@ -28,6 +28,7 @@ pub mod ctx_glob;
 pub mod ctx_graph;
 pub mod ctx_graph_diagram;
 pub mod ctx_graph_diff;
+pub mod ctx_graph_landing;
 pub mod ctx_graph_primitives;
 pub mod ctx_handoff;
 pub mod ctx_heatmap;
@@ -71,6 +72,7 @@ pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
 pub mod knowledge_shared;
 pub(crate) mod output_format;
+pub(crate) mod path_base;
 pub mod registered;
 pub use lean_ctx::core::search_hook;
 pub use lean_ctx::core::search_kernel;
@@ -83,6 +85,8 @@ mod server_lifecycle;
 pub use server_lifecycle::shutdown_stage;
 mod server_metrics;
 mod server_paths;
+#[cfg(all(test, not(feature = "no-jail")))]
+pub(crate) use server_paths::ADOPTION_BARRIER;
 pub(crate) mod startup;
 
 pub use server::*;
@@ -355,7 +359,7 @@ mod resolve_path_tests {
         // absolute path into a real project must still correct the root — an
         // agent config dir is never a real jail boundary.
         let _iso = lean_ctx::core::data_dir::isolated_data_dir();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
         let agent = tmp.path().join(".copilot");
         let real = tmp.path().join("repo");
         std::fs::create_dir_all(&agent).unwrap();
@@ -384,6 +388,46 @@ mod resolve_path_tests {
             "agent-dir jail must auto-correct: {out}"
         );
 
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+    }
+
+    /// Activation #3, lead decision 4: with `HOME=/` (containers, systemd
+    /// units) the hardened adoption has no home to judge against and fails
+    /// closed; the #580 re-root stays exactly as before, so the session is
+    /// never left worse off than without the adoption.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_still_reroots_from_agent_config_dir_when_home_is_root() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", "/");
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = tmp.path().join(".copilot");
+        let real = tmp.path().join("repo");
+        std::fs::create_dir_all(&agent).unwrap();
+        let real_root = create_git_root(&real);
+        std::fs::write(real.join("a.txt"), "ok").unwrap();
+        assert!(!lean_ctx::core::pathjail_autobind::hardened_adoption_available());
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(agent.to_string_lossy().to_string());
+            session.shell_cwd = Some(agent.to_string_lossy().to_string());
+        }
+
+        let out = server
+            .resolve_path(&real.join("a.txt").to_string_lossy())
+            .await
+            .unwrap();
+        assert!(out.ends_with("/a.txt"), "{out}");
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
     }

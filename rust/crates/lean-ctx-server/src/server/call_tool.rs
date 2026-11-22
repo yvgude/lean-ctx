@@ -20,6 +20,8 @@ pub(super) use outcome::*;
 pub(super) use pipeline::dispatch_and_post_process;
 
 #[cfg(test)]
+mod cloud_agent_tests;
+#[cfg(test)]
 mod edit_outcome_tests;
 #[cfg(test)]
 mod tests;

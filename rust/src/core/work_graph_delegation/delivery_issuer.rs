@@ -76,7 +76,7 @@ impl DeliveryIssuerConfig {
         }
         let policy = TaskAuthorityConfigV1::from_file(&self.authority_file)?;
         let host_key = crate::core::agent_identity::get_stored_signing_key(&self.host_agent)?;
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         // Validate configured host authority before creating any child key.
         let peer = policy
             .peers
@@ -114,7 +114,7 @@ impl DeliveryIssuerConfig {
                     && grant.expires_at > now
             })
             .ok_or("delivery issuer has no live delegation grant")?;
-        let lease_expiry = chrono::DateTime::from_timestamp_millis(
+        let lease_expiry = lean_ctx_time::UtcDateTime::from_timestamp_millis(
             i64::try_from(
                 plan.node
                     .lease_expires_epoch_ms
@@ -124,7 +124,7 @@ impl DeliveryIssuerConfig {
         )
         .ok_or("invalid execution lease timestamp")?;
         let expires_at = (now
-            + chrono::Duration::milliseconds(
+            + lean_ctx_time::Duration::milliseconds(
                 i64::try_from(plan.window_ms).map_err(|_| "invalid start window")?,
             ))
         .min(lease_expiry)

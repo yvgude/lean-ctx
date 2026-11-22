@@ -17,7 +17,7 @@
 //! All scenarios live in one serial test: they redirect Codex via `CODEX_HOME`
 //! (the documented override `resolve_codex_dir` honours) and a live dummy proxy so
 //! the reachability guard passes. A single test means no in-process race on the
-//! shared env vars, and a dedicated test binary isolates it from the lib suite.
+//! shared env vars, and a process of its own (fresh_process) isolates it from the other tests.
 
 use std::ffi::OsString;
 use std::net::TcpListener;
@@ -41,7 +41,7 @@ struct CodexHome(Option<OsString>);
 impl CodexHome {
     fn set(dir: &Path) -> Self {
         let prev = std::env::var_os("CODEX_HOME");
-        // SAFETY: this integration-test binary contains a single `#[test]`, so no
+        // SAFETY: this test runs in a process of its own (fresh_process), so no
 
         // other thread reads or writes the environment concurrently.
         unsafe { std::env::set_var("CODEX_HOME", dir) };
@@ -52,11 +52,11 @@ impl CodexHome {
 impl Drop for CodexHome {
     fn drop(&mut self) {
         match &self.0 {
-            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+            // SAFETY: this test runs in a process of its own (fresh_process), so no
 
             // other thread reads or writes the environment concurrently.
             Some(v) => unsafe { std::env::set_var("CODEX_HOME", v) },
-            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+            // SAFETY: this test runs in a process of its own (fresh_process), so no
 
             // other thread reads or writes the environment concurrently.
             None => unsafe { std::env::remove_var("CODEX_HOME") },
@@ -75,7 +75,7 @@ struct EnvVar {
 impl EnvVar {
     fn set(key: &'static str, value: &str) -> Self {
         let prev = std::env::var_os(key);
-        // SAFETY: this integration-test binary contains a single `#[test]`, so no
+        // SAFETY: this test runs in a process of its own (fresh_process), so no
 
         // other thread reads or writes the environment concurrently.
         unsafe { std::env::set_var(key, value) };
@@ -84,7 +84,7 @@ impl EnvVar {
 
     fn cleared(key: &'static str) -> Self {
         let prev = std::env::var_os(key);
-        // SAFETY: this integration-test binary contains a single `#[test]`, so no
+        // SAFETY: this test runs in a process of its own (fresh_process), so no
 
         // other thread reads or writes the environment concurrently.
         unsafe { std::env::remove_var(key) };
@@ -95,11 +95,11 @@ impl EnvVar {
 impl Drop for EnvVar {
     fn drop(&mut self) {
         match &self.prev {
-            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+            // SAFETY: this test runs in a process of its own (fresh_process), so no
 
             // other thread reads or writes the environment concurrently.
             Some(v) => unsafe { std::env::set_var(self.key, v) },
-            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+            // SAFETY: this test runs in a process of its own (fresh_process), so no
 
             // other thread reads or writes the environment concurrently.
             None => unsafe { std::env::remove_var(self.key) },
@@ -126,6 +126,9 @@ fn codex_home_with_auth(auth_json: &str) -> (tempfile::TempDir, std::path::PathB
 
 #[test]
 fn proxy_enable_respects_codex_auth_mode_554() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     // An explicit OPENAI_API_KEY forces API-key mode regardless of auth.json, which
     // would invalidate the ChatGPT-login halves of this test.
     if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {

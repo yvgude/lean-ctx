@@ -1,0 +1,50 @@
+{
+  "cases": [
+    {
+      "fixture": "routes/instance_card.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "e5e17fcf062d2dc0228eef6e15b9a1827c34df4ccef513ebe33c30462f22e4e15ef934bd89dcbe7239c9e782e310ff1162104cc2c67a2f2a2f35a62838d53506",
+      "signing_input": "leanctx.cloud.instance_card.v1\n{\"consent_channel\":\"os_presence\",\"instance_version\":\"3.12.0\",\"key_id\":\"47983724220c8521\"}"
+    },
+    {
+      "fixture": "routes/instance_card.clear.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "766463a1046099c644d18d5f32b2f76cf325f9daec464c54ccfd6e563fe6d3eb01050241000f11aec553c3ad5668165fa5a02c4f702560ce39b83b992da85106",
+      "signing_input": "leanctx.cloud.instance_card.v1\n{\"consent_channel\":\"tty_only\",\"instance_version\":\"3.12.0\",\"key_id\":\"47983724220c8521\",\"presence_key\":null}"
+    },
+    {
+      "fixture": "routes/worker_register.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "50f2a5b2b23063bdaf63db0059d4d21b0e0efd908cf1836209a70b10e9278bcfb40f3131a91776a58843d27c8f9b160bf4d584281dac7b320ac6953830a3110e",
+      "signing_input": "leanctx.cloud.worker.v1\n{\"card\":{\"availability\":\"online\",\"budget\":{\"tasks_per_day\":20},\"host_app\":\"claude-code\",\"model\":\"claude-opus-5-5\",\"model_source\":\"self_reported\",\"tools\":[\"ctx_read\",\"ctx_search\",\"ctx_shell\"]},\"host_app\":\"claude-code\",\"key_id\":\"47983724220c8521\",\"name\":\"yves-mac · Claude Code · backend\",\"role\":\"backend\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}"
+    },
+    {
+      "fixture": "routes/worker_register.alias.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "a5bfaf52b56c2bcd56b6d32c2f03992ef81c11cd264d1fe491b46ee11fe46dbdd09e491993a01219e6f04d7d03ce6015ec9fd645c21bb6568557daf2cce4ca09",
+      "signing_input": "leanctx.cloud.worker.v1\n{\"alias_pubkey\":\"w_Yn7cb71homz6XEoocEil802s6tkHySmEIE_XWDhnc\",\"card\":{\"availability\":\"idle\",\"budget\":{},\"host_app\":\"codex\",\"model\":\"unknown\",\"model_source\":\"unknown\",\"tools\":[]},\"hlc_node\":\"2943c5c46c90c0eb\",\"host_app\":\"codex\",\"key_id\":\"47983724220c8521\",\"name\":\"Codex · general\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"role\":\"general\",\"worker_id\":\"wkr_hzagnwpiaatupo6tzfhs\"}"
+    }
+  ],
+  "presence_bind": [
+    {
+      "alg": "ed25519",
+      "card_bind_signature": "Rhe1yItxtCqna8rx2YxQ-_MeTRq4fHiP9v8a8G8qNjnXE1WuzEJrcn4OU9iUIKOceBYsWYvKfdI5NA6s1HBUAg",
+      "instance": "instance_a",
+      "key": "presence_a",
+      "signing_input": "leanctx.cloud.presence_bind.v1\n{\"alg\":\"ed25519\",\"instance_id\":\"6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b\",\"key_id\":\"ef1bd9c792ccc768\",\"public_key\":\"PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs\"}",
+      "statement": {
+        "alg": "ed25519",
+        "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "key_id": "ef1bd9c792ccc768",
+        "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+      }
+    }
+  ],
+  "rules": {
+    "card_domain": "leanctx.cloud.instance_card.v1\n",
+    "card_signing_input": "card_domain ‖ canonical_json(request body without signature), instance key",
+    "presence_bind": "\"leanctx.cloud.presence_bind.v1\\n\" ‖ canonical_json({instance_id, key_id, alg, public_key}); public_key base64url (raw 32 bytes for ed25519, SPKI DER for P-256/RSA); key_id = hex(sha256(public_key bytes))[..16]",
+    "worker_domain": "leanctx.cloud.worker.v1\n",
+    "worker_signing_input": "worker_domain ‖ canonical_json(E10 body without signature), instance key (also for alias registrations)"
+  }
+}

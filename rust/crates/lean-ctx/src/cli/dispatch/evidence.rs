@@ -42,6 +42,28 @@ enum EvidenceSubcommand {
     /// Assemble a canonical V2 customer-proof candidate from explicit local artifacts.
     V2(EvidenceV2Command),
     Inspect(EvidenceInspectCommand),
+    /// Validate a landing receipt JSON file and store it in the project's proofs.
+    ImportLanding(EvidenceImportLandingCommand),
+    /// List the landing receipts stored in this project.
+    Landings(EvidenceLandingsCommand),
+}
+
+#[derive(Debug, Args)]
+struct EvidenceImportLandingCommand {
+    /// Landing receipt JSON (`landing_receipt`, schema 1).
+    #[arg(value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    file: PathBuf,
+
+    /// Print the stored receipt as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct EvidenceLandingsCommand {
+    /// Print the receipts as JSON.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -234,6 +256,10 @@ pub(crate) fn run(args: &[String]) -> i32 {
                 }
             },
         },
+        EvidenceSubcommand::ImportLanding(cmd) => {
+            super::evidence_landing::run_import(&cmd.file, cmd.json)
+        }
+        EvidenceSubcommand::Landings(cmd) => super::evidence_landing::run_list(cmd.json),
         EvidenceSubcommand::Inspect(command) => match inspect(&command.bundle_path) {
             Ok(()) => 0,
             Err(error) => {
@@ -391,7 +417,7 @@ fn execute_realworld(cmd: &EvidenceRealworldCommand) -> Result<i32> {
     let output_dir = cmd.output.clone().unwrap_or_else(|| {
         PathBuf::from(format!(
             "evidence-realworld-{}",
-            chrono::Local::now().format("%Y%m%d-%H%M%S")
+            lean_ctx_time::LocalDateTime::now().format("%Y%m%d-%H%M%S")
         ))
     });
 
@@ -486,7 +512,7 @@ fn execute_workflow(cmd: &EvidenceWorkflowCommand) -> Result<()> {
     let output_dir = cmd.output.clone().unwrap_or_else(|| {
         PathBuf::from(format!(
             "evidence-workflow-{}",
-            chrono::Local::now().format("%Y%m%d-%H%M%S")
+            lean_ctx_time::LocalDateTime::now().format("%Y%m%d-%H%M%S")
         ))
     });
 
@@ -634,7 +660,7 @@ fn create_workflow_bundle(dir: &Path, bundle_path: &Path) -> Result<()> {
         "bundle": "evidence-workflow-strict",
         "version": "2.0.0",
         "lean_ctx_version": env!("CARGO_PKG_VERSION"),
-        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "generated_at": lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         "methodology": {
             "multi_turn": true,
             "shell_cap_lines": 500,

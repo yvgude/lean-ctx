@@ -1,0 +1,26 @@
+{
+  "action": "policy.ack",
+  "actor": {
+    "instance": "9c8b7a6d-5e4f-4321-8fed-cba987654321",
+    "kind": "instance",
+    "label": "dev-laptop",
+    "user": "1b2c3d4e-5f60-4718-893a-4b5c6d7e8f90"
+  },
+  "at": "2026-11-15T09:00:00Z",
+  "details": {
+    "vaults": [
+      "a"
+    ]
+  },
+  "ip": "hmac:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+  "org": "7d1e4c2a-9b3f-4e6a-8c0d-2b4f6e8a1c3e",
+  "prev": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "schema": "leanctx.cloud.audit/v1",
+  "seq": 2,
+  "target": {
+    "id": "9c8b7a6d-5e4f-4321-8fed-cba987654321",
+    "kind": "instance",
+    "label": "dev-laptop"
+  },
+  "user_agent": null
+}

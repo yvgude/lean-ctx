@@ -1,0 +1,15 @@
+{
+  "body": {
+    "percentage": 10,
+    "step": "Build stage for the ledger export: the developer takes the lock rework."
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000007",
+  "kind": "coordinate",
+  "schema": "leanctx.cloud.bus/v2",
+  "t": "place.publish",
+  "task_id": "task-app-3",
+  "thread": "ledger-export",
+  "to": "#acme/payments",
+  "type": "progress",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

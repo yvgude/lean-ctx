@@ -425,9 +425,9 @@ impl LeanCtxServer {
         &self,
         request: CallToolRequestParams,
     ) -> Result<CallToolResult, ErrorData> {
-        // A withheld Hive tool (release switch off) answers one fixed line
+        // A withheld Cloud tool (release switch off) answers one fixed line
         // before any lifecycle, ledger or tool state is touched.
-        if let Some(line) = crate::server::dynamic_tools::withheld_hive_tool_refusal(
+        if let Some(line) = crate::server::dynamic_tools::withheld_cloud_tool_refusal(
             &request.name,
             request.arguments.as_ref(),
         ) {
@@ -603,6 +603,40 @@ impl LeanCtxServer {
                 "role or policy denied",
             ));
         }
+        // Cloud `agents.allowed` (ent2-2): the whole session belongs to one
+        // agent, so a refused agent gets no tool at all (ctx_call included).
+        // Fail-closed: a damaged Cloud policy refuses too.
+        {
+            let client_name = self.client_name.read().await.clone();
+            let project_root = self.session.read().await.project_root.clone();
+            if let Some(reason) = lean_ctx::core::policy::cloud_agents::agent_refusal(
+                project_root.as_deref().map(std::path::Path::new),
+                &client_name,
+            ) {
+                tracing::warn!(tool = name, %reason, "agent refused by the team policy");
+                return Ok(PreparedCallResult::Terminal(
+                    CallToolResult::error(vec![ContentBlock::text(format!(
+                        "[POLICY BLOCKED] {reason}. Ask a team admin to allow this agent."
+                    ))]),
+                    "agent not allowed",
+                ));
+            }
+            // N1 `security.require_proxy`: model traffic must go through the
+            // LeanCTX proxy; an agent that cannot be confirmed is refused.
+            if let Some(reason) = lean_ctx::core::policy::cloud_agents::proxy_requirement_refusal(
+                project_root.as_deref().map(std::path::Path::new),
+                &client_name,
+            ) {
+                tracing::warn!(tool = name, %reason, "agent refused by the Cloud policy");
+                return Ok(PreparedCallResult::Terminal(
+                    CallToolResult::error(vec![ContentBlock::text(format!(
+                        "[POLICY BLOCKED] {reason}. Run `lean-ctx proxy enable` and restart \
+                         the agent so its model traffic goes through the LeanCTX proxy."
+                    ))]),
+                    "agent not routed through the proxy",
+                ));
+            }
+        }
 
         // ctx_call is a meta-dispatcher: the egress DLP and permission-
         // inheritance gates below must inspect the INNER tool + arguments, or
@@ -685,7 +719,7 @@ impl LeanCtxServer {
             }
         }
 
-        // Hive bus control (C5b): `hold`/`stop` pause Hive tools only,
+        // Cloud bus control (C5b): `hold`/`stop` pause Cloud tools only,
         // including via ctx_call; local tools are never gated. The agent id
         // is copied out first so no lock is held across the file check.
         let agent = match self.agent_id.read().await.clone() {
@@ -693,20 +727,20 @@ impl LeanCtxServer {
             None => self.presence_agent_id.read().await.clone(),
         };
         if let Some(message) =
-            lean_ctx_hive::bus::control::tool_refusal(agent.as_deref(), guard_name)
+            lean_ctx_cloud::bus::control::tool_refusal(agent.as_deref(), guard_name)
         {
             return Ok(PreparedCallResult::Terminal(
                 CallToolResult::error(vec![ContentBlock::text(message)]),
-                "hive control denied",
+                "cloud control denied",
             ));
         }
         // A maintainer vetoed this agent's lock or handoff (§3.7.4): its next
         // ctx_tasks / ctx_agent call says so, once.
-        if let Some(message) = lean_ctx_hive::bus::veto::take_refusal(agent.as_deref(), guard_name)
+        if let Some(message) = lean_ctx_cloud::bus::veto::take_refusal(agent.as_deref(), guard_name)
         {
             return Ok(PreparedCallResult::Terminal(
                 CallToolResult::error(vec![ContentBlock::text(message)]),
-                "hive veto",
+                "cloud veto",
             ));
         }
 

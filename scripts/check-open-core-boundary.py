@@ -51,7 +51,7 @@ INLINE_PATH = re.compile(r"(?:^|\s)(rust/(?:src|crates)/[^\s|)`]+)")
 PRIVATE_IMPORT = re.compile(
     RUST_IDENTIFIER_LEFT
     + r"(?:"
-    r"(?:r#)?lean[_-]?ctx[_-]?(?:cloud|enterprise|private)|"
+    r"(?:r#)?lean[_-]?ctx[_-]?(?:enterprise|private)|"
     r"(?:r#)?leanctx[_-]?(?:cloud|enterprise|private)|"
     r"(?:r#)?(?:private|enterprise|proprietary|commercial|strategic_data)"
     r")(?:$|::|\s+as\b)",
@@ -60,7 +60,7 @@ PRIVATE_IMPORT = re.compile(
 PRIVATE_QUALIFIED = re.compile(
     RUST_IDENTIFIER_LEFT
     + r"(?:::)?(?:"
-    r"(?:r#)?lean[_-]?ctx[_-]?(?:cloud|enterprise|private)|"
+    r"(?:r#)?lean[_-]?ctx[_-]?(?:enterprise|private)|"
     r"(?:r#)?leanctx[_-]?(?:cloud|enterprise|private)"
     r")(?:::|" + RUST_IDENTIFIER_RIGHT + r")",
     re.IGNORECASE,
@@ -73,7 +73,7 @@ PRIVATE_LOCAL_QUALIFIED = re.compile(
 PRIVATE_EXTERN = re.compile(
     RUST_IDENTIFIER_LEFT
     + r"extern\s+crate\s+(?:"
-    r"(?:r#)?lean[_-]?ctx[_-]?(?:cloud|enterprise|private)|"
+    r"(?:r#)?lean[_-]?ctx[_-]?(?:enterprise|private)|"
     r"(?:r#)?leanctx[_-]?(?:cloud|enterprise|private)|"
     r"(?:r#)?(?:private|enterprise|proprietary|commercial|strategic_data)"
     r")"
@@ -956,16 +956,26 @@ def _surface_references(
     external = re.compile(
         (
             RUST_IDENTIFIER_LEFT
-            + r"extern\s+crate\s+%s"
+            + r"extern\s+crate\s+(?P<target>%s)"
             + RUST_IDENTIFIER_RIGHT
-            + r"(?:\s+as\s+%s)?"
+            + r"(?:\s+as\s+(?P<alias>%s))?"
         )
         % (external_target, RUST_IDENTIFIER)
     )
-    findings.extend(
-        (source.count("\n", 0, match.start()) + 1, match.group(0))
-        for match in external.finditer(code)
-    )
+    alias_end = re.compile(RUST_IDENTIFIER_RIGHT)
+    for match in external.finditer(code):
+        # `extern crate self as lean_ctx_protocol` in the protocol crate binds
+        # its own public name: every path through it is a `lean_ctx_protocol::`
+        # path, which the scans above and the alias scan already check. Any
+        # other alias adds a root name they do not see and stays rejected.
+        if (
+            same_protocol_crate
+            and match.group("target") == "self"
+            and match.group("alias") in ("lean_ctx_protocol", "r#lean_ctx_protocol")
+            and alias_end.match(code, match.end())
+        ):
+            continue
+        findings.append((source.count("\n", 0, match.start()) + 1, match.group(0)))
     return sorted(findings, key=lambda item: (item[0], item[1]))
 
 
@@ -1237,6 +1247,71 @@ def _source_injection_findings(
     return findings
 
 
+PRIVATE_TREE_PREFIX = "ee/"
+RUST_PATH_TOKEN = re.compile(r"\binclude(?:_str|_bytes)?\s*!|#\s*\[\s*path\s*=")
+RUST_PATH_LITERAL = re.compile(
+    r'(?:\binclude(?:_str|_bytes)?\s*!\s*\(\s*|#\s*\[\s*path\s*=\s*)"([^"\\]*)"'
+)
+CARGO_PATH_LITERAL = re.compile(r'\bpath\s*=\s*"([^"\\]*)"')
+
+
+def _private_tree(root: Path, base: Path, literal: str) -> Optional[str]:
+    """`literal` resolved against `base`, when it lands in the private `ee/` tree."""
+
+    try:
+        relative = os.path.normpath(base / literal)
+        relative = Path(relative).relative_to(root).as_posix()
+    except ValueError:
+        return None
+    return relative if (relative + "/").startswith(PRIVATE_TREE_PREFIX) else None
+
+
+def _private_path_findings(root: Path, files: Sequence[Path], source_cache: dict) -> List[str]:
+    """Reject public sources and public crate manifests that reach into `ee/`.
+
+    The private tree is private by its path, whatever its packages are named:
+    `ee/services/cloud` (package `lean-ctx-cloud`, slated for deletion) shares
+    its package name with the public Cloud connector `rust/crates/lean-ctx-cloud`,
+    so a name rule alone cannot tell them apart.
+    """
+
+    findings = []
+    for path in files:
+        source = source_cache[path]
+        if not RUST_PATH_TOKEN.search(source):
+            continue
+        masked = _mask_rust_non_code(source)
+        for token in RUST_PATH_TOKEN.finditer(masked):
+            literal = RUST_PATH_LITERAL.match(source, token.start())
+            if literal is None:
+                continue
+            target = _private_tree(root, path.parent, literal.group(1))
+            if target is not None:
+                findings.append(
+                    "[private-path] %s:%d reaches into the private tree: %s"
+                    % (_relative(root, path), source.count("\n", 0, token.start()) + 1, target)
+                )
+    manifests = [root / "rust/Cargo.toml"]
+    crates_root = root / "rust/crates"
+    if crates_root.is_dir():
+        manifests.extend(sorted(crates_root.glob("lean-ctx*/Cargo.toml")))
+    for manifest in manifests:
+        if not manifest.is_file() or manifest.is_symlink():
+            continue
+        try:
+            text = manifest.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise ManifestError("cannot read %s" % _relative(root, manifest)) from error
+        for literal in CARGO_PATH_LITERAL.finditer(text):
+            target = _private_tree(root, manifest.parent, literal.group(1))
+            if target is not None:
+                findings.append(
+                    "[private-path] %s:%d depends on the private tree: %s"
+                    % (_relative(root, manifest), text.count("\n", 0, literal.start()) + 1, target)
+                )
+    return findings
+
+
 def _shape_mapping(
     root: Path,
     files: Sequence[Path],
@@ -1464,7 +1539,6 @@ def _needs_consumer_scan(source: str, manifest: dict) -> bool:
     needles = FROZEN_SURFACES + (
         "lean_ctx_protocol",
         "extern crate",
-        "lean_ctx_cloud",
         "leanctx_cloud",
         "lean_ctx_enterprise",
         "leanctx_enterprise",
@@ -1542,6 +1616,7 @@ def check_repo(root: Path = ROOT, manifest_path: Optional[Path] = None) -> List[
                 code_cache[path] = code
         findings = []
         findings.extend(_source_injection_findings(root, files, source_cache, masked_cache))
+        findings.extend(_private_path_findings(root, files, source_cache))
         for surface in FROZEN_SURFACES:
             spec = manifest["surfaces"][surface]
             findings.extend(

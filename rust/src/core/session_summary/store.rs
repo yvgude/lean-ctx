@@ -147,13 +147,13 @@ pub(crate) fn tokenize(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn rec(id: &str, title: &str, body: &str) -> SummaryRecord {
         SummaryRecord {
             id: id.to_string(),
             session_id: "sess".to_string(),
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
             title: title.to_string(),
             body: body.to_string(),
             files: vec![],

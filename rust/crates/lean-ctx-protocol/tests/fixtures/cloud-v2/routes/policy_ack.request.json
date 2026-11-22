@@ -1,0 +1,7 @@
+{
+  "digest": "sha256:309839a13391ba6c3367fb020714a044c2ccb092fe0f53d967609fbd49cf8468",
+  "unenforced": [
+    "context.max_context_tokens"
+  ],
+  "version": 3
+}

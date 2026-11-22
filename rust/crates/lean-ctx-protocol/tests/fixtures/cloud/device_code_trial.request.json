@@ -1,0 +1,8 @@
+{
+  "client_id": "lean-ctx-engine",
+  "instance_version": "3.12.1",
+  "intent": "trial",
+  "os": "macos",
+  "plan": "personal",
+  "schema": "leanctx.cloud.device-code-request/v1"
+}

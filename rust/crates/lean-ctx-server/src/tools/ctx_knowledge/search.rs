@@ -56,7 +56,7 @@ fn project_in_scope(
     );
     lean_ctx::core::memory_boundary::record_audit_event(
         &lean_ctx::core::memory_boundary::CrossProjectAuditEvent {
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             event_type: lean_ctx::core::memory_boundary::CrossProjectEventType::Search,
             source_project_hash: current_hash.to_string(),
             target_project_hash: target_hash.to_string(),
@@ -307,7 +307,7 @@ pub(crate) fn apply_retrieval_signals_from_hits(
     knowledge: &mut ProjectKnowledge,
     hits: &[SemanticHit],
 ) {
-    let now = Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     for s in hits {
         for f in &mut knowledge.facts {
             if !f.is_current() {

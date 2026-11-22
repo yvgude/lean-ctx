@@ -14,15 +14,15 @@
 
 use std::path::{Path, PathBuf};
 
-use lean_ctx_protocol::hive::effective_policy::refusal_detail;
-use lean_ctx_protocol::hive::metrics_v2::{
+use lean_ctx_protocol::cloud::effective_policy::refusal_detail;
+use lean_ctx_protocol::cloud::metrics_v2::{
     DetectorName, FilterName, Fingerprint, HourStamp, HoursRequestV2, KeyId, RuleId, ToolName,
     UnregulatedName, VaultId, WireName,
 };
 use serde_json::Value;
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hive-v2")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cloud-v2")
 }
 
 fn load(rel: &str) -> Value {
@@ -235,7 +235,7 @@ fn every_invalid_hours_fixture_is_refused_by_the_engine_types() {
         // A tampered batch is well formed; only the signature refuses it.
         assert!(
             refused || name.contains("tampered"),
-            "{name}: the engine types accept a body Hive must refuse"
+            "{name}: the engine types accept a body LeanCTX Cloud must refuse"
         );
     }
     assert!(
@@ -399,7 +399,7 @@ fn property_strict_names_never_carry_a_structural_content_char() {
 /// `^[A-Za-z0-9._:/-]{1,64}$`, which the SPEC §1 promise ("never paths,
 /// never free text") does not survive: relative paths, host names, fine-tune
 /// ids with an org name and mixed-case API keys all pass, in the engine types
-/// and in the contract schema Hive validates with.
+/// and in the contract schema Cloud validates with.
 #[test]
 fn k2_finding_wire_name_admits_relative_paths_hostnames_and_secrets() {
     let samples = [
@@ -421,13 +421,13 @@ fn k2_finding_wire_name_admits_relative_paths_hostnames_and_secrets() {
     );
 }
 
-/// The schema's own `name` rule had the same hole, so Hive's K1 check did
+/// The schema's own `name` rule had the same hole, so Cloud's K1 check did
 /// not catch it either. Since contract v2.5 it is a closed enum: the union of
 /// the engine's host, provider and model registries plus `other`, and it
 /// holds none of the content samples.
 #[test]
 fn k2_finding_contract_name_rule_admits_relative_paths() {
-    use lean_ctx_protocol::hive::metrics_v2::{KNOWN_HOSTS, KNOWN_MODELS, KNOWN_PROVIDERS, OTHER};
+    use lean_ctx_protocol::cloud::metrics_v2::{KNOWN_HOSTS, KNOWN_MODELS, KNOWN_PROVIDERS, OTHER};
     let schemas = Schemas::load();
     let names: std::collections::BTreeSet<&str> = schemas.metrics["$defs"]["name"]["enum"]
         .as_array()
@@ -458,7 +458,7 @@ fn k2_finding_contract_name_rule_admits_relative_paths() {
 /// Every closed registry of the contract is exactly the engine's table.
 #[test]
 fn the_contract_registries_are_the_engine_tables() {
-    use lean_ctx_protocol::hive::metrics_v2::{
+    use lean_ctx_protocol::cloud::metrics_v2::{
         HOST_FAMILIES, KNOWN_DETECTORS, KNOWN_FILTERS, KNOWN_HOSTS, KNOWN_MODELS, KNOWN_PROGRAMS,
         KNOWN_PROVIDERS, KNOWN_RULES, KNOWN_TOOLS,
     };
@@ -491,11 +491,11 @@ fn the_contract_registries_are_the_engine_tables() {
 #[test]
 fn k2_finding_policy_ack_refusal_detail_keeps_local_paths() {
     let line = format!(
-        "install the effective policy: write effective.json in /Users/{MARK}/.local/share/lean-ctx/hive/effective-policy: Permission denied (os error 13)"
+        "install the effective policy: write effective.json in /Users/{MARK}/.local/share/lean-ctx/cloud/effective-policy: Permission denied (os error 13)"
     );
     let detail = refusal_detail(&line).unwrap_or_default();
     assert!(
         !detail.contains(MARK) && !detail.contains("/Users/"),
-        "refusal detail sent to Hive: {detail:?}"
+        "refusal detail sent to LeanCTX Cloud: {detail:?}"
     );
 }

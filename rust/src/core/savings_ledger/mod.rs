@@ -193,7 +193,7 @@ fn new_event(tool: &str) -> SavingsEvent {
         event::EvidenceClass::Measured
     };
     SavingsEvent {
-        ts: chrono::Utc::now().to_rfc3339(),
+        ts: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         tool: tool.to_string(),
         mechanism: event::MECHANISM_COMPRESSION.to_string(),
         model_id: model_id.clone(),

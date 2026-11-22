@@ -46,6 +46,7 @@ const SELF_HELP: &[&[&str]] = &[
     &["bus"],
     &["presence"],
     &["capabilities"],
+    &["archive"],
     &["client"],
     &["agents"],
     &["instructions"],
@@ -83,8 +84,10 @@ const SELF_HELP: &[&[&str]] = &[
     &["uninstall"],
     &["cheat", "cheatsheet", "cheat-sheet"],
     &["telemetry"],
-    &["hive"],
+    &["cloud"],
     &["models"],
+    // `run "<task>"` starts an agent; `--help` must never start one.
+    &["run"],
 ];
 
 /// Arms the guard never intercepts: passthroughs whose arguments belong to the
@@ -202,10 +205,10 @@ const NON_COMMAND_SECTIONS: &[&str] = &[
 
 /// [`SELF_HELP`] arms whose handler honours `--help` at *any* position with its
 /// own, richer usage (`init --agent claude --help`, #1849 — covered by the
-/// `init_help_safety_1849` integration test; `hive tasks --help` prints the
-/// tasks usage, `hive worker --help` the hive one; `serve --port 9 --help`
+/// `init_help_safety_1849` integration test; `cloud tasks --help` prints the
+/// tasks usage, `cloud worker --help` the cloud one; `serve --port 9 --help`
 /// prints every serve flag and starts nothing, `serve_args::parse`).
-const SELF_HELP_ANYWHERE: &[&str] = &["init", "hive", "serve"];
+const SELF_HELP_ANYWHERE: &[&str] = &["init", "cloud", "serve"];
 
 fn group_of<'a>(table: &'a [&'a [&'a str]], cmd: &str) -> Option<&'a [&'a str]> {
     table.iter().copied().find(|group| group.contains(&cmd))
@@ -395,9 +398,9 @@ mod tests {
     fn every_non_exempt_arm_has_reference_lines() {
         let help = full_help_text();
         for group in SELF_HELP.iter().chain(GUARDED) {
-            // `hive` and `models` print their own help and stay out of
+            // `cloud` and `models` print their own help and stay out of
             // `help all` until the release switch is on (3.12.1).
-            if matches!(group[0], "hive" | "models") && !lean_ctx_hive::HIVE_AVAILABLE {
+            if matches!(group[0], "cloud" | "models") && !lean_ctx_cloud::CLOUD_AVAILABLE {
                 continue;
             }
             assert!(
@@ -487,13 +490,13 @@ mod tests {
         assert!(lines.iter().all(|l| !l.contains("grep/rg")), "{lines:?}");
     }
 
-    /// `hive <sub> --help` reaches the hive handler, which prints the
+    /// `cloud <sub> --help` reaches the cloud handler, which prints the
     /// subcommand's own usage, never the generic reference lines.
     #[test]
-    fn hive_subcommand_help_is_answered_by_hive() {
+    fn cloud_subcommand_help_is_answered_by_cloud() {
         for sub in ["tasks", "worker"] {
             let rest = vec![sub.to_owned(), "--help".to_owned()];
-            assert_eq!(guarded_help("hive", &rest), None, "{sub}");
+            assert_eq!(guarded_help("cloud", &rest), None, "{sub}");
         }
     }
 }

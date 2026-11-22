@@ -236,14 +236,16 @@ impl HostReceiptAuthority {
         } else {
             verified_at.clone()
         };
-        let observed_time = chrono::DateTime::parse_from_rfc3339(observed_at.as_str())?;
-        let age = observed_time.signed_duration_since(chrono::DateTime::parse_from_rfc3339(
-            initial.issued_at.as_str(),
-        )?);
+        let observed_time =
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339(observed_at.as_str())?;
+        let age = observed_time.signed_duration_since(
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339(initial.issued_at.as_str())?,
+        );
         ensure!(
-            observed_time <= chrono::DateTime::parse_from_rfc3339(verified_at.as_str())?
-                && age >= chrono::Duration::zero()
-                && age <= chrono::Duration::hours(i64::from(contract.expiry_window_hours)),
+            observed_time
+                <= lean_ctx_time::OffsetDateTime::parse_from_rfc3339(verified_at.as_str())?
+                && age >= lean_ctx_time::Duration::zero()
+                && age <= lean_ctx_time::Duration::hours(i64::from(contract.expiry_window_hours)),
             "outcome is outside its contract window"
         );
         let mut outcome = evaluate_for_task(

@@ -60,7 +60,7 @@ fn persisted_context_respects_numeric_budget_without_a_daemon() {
     let ledger = serde_json::json!({
         "window_size":12000,"total_tokens_sent":1000,"total_tokens_saved":0,
         "entries":[{"path":source,"mode":"full","original_tokens":1000,
-            "sent_tokens":1000,"timestamp":chrono::Utc::now().timestamp(),"phi":0.8}]
+            "sent_tokens":1000,"timestamp":lean_ctx_time::UtcDateTime::now().timestamp(),"phi":0.8}]
     });
     std::fs::write(
         root.join("state/context_ledger.json"),

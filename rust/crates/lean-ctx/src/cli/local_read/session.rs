@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx session stats|cost --json --session ID`: one app session as a
-//! local reader (Hive Desktop) sees it. The app names its sessions with
+//! local reader (Cloud Desktop) sees it. The app names its sessions with
 //! `LEAN_CTX_SESSION_ID` (and the proxy header `x-leanctx-session-id`);
 //! `--session` takes that id or a LeanCTX session id.
 //!
@@ -31,6 +31,8 @@ pub(crate) struct SessionStatsDoc {
     pub started_at: Option<String>,
     pub updated_at: Option<String>,
     pub tokens: Tokens,
+    pub tools: Tools,
+    pub knowledge: Knowledge,
     pub kept_out: KeptOut,
     pub waste: Waste,
 }
@@ -43,6 +45,21 @@ pub(crate) struct Tokens {
     pub cache_hits: u64,
     pub files_read: u64,
     pub commands_run: u64,
+}
+
+/// Tool use of the session: `compose` is its `ctx_compose` calls, including
+/// those routed through `ctx_call`. The app's Compose share is
+/// `tools.compose / tokens.tool_calls`.
+#[derive(Debug, Default, Serialize, PartialEq, Eq)]
+pub(crate) struct Tools {
+    pub compose: u64,
+}
+
+/// Knowledge the session wrote: `written` counts its successful
+/// `ctx_knowledge` remembers.
+#[derive(Debug, Default, Serialize, PartialEq, Eq)]
+pub(crate) struct Knowledge {
+    pub written: u64,
 }
 
 #[derive(Debug, Default, Serialize, PartialEq, Eq)]
@@ -193,8 +210,12 @@ pub(crate) fn stats_of(
         ));
     }
     let mut tokens = Tokens::default();
+    let mut tools = Tools::default();
+    let mut knowledge = Knowledge::default();
     let mut kept_out = KeptOut::default();
     for s in sessions {
+        tools.compose += s.stats.compose_calls;
+        knowledge.written += s.stats.knowledge_written;
         tokens.input += s.stats.total_tokens_input;
         tokens.saved += s.stats.total_tokens_saved;
         tokens.tool_calls += u64::from(s.stats.total_tool_calls);
@@ -216,6 +237,8 @@ pub(crate) fn stats_of(
         started_at: sessions.first().map(|s| rfc3339(s.started_at)),
         updated_at: sessions.iter().map(|s| s.updated_at).max().map(rfc3339),
         tokens,
+        tools,
+        knowledge,
         kept_out,
         waste: Waste {
             repeated_reads: repeated_reads(sessions, events),
@@ -461,5 +484,136 @@ mod tests {
         assert!(!doc.available);
         assert_eq!((doc.total_usd, doc.requests), (0.0, 0));
         assert!(doc.per_model.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod session_stats_tests {
+    //! rel12 WP2: `session.stats` carries `tools.compose` and
+    //! `knowledge.written` per app session, additively.
+    use super::*;
+    use serde_json::{Value, json};
+
+    /// A session record whose stats come from JSON, the way a saved session
+    /// is read back (a record from before the counters has none).
+    fn session(id: &str, app: &str, stats: Value) -> SessionState {
+        let mut s = SessionState::new();
+        s.id = id.into();
+        s.app_session_id = Some(app.into());
+        s.stats = serde_json::from_value(stats).expect("session stats");
+        s
+    }
+
+    #[test]
+    fn the_doc_adds_compose_calls_and_knowledge_writes_beside_tokens() {
+        let a = session(
+            "lean-a",
+            "app-1",
+            json!({"total_tool_calls": 8, "compose_calls": 3, "knowledge_written": 2}),
+        );
+        let b = session(
+            "lean-b",
+            "app-1",
+            json!({"total_tool_calls": 4, "compose_calls": 1}),
+        );
+        let doc = serde_json::to_value(stats_of("app-1", &[a, b], &[]).expect("known")).unwrap();
+        assert_eq!(doc["tools"], json!({"compose": 4}), "{doc}");
+        assert_eq!(doc["knowledge"], json!({"written": 2}), "{doc}");
+        // Additive: every earlier field keeps its name and place.
+        let mut tokens: Vec<&str> = doc["tokens"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        tokens.sort_unstable();
+        assert_eq!(
+            tokens,
+            [
+                "cache_hits",
+                "commands_run",
+                "files_read",
+                "input",
+                "saved",
+                "tool_calls"
+            ]
+        );
+        assert_eq!(doc["tokens"]["tool_calls"], 12);
+        assert!(
+            doc["tools"]["compose"].as_u64() <= doc["tokens"]["tool_calls"].as_u64(),
+            "tools.compose is a subset of tokens.tool_calls: {doc}"
+        );
+        for field in [
+            "session_id",
+            "lean_sessions",
+            "project_root",
+            "started_at",
+            "updated_at",
+            "kept_out",
+            "waste",
+        ] {
+            assert!(doc.get(field).is_some(), "{field} missing: {doc}");
+        }
+    }
+
+    #[test]
+    fn a_session_saved_before_the_counters_counts_zero_and_keeps_its_bytes() {
+        let old = json!({"total_tool_calls": 5, "files_read": 2});
+        let record = session("lean-old", "app-old", old);
+        // Read back and written again, an old record gains no field.
+        let again = serde_json::to_value(&record.stats).unwrap();
+        assert!(again.get("compose_calls").is_none(), "{again}");
+        assert!(again.get("knowledge_written").is_none(), "{again}");
+        let doc =
+            serde_json::to_value(stats_of("app-old", &[record], &[]).expect("known")).unwrap();
+        assert_eq!(doc["tools"]["compose"], 0, "{doc}");
+        assert_eq!(doc["knowledge"]["written"], 0, "{doc}");
+        // A counted record keeps its counters through a save.
+        let counted = session(
+            "lean-new",
+            "app-new",
+            json!({"compose_calls": 2, "knowledge_written": 1}),
+        );
+        let again = serde_json::to_value(&counted.stats).unwrap();
+        assert_eq!(again["compose_calls"], 2, "{again}");
+        assert_eq!(again["knowledge_written"], 1, "{again}");
+    }
+
+    #[test]
+    fn each_app_session_including_an_acp_one_reads_only_its_own_counters() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let cases = [
+            ("lean-cli-1", "app-1", 3, 1),
+            ("lean-cli-2", "app-2", 7, 0),
+            ("lean-acp-1", "acp:claude.sess-1", 2, 4),
+        ];
+        for (id, app, compose, written) in cases {
+            let mut s = session(
+                id,
+                app,
+                json!({"total_tool_calls": 10, "compose_calls": compose,
+                       "knowledge_written": written}),
+            );
+            s.project_root = Some(root.clone());
+            s.save().expect("session saved");
+        }
+        for (id, app, compose, written) in cases {
+            let args = ["--session".to_owned(), app.to_owned()];
+            let doc = serde_json::to_value(build_stats(&args).expect("known")).unwrap();
+            assert_eq!(doc["lean_sessions"], json!([id]), "{app}: {doc}");
+            assert_eq!(doc["tools"], json!({"compose": compose}), "{app}: {doc}");
+            assert_eq!(
+                doc["knowledge"],
+                json!({"written": written}),
+                "{app}: {doc}"
+            );
+        }
     }
 }

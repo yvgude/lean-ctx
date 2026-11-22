@@ -145,6 +145,10 @@ fn policy_view_refusal(error: &str) -> &'static str {
     }
 }
 
+/// The content-free notice of a document in which only a credential member
+/// was masked (the same line the gateway writes for a masked value).
+const STRUCTURAL_NOTICE: &str = "[lean-ctx gateway: content redacted]";
+
 /// The parts of `original` that masking replaced to give `masked`: the
 /// text each `[REDACTED…]` marker stands for. Masking keeps everything else
 /// in order, so the literal pieces between markers are found in `original`
@@ -793,6 +797,20 @@ impl<'a> CliToolRun<'a> {
                 .unwrap_or_else(|_| serde_json::Value::String(document.to_owned()));
             let mut out = Vec::new();
             self.masked_values(&gate, &value, 0, &mut out);
+            // What the structural pass masks (the whole value of a member
+            // named like a credential, at any depth) is hidden as well: a
+            // `jsonl` line must not carry what another line has masked. A
+            // text that cannot be inspected cannot say what it hides.
+            match lean_ctx::core::redaction::structured::mask_structured_text(document) {
+                Ok(Some(masked)) => out.extend(masked.originals),
+                Ok(None) => {}
+                Err(_) => {
+                    return Err(lean_ctx::core::context_admission::carrier::Withheld::new(&[
+                        "coverage.partial",
+                    ])
+                    .notice());
+                }
+            }
             Ok(out)
         })
     }
@@ -817,7 +835,7 @@ impl<'a> CliToolRun<'a> {
         // One verified policy snapshot for the whole document. A document
         // that needs masking is released value by value, and every release
         // asked the policy worker for a fresh snapshot (re-reading policy,
-        // trust store, marker and Hive filters): 44,660 string values of a
+        // trust store, marker and Cloud filters): 44,660 string values of a
         // 3,504-fact knowledge export took 100–200 s. Inside the view the
         // pack rules are read once; the view is verified again before the
         // document is handed out, and a change in between withholds it.
@@ -835,15 +853,39 @@ impl<'a> CliToolRun<'a> {
 
     fn release_document_scoped(
         &self,
-        document: String,
+        mut document: String,
     ) -> Result<(String, Option<String>), String> {
         use lean_ctx::core::context_admission::carrier::{ReleaseGate, Withheld};
         lean_ctx_server::tools::admitted_sources::as_agent_acquisition(self.project_root, || {
+            let unadmitted = || Withheld::new(&["release.unadmitted_content"]).notice();
+            // The whole value of every member named like a credential, at any
+            // depth and in any shape (`{"token":["S"]}`,
+            // `{"auth":{"value":"S"}}`), and of every JSON document kept as a
+            // string, is masked first: the text rules read a secret only as
+            // a string right after its name. A document with no such member
+            // keeps its bytes; one that cannot be inspected is withheld.
+            let mut originals = Vec::new();
+            let structural =
+                match lean_ctx::core::redaction::structured::mask_structured_text(&document) {
+                    Ok(None) => false,
+                    Ok(Some(masked)) => {
+                        originals = masked.originals;
+                        document = masked.text;
+                        true
+                    }
+                    Err(_) => return Err(Withheld::new(&["coverage.partial"]).notice()),
+                };
             // The whole document through the one release sequence first: an
             // admitted document passes unchanged and keeps its bytes (#498).
             let (whole, refused) = self.released(document.clone());
             if !refused && whole == document {
-                return Ok((document, None));
+                if !structural {
+                    return Ok((document, None));
+                }
+                if still_carries_a_masked_value(&document, &originals) {
+                    return Err(unadmitted());
+                }
+                return Ok((document, Some(STRUCTURAL_NOTICE.to_owned())));
             }
             // Something has to be masked. Masking the serialized text could
             // cut through its syntax, so every string value is released on
@@ -863,8 +905,12 @@ impl<'a> CliToolRun<'a> {
                 let (masked, notice, _) = self.release_masked(&gate, value, pretty)?;
                 (masked, notice)
             };
-            let notice =
-                notice.unwrap_or_else(|| "[lean-ctx gateway: content redacted]".to_string());
+            // A value masked structurally (above) must not stand anywhere in
+            // the released document, under another name or inside a value.
+            if structural && still_carries_a_masked_value(&masked, &originals) {
+                return Err(unadmitted());
+            }
+            let notice = notice.unwrap_or_else(|| STRUCTURAL_NOTICE.to_owned());
             Ok((masked, Some(notice)))
         })
     }

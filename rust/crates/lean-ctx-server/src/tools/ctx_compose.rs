@@ -413,7 +413,7 @@ fn small_files_section(composed: &str, project_root: &str, allow_secret: bool) -
             break;
         }
         let path = std::path::Path::new(project_root).join(&rel);
-        if !allow_secret && lean_ctx::core::io_boundary::is_secret_like(&path).is_some() {
+        if lean_ctx::core::io_boundary::withheld_secret(&path, allow_secret).is_some() {
             continue;
         }
         let Ok(meta) = std::fs::metadata(&path) else {

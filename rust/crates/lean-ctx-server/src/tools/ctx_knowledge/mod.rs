@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 #[cfg(feature = "embeddings")]
 use lean_ctx::core::embeddings::EmbeddingEngine;
@@ -25,9 +25,9 @@ pub(crate) use search::*;
 mod consolidate;
 pub use consolidate::*;
 #[cfg(test)]
-mod engine_tests;
+mod cloud_guard_tests;
 #[cfg(test)]
-mod hive_guard_tests;
+mod engine_tests;
 #[cfg(test)]
 mod recall_window_tests;
 #[cfg(test)]
@@ -206,6 +206,17 @@ pub fn handle_outcome_windowed(
     let Ok(result) = lean_ctx::core::policy::content::protect_active(&result) else {
         return Err("Error: knowledge output withheld by current policy".to_string());
     };
+    // A fact value that is a JSON document carries a credential member's
+    // secret nested (`{"token":["S"]}`) where the text rules cannot see it:
+    // the whole value of every such member is masked in every view.
+    let result = match lean_ctx::core::redaction::structured::mask_structured_text(&result) {
+        Ok(None) => result.to_string(),
+        Ok(Some(masked)) if !masked.still_carries_an_original() => masked.text,
+        Ok(Some(_)) => {
+            return Err("Error: knowledge output withheld: a masked value appears elsewhere".to_string());
+        }
+        Err(_) => return Err("Error: knowledge output withheld: not inspectable".to_string()),
+    };
     // Stored knowledge is recovered text: every view of it passes the context
     // gateway under the current policy, including facts written before the
     // store admitted its input (G5). A failure text passes the same gates.
@@ -299,7 +310,7 @@ fn handle_feedback(
         } else {
             f.feedback_down = f.feedback_down.saturating_add(1);
         }
-        f.last_feedback = Some(Utc::now());
+        f.last_feedback = Some(UtcDateTime::now());
         Ok((
             f.quality_score(),
             f.feedback_up,
@@ -378,7 +389,7 @@ pub(crate) fn handle_judge(
         if src == tgt {
             return Err("Error: a fact is not judged against itself".to_string());
         }
-        let now = Utc::now();
+        let now = UtcDateTime::now();
 
         if verdict == "supersedes" {
             let tf = &mut knowledge.facts[tgt];
@@ -393,7 +404,7 @@ pub(crate) fn handle_judge(
             }
         }
         // J2: both stay current and both are marked until one supersedes the
-        // other. A Hive fact's state reaches Hive with the next sync
+        // other. A Cloud fact's state reaches Cloud with the next sync
         // (C0 1.9 section 3), which opens a task when nobody resolves it.
         if verdict == "contradicts" {
             use lean_ctx::core::knowledge::{FactReviewReason, FactReviewState};
@@ -591,7 +602,7 @@ fn handle_health(project_root: &str) -> String {
     let mut room_counts: std::collections::HashMap<String, (u32, f32)> =
         std::collections::HashMap::new();
 
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     for f in &current {
         let q = f.quality_score();
         total_quality += q;
@@ -738,7 +749,7 @@ fn handle_export(project_root: &str) -> String {
             }
             let data_dir = lean_ctx::core::data_dir::lean_ctx_data_dir()?;
             let export_dir = data_dir.join("exports").join("knowledge");
-            let ts = Utc::now().format("%Y%m%d-%H%M%S");
+            let ts = UtcDateTime::now().format("%Y%m%d-%H%M%S");
             let filename = format!(
                 "knowledge-{}-{ts}.json",
                 short_hash(&knowledge.project_hash)
@@ -746,6 +757,13 @@ fn handle_export(project_root: &str) -> String {
             let path = export_dir.join(filename);
             let mut json = serde_json::to_string_pretty(&knowledge)
                 .map_err(|_| "Export serialization failed")?;
+            // A fact value that is a JSON document: the whole value of every
+            // credential member in it is masked, as in every other view.
+            match lean_ctx::core::redaction::structured::mask_structured_text(&json) {
+                Ok(None) => {}
+                Ok(Some(masked)) if !masked.still_carries_an_original() => json = masked.text,
+                Ok(Some(_)) | Err(_) => return Err("export withheld: secret not maskable".into()),
+            }
             json.push('\n');
             admission.authorize_publication(authority)?;
             lean_ctx::config_io::write_atomic_with_backup(&path, &json)?;

@@ -33,12 +33,13 @@ Commit `.lean-ctx/policy.toml`. From now on, governance changes are diffs.
 
 Domain packs (health, finance, legal, company-specific) and the
 compliance-framework packs (EU AI Act, ISO 42001, SOC 2) are part of
-LeanCTX Hive / Enterprise and no longer ship with the Community engine. A pack
+LeanCTX Cloud / Enterprise and no longer ship with the Community engine. A pack
 that `extends` a former built-in (`healthcare`, `finance-eu`, `soc2-context`,
 `iso42001-aligned`, `eu-ai-act-deployer`) now fails to load with a pointer to
 its tier: switch `extends` to `strict-redaction` and add your own patterns
 (below), or install the paid pack. The Community PII filter (`[filters] pii`)
-still detects IBAN, payment cards, e-mail, phone, US SSN and Swiss AHV numbers.
+detects payment cards, e-mail addresses and phone numbers; IBAN, US SSN and
+Swiss AHV detection comes with the Cloud filter packs.
 Inspect any pack resolved (`lean-ctx policy show strict-redaction`) or raw
 (`--toml`).
 
@@ -100,12 +101,13 @@ lean-ctx policy show project        # the resolved, effective policy
 - `extends` to unknown packs, cycles, chains deeper than 8
 - allow/deny overlaps
 
-## Personal LeanCTX Hive rules (staging)
+## Personal rules
 
-The installed LeanCTX Hive runtime prepares personal mask/block rules; their resulting
-policy stays in the existing `.lean-ctx/policy.toml`. Existing OSS regex rules
-remain available. Published protection keeps working after a license expires;
-preparing or publishing a new LeanCTX Hive rule set requires `personal_protection`.
+The engine compiles personal mask/block rules locally. It is free and needs no
+account, license or installed runtime. The resulting policy stays in the existing
+`.lean-ctx/policy.toml`, and existing regex rules remain available. Ready-made
+industry rule sets (for example healthcare or finance) are a LeanCTX Cloud
+Personal feature; they use the same rule format.
 
 ```json
 {"schema_version":1,"rules":[
@@ -135,7 +137,7 @@ Field selectors match literal labels in single-line JSON, key=value and colon
 text, including quoted values with escaped quotes. They mask the whole
 assignment. They do not decode escaped JSON keys, XML, multiline values or other
 document structures; masked output is context text, not necessarily valid JSON.
-Use explicit patterns for other text conventions. Rule sets contain at most32
+Use explicit patterns for other text conventions. Rule sets contain at most 32
 rules and use bounded regex compilation; no programs or project tests are run.
 
 The shared open policy format also supports `[filters.blocked_patterns]`:
@@ -238,14 +240,17 @@ takes an action: `off`, `warn` (let through + audit), `redact` (mask matches), o
 
 ```toml
 [filters]
-pii = "redact"                       # Swiss AHV, IBAN, payment cards, email
+pii = "redact"                       # payment cards, e-mail, phone
 classification = "block"             # gate confidential/secret-marked files
 injection = "block"                  # OWASP LLM01 prompt-injection
 blocked_labels = ["CONFIDENTIAL", "TS//SCI"]   # optional: your own label set
 ```
 
-- **PII** is checksum-validated (Luhn for cards, mod-97 for IBAN, EAN-13 for
-  AHV), so a random 16-digit order number is not mistaken for a card.
+- **PII**: cards are Luhn-validated (plus layout and issuer checks), so a
+  random 16-digit order number is not mistaken for a card; a phone number needs
+  a phone shape or a nearby label such as `tel:`. E-mail and phone are screened
+  only under a pack's `[filters] pii`; without a pack, the gateway's
+  `[context_gateway] pii` screens checksum-validated cards only.
 - **Classification** only fires on an actual *marking* — a banner line
   (`CONFIDENTIAL` on its own line) or a `Classification:`/`Sensitivity:` field —
   not the word used in a sentence.
@@ -307,8 +312,9 @@ producer's key, received out of band) or this installation's own key; a report s
 any other key is reported as SELF-SIGNED / UNPINNED (exit code 3), because a key embedded
 in the report proves integrity, not who produced it. The Community engine also keeps the
 raw evidence:
-`lean-ctx audit evidence` writes the offline-verifiable bundle
-(`docs/contracts/evidence-bundle-v1.md`) and `lean-ctx policy coverage` runs the CGB
+`lean-ctx audit evidence --from <rfc3339> --to <rfc3339> [--out <file>]` writes the
+offline-verifiable bundle (`docs/contracts/evidence-bundle-v1.md`); both bounds are
+required RFC 3339 timestamps such as `2026-05-01T00:00:00Z` and `lean-ctx policy coverage` runs the CGB
 assessment.
 
 ## Central org policy (#674)

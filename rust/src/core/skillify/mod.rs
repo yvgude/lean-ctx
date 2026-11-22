@@ -93,7 +93,7 @@ pub fn mine(project_root: &str) -> Result<MineReport, String> {
         return Err("skillify is disabled — set `[skillify] enabled = true`".to_string());
     }
     let root = output_root(project_root, &cfg.scope);
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = lean_ctx_time::UtcDateTime::now().to_rfc3339();
     let candidates = candidate::mine_candidates(project_root);
 
     let mut report = MineReport {

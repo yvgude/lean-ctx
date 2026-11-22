@@ -57,6 +57,28 @@ pub use pipeline::{CompressionPipeline, PipelineReport, StageReport};
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
 const OCLA_BUDGET_SCOPE_HEADER: &str = "x-ocla-budget-scope";
 const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;
+/// The serving provider is not in the Cloud policy's `allowed_providers`.
+const PROVIDER_NOT_ALLOWED: &str = "destination.provider_not_allowed";
+/// The installed Cloud policy cannot be trusted; nothing leaves.
+const PROVIDER_POLICY_UNAVAILABLE: &str = "destination.provider_policy_unavailable";
+
+/// The gateway refusal for a Cloud `allowed_providers` verdict: not allowed
+/// is withheld (403), an untrusted policy is unavailable (503).
+fn provider_policy_refusal(
+    verdict: Result<Option<String>, String>,
+) -> Option<(admitted::GatewayRefusal, String)> {
+    match verdict {
+        Ok(None) => None,
+        Ok(Some(reason)) => Some((
+            admitted::GatewayRefusal::withheld(PROVIDER_NOT_ALLOWED),
+            reason,
+        )),
+        Err(reason) => Some((
+            admitted::GatewayRefusal::unavailable(PROVIDER_POLICY_UNAVAILABLE),
+            reason,
+        )),
+    }
+}
 
 /// Check whether an incoming request was already compressed by Headroom.
 pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool {
@@ -696,13 +718,30 @@ async fn prepare_upstream_request(
             &trace_id,
         ));
     }
+    // Cloud `security.allowed_providers` (ent2-4) on the host the request is
+    // actually sent to after routing (the same base the wire uses below),
+    // never on a label or registry id from local config; a damaged Cloud
+    // policy refuses (503).
+    let serving_base = prepared
+        .route
+        .as_ref()
+        .and_then(|r| r.upstream_base.as_deref())
+        .unwrap_or(upstream_base);
+    let provider_refusal = provider_policy_refusal(
+        lean_ctx::core::policy::cloud_agents::provider_refusal(serving_base),
+    );
+    if let Some((refusal, reason)) = provider_refusal {
+        tracing::warn!("lean-ctx proxy: {} ({reason})", refusal.message());
+        return Ok(admission::refused(
+            &refusal,
+            provider_label,
+            caller_bytes,
+            &trace_id,
+        ));
+    }
     if let Some(refused) = origin_gate::admit(
         origin_gate::Destination {
-            base: prepared
-                .route
-                .as_ref()
-                .and_then(|r| r.upstream_base.as_deref())
-                .unwrap_or(upstream_base),
+            base: serving_base,
             model: prepared
                 .parsed
                 .as_ref()

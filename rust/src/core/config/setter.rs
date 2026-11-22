@@ -76,10 +76,10 @@ pub fn set_many_by_key(
         .map_err(|e| crate::core::error::ConfigError::Save {
             source: Box::new(e),
         })?;
-    // K2 review 3 (NEW-2): a Hive off switch stops local recording at
+    // K2 review 3 (NEW-2): a Cloud off switch stops local recording at
     // once, not at the scheduler's next tick (or the next restart).
-    if updates.iter().any(|(key, _)| key.starts_with("hive.")) {
-        super::hive::apply_off_switches(&cfg.hive);
+    if updates.iter().any(|(key, _)| key.starts_with("cloud.")) {
+        super::cloud::apply_off_switches(&cfg.cloud);
     }
     Ok(cfg)
 }
@@ -288,17 +288,17 @@ mod tests {
         use crate::core::config::managed::{managed_from_toml_for_test, with_managed_for_test};
         let isolated = crate::core::data_dir::isolated_data_dir();
         let managed = managed_from_toml_for_test(
-            "[hive]\nurl = \"https://hive.acme.example\"\norg = \"org_acme\"\n",
+            "[cloud]\nurl = \"https://cloud.acme.example\"\norg = \"org_acme\"\n",
         );
         let result = with_managed_for_test(Some(managed), || {
             set_many_by_key(&[
-                ("hive.auto_capture", "false"),
-                ("hive.url", "https://hive.user.example"),
+                ("cloud.auto_capture", "false"),
+                ("cloud.url", "https://cloud.user.example"),
             ])
         });
         match result {
             Err(crate::core::error::ConfigError::InvalidValue { key, message }) => {
-                assert_eq!(key, "hive.url");
+                assert_eq!(key, "cloud.url");
                 assert!(message.contains("managed by org_acme"), "{message}");
             }
             other => panic!("expected a managed refusal, got {other:?}"),

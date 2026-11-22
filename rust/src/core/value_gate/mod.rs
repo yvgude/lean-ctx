@@ -124,7 +124,7 @@ fn assess_task_with_context(
         outcome_accepted,
         cpao_micros,
         evidence,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
     }
 }
 

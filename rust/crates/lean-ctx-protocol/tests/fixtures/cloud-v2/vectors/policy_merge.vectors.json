@@ -1,0 +1,888 @@
+{
+  "cases": [
+    {
+      "case": "empty_chain",
+      "effective": {
+        "context": {},
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:65b5dff49a948c6df42444af1faf6de12f9b0921c981e7dec3f9f35183fdb025",
+      "levels": []
+    },
+    {
+      "case": "single_document_normal_form",
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_shell"
+          ]
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "excluded_paths": [
+            "**/*.pem",
+            ".env*",
+            "secrets/**"
+          ]
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:1ced7638e8ca89aaa9e61ad7d25bb0ac06f8a0189a4aa660bc1d0e63c891e74e",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "excluded_paths": [
+                "secrets/**",
+                ".env*",
+                "**/*.pem"
+              ]
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "deny_wins_union",
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_edit",
+            "ctx_shell"
+          ]
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "blocked_labels": [
+            "confidential",
+            "secret"
+          ],
+          "excluded_paths": [
+            "customers/**",
+            "secrets/**"
+          ],
+          "external_model_excluded_classes": [
+            "customer_data",
+            "pii",
+            "secrets"
+          ]
+        },
+        "sharing": {
+          "consent_required_for": [
+            "destructive_change",
+            "permission_expansion",
+            "team_sharing"
+          ]
+        }
+      },
+      "effective_digest": "sha256:5eab384f6f52daffc9c24b2be37626f1d5919070bd9fb03a38816d003b527af5",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "blocked_labels": [
+                "secret"
+              ],
+              "excluded_paths": [
+                "secrets/**"
+              ],
+              "external_model_excluded_classes": [
+                "secrets"
+              ]
+            },
+            "sharing": {
+              "consent_required_for": [
+                "permission_expansion"
+              ]
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_edit"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "blocked_labels": [
+                "confidential"
+              ],
+              "excluded_paths": [
+                "customers/**",
+                "secrets/**"
+              ],
+              "external_model_excluded_classes": [
+                "customer_data",
+                "pii"
+              ]
+            },
+            "sharing": {
+              "consent_required_for": [
+                "destructive_change",
+                "team_sharing"
+              ]
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "allowed_values_intersect",
+      "effective": {
+        "context": {
+          "allowed_sources": [],
+          "allowed_tools": [
+            "ctx_read",
+            "ctx_search"
+          ]
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {},
+        "sharing": {
+          "allowed_vaults": [
+            "8a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d"
+          ]
+        }
+      },
+      "effective_digest": "sha256:087389742badc1dbf66970acbc61e3a66bf7e8ee5043fe633f9cf613f5ed04a2",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "allowed_sources": [
+                "files",
+                "knowledge"
+              ],
+              "allowed_tools": [
+                "ctx_read",
+                "ctx_search",
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "sharing": {
+              "allowed_vaults": [
+                "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+                "8a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d"
+              ]
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "allowed_sources": [
+                "web"
+              ],
+              "allowed_tools": [
+                "ctx_search",
+                "ctx_read",
+                "ctx_tree"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "sharing": {
+              "allowed_vaults": [
+                "8a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d"
+              ]
+            }
+          },
+          "level": "instance"
+        }
+      ]
+    },
+    {
+      "case": "numbers_take_the_stricter_limit",
+      "effective": {
+        "context": {
+          "max_context_tokens": 64000,
+          "max_cost_cents_per_person_per_day": 500,
+          "max_source_age_days": 90,
+          "max_writes_per_min": 0
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:5e4ce97aa0a7e00894d34131062d62860f0e7936dd985918ffbb32678bb5c054",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 120000,
+              "max_cost_cents_per_person_per_day": 2000,
+              "max_source_age_days": 90
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 200000,
+              "max_cost_cents_per_person_per_day": 500,
+              "max_writes_per_min": 30
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "vault"
+        },
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 64000,
+              "max_source_age_days": 365,
+              "max_writes_per_min": 0
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "instance"
+        }
+      ]
+    },
+    {
+      "case": "restrictive_booleans_win",
+      "effective": {
+        "context": {
+          "auto_extraction": false,
+          "extraction_requires_source_anchor": true
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "block_secrets": true,
+          "confidential_out_of_sharing": true
+        },
+        "sharing": {
+          "cross_team_sharing": false
+        }
+      },
+      "effective_digest": "sha256:fcbbb804e6eaa5a3923ffea270c4c52c690c72aa3c2e3f193c87959542f520af",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "auto_extraction": true,
+              "extraction_requires_source_anchor": false
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "block_secrets": false,
+              "confidential_out_of_sharing": true
+            },
+            "sharing": {
+              "cross_team_sharing": true
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "auto_extraction": false,
+              "extraction_requires_source_anchor": true
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "confidential_out_of_sharing": false
+            },
+            "sharing": {
+              "cross_team_sharing": false
+            }
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "ranked_values_take_the_stricter",
+      "effective": {
+        "context": {
+          "injection_filter": "block"
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "classification": "block",
+          "pii": "redact"
+        },
+        "sharing": {
+          "task_claim_min_role": "maintainer"
+        }
+      },
+      "effective_digest": "sha256:72a99758574a619401e7a6713541cc51a7813a6df5157211268d56d6bab3fb89",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "injection_filter": "block"
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "classification": "warn",
+              "pii": "redact"
+            },
+            "sharing": {
+              "task_claim_min_role": "maintainer"
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "context": {
+              "injection_filter": "off"
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "classification": "block",
+              "pii": "warn"
+            },
+            "sharing": {
+              "task_claim_min_role": "contributor"
+            }
+          },
+          "level": "instance"
+        }
+      ]
+    },
+    {
+      "case": "model_allowlists_all_apply",
+      "effective": {
+        "context": {},
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "allowed_models": [
+            [
+              "claude-*"
+            ],
+            [
+              "claude-*",
+              "gpt-*"
+            ]
+          ]
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:9ff7d78d9d21672dd26e7c1896d709d25754bd0880715142e7a79de5b91bf511",
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "allowed_models": [
+                [
+                  "gpt-*",
+                  "claude-*"
+                ]
+              ]
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "allowed_models": [
+                [
+                  "claude-*"
+                ],
+                [
+                  "claude-*",
+                  "gpt-*"
+                ]
+              ]
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "equal_members_agree",
+      "effective": {
+        "context": {
+          "ranking_profile": "precision",
+          "read_mode": "map"
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:95a4bc9218bbc1938a3334cd8895351b6014201054f207aeba54ae080f592d47",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "ranking_profile": "precision",
+              "read_mode": "map"
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "read_mode": "map"
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "equal_members_disagree_non_mergeable",
+      "error": {
+        "code": "non_mergeable",
+        "field": "context.read_mode"
+      },
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "read_mode": "map"
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "read_mode": "full"
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "instance"
+        }
+      ]
+    },
+    {
+      "case": "unknown_member_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "security.allow_everything"
+      },
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "allow_everything": true
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "unknown_schema_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "schema"
+      },
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v2"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "limit_out_of_range_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "context.max_context_tokens"
+      },
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 0
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "instance"
+        }
+      ]
+    },
+    {
+      "case": "repeated_value_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "context.denied_tools"
+      },
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell",
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "levels_out_of_order_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": ""
+      },
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "instance"
+        },
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "agent_and_model_rules_ent2",
+      "effective": {
+        "agents": {
+          "allowed": [
+            "claude-code"
+          ]
+        },
+        "context": {},
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "allowed_providers": [
+            "anthropic"
+          ],
+          "never_send": [
+            "*.pem",
+            "secrets/**"
+          ],
+          "readable_roots": [
+            "{project}"
+          ]
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:e0f47f23d67070ae251cc5a4aac1d52508c919cdb7794570b9c9def0684dba22",
+      "levels": [
+        {
+          "document": {
+            "agents": {
+              "allowed": [
+                "*"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "allowed_providers": [
+                "openai",
+                "anthropic"
+              ],
+              "never_send": [
+                "secrets/**"
+              ],
+              "readable_roots": [
+                "~/shared",
+                "{project}"
+              ]
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "agents": {
+              "allowed": [
+                "codex",
+                "claude-code"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "allowed_providers": [
+                "anthropic"
+              ],
+              "never_send": [
+                "*.pem"
+              ],
+              "readable_roots": [
+                "{project}"
+              ]
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "agents": {
+              "allowed": [
+                "claude-code",
+                "acp:zed"
+              ]
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "readable_roots_by_containment",
+      "effective": {
+        "context": {},
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "readable_roots": [
+            "~/shared/docs/api"
+          ]
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:8042cfc39654d133e40832dce763e05378335a29c0f3d0f558aa9bf112f9a289",
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "readable_roots": [
+                "~/shared",
+                "{project}"
+              ]
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "readable_roots": [
+                "~/shared/docs",
+                "/srv/data"
+              ]
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "readable_roots": [
+                "/srv",
+                "~/shared/docs/api"
+              ]
+            }
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "orchestrator_and_proxy_qn2",
+      "effective": {
+        "context": {},
+        "orchestrator": {
+          "cross_team_review": false,
+          "max_sessions_per_vault": 3,
+          "network": false
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "require_proxy": true
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:601a5824ed35e80257d6b6c02a00eba54da024e24c37710f63f90317604a9bc1",
+      "levels": [
+        {
+          "document": {
+            "orchestrator": {
+              "cross_team_review": true,
+              "max_sessions_per_vault": 8,
+              "network": true
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "require_proxy": true
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "orchestrator": {
+              "max_sessions_per_vault": 3
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "orchestrator": {
+              "cross_team_review": false,
+              "max_sessions_per_vault": 5,
+              "network": false
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "require_proxy": false
+            }
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "orchestrator_session_cap_out_of_range_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "orchestrator.max_sessions_per_vault"
+      },
+      "levels": [
+        {
+          "document": {
+            "orchestrator": {
+              "max_sessions_per_vault": 1001
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "orchestrator_unknown_member_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "orchestrator.relay_everything"
+      },
+      "levels": [
+        {
+          "document": {
+            "orchestrator": {
+              "relay_everything": true
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "bundle_chain",
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_shell"
+          ],
+          "max_context_tokens": 64000
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {
+          "block_secrets": true,
+          "excluded_paths": [
+            ".env*",
+            "customers/**",
+            "secrets/**"
+          ],
+          "pii": "block"
+        },
+        "sharing": {
+          "consent_required_for": [
+            "permission_expansion"
+          ],
+          "cross_team_sharing": false
+        }
+      },
+      "effective_digest": "sha256:f64df20a7fccb329798f9db5aab53a588bfe5924c3f29971f013286889c9dd89",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ],
+              "max_context_tokens": 120000
+            },
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "secrets/**"
+              ],
+              "pii": "redact"
+            },
+            "sharing": {
+              "consent_required_for": [
+                "permission_expansion"
+              ],
+              "cross_team_sharing": false
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "excluded_paths": [
+                "customers/**"
+              ],
+              "pii": "block"
+            },
+            "sharing": {}
+          },
+          "level": "vault"
+        },
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 64000
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "instance"
+        }
+      ]
+    }
+  ],
+  "name": "policy_merge",
+  "note": "Merge of the policy hierarchy (policy.schema.json): `levels` outermost first (org, workspace, vault, instance; at most one each), each document validated, then merged member by member by its x-merge rule. `effective` is authored by hand and never re-blessed; `effective_digest` = \"sha256:\" + hex(sha256(canonical_json(effective))) is derived. A case with `error` must be refused with that code at that member path (\"\" = the document or chain as a whole). Merging never weakens any member relative to any input, is idempotent, commutative and associative where defined. Case bundle_chain is the input of routes/policy_bundle.v2.response.json."
+}

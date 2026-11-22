@@ -111,12 +111,11 @@ fn compression_is_recent() -> bool {
     lean_ctx::core::stats::load()
         .last_use
         .as_deref()
-        .and_then(|timestamp| chrono::DateTime::parse_from_rfc3339(timestamp).ok())
+        .and_then(|timestamp| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(timestamp).ok())
         .is_some_and(|timestamp| {
-            let age =
-                chrono::Utc::now().signed_duration_since(timestamp.with_timezone(&chrono::Utc));
-            age >= chrono::Duration::zero()
-                && age <= chrono::Duration::minutes(RECENT_COMPRESSION_MINUTES)
+            let age = lean_ctx_time::UtcDateTime::now().signed_duration_since(timestamp.to_utc());
+            age >= lean_ctx_time::Duration::zero()
+                && age <= lean_ctx_time::Duration::minutes(RECENT_COMPRESSION_MINUTES)
         })
 }
 

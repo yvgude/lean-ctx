@@ -286,7 +286,7 @@ fn build_realworld_result(
         model: args.model.clone(),
         endpoint: args.endpoint.clone(),
         target_path: args.target_dir.display().to_string(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         lean_ctx_version: env!("CARGO_PKG_VERSION").to_string(),
         methodology: Methodology {
             description: "Sequential 5-turn API calls per arm. Each turn accumulates \

@@ -277,7 +277,9 @@ fn print_setup_help() {
     println!("                      Check (or start) a separate protected Codex session");
     println!("  runtime <configure|status|sync-configured|rollback-configured|");
     println!("           activate-configured|activate-personal|renew-configured|deactivate>");
-    println!("                      Optional LeanCTX | Hive runtime (Hive analyses, Cockpit);");
+    println!(
+        "                      Optional LeanCTX Cloud runtime (LeanCTX Cloud analyses, Cockpit);"
+    );
     println!("                      installing needs --accept-proprietary, staging-only");
     println!("                      operator commands also --staging");
     println!("  share-identity | share-invite | share-publish | share-continue");

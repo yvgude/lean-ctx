@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "human_session_required",
+    "message": "only a person signed in on the web may do this"
+  }
+}

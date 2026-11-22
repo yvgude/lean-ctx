@@ -185,7 +185,7 @@ the [CapabilityManifestV1](../capability-manifest-v1.schema.json) contract.
 | Offering | Profile capability |
 |---|---|
 | LeanCTX OSS | Create profiles, run local benchmarks, retain local benchmark history, and calibrate parameters manually or with local parameter sweeps. |
-| LeanCTX Hive Team / Enterprise | Add governance, shared production profiles and their history across engines. |
+| LeanCTX Cloud Team / Enterprise | Add governance, shared production profiles and their history across engines. |
 
 These additions are control-plane services; they do not restrict local profile
 creation or execution. See [OSS Plane Separation v1](../oss-plane-separation-v1.md)

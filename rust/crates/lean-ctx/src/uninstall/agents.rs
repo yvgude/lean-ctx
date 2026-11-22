@@ -8,7 +8,7 @@ use super::parsers::{
 };
 use super::{
     backup_before_modify, copilot_instructions_path, remove_marked_block, safe_remove, safe_write,
-    shorten,
+    safe_write_rules, shorten,
 };
 
 pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
@@ -614,10 +614,17 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ),
         ("JetBrains IDEs", home.join(".jb-rules/lean-ctx.md")),
         (
-            "Antigravity",
+            "Antigravity (legacy)",
             home.join(".gemini/antigravity/rules/lean-ctx.md"),
         ),
-        ("Pi Coding Agent", home.join(".pi/rules/lean-ctx.md")),
+        (
+            "Antigravity (dedicated)",
+            lean_ctx::rules_inject::antigravity_dedicated_rules_path(home),
+        ),
+        (
+            "Pi Coding Agent (legacy)",
+            home.join(".pi/rules/lean-ctx.md"),
+        ),
         ("AWS Kiro", home.join(".kiro/steering/lean-ctx.md")),
         ("Verdent", home.join(".verdent/rules/lean-ctx.md")),
         ("Crush", home.join(".config/crush/rules/lean-ctx.md")),
@@ -633,7 +640,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
 
     // Shared files: contain user content + lean-ctx block with markers.
     // Only remove the <!-- lean-ctx --> ... <!-- /lean-ctx --> section.
-    let shared_files: Vec<(&str, PathBuf)> = vec![
+    let mut shared_files: Vec<(&str, PathBuf)> = vec![
         (
             "Claude Code (legacy)",
             lean_ctx::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
@@ -649,7 +656,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ),
         ("Gemini CLI", home.join(".gemini/GEMINI.md")),
         (
-            "Codex CLI",
+            "Codex CLI (legacy)",
             lean_ctx::core::home::resolve_codex_dir()
                 .unwrap_or_else(|| home.join(".codex"))
                 .join("instructions.md"),
@@ -665,7 +672,22 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ),
         ("Hermes Agent", home.join(".hermes/HERMES.md")),
         ("Grok", home.join(".grok/AGENTS.md")),
+        ("Antigravity", home.join(".gemini/AGENTS.md")),
+        (
+            "Pi Coding Agent",
+            lean_ctx::core::editor_registry::pi_agents_path(home),
+        ),
     ];
+    // `PI_CODING_AGENT_DIR` is read at uninstall time; setup may have run
+    // without it, so the default agent dir is cleaned as well.
+    let pi_default = home.join(".pi/agent/AGENTS.md");
+    if pi_default != lean_ctx::core::editor_registry::pi_agents_path(home) {
+        shared_files.push(("Pi Coding Agent (default dir)", pi_default));
+    }
+    // lean-ctx only ever wrote a marked block into these files, so they skip
+    // the pre-v13 heading heuristic: unless both marker lines are present,
+    // they stay untouched.
+    let marker_only = |name: &str| name == "Antigravity" || name.starts_with("Pi Coding Agent");
 
     let mut removed = false;
 
@@ -694,21 +716,59 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         lean_ctx_hooks::hooks::agents::unregister_gemini_context_filename(home);
     }
 
-    // --- Dedicated: delete if contains lean-ctx ---
+    // --- Dedicated: remove the lean-ctx block; the file goes when nothing
+    // but it (and a frontmatter) is left, otherwise the user's notes stay ---
+    const HTML_START: &str = lean_ctx::core::rules_canonical::START_MARK;
     for (name, path) in &dedicated_files {
         if !path.exists() {
             continue;
         }
-        if let Ok(content) = fs::read_to_string(path)
-            && content.contains("lean-ctx")
-        {
-            if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove {name} rules: {e}");
-            } else {
-                let verb = if dry_run { "Would remove" } else { "✓" };
-                println!("  {verb} Rules removed from {name}");
-                removed = true;
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        // Files at paths no client loads any more, and Codex's `LEAN-CTX.md`,
+        // were written by releases without markers: lean-ctx owns them whole.
+        let legacy = name.contains("(legacy)") || *name == "Codex CLI";
+        if legacy {
+            if !content.contains("lean-ctx") {
+                continue;
             }
+        } else if lean_ctx::marked_block::contains_marker_line(&content, HTML_START) {
+            let file = lean_ctx::core::rules_canonical::RulesFile::parse(&content);
+            if file.is_unterminated() {
+                println!("  ! {name}: lean-ctx block has no end marker, left untouched");
+                continue;
+            }
+            let rest = file.without_section();
+            if !without_frontmatter(&rest).trim().is_empty() {
+                backup_before_modify(path, dry_run);
+                let rest = lean_ctx::marked_block::with_line_endings_of(
+                    &content,
+                    format!("{}\n", rest.trim_end()),
+                );
+                match safe_write_rules(path, &rest, dry_run) {
+                    Ok(()) => {
+                        let verb = if dry_run { "Would clean" } else { "✓" };
+                        println!("  {verb} Rules removed from {name} (user content preserved)");
+                        removed = true;
+                    }
+                    Err(e) => tracing::warn!("Failed to clean {name} rules: {e}"),
+                }
+                continue;
+            }
+        } else if !lean_ctx::marked_block::contains_marker_line(
+            &content,
+            "# Context Engineering Layer",
+        ) {
+            // Neither marker nor the pre-v13 heading: not lean-ctx's file.
+            continue;
+        }
+        if let Err(e) = safe_remove(path, dry_run) {
+            tracing::warn!("Failed to remove {name} rules: {e}");
+        } else {
+            let verb = if dry_run { "Would remove" } else { "✓" };
+            println!("  {verb} Rules removed from {name}");
+            removed = true;
         }
     }
 
@@ -717,7 +777,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
     //   1. HTML comment markers: `START_MARK` … `END_MARK`
     //   2. Old heading-based: `# Context Engineering Layer` (pre-v13)
     const HEADING_MARKER: &str = "# Context Engineering Layer";
-    const HTML_START: &str = lean_ctx::core::rules_canonical::START_MARK;
     const HTML_END: &str = lean_ctx::core::rules_canonical::END_MARK;
 
     for (name, path) in &shared_files {
@@ -731,10 +790,20 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             continue;
         }
 
-        let cleaned = if content.contains(HEADING_MARKER) && content.contains(HTML_END) {
-            remove_marked_block(&content, HEADING_MARKER, HTML_END)
-        } else if content.contains(HTML_START) && content.contains(HTML_END) {
+        let has_line = |marker| lean_ctx::marked_block::contains_marker_line(&content, marker);
+        // Without its end line, the block's extent is unknown: removing
+        // "until the next heading" would take the user's text with it, and the
+        // backup goes once the write succeeds. Leave the file as it is.
+        if lean_ctx::core::rules_canonical::RulesFile::parse(&content).is_unterminated() {
+            println!("  ! {name}: lean-ctx block has no end marker, left untouched");
+            continue;
+        }
+        let cleaned = if has_line(HTML_START) && has_line(HTML_END) {
             remove_marked_block(&content, HTML_START, HTML_END)
+        } else if marker_only(name) {
+            continue;
+        } else if has_line(HEADING_MARKER) && has_line(HTML_END) {
+            remove_marked_block(&content, HEADING_MARKER, HTML_END)
         } else {
             remove_lean_ctx_block_from_md(&content)
         };
@@ -744,50 +813,24 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             let _ = safe_remove(path, dry_run);
             let verb = if dry_run { "Would remove" } else { "✓" };
             println!("  {verb} Rules removed from {name} (file was lean-ctx only)");
-        } else if cleaned.trim() != content.trim() {
+            removed = true;
+        } else if lf_trimmed(&cleaned) != lf_trimmed(&content) {
             backup_before_modify(path, dry_run);
-            let _ = safe_write(path, &cleaned, dry_run);
+            let cleaned = lean_ctx::marked_block::with_line_endings_of(&content, cleaned);
+            if let Err(e) = safe_write_rules(path, &cleaned, dry_run) {
+                tracing::warn!("Failed to clean {name} rules: {e}");
+                continue;
+            }
             let verb = if dry_run { "Would clean" } else { "✓" };
             println!("  {verb} Rules removed from {name} (user content preserved)");
+            removed = true;
         }
-        removed = true;
     }
 
     // --- Hermes Agent: block-based removal from shared HERMES.md ---
-    let hermes_md = home.join(".hermes/HERMES.md");
-    if hermes_md.exists()
-        && let Ok(content) = fs::read_to_string(&hermes_md)
-        && content.contains("lean-ctx")
-    {
-        let cleaned = remove_lean_ctx_block_from_md(&content);
-        backup_before_modify(&hermes_md, dry_run);
-        if cleaned.trim().is_empty() {
-            let _ = safe_remove(&hermes_md, dry_run);
-        } else {
-            let _ = safe_write(&hermes_md, &cleaned, dry_run);
-        }
-        let verb = if dry_run { "Would clean" } else { "✓" };
-        println!("  {verb} Rules removed from Hermes Agent");
-        removed = true;
-    }
-
+    removed |= clean_hermes_rules(&home.join(".hermes/HERMES.md"), "Hermes Agent", dry_run);
     if let Ok(cwd) = std::env::current_dir() {
-        let project_hermes = cwd.join(".hermes.md");
-        if project_hermes.exists()
-            && let Ok(content) = fs::read_to_string(&project_hermes)
-            && content.contains("lean-ctx")
-        {
-            let cleaned = remove_lean_ctx_block_from_md(&content);
-            backup_before_modify(&project_hermes, dry_run);
-            if cleaned.trim().is_empty() {
-                let _ = safe_remove(&project_hermes, dry_run);
-            } else {
-                let _ = safe_write(&project_hermes, &cleaned, dry_run);
-            }
-            let verb = if dry_run { "Would clean" } else { "✓" };
-            println!("  {verb} Rules removed from .hermes.md");
-            removed = true;
-        }
+        removed |= clean_hermes_rules(&cwd.join(".hermes.md"), ".hermes.md", dry_run);
     }
 
     if !removed {
@@ -796,7 +839,68 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
     removed
 }
 
+/// `content` without a leading YAML frontmatter block (Cursor `.mdc`,
+/// Antigravity rules): a frontmatter alone is not user content worth a file.
+fn without_frontmatter(content: &str) -> &str {
+    let trimmed = content.trim_start_matches('\u{feff}').trim_start();
+    let Some(rest) = trimmed
+        .strip_prefix("---\n")
+        .or_else(|| trimmed.strip_prefix("---\r\n"))
+    else {
+        return content;
+    };
+    rest.find("\n---").map_or(content, |end| {
+        rest[end + 4..].trim_start_matches(['\r', '\n'])
+    })
+}
+
+/// `text` with LF line endings and without surrounding whitespace: whether a
+/// cleanup changed anything, whatever the file's line endings.
+fn lf_trimmed(text: &str) -> String {
+    text.replace("\r\n", "\n").trim().to_string()
+}
+
+/// Remove the lean-ctx block from a Hermes rules file. Reports and touches
+/// the file only when the block was actually there; a rewrite keeps the
+/// file's line endings.
+fn clean_hermes_rules(path: &Path, label: &str, dry_run: bool) -> bool {
+    let Ok(content) = fs::read_to_string(path) else {
+        return false;
+    };
+    if !content.contains("lean-ctx") {
+        return false;
+    }
+    let cleaned = remove_lean_ctx_block_from_md(&content);
+    if lf_trimmed(&cleaned) == lf_trimmed(&content) {
+        return false;
+    }
+    backup_before_modify(path, dry_run);
+    let written = if cleaned.trim().is_empty() {
+        safe_remove(path, dry_run).map_err(|e| e.to_string())
+    } else {
+        let cleaned = lean_ctx::marked_block::with_line_endings_of(&content, cleaned);
+        safe_write_rules(path, &cleaned, dry_run)
+    };
+    match written {
+        Ok(()) => {
+            let verb = if dry_run { "Would clean" } else { "✓" };
+            println!("  {verb} Rules removed from {label}");
+            true
+        }
+        Err(e) => {
+            tracing::warn!("Failed to clean {label} rules: {e}");
+            false
+        }
+    }
+}
+
+/// Remove the lean-ctx block (marked or pre-v13 heading form) from `content`.
+/// A start marker without its end line is left alone: the block's extent is
+/// unknown, so nothing is removed.
 fn remove_lean_ctx_block_from_md(content: &str) -> String {
+    if lean_ctx::core::rules_canonical::RulesFile::parse(content).is_unterminated() {
+        return content.to_string();
+    }
     // Detect both HTML-comment markers and old heading-based markers.
     let start_marker = lean_ctx::core::rules_canonical::START_MARK;
     let end_marker = lean_ctx::core::rules_canonical::END_MARK;
@@ -805,16 +909,17 @@ fn remove_lean_ctx_block_from_md(content: &str) -> String {
     let mut in_block = false;
 
     for line in content.lines() {
-        if !in_block && (line.contains(start_marker) || line.trim() == heading) {
+        // Whole marker lines only (GL #1158): a quoted marker is user text.
+        if !in_block && (line.trim() == start_marker || line.trim() == heading) {
             in_block = true;
             continue;
         }
         if in_block {
-            if line.contains(end_marker) {
+            if line.trim() == end_marker {
                 in_block = false;
                 continue;
             }
-            if line.starts_with('#') && line.trim() != heading && !line.contains(start_marker) {
+            if line.starts_with('#') && line.trim() != heading {
                 in_block = false;
                 out.push_str(line);
                 out.push('\n');

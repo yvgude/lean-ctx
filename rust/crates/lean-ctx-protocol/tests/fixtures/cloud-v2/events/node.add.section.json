@@ -1,0 +1,49 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+  "body": {
+    "body": "\nThe wiki of a vault stores readable pages as place nodes: a page, its sections in order and the notes on them. Pages link to each other by id, for example [the item types](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies).\n\n",
+    "body_nonce": "15151515151515151515151515151515",
+    "order": 1024
+  },
+  "body_commit": "633279f54b991db0d6dabdc426218de1934f089b38fb6240ac51c198c72d1948",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 20,
+  "event_id": "01M5NKAPG8005000000000D021",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800021000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "section",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800021350,
+  "schema": "leanctx.cloud.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 21,
+  "signature": "7197346cca03dc09903524ecd81d6a5520b1817b03a41439cafef3e9a8cfd70209c1801d56c78d437300acdf1c6f06c19d6a34b9c9178cf1e138f4b3e0142502",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

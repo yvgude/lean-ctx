@@ -116,16 +116,16 @@ contracts and, free on one machine, deterministic local briefing packs, bounded
 Work Graph children (the host launches them), structured return synthesis, child
 receipts, outcome evaluation and accepted-path/waste attribution.
 
-### LeanCTX Hive Team
+### LeanCTX Cloud Team
 
-LeanCTX Hive Team adds authenticated workspace-scoped briefing sources, shared checkpoints,
+LeanCTX Cloud Team adds authenticated workspace-scoped briefing sources, shared checkpoints,
 multiple users, roles, seat enforcement, durable child history and
 cross-machine synthesis. Personal facts require explicit promotion before they
 become shared workspace context.
 
-### LeanCTX Hive Enterprise
+### LeanCTX Cloud Enterprise
 
-LeanCTX Hive Enterprise adds governed identity, RBAC, capability and delegation policy,
+LeanCTX Cloud Enterprise adds governed identity, RBAC, capability and delegation policy,
 classification/region/provider restrictions, retention, audit, offboarding and
 supported VPC/on-premise/air-gap execution.
 

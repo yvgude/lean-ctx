@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -134,7 +134,7 @@ pub struct ContextEventV1 {
     pub channel_id: String,
     pub kind: String,
     pub actor: Option<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub version: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<i64>,
@@ -237,8 +237,10 @@ impl TopicFilter {
 
 fn event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContextEventV1> {
     let ts_str: String = row.get(5)?;
-    let ts = DateTime::parse_from_rfc3339(&ts_str)
-        .map_or_else(|_| Utc::now(), |d| d.with_timezone(&Utc));
+    let ts = OffsetDateTime::parse_from_rfc3339(&ts_str).map_or_else(
+        |_| UtcDateTime::now(),
+        lean_ctx_time::OffsetDateTime::to_utc,
+    );
     let payload_str: String = row.get(6)?;
     let payload: Value = serde_json::from_str(&payload_str).unwrap_or(Value::Null);
     let kind_str: String = row.get(3)?;
@@ -764,7 +766,7 @@ impl ContextBus {
         parent_id: Option<i64>,
         target_agents: Option<Vec<String>>,
     ) -> Option<ContextEventV1> {
-        let ts = Utc::now();
+        let ts = UtcDateTime::now();
         let payload_json = payload.to_string();
         let target_agents_json = encode_target_agents(target_agents.as_deref());
 
@@ -886,7 +888,7 @@ impl ContextBus {
         delivery_id: &str,
         target_agents: Option<Vec<String>>,
     ) -> Result<bool, String> {
-        let ts = Utc::now();
+        let ts = UtcDateTime::now();
         let payload_json = payload.to_string();
         let target_agents_json = encode_target_agents(target_agents.as_deref());
         let (id, version) = {

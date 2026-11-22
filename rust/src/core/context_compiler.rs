@@ -127,7 +127,7 @@ pub fn compile(
 ) -> CompileResult {
     let run_id = format!(
         "run_{}_{}",
-        chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+        lean_ctx_time::UtcDateTime::now().format("%Y%m%d_%H%M%S"),
         std::process::id() % 1000
     );
     let selection = select_explicit(candidates, budget);

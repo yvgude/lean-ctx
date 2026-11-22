@@ -389,7 +389,7 @@ fn ctx_knowledge_recall_as_of_time_travels() {
     let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
     knowledge.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
     knowledge.facts[0].confirmation_count = 3;
-    let between = chrono::Utc::now();
+    let between = lean_ctx_time::UtcDateTime::now();
     std::thread::sleep(std::time::Duration::from_millis(10));
     knowledge.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
     knowledge.save().expect("save knowledge");

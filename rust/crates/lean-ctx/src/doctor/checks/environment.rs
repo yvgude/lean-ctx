@@ -585,7 +585,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
         // open project roots claimed "no active session" and looked broken).
         // Surface the recent sessions with their roots instead of denying
         // their existence.
-        None => match &recent_sessions_line(chrono::Utc::now()) {
+        None => match &recent_sessions_line(lean_ctx_time::UtcDateTime::now()) {
             Some(line) => Outcome {
                 ok: true,
                 line: format!(
@@ -605,13 +605,13 @@ pub(crate) fn session_state_outcome() -> Outcome {
 /// Renders "recent: root1 (2h ago), root2 (5m ago)" for the newest sessions
 /// across ALL workspaces (multi-window setups, GH #694). `None` when no
 /// session exists at all.
-fn recent_sessions_line(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
+fn recent_sessions_line(now: lean_ctx_time::UtcDateTime) -> Option<String> {
     format_recent_sessions(lean_ctx::core::session::SessionState::list_sessions(), now)
 }
 
 pub(crate) fn format_recent_sessions(
     sessions: Vec<lean_ctx::core::session::SessionSummary>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> Option<String> {
     let mut seen_roots = std::collections::HashSet::new();
     let mut parts = Vec::new();
@@ -640,7 +640,7 @@ pub(crate) fn format_recent_sessions(
     }
 }
 
-pub(crate) fn humanize_age(age: chrono::Duration) -> String {
+pub(crate) fn humanize_age(age: lean_ctx_time::Duration) -> String {
     let mins = age.num_minutes();
     if mins < 1 {
         "just now".to_string()
@@ -707,22 +707,26 @@ pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
     outcomes
 }
 
-/// Hive filter packs, shown only on an enrolled instance. A refused bundle
+/// Cloud filter packs, shown only on an enrolled instance. A refused bundle
 /// (a pack not as signed, malformed, over the rule limit) is a warning,
 /// never a failure: local work goes on under the last verified bundle.
 /// Local files only — no network.
-pub(crate) fn hive_policy_outcome() -> Option<Outcome> {
-    use lean_ctx_hive::{policy, state::HiveStore};
-    let store = HiveStore::open().ok()?;
+pub(crate) fn cloud_policy_outcome() -> Option<Outcome> {
+    use lean_ctx_cloud::{policy, state::CloudStore};
+    let store = CloudStore::open().ok()?;
     store.instance().ok().flatten()?;
     let state = policy::load_state(store.data_dir());
     let line = match (&state.last_refusal, state.filter_packs.len()) {
         (Some(refusal), _) => format!(
-            "{BOLD}Hive policy{RST}     {YELLOW}bundle refused: {refusal}{RST}  {DIM}(the last verified bundle stays; see lean-ctx hive status){RST}"
+            "{BOLD}LeanCTX Cloud policy{RST}     {YELLOW}bundle refused: {refusal}{RST}  {DIM}(the last verified bundle stays; see lean-ctx cloud status){RST}"
         ),
-        (None, 0) => format!("{BOLD}Hive policy{RST}     {DIM}no filter packs from Hive{RST}"),
+        (None, 0) => format!(
+            "{BOLD}LeanCTX Cloud policy{RST}     {DIM}no filter packs from LeanCTX Cloud{RST}"
+        ),
         (None, packs) => {
-            format!("{BOLD}Hive policy{RST}     {GREEN}{packs} filter pack(s) verified{RST}")
+            format!(
+                "{BOLD}LeanCTX Cloud policy{RST}     {GREEN}{packs} filter pack(s) verified{RST}"
+            )
         }
     };
     Some(Outcome { ok: true, line })
@@ -741,15 +745,76 @@ pub(crate) fn claude_mod_outcome() -> Option<Outcome> {
     let versions = claude_mod::cached_versions(&claude_dir);
     let want = claude_mod::mod_version();
     let line = if versions.contains(&claude_mod::cache_dir_name(&want)) {
-        format!("{BOLD}Claude Code mod{RST}  {GREEN}installed ({want}){RST}")
+        let hint = if claude_mod_front_loads_under_governor(&claude_dir) {
+            format!(
+                "  {YELLOW}enabled under governor-mcp: front-loads lean-ctx tool schemas{RST}  {DIM}(run: claude plugin disable {} --scope user){RST}",
+                claude_mod::PLUGIN_ID
+            )
+        } else {
+            String::new()
+        };
+        format!("{BOLD}Claude Code mod{RST}  {GREEN}installed ({want}){RST}{hint}")
     } else if let Some(old) = versions.last() {
         format!(
             "{BOLD}Claude Code mod{RST}  {YELLOW}{old} — this instance ships {want}{RST}  {DIM}(run: lean-ctx claude-mod install){RST}"
         )
     } else {
         format!(
-            "{BOLD}Claude Code mod{RST}  {DIM}not installed — optional: wake-not-poll, Bash shaping, /leanctx (run: lean-ctx claude-mod install){RST}"
+            "{BOLD}Claude Code mod{RST}  {DIM}not installed — optional: cockpit, /leanctx, wake-not-poll, Code Mode (run: lean-ctx claude-mod install){RST}"
         )
+    };
+    Some(Outcome { ok: true, line })
+}
+
+/// governor-mcp keeps lean-ctx tool schemas deferred; the mod, when enabled in
+/// the user's Claude settings (user scope, so the hint names `--scope user`),
+/// front-loads them again. Silent once the governor marker stands: a plugin
+/// enabled after `init --mode governor-mcp` disabled it is the user's choice.
+/// File-only.
+fn claude_mod_front_loads_under_governor(claude_dir: &std::path::Path) -> bool {
+    use lean_ctx_hooks::hooks::agents::{claude_governor, claude_mod};
+    let governor_mcp = lean_ctx::core::home::resolve_home_dir()
+        .and_then(|h| claude_governor::installed_arm(&h))
+        == Some(claude_governor::GovernorArm::McpDeferred);
+    let chosen = claude_mod::governor_disabled_marker().is_ok_and(|m| m.exists());
+    governor_mcp
+        && !chosen
+        && std::fs::read_to_string(claude_dir.join("settings.json"))
+            .is_ok_and(|text| core_plugin_enabled(&text))
+}
+
+/// Whether Claude settings text (JSONC, as Claude Code accepts it) enables
+/// the core plugin.
+pub(crate) fn core_plugin_enabled(settings: &str) -> bool {
+    lean_ctx::core::jsonc::parse_jsonc(settings).is_ok_and(|doc| {
+        doc.get("enabledPlugins")
+            .and_then(|p| p.get(lean_ctx_hooks::hooks::agents::claude_mod::PLUGIN_ID))
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    })
+}
+
+/// Claude Code's Code Mode next to lean-ctx: shown once the mod is installed,
+/// informational only. Names the one thing `lean-ctx claude-mod code-mode`
+/// cannot fix itself. File-only — no `claude` spawn.
+pub(crate) fn claude_code_mode_outcome() -> Option<Outcome> {
+    use lean_ctx_hooks::hooks::agents::claude_mod::{self, CodeModeReadiness};
+    let claude_dir = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".claude")))?;
+    if claude_mod::cached_versions(&claude_dir).is_empty() {
+        return None;
+    }
+    let line = match claude_mod::code_mode_readiness(&claude_dir) {
+        CodeModeReadiness::Ready => format!(
+            "{BOLD}Code Mode{RST}        {GREEN}ready{RST}  {DIM}(run: lean-ctx claude-mod code-mode){RST}"
+        ),
+        CodeModeReadiness::Gateway(reason) => {
+            format!("{BOLD}Code Mode{RST}        {YELLOW}unavailable: {reason}{RST}")
+        }
+        CodeModeReadiness::StaleHooks => format!(
+            "{BOLD}Code Mode{RST}        {YELLOW}lean-ctx hooks predate Code Mode; a hook failure would refuse tool calls{RST}  {DIM}(run: lean-ctx init --agent claude){RST}"
+        ),
     };
     Some(Outcome { ok: true, line })
 }

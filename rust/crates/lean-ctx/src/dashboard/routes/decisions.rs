@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `GET /api/hive/decisions?range=24h|7d|30d`: the gateway's decision log
+//! `GET /api/cloud/decisions?range=24h|7d|30d`: the gateway's decision log
 //! without content (owner checklist K11), read from the signed audit trail.
 //!
 //! One row per decision the gateway made: when, what (blocked, redacted,
@@ -10,7 +10,7 @@
 //! policy version per decision and no monitor-mode ("would block") outcome
 //! yet; both are reported as not recorded instead of being guessed.
 
-use chrono::{DateTime, Duration, Utc};
+use lean_ctx_time::{Duration, OffsetDateTime, UtcDateTime};
 use serde_json::{Value, json};
 
 use lean_ctx::core::audit_trail::{AuditEntry, AuditEventType};
@@ -31,7 +31,7 @@ pub(super) fn handle(
     method: &str,
     _body: &str,
 ) -> Option<(&'static str, &'static str, String)> {
-    if path != "/api/hive/decisions" || !method.eq_ignore_ascii_case("GET") {
+    if path != "/api/cloud/decisions" || !method.eq_ignore_ascii_case("GET") {
         return None;
     }
     let range = extract_query_param(query, "range").unwrap_or_else(|| "7d".into());
@@ -42,7 +42,7 @@ pub(super) fn handle(
             json!({ "error": { "code": "invalid_field", "field": "range" } }).to_string(),
         ));
     };
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let since = now - Duration::days(days);
     let text = lean_ctx::core::audit_trail::default_trail_path()
         .and_then(|trail| lean_ctx::core::audit_trail::read_trail_since(&trail, Some(since)).ok())
@@ -131,14 +131,15 @@ fn host_family(agent_id: &str) -> &'static str {
         .unwrap_or("other")
 }
 
-fn log(text: &str, since: DateTime<Utc>, range: &str) -> Value {
+fn log(text: &str, since: UtcDateTime, range: &str) -> Value {
     let mut rows: Vec<Value> = Vec::new();
     let mut total = 0usize;
     for line in text.lines() {
         let Ok(entry) = serde_json::from_str::<AuditEntry>(line) else {
             continue;
         };
-        let at = DateTime::parse_from_rfc3339(&entry.timestamp).map(|t| t.to_utc());
+        let at = OffsetDateTime::parse_from_rfc3339(&entry.timestamp)
+            .map(lean_ctx_time::OffsetDateTime::to_utc);
         if !at.is_ok_and(|at| at >= since) {
             continue;
         }
@@ -174,7 +175,7 @@ mod tests {
 
     #[test]
     fn decisions_carry_rule_tool_and_host_never_content() {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let at = (now - Duration::hours(1)).to_rfc3339();
         let old = (now - Duration::days(9)).to_rfc3339();
         let text = [
@@ -235,9 +236,9 @@ mod tests {
         assert_eq!(days_of("30d"), Some(30));
         assert_eq!(days_of("365d"), None);
         assert!(
-            handle("/api/hive/decisions", "range=1y", "GET", "")
+            handle("/api/cloud/decisions", "range=1y", "GET", "")
                 .is_some_and(|r| r.0.starts_with("400"))
         );
-        assert!(handle("/api/hive/decisions", "", "POST", "").is_none());
+        assert!(handle("/api/cloud/decisions", "", "POST", "").is_none());
     }
 }

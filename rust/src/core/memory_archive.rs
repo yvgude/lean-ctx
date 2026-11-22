@@ -21,7 +21,7 @@
 //! collection serializes as `items`; the `facts` alias keeps legacy facts
 //! archives (which used that key) deserializable.
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::path::{Path, PathBuf};
 
@@ -138,7 +138,7 @@ impl ArchiveConfig {
 /// deserializable.
 #[derive(Debug, Deserialize)]
 pub struct ArchiveEnvelope<T> {
-    pub archived_at: DateTime<Utc>,
+    pub archived_at: UtcDateTime,
     #[serde(default)]
     pub store: String,
     #[serde(default)]
@@ -156,7 +156,7 @@ pub struct ArchiveEnvelope<T> {
 /// slice. Mirrors [`ArchiveEnvelope`]'s on-disk shape exactly.
 #[derive(Serialize)]
 struct ArchiveEnvelopeRef<'a, T: Serialize> {
-    archived_at: DateTime<Utc>,
+    archived_at: UtcDateTime,
     store: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     scope: Option<&'a str>,
@@ -237,7 +237,7 @@ pub fn archive_items<T: Serialize>(
     items: &[T],
     cfg: &ArchiveConfig,
 ) -> Result<Option<PathBuf>, String> {
-    archive_items_at(store, scope, items, cfg, Utc::now())
+    archive_items_at(store, scope, items, cfg, UtcDateTime::now())
 }
 
 fn archive_items_at<T: Serialize>(
@@ -245,7 +245,7 @@ fn archive_items_at<T: Serialize>(
     scope: Option<&str>,
     items: &[T],
     cfg: &ArchiveConfig,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
 ) -> Result<Option<PathBuf>, String> {
     if knowledge_store(store) && !items.is_empty() {
         let root = archive_project().ok_or("archive project unavailable")?;
@@ -332,7 +332,7 @@ fn archive_items_inner<T: Serialize>(
         &crate::core::knowledge::protection::KnowledgeAdmission,
         &crate::core::policy::runtime::PublicationAuthority,
     )>,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
 ) -> Result<Option<PathBuf>, String> {
     if items.is_empty() {
         return Ok(None);
@@ -524,7 +524,7 @@ pub fn adopt_legacy_facts(
             &ArchiveConfig::from_env(),
             Some((admission.gateway_snapshot(), authority)),
             Some((&admission, authority)),
-            Utc::now(),
+            UtcDateTime::now(),
         )?;
         Ok(admitted)
     })?
@@ -565,7 +565,7 @@ pub fn list_archives(store: MemoryStore, scope: Option<&str>) -> Vec<PathBuf> {
 fn ordered_archive_files(dir: &Path) -> (Vec<PathBuf>, bool) {
     #[derive(Deserialize)]
     struct ArchiveTimestamp {
-        archived_at: DateTime<Utc>,
+        archived_at: UtcDateTime,
     }
 
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -780,7 +780,7 @@ pub mod tests {
         let dir = std::env::temp_dir().join(format!(
             "lctx-archive-{}-{}",
             std::process::id(),
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            UtcDateTime::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
@@ -948,7 +948,7 @@ pub mod tests {
                     Some("p"),
                     &batch,
                     &cfg,
-                    DateTime::from_timestamp(1_700_000_000, nanos).unwrap(),
+                    UtcDateTime::from_timestamp(1_700_000_000, nanos).unwrap(),
                 )
                 .unwrap();
             }
@@ -967,7 +967,7 @@ pub mod tests {
             let store = MemoryStore::Patterns;
             let dir = archive_dir(store, Some("p")).unwrap();
             std::fs::create_dir_all(&dir).unwrap();
-            let old_time = DateTime::from_timestamp(1_700_000_000, 1_900_000).unwrap();
+            let old_time = UtcDateTime::from_timestamp(1_700_000_000, 1_900_000).unwrap();
             let legacy = dir.join(format!(
                 "archive-{}-900000.json",
                 old_time.format("%Y%m%d-%H%M%S")
@@ -993,7 +993,7 @@ pub mod tests {
                 Some("p"),
                 &items(2),
                 &cfg,
-                DateTime::from_timestamp(1_700_000_000, 2_100_000).unwrap(),
+                UtcDateTime::from_timestamp(1_700_000_000, 2_100_000).unwrap(),
             )
             .unwrap()
             .unwrap();

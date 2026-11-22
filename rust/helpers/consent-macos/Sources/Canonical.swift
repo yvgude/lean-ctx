@@ -17,7 +17,7 @@ enum JSONValue: Equatable {
     struct NotCanonical: Error {}
 
     /// Parse with JSONSerialization; non-integer numbers are refused, as in
-    /// `lean_ctx_protocol::hive::canonical_json`.
+    /// `lean_ctx_protocol::cloud::canonical_json`.
     static func parse(_ data: Data) throws -> JSONValue {
         let any = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         return try from(any)

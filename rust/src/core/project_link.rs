@@ -237,7 +237,7 @@ fn unlink_in(dir: &Path, root: &str) -> Result<Option<ProjectLink>, String> {
 
 /// `now` as a link time: RFC 3339 UTC, whole seconds.
 pub fn link_time() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    lean_ctx_time::UtcDateTime::now().to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true)
 }
 
 #[cfg(test)]

@@ -240,11 +240,11 @@ struct Snapshot {
     local: Option<String>,
     organization: Option<String>,
     trust: Option<String>,
-    /// The installed Hive filter set, as one captured text.
-    hive_filters: Option<String>,
-    /// The Hive effective policy (2.x): floor, requirement and the vault
-    /// whose entry applies to this project ([`crate::core::policy::hive_floor`]).
-    hive_policy: HivePolicy,
+    /// The installed Cloud filter set, as one captured text.
+    cloud_filters: Option<String>,
+    /// The Cloud effective policy (2.x): floor, requirement and the vault
+    /// whose entry applies to this project ([`crate::core::policy::cloud_floor`]).
+    cloud_policy: CloudPolicy,
     /// The required-organization marker. Part of the fingerprint: a marker
     /// change is a new snapshot, so no compiled policy outlives it.
     marker: Option<String>,
@@ -310,21 +310,21 @@ impl Snapshot {
         let trust = read(&trust_path, false)?;
         field(&mut hash, organization.as_deref().map(str::as_bytes));
         field(&mut hash, trust.as_deref().map(str::as_bytes));
-        // The Hive filter set is written atomically as one file; a changed
+        // The Cloud filter set is written atomically as one file; a changed
         // set is a new snapshot, in every process that reads it.
-        let filters_path = crate::core::policy::hive_filters::filter_set_path();
+        let filters_path = crate::core::policy::cloud_filters::filter_set_path();
         field(
             &mut hash,
             filters_path
                 .as_ref()
                 .map(|path| path.as_os_str().as_encoded_bytes()),
         );
-        let hive_filters = match &filters_path {
+        let cloud_filters = match &filters_path {
             Some(path) => read(path, false)?,
             None => None,
         };
-        field(&mut hash, hive_filters.as_deref().map(str::as_bytes));
-        let hive_policy = HivePolicy::capture(&root, read, &mut hash)?;
+        field(&mut hash, cloud_filters.as_deref().map(str::as_bytes));
+        let cloud_policy = CloudPolicy::capture(&root, read, &mut hash)?;
         let marker_path = org::marker::marker_path_read_only()?;
         field(&mut hash, Some(marker_path.as_os_str().as_encoded_bytes()));
         let marker = read(&marker_path, false)?;
@@ -336,8 +336,8 @@ impl Snapshot {
             local,
             organization,
             trust,
-            hive_filters,
-            hive_policy,
+            cloud_filters,
+            cloud_policy,
             marker,
         })
     }
@@ -383,12 +383,12 @@ impl Snapshot {
                     deadline,
                 )?;
                 // The packs the verified policy requires must be the ones
-                // installed, from this same snapshot (HIVE-RT-D5). A lifted
+                // installed, from this same snapshot (CLOUD-RT-D5). A lifted
                 // requirement (no floor) requires nothing.
                 if verified.floor.is_some() {
-                    crate::core::policy::hive_filters::required_packs_installed(
+                    crate::core::policy::cloud_filters::required_packs_installed(
                         text,
-                        self.hive_filters.as_deref(),
+                        self.cloud_filters.as_deref(),
                     )?;
                 }
                 if self.marker.as_deref() != Some(verified.marker.as_str()) {
@@ -429,22 +429,22 @@ impl Snapshot {
         };
         // The compiled policy carries the signed end of its floor, so that a
         // policy kept beyond this refresh ends with it.
-        let hive = crate::core::policy::hive_filters::filter_rules(self.hive_filters.as_deref());
-        if hive.dropped > 0 {
+        let cloud = crate::core::policy::cloud_filters::filter_rules(self.cloud_filters.as_deref());
+        if cloud.dropped > 0 {
             tracing::warn!(
-                dropped = hive.dropped,
-                "hive filter set: rules that did not validate are not applied"
+                dropped = cloud.dropped,
+                "cloud filter set: rules that did not validate are not applied"
             );
         }
-        // A missing or damaged Hive policy in force fails the refresh
-        // closed; it never means "no Hive rules".
-        let hive_floor = self.hive_policy.resolve()?;
+        // A missing or damaged Cloud policy in force fails the refresh
+        // closed; it never means "no Cloud rules".
+        let cloud_floor = self.cloud_policy.resolve()?;
         let policy = super::apply_org_floor(
             local,
             Ok(organization),
             lifetime.as_ref().and_then(org::Lifetime::horizon),
-            &hive,
-            hive_floor.as_ref(),
+            &cloud,
+            cloud_floor.as_ref(),
         );
         if policy.as_ref().is_some_and(|policy| !policy.content_valid) {
             return Err("policy compilation failed".into());
@@ -465,41 +465,41 @@ struct Compiled {
     observation: Option<org::Observation>,
 }
 
-/// The captured Hive effective policy of one snapshot.
+/// The captured Cloud effective policy of one snapshot.
 #[derive(Default)]
-struct HivePolicy {
+struct CloudPolicy {
     floor: Option<String>,
     required: Option<String>,
     vault: Option<String>,
 }
 
-impl HivePolicy {
+impl CloudPolicy {
     /// Read the installed floor and requirement (and, for a floor with
     /// per-vault entries, the vault linked to `root`). Hashed only when one
-    /// of them exists, so a snapshot without a Hive policy keeps the
+    /// of them exists, so a snapshot without a Cloud policy keeps the
     /// fingerprint it had before Release B.
     fn capture(
         root: &Path,
         read: fn(&Path, bool) -> Result<Option<String>, String>,
         hash: &mut blake3::Hasher,
     ) -> Result<Self, String> {
-        use crate::core::policy::hive_floor::{FLOOR_FILE, REQUIRED_FILE, floor_dir, vault_for};
+        use crate::core::policy::cloud_floor::{FLOOR_FILE, REQUIRED_FILE, floor_dir, vault_for};
         let Some(dir) = floor_dir() else {
             crate::core::config::managed::require_gate(false)?;
             return Ok(Self::default());
         };
         let floor = read(&dir.join(FLOOR_FILE), false)?;
         let required = read(&dir.join(REQUIRED_FILE), false)?;
-        // `hive.require` (managed): no tool runs before a sign-in and a floor.
+        // `cloud.require` (managed): no tool runs before a sign-in and a floor.
         crate::core::config::managed::require_gate(floor.is_some())?;
         if floor.is_none() && required.is_none() {
             return Ok(Self::default());
         }
         let vault = floor.as_deref().and_then(|text| {
-            let hive_data = dir.parent()?.parent()?;
-            vault_for(text, hive_data, root)
+            let cloud_data = dir.parent()?.parent()?;
+            vault_for(text, cloud_data, root)
         });
-        field(hash, Some(b"hive-effective-policy-v1"));
+        field(hash, Some(b"cloud-effective-policy-v1"));
         field(hash, Some(dir.as_os_str().as_encoded_bytes()));
         field(hash, floor.as_deref().map(str::as_bytes));
         field(hash, required.as_deref().map(str::as_bytes));
@@ -512,7 +512,7 @@ impl HivePolicy {
     }
 
     fn resolve(&self) -> Result<Option<super::ResolvedPolicy>, String> {
-        crate::core::policy::hive_floor::resolve(
+        crate::core::policy::cloud_floor::resolve(
             self.floor.as_deref(),
             self.required.as_deref(),
             self.vault.as_deref(),
@@ -885,7 +885,7 @@ mod required_policy_tests {
     }
 
     #[test]
-    fn managed_hive_require_refuses_the_policy_snapshot() {
+    fn managed_cloud_require_refuses_the_policy_snapshot() {
         use crate::core::config::managed::{managed_from_toml_for_test, with_managed_for_test};
         let _isolation = crate::core::data_dir::isolated_data_dir();
         let temp = tempfile::tempdir().unwrap();
@@ -896,12 +896,12 @@ mod required_policy_tests {
             })
         };
         assert_eq!(capture(None), Ok(()));
-        assert_eq!(capture(Some("[hive]\norg = \"org_acme\"\n")), Ok(()));
+        assert_eq!(capture(Some("[cloud]\norg = \"org_acme\"\n")), Ok(()));
         // No lease and no installed floor here: required means refused.
-        let required = capture(Some("[hive]\nrequire = true\norg = \"org_acme\"\n"))
-            .expect_err("hive.require without a lease or floor");
+        let required = capture(Some("[cloud]\nrequire = true\norg = \"org_acme\"\n"))
+            .expect_err("cloud.require without a lease or floor");
         assert!(required.contains("managed by org_acme"), "{required}");
-        let broken = capture(Some("[hive]\nrequire = \"maybe\"\n")).expect_err("refused carrier");
+        let broken = capture(Some("[cloud]\nrequire = \"maybe\"\n")).expect_err("refused carrier");
         assert!(broken.contains("is refused"), "{broken}");
     }
 

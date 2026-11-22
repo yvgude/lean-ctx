@@ -18,15 +18,15 @@ pub fn targets_internal_host_tool(
 }
 
 /// The fixed answer for a call — direct, or through `ctx_call`/`ctx` — to a
-/// withheld Hive tool, else `None`. Stable text (#498).
+/// withheld Cloud tool, else `None`. Stable text (#498).
 #[must_use]
-pub fn withheld_hive_tool_refusal(
+pub fn withheld_cloud_tool_refusal(
     name: &str,
     args: Option<&serde_json::Map<String, serde_json::Value>>,
 ) -> Option<&'static str> {
     crate::tools::registered::ctx_call::resolve(name, args)
-        .is_ok_and(|(inner, _)| is_withheld_hive_tool(&inner))
-        .then_some(lean_ctx_hive::TOOL_NOT_AVAILABLE)
+        .is_ok_and(|(inner, _)| is_withheld_cloud_tool(&inner))
+        .then_some(lean_ctx_cloud::TOOL_NOT_AVAILABLE)
 }
 
 #[cfg(test)]

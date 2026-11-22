@@ -43,6 +43,14 @@ import { withFooter } from "./footer.js";
 import { notifyLensRead } from "./lens-read-bridge.js";
 import { lastReadFallback, readViaBridge } from "./bridge-read.js";
 import { boundReadOutput, READ_OUTPUT_MAX_BYTES, READ_OUTPUT_MAX_LINES } from "./read-output.js";
+import {
+  agentsRulesBlockPresent,
+  GUIDANCE_CUSTOM_TYPE,
+  guidanceNote,
+  hasGuidanceNote,
+  preferGuidelines,
+  skillsSectionFallback,
+} from "./guidance.js";
 
 const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
 
@@ -328,6 +336,46 @@ export default async function (pi: ExtensionAPI) {
     });
   }
 
+  // Default guidance (additive): every builtin stays registered. Registered
+  // after the suppression handler so getActiveTools() already reflects it.
+  // The note goes out once per session transcript — a resumed, forked or
+  // reloaded session already carries it — and waits for the next user prompt
+  // instead of starting a turn.
+  const prefer = (tool: Parameters<typeof preferGuidelines>[0]) =>
+    preferGuidelines(tool, PI_CONFIG.guidance, suppressedBuiltins);
+  if (PI_CONFIG.guidance) {
+    pi.on("session_start", (_event, ctx) => {
+      try {
+        if (hasGuidanceNote(ctx.sessionManager.getBranch())) return;
+        // One rules channel per host (A3): when `lean-ctx setup` put the rules
+        // block into Pi's AGENTS.md, that block already steers the agent.
+        if (agentsRulesBlockPresent(process.env, homedir())) return;
+        const note = guidanceNote(pi.getActiveTools());
+        if (!note) return;
+        pi.sendMessage(
+          { customType: GUIDANCE_CUSTOM_TYPE, content: note, display: false },
+          { deliverAs: "nextTurn" },
+        );
+      } catch {
+        // Guidance is best-effort; a host without these APIs keeps working.
+      }
+    });
+  }
+
+  // Pi drops its <skills> prompt section when neither `read` nor `bash` is
+  // selected, which is always the case in replace mode (#2260). Put it back,
+  // naming ctx_read as the loader. A no-op whenever Pi renders it itself.
+  pi.on("before_agent_start", (event) => {
+    try {
+      const options = event.systemPromptOptions;
+      if (!options?.sections) return;
+      const section = skillsSectionFallback(options);
+      if (section) options.sections.skills = section;
+    } catch {
+      // Best-effort; an older Pi without systemPromptOptions keeps working.
+    }
+  });
+
   // Declared up-front so the ctx_read handler (registered below) can route
   // through the embedded bridge once it connects. Assigned after the tools are
   // registered (the bridge is started at the end of this function).
@@ -444,6 +492,7 @@ export default async function (pi: ExtensionAPI) {
     promptSnippet: "Run shell commands (not for file reading — use ctx_read)",
     promptGuidelines: [
       "Use ctx_shell only for commands with side effects: build, test, install, git, run scripts.",
+      ...prefer("ctx_shell"),
     ],
     parameters: bashSchemaWithRaw,
     renderCall(args, theme) {
@@ -527,6 +576,7 @@ export default async function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Use ctx_read to inspect file contents instead of cat or less.",
       "Use mode=full if you need the complete file content.",
+      ...prefer("ctx_read"),
     ],
     parameters: readSchema,
     renderCall(args, theme, context) {
@@ -692,6 +742,7 @@ export default async function (pi: ExtensionAPI) {
     label: "ctx_ls",
     description: "List a directory. Prefer over native ls (compact, summarized). `path` is required — pass the directory you are working in. Use limit to reduce output size.",
     promptSnippet: "List directory contents",
+    promptGuidelines: prefer("ctx_ls"),
     parameters: lsSchema,
     renderCall(args, theme, context) {
       return nativeLsTool.renderCall
@@ -716,6 +767,7 @@ export default async function (pi: ExtensionAPI) {
     label: "ctx_find",
     description: "Find files by glob. Prefer over native find/fd (gitignore-aware). `path` is required — pass the directory you are working in. Use limit to reduce output size.",
     promptSnippet: "Find files by glob pattern",
+    promptGuidelines: prefer("ctx_find"),
     parameters: findSchema,
     renderCall(args, theme, context) {
       return nativeFindTool.renderCall
@@ -755,6 +807,7 @@ export default async function (pi: ExtensionAPI) {
     label: "ctx_grep",
     description: "Search code. Prefer over native Grep/ripgrep (compact, ranked). `path` is required — pass the directory you are working in. Use limit to cap matches, context for surrounding lines.",
     promptSnippet: "Search file contents for patterns",
+    promptGuidelines: prefer("ctx_grep"),
     parameters: grepSchema,
     renderCall(args, theme, context) {
       return nativeGrepTool.renderCall

@@ -1,0 +1,7 @@
+{
+  "acked_at": "2026-10-25T12:00:05Z",
+  "digest": "sha256:309839a13391ba6c3367fb020714a044c2ccb092fe0f53d967609fbd49cf8468",
+  "schema": "leanctx.cloud.policy-ack/v1",
+  "state": "acked",
+  "version": 3
+}

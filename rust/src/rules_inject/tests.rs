@@ -1,6 +1,5 @@
 //! Tests for rules injection. `super::*` resolves to the `rules_inject` module.
 
-use super::content::rules_content;
 use super::skills::{SKILL_TEMPLATE, build_skill_targets};
 use std::sync::OnceLock;
 
@@ -106,7 +105,11 @@ fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
     // Includes Grok and Oh My Pi (`~/.omp/agent/AGENTS.md`).
-    assert_eq!(targets.len(), 27);
+    assert_eq!(targets.len(), 26);
+    assert!(
+        !targets.iter().any(|t| t.name == "Codex CLI"),
+        "Codex never reads instructions.md; its AGENTS.md block is written by setup"
+    );
     assert!(
         targets.iter().any(|t| t.name == "Grok"),
         "Grok must have a rules target"
@@ -119,8 +122,9 @@ fn target_count() {
         !targets.iter().any(|t| t.name == "CodeBuddy"),
         "CodeBuddy must not get a rules target"
     );
+    // Dedicated mode skips Pi: it loads no lean-ctx-owned file.
     let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
-    assert_eq!(dedicated.len(), 27);
+    assert_eq!(dedicated.len(), 25);
 }
 
 #[test]
@@ -206,12 +210,12 @@ fn rules_catalog_includes_previously_missing_agents_for_detection() {
 
 #[test]
 fn cursor_mdc_has_frontmatter_and_markers() {
-    let mdc = rules_content(
-        &RulesFormat::CursorMdc,
-        CompressionLevel::Off,
+    let mdc = super::content::cursor_mdc_document(&crate::core::rules_canonical::render(
+        false,
         Wrapper::Dedicated,
+        CompressionLevel::Off,
         &power(),
-    );
+    ));
     assert!(mdc.contains("alwaysApply: true"));
     assert!(mdc.contains(START_MARK));
     assert!(mdc.contains(END_MARK));
@@ -875,6 +879,162 @@ fn rules_selection_filter_skips_unselected_tools() {
     );
 }
 
+/// Pi and Antigravity get their block in the file each client documents as
+/// loaded (Pi `<agent-dir>/AGENTS.md`, Antigravity `~/.gemini/AGENTS.md`),
+/// merged beside the user's own text, and a rerun changes nothing.
+#[test]
+fn pi_and_antigravity_rules_land_in_their_loaded_agents_md() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let pi_dir = home.join("custom-pi-agent");
+    let _pi =
+        crate::test_env::EnvVarGuard::set("PI_CODING_AGENT_DIR", pi_dir.to_string_lossy().as_ref());
+    // Reinstall over an older release: its lean-ctx-owned files at paths the
+    // clients never load are removed when setup (re)writes the loaded file
+    // (just before it, so a failed write still leaves no stale copy loaded).
+    let legacy = |rel: &str| {
+        let path = home.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{START_MARK}\nold\n{END_MARK}\n")).unwrap();
+        path
+    };
+    let legacy_pi = legacy(".pi/rules/lean-ctx.md");
+    let legacy_antigravity = legacy(".gemini/antigravity/rules/lean-ctx.md");
+    for (key, path) in [
+        ("pi", pi_dir.join("AGENTS.md")),
+        ("antigravity", home.join(".gemini/AGENTS.md")),
+    ] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# My own rules\n").unwrap();
+
+        let first = inject_rules_for_agent(home, key);
+        assert!(first.errors.is_empty(), "{key}: {first:?}");
+        assert_eq!(first.updated.len(), 1, "{key}: {first:?}");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("# My own rules"), "{key}: user text kept");
+        assert!(RulesFile::parse(&content).has_content(), "{key}: {content}");
+
+        let again = inject_rules_for_agent(home, key);
+        assert!(again.updated.is_empty(), "{key} rerun: {again:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+    }
+    assert!(!legacy_pi.exists() && !legacy_antigravity.exists());
+    // Pi's extension names its search/find/list tools ctx_grep/ctx_find/ctx_ls.
+    let pi = std::fs::read_to_string(pi_dir.join("AGENTS.md")).unwrap();
+    let note = pi.find("ctx_grep(pattern, path)").expect("Pi tool names");
+    assert!(note < pi.find(END_MARK).unwrap(), "inside the block: {pi}");
+    assert!(pi.contains("ctx_find(pattern, path)"), "{pi}");
+    // `rules diff` must call the block `rules sync` just wrote current, or the
+    // user is told to sync forever.
+    let drift = crate::core::contextops::drift::detect_drift(home);
+    let pi_drift = drift
+        .iter()
+        .find(|report| report.target == "Pi Coding Agent")
+        .expect("Pi in the drift report");
+    assert_eq!(
+        pi_drift.status,
+        crate::core::contextops::DriftStatus::InSync,
+        "{pi_drift:?}"
+    );
+    let antigravity = std::fs::read_to_string(home.join(".gemini/AGENTS.md")).unwrap();
+    assert!(!antigravity.contains("ctx_grep"), "{antigravity}");
+}
+
+/// `rules_injection = "dedicated"` keeps the user's text in shared files:
+/// Antigravity gets its lean-ctx-owned modular rule (with the
+/// `trigger: always_on` frontmatter Antigravity needs to load it at all), and
+/// Pi, which loads no lean-ctx-owned file, is skipped. A block a prior shared
+/// install left in `~/.gemini/AGENTS.md` goes, or the rules would load twice.
+#[test]
+fn dedicated_mode_keeps_pi_and_antigravity_out_of_shared_agents_md() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "dedicated");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let pi_dir = home.join(".pi/agent");
+    let _pi =
+        crate::test_env::EnvVarGuard::set("PI_CODING_AGENT_DIR", pi_dir.to_string_lossy().as_ref());
+    std::fs::create_dir_all(&pi_dir).unwrap();
+    std::fs::write(pi_dir.join("AGENTS.md"), "# Mine\n").unwrap();
+    std::fs::create_dir_all(home.join(".gemini")).unwrap();
+    std::fs::write(
+        home.join(".gemini/AGENTS.md"),
+        format!("# Mine\n\n{START_MARK}\nold\n{END_MARK}\n"),
+    )
+    .unwrap();
+
+    let pi = inject_rules_for_agent(home, "pi");
+    assert!(pi.updated.is_empty() && pi.already.is_empty(), "{pi:?}");
+    let antigravity = inject_rules_for_agent(home, "antigravity");
+    assert_eq!(antigravity.updated, vec!["Antigravity".to_string()]);
+
+    for shared in [pi_dir.join("AGENTS.md"), home.join(".gemini/AGENTS.md")] {
+        assert_eq!(std::fs::read_to_string(&shared).unwrap(), "# Mine\n");
+    }
+    let rule = std::fs::read_to_string(antigravity_dedicated_rules_path(home)).unwrap();
+    assert!(
+        rule.starts_with("---\ntrigger: always_on\n"),
+        "Antigravity drops a rule without a valid trigger:\n{rule}"
+    );
+    assert!(RulesFile::parse(&rule).has_content(), "{rule}");
+    let again = inject_rules_for_agent(home, "antigravity");
+    assert_eq!(again.already, vec!["Antigravity".to_string()], "{again:?}");
+}
+
+/// A start marker whose end marker was lost (or a marker merely quoted in
+/// the user's prose) must never make setup drop the text after it.
+#[test]
+fn unterminated_rules_block_is_refused_and_user_text_kept() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let path = home.join(".gemini/AGENTS.md");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mine = format!(
+        "# Mine\nlean-ctx wraps its rules in `{START_MARK}` lines.\n\n\
+         {START_MARK}\nold rules\n\n## My notes\nkeep me\n"
+    );
+    std::fs::write(&path, &mine).unwrap();
+
+    let result = inject_rules_for_agent(home, "antigravity");
+
+    assert_eq!(result.errors.len(), 1, "{result:?}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
+}
+
+/// Windows editors save CRLF and a byte-order mark: a user-tuned frontmatter
+/// in that form is still the rule's frontmatter, not a reason for a second.
+#[test]
+fn antigravity_rule_keeps_a_crlf_bom_frontmatter() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "dedicated");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let rule = antigravity_dedicated_rules_path(home);
+    std::fs::create_dir_all(rule.parent().unwrap()).unwrap();
+    let frontmatter = "\u{feff}---\r\ntrigger: model_decision\r\n---";
+    std::fs::write(
+        &rule,
+        format!("{frontmatter}\r\n\r\n{START_MARK}\nold\n{END_MARK}\n"),
+    )
+    .unwrap();
+
+    let result = inject_rules_for_agent(home, "antigravity");
+
+    assert!(result.errors.is_empty(), "{result:?}");
+    let content = std::fs::read_to_string(&rule).unwrap();
+    assert!(content.starts_with(frontmatter), "{content}");
+    assert!(!content.contains("always_on"), "{content}");
+    // The rewrite keeps the file's CRLF line endings, and the CRLF block
+    // counts as current on the next run.
+    assert!(!content.replace("\r\n", "").contains('\n'), "{content:?}");
+    let again = inject_rules_for_agent(home, "antigravity");
+    assert_eq!(again.already, vec!["Antigravity".to_string()], "{again:?}");
+}
+
 // ── One rules channel per host (A3) ──────────────────────────
 
 /// Points HOME at `home` (and clears the host dir overrides) for one closure,
@@ -884,12 +1044,14 @@ fn with_temp_home<T>(home: &std::path::Path, f: impl FnOnce() -> T) -> T {
         "HOME",
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
+        "PI_CODING_AGENT_DIR",
         "LEAN_CTX_MINIMAL",
     ];
     let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
     crate::test_env::set_var("HOME", home);
     crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
     crate::test_env::remove_var("CODEX_HOME");
+    crate::test_env::remove_var("PI_CODING_AGENT_DIR");
     crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
     let out = f();
     for (k, v) in saved {
@@ -918,16 +1080,13 @@ fn each_host_gets_exactly_one_rules_channel() {
             ".cursor/rules/lean-ctx.mdc",
         ),
         (
-            "codex-mcp-client",
-            Some("Codex CLI"),
-            ".codex/instructions.md",
-        ),
-        (
             "gemini-cli-mcp-client",
             Some("Gemini CLI"),
             ".gemini/GEMINI.md",
         ),
         ("opencode", Some("OpenCode"), ".config/opencode/AGENTS.md"),
+        ("antigravity", Some("Antigravity"), ".gemini/AGENTS.md"),
+        ("pi", Some("Pi Coding Agent"), ".pi/agent/AGENTS.md"),
     ];
     for &(client, target, rel) in hosts {
         let tmp = tempfile::tempdir().unwrap();

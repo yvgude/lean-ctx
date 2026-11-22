@@ -178,7 +178,7 @@ fn repo_wide_symbol_only_and_symbols() {
 
 #[test]
 fn repos_and_supersedes_filter_active() {
-    let other = parse("dec-other", "[scope]\nrepos = [\"leanctx-hive\"]\n").unwrap();
+    let other = parse("dec-other", "[scope]\nrepos = [\"leanctx-cloud\"]\n").unwrap();
     let mine = parse("dec-mine", "[scope]\nrepos = [\"LEAN-CTX\"]\n").unwrap();
     let old = parse("dec-old", "").unwrap();
     let new_text = record("dec-new", "").replace("status", "supersedes = [\"dec-old\"]\nstatus");
@@ -324,6 +324,117 @@ fn require_regex_scans_the_working_tree() {
     );
 }
 
+#[test]
+fn worktree_scan_walk_is_bounded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_project(
+        root,
+        &[(
+            "dec-r",
+            "[[check]]\nkind = \"require_regex\"\npaths = [\"src/**\"]\npattern = \"MARKER\"\n",
+        )],
+    );
+    // Many files outside the check's paths: they count towards the walk bound.
+    std::fs::create_dir_all(root.join("other")).unwrap();
+    for i in 0..20 {
+        std::fs::write(root.join(format!("other/f{i}.txt")), "x\n").unwrap();
+    }
+    let set = load(root);
+    let d = &set.decisions[0];
+    let c = &d.checks[0];
+    assert!(
+        !check::worktree_other_files_bounded(root, d, c, "", check::MAX_WALK_ENTRIES),
+        "no file holds MARKER"
+    );
+    assert!(
+        check::worktree_other_files_bounded(root, d, c, "", 5),
+        "an exhausted walk answers `true` (cannot tell)"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shared_collector_refuses_symlinks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("repo");
+    write_project(&root, &[("dec-a", "")]);
+    let outside = tmp.path().join("outside.toml");
+    std::fs::write(&outside, record("dec-outside", "")).unwrap();
+    let link = root.join(DECISIONS_DIR).join("dec-outside.toml");
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    let entries = list_records(&root).unwrap().unwrap();
+    let flags: Vec<(&str, bool)> = entries
+        .iter()
+        .map(|e| (e.rel.as_str(), e.regular))
+        .collect();
+    assert_eq!(
+        flags,
+        vec![
+            (".leanctx/decisions/dec-a.toml", true),
+            (".leanctx/decisions/dec-outside.toml", false),
+        ]
+    );
+    assert_eq!(read_record(&link), Err("not a regular file"));
+    let set = load(&root);
+    assert!(set.get("dec-a").is_some());
+    assert!(set.get("dec-outside").is_none());
+    assert!(
+        set.errors
+            .iter()
+            .any(|e| e.starts_with(".leanctx/decisions/dec-outside.toml: not a regular file")),
+        "{:?}",
+        set.errors
+    );
+
+    // A symlinked decisions directory is refused as a whole.
+    let other = tmp.path().join("other");
+    write_project(&other, &[]);
+    std::fs::remove_dir(other.join(DECISIONS_DIR)).unwrap();
+    std::os::unix::fs::symlink(root.join(DECISIONS_DIR), other.join(DECISIONS_DIR)).unwrap();
+    assert!(list_records(&other).is_err());
+    let set = load(&other);
+    assert!(set.decisions.is_empty());
+    assert!(
+        set.errors[0].contains("is not a directory inside the project"),
+        "{:?}",
+        set.errors
+    );
+
+    // A symlinked parent (`.leanctx`) leads outside the project: refused too.
+    let third = tmp.path().join("third");
+    std::fs::create_dir_all(&third).unwrap();
+    std::os::unix::fs::symlink(root.join(".leanctx"), third.join(".leanctx")).unwrap();
+    assert!(list_records(&third).is_err());
+    let set = load(&third);
+    assert!(set.decisions.is_empty());
+    assert!(
+        set.errors[0].contains("leads outside the project"),
+        "{:?}",
+        set.errors
+    );
+}
+
+#[test]
+fn record_cache_is_bounded() {
+    let tmp = tempfile::tempdir().unwrap();
+    for i in 0..(MAX_CACHED_ROOTS + 4) {
+        let root = tmp.path().join(format!("p{i}"));
+        write_project(&root, &[("dec-a", "")]);
+        assert!(load(&root).get("dec-a").is_some());
+        assert!(cached_roots() <= MAX_CACHED_ROOTS);
+    }
+}
+
+#[test]
+fn scaffold_folds_control_characters_in_title() {
+    let id = id_from_slug("multi line").unwrap();
+    let text = scaffold(&id, "first\nsecond = \"x\"\r\tthird\\", "2026-11-12");
+    let d = parse_decision(&text, &id, "x").expect("scaffold must parse");
+    assert_eq!(d.title, "first second = \"x\"  third\\");
+    assert!(!d.title.contains('\n'));
+}
+
 // ── Suffix determinism ──────────────────────────────────────────────────────
 
 #[test]
@@ -454,4 +565,30 @@ fn pre_edit_evaluate_sorts_and_dedups() {
     let out = pre_edit::evaluate_with(&input, &[twice]);
     let ids: Vec<&str> = out.iter().map(|f| f.id.as_str()).collect();
     assert_eq!(ids, vec!["a", "c", "b"]);
+}
+
+#[test]
+fn describe_never_prints_terminal_escapes_from_history() {
+    let d = parse(
+        "dec-esc",
+        "[evidence]\ncommit = \"abcdef0123456789\"\n\
+         quote = \"Decision: keep \\u001b[2J\\u009b31m the \\u202e rule\\u0007\"\n\
+         trust = \"confirmed\"\n",
+    )
+    .expect("valid record");
+    assert!(d.evidence.as_ref().unwrap().quote.contains('\u{1b}'));
+    let set = set_of(vec![d.clone()]);
+    let text = describe(&set, &d);
+    assert!(
+        !text
+            .chars()
+            .any(|c| (c.is_control() && c != '\n') || c == '\u{202e}'),
+        "{text:?}"
+    );
+    assert!(
+        text.contains("\"Decision: keep ?[2J?31m the ? rule?\""),
+        "{text}"
+    );
+    assert!(text.lines().count() > 3, "line structure stays");
+    assert_eq!(terminal_safe("a\u{200f}b\u{2066}c\td"), "a?b?c?d");
 }

@@ -783,7 +783,7 @@ impl RequestStateCodec {
     }
 
     fn now_ms() -> i64 {
-        chrono::Utc::now().timestamp_millis()
+        lean_ctx_time::UtcDateTime::now().timestamp_millis()
     }
 }
 

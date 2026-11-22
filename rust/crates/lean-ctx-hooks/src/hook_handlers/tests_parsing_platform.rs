@@ -150,6 +150,9 @@ fn rewrite_preserves_native_windows_binary_path() {
     // #518: a Windows native binary path must survive into the rewritten
     // command verbatim — no `/c/...` MSYS rewrite, which PowerShell/cmd
     // cannot execute.
+    // The rewrite guards read the shell, allowlist and config from the
+    // environment, which other tests change while they hold this lock.
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
     let win_binary = "C:/Users/Dawid/.cargo/bin/lean-ctx.exe";
     let rewritten =
         rewrite_candidate("git status", win_binary).expect("git status is a rewrite candidate");

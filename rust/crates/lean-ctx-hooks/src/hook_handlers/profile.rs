@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The hook profile of one agent session (`LEAN_CTX_HOOK_PROFILE`). A
-//! launching app (Hive Desktop) starts a session with `governor` while the
+//! launching app (Cloud Desktop) starts a session with `governor` while the
 //! machine keeps the standard hooks: the standard actions then behave as the
 //! governor's, so nothing runs twice and nothing competes with it, and the
 //! global setup stays untouched.

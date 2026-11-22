@@ -1,0 +1,7 @@
+{
+  "schema": "leanctx.cloud.link/v1",
+  "repo": {
+    "ns": "acme",
+    "name": "payments"
+  }
+}

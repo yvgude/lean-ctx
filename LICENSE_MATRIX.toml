@@ -152,6 +152,9 @@ include = [
   "rust/crates/lean-ctx-tripwires/tests/fixtures/**",
   # pz21 locked acceptance inputs (pages, rows, scan diffs): byte-exact.
   "rust/crates/lean-ctx-server/tests/fixtures/input_check/**",
+  # N8 model-v1: byte copy of the Cloud contract tree, checked against its
+  # MANIFEST.sha256 (generated .d.ts files carry no header of their own).
+  "rust/crates/lean-ctx-protocol/tests/fixtures/model-v1/**",
 ]
 exclude = []
 fixture = true
@@ -253,6 +256,7 @@ exclude = [
   "scripts/tests/fixtures/ip-provenance/**",
   "rust/crates/lean-ctx-tripwires/tests/fixtures/**",
   "rust/crates/lean-ctx-server/tests/fixtures/input_check/**",
+  "rust/crates/lean-ctx-protocol/tests/fixtures/model-v1/**",
   "**/generated/**",
   "generated/**",
   "*.generated.*",

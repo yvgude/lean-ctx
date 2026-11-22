@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::graph_model::{GraphSummary, MarketplaceMeta};
@@ -56,9 +56,9 @@ pub struct PackageManifest {
     pub author: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     #[serde(default)]
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<UtcDateTime>,
     pub layers: Vec<PackageLayer>,
     #[serde(default)]
     pub dependencies: Vec<PackageDependency>,
@@ -367,7 +367,7 @@ mod tests {
             description: "A test package".into(),
             author: None,
             scope: None,
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
             updated_at: None,
             layers: vec![PackageLayer::Knowledge],
             dependencies: vec![],
@@ -474,7 +474,7 @@ mod tests {
             edge_count: 100,
             node_types: vec!["fact".into(), "gotcha".into()],
             activation_mean: Some(0.75),
-            freshness: Some(Utc::now()),
+            freshness: Some(UtcDateTime::now()),
         });
         m.marketplace = Some(MarketplaceMeta {
             categories: vec!["security".into()],

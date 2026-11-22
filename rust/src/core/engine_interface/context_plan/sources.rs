@@ -7,13 +7,13 @@ use std::{
     path::Path,
 };
 
-use chrono::{DateTime, SecondsFormat, Timelike, Utc};
 use lean_ctx_protocol::context_gateway::ClassificationV1;
 use lean_ctx_protocol::{
     ContextDispositionV1, DataClassification, EngineContextSourceDescriptorV1,
     EngineContextSourcePermissionV1, EngineContextSourcePlanRequestV1,
     EngineContextSourcePlanResponseV1, EngineContextSourceV1, UtcTimestamp,
 };
+use lean_ctx_time::{OffsetDateTime, SecondsFormat, UtcDateTime};
 
 use crate::core::{
     context_field::{ContextField, ContextItemId, FieldWeights, Provenance, ViewCosts, ViewKind},
@@ -56,14 +56,14 @@ pub fn plan(
     let policy = current_policy(root)?;
     let (evaluation_time, include_marker) = if policy.retention_days.is_some() {
         (
-            Utc::now()
+            UtcDateTime::now()
                 .with_nanosecond(0)
                 .ok_or("source_plan_epoch_invalid")?
                 .fixed_offset(),
             true,
         )
     } else {
-        (Utc::now().fixed_offset(), false)
+        (UtcDateTime::now().fixed_offset(), false)
     };
     Ok(plan_at(root, request, evaluation_time, include_marker)?.response)
 }
@@ -90,7 +90,7 @@ pub(super) struct AdmittedSourceBody {
 pub(super) fn plan_for_materialization(
     root: &Path,
     request: EngineContextSourcePlanRequestV1,
-    evaluation_time: Option<DateTime<chrono::FixedOffset>>,
+    evaluation_time: Option<OffsetDateTime>,
 ) -> Result<SourcePlanningHandoff, &'static str> {
     request
         .validate_payload()
@@ -100,14 +100,14 @@ pub(super) fn plan_for_materialization(
     let include_marker = policy.retention_days.is_some();
     let evaluation_time = if include_marker {
         let evaluation_time = evaluation_time.ok_or("source_plan_epoch_missing")?;
-        if evaluation_time > Utc::now().fixed_offset() {
+        if evaluation_time > UtcDateTime::now().fixed_offset() {
             return Err("source_plan_epoch_invalid");
         }
         evaluation_time
     } else {
         // Retention is the only policy that contributes the epoch to identity;
         // ignore an optional echo for old no-retention plans.
-        Utc::now().fixed_offset()
+        UtcDateTime::now().fixed_offset()
     };
     plan_at(root, request, evaluation_time, include_marker)
 }
@@ -115,7 +115,7 @@ pub(super) fn plan_for_materialization(
 fn plan_at(
     root: &Path,
     request: EngineContextSourcePlanRequestV1,
-    evaluation_time: DateTime<chrono::FixedOffset>,
+    evaluation_time: OffsetDateTime,
     include_marker: bool,
 ) -> Result<SourcePlanningHandoff, &'static str> {
     request
@@ -132,10 +132,10 @@ fn plan_at(
 fn plan_at_in_view(
     root: &Path,
     request: EngineContextSourcePlanRequestV1,
-    evaluation_time: DateTime<chrono::FixedOffset>,
+    evaluation_time: OffsetDateTime,
     include_marker: bool,
 ) -> Result<SourcePlanningHandoff, &'static str> {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let max_sensitivity = current_policy(root)?.max_sensitivity;
     let mut candidates = request
         .sources
@@ -408,7 +408,7 @@ pub(super) fn ensure_current_admission(
     {
         return Err("source_plan_changed");
     }
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let evaluation_time = now.fixed_offset();
     for binding in bindings {
         sources
@@ -446,7 +446,7 @@ pub(super) fn revalidate_admitted_sources(
         {
             return Err("source_plan_changed");
         }
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let evaluation_time = now.fixed_offset();
         let mut revalidated = Vec::with_capacity(bindings.len());
         for binding in bindings {
@@ -494,7 +494,7 @@ pub(super) fn revalidate_admitted_sources(
 /// the kernel records its canonical policy exclusion.
 pub fn candidate(
     source: &EngineContextSourceV1,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
     max_sensitivity: &SensitivityLevel,
 ) -> Result<Option<ContextObjectV1>, &'static str> {
     let descriptor = &source.descriptor;
@@ -513,7 +513,7 @@ pub fn candidate(
         (&descriptor.valid_until, true),
     ] {
         if let Some(timestamp) = timestamp {
-            let time = DateTime::parse_from_rfc3339(timestamp.as_str())
+            let time = OffsetDateTime::parse_from_rfc3339(timestamp.as_str())
                 .map_err(|_| "invalid_source_manifest")?;
             if (expiry && time <= now) || (!expiry && time > now) {
                 return Ok(None);
@@ -628,7 +628,7 @@ mod tests {
             "[context_gateway]\nclassification = \"warn\"\n",
         )
         .expect("config");
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let marked = "*** TOP SECRET *** invoice ledger plans";
 
         // Detected restricted, declared public, policy admits internal:

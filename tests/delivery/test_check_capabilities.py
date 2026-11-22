@@ -20,15 +20,15 @@ RECORD = ('[[capability]]\nid = "{id}"\nprice_class = "{price}"\n{plan}source_vi
 
 def record(identifier, price, visibility, delivery, hosted, source, plan=None):
     return RECORD.format(id=identifier, price=price, visibility=visibility, delivery=delivery, hosted=hosted,
-                         source=source, plan=f'hive_plan = "{plan}"\n' if plan else "")
+                         source=source, plan=f'cloud_plan = "{plan}"\n' if plan else "")
 
 
-# The schema-3 product registry: local free, Hive plans, retired Personal Cloud.
+# The schema-3 product registry: local free, Cloud plans, retired Personal Cloud.
 REGISTRY = 'schema_version = 3\n\n[aliases]\n"sync" = "pro.cloud_sync"\n\n' + "".join([
     record("trust.runtime.cache", "free", "public_apache", "source_build", "false", "rust/src/core/cache.rs"),
     record("pro.cloud_sync", "retired", "private_source", "managed_cloud_service", "true", "cloud"),
     record("pro.runtime.adaptive_context", "free", "private_source", "signed_binary", "false", "runtime"),
-    record("pro.runtime.code_security", "hive", "private_source", "hive_service", "true", "hive", "pro"),
+    record("pro.runtime.code_security", "cloud", "private_source", "cloud_service", "true", "cloud", "pro"),
 ])
 # The frozen schema-2 registry the legacy hosted services keep deciding from.
 LEGACY = 'schema_version = 2\n\n[aliases]\n"sync" = "pro.cloud_sync"\n\n' + "".join([
@@ -36,9 +36,9 @@ LEGACY = 'schema_version = 2\n\n[aliases]\n"sync" = "pro.cloud_sync"\n\n' + "".j
     record("pro.cloud_sync", "cloud_paid", "private_source", "managed_cloud_service", "true", "cloud"),
     record("pro.runtime.adaptive_context", "pro_paid", "private_source", "signed_binary", "false", "runtime"),
 ])
-ENGINE = ('pub enum UserPriceClass {\n    Free,\n    Hive,\n    Retired,\n    CloudPaid,\n    ProPaid,\n}\n'
+ENGINE = ('pub enum UserPriceClass {\n    Free,\n    Cloud,\n    Retired,\n    CloudPaid,\n    ProPaid,\n}\n'
           'pub enum RuntimeDelivery {\n    SourceBuild,\n    SignedBinary,\n    ManagedCloudService,\n'
-          '    HiveService,\n}\n'
+          '    CloudService,\n}\n'
           'UserPriceClass::Free => Plan::Community,\n')
 EDGE = 'const RETIRED: [&str; 1] = ["pro.runtime.adaptive_routing"];\nfn allows() {}\nconst PIN: &str = "{digest}";\n'
 LEGACY_PATH = "ee/services/cloud/legacy-registry.toml"
@@ -63,7 +63,7 @@ class CapabilityCheckTests(unittest.TestCase):
                          for name, tier in [("free", "community"), ("cloud_paid", "pro"), ("pro_paid", "pro")]}
         for legacy in ("cloud_paid", "pro_paid"):
             price_classes[legacy]["legacy"] = True
-        price_classes["hive"] = {"tier_from": "hive_plan", "plans": {"pro": "pro"}, "grant": "g",
+        price_classes["cloud"] = {"tier_from": "cloud_plan", "plans": {"pro": "pro"}, "grant": "g",
                                   "enforced_by": engine}
         price_classes["retired"] = {"retired": True, "grant": "none", "enforced_by": engine}
         self.map = {
@@ -78,7 +78,7 @@ class CapabilityCheckTests(unittest.TestCase):
             "price_classes": price_classes,
             "hosted_catalog": {"path": "ee/services/cloud/catalog.json", "generator": "gen", "price_classes": ["cloud_paid"]},
             "deliveries": {name: {"ships_in": name, "source_roots": []}
-                           for name in ["source_build", "signed_binary", "managed_cloud_service", "hive_service"]},
+                           for name in ["source_build", "signed_binary", "managed_cloud_service", "cloud_service"]},
             "runtime": {"engine_gate_dir": "rust/src/core/intelligence_runtime",
                         "description": "ee/intelligence/src/lib.rs", "not_advertised": {}},
             "retired": {"enforced_by": needle(edge, "fn allows() {}"), "ids": {"pro.runtime.adaptive_routing": "r"}},
@@ -143,13 +143,13 @@ class CapabilityCheckTests(unittest.TestCase):
         self.assertIn("does not pin legacy registry sha256", found)
         self.assertIn("ee/services/cloud/catalog.json: list pro differs", found)
 
-    def test_schema_3_refuses_legacy_classes_planless_hive_and_accounted_free(self):
+    def test_schema_3_refuses_legacy_classes_planless_cloud_and_accounted_free(self):
         self.write_registry(REGISTRY.replace('price_class = "retired"', 'price_class = "cloud_paid"'))
         self.assertIn("pro.cloud_sync: legacy price class cloud_paid is not valid in schema 3", self.errors())
-        self.write_registry(REGISTRY.replace('hive_plan = "pro"\n', ""))
-        self.assertIn("pro.runtime.code_security: hive_plan must be set exactly on hive", self.errors())
-        self.write_registry(REGISTRY.replace('hive_plan = "pro"', 'hive_plan = "galaxy"'))
-        self.assertIn("pro.runtime.code_security: unknown hive_plan galaxy", self.errors())
+        self.write_registry(REGISTRY.replace('cloud_plan = "pro"\n', ""))
+        self.assertIn("pro.runtime.code_security: cloud_plan must be set exactly on cloud", self.errors())
+        self.write_registry(REGISTRY.replace('cloud_plan = "pro"', 'cloud_plan = "galaxy"'))
+        self.assertIn("pro.runtime.code_security: unknown cloud_plan galaxy", self.errors())
         self.write_registry(REGISTRY + record("trust.runtime.x", "free", "private_source", "signed_binary",
                                               "true", "runtime"))
         self.assertIn("trust.runtime.x: a free capability must not require an account", self.errors())
@@ -174,7 +174,7 @@ class CapabilityCheckTests(unittest.TestCase):
     def test_team_capability_is_either_served_by_named_code_or_listed_as_not_served(self):
         team = ("team.bus", "team.graph", "team.leases")
         self.write_registry(REGISTRY + "".join(
-            record(i, "hive", "private_source", "hive_service", "true", "hive", "team") for i in team))
+            record(i, "cloud", "private_source", "cloud_service", "true", "cloud", "team") for i in team))
         self.write_legacy(LEGACY + "".join(
             record(i, "team_paid", "private_source", "managed_cloud_service", "true", "cloud") for i in team))
         self.write("rust/src/core/product_capabilities.rs", ENGINE.replace("ProPaid,", "ProPaid,\n    TeamPaid,"))
@@ -188,7 +188,7 @@ class CapabilityCheckTests(unittest.TestCase):
         self.map["tiers"].append("team")
         self.map["instance_limits"]["team"] = {"instances": 25, "per": "org"}
         self.map["price_classes"]["team_paid"] = dict(self.map["price_classes"]["cloud_paid"], tier="team")
-        self.map["price_classes"]["hive"]["plans"]["team"] = "team"
+        self.map["price_classes"]["cloud"]["plans"]["team"] = "team"
         self.map["hosted_catalog"]["price_classes"].append("team_paid")
         self.map["id_scan"]["roots"].append("ee/services/cloud/src")
         self.map["id_scan"]["prefixes"].append("team")
@@ -224,6 +224,42 @@ class CapabilityCheckTests(unittest.TestCase):
         self.write("ee/services/cloud/src/graph.rs", 'fn gate() { require("team.graph"); }\n')
         self.assertIn("team.graph: listed as entitled_not_served but named in ee/services/cloud/src/graph.rs",
                       listed(["team.leases"], ["team.bus"], ["team.graph"]))
+
+    def team_registry_without_service(self):
+        """Team capabilities in both registries and no team_service section."""
+        team = ("team.bus",)
+        self.write_registry(REGISTRY + record("team.bus", "cloud", "private_source", "cloud_service", "true",
+                                              "cloud", "team"))
+        self.write_legacy(LEGACY + record("team.bus", "team_paid", "private_source", "managed_cloud_service",
+                                          "true", "cloud"))
+        self.write("rust/src/core/product_capabilities.rs", ENGINE.replace("ProPaid,", "ProPaid,\n    TeamPaid,"))
+        self.write("ee/services/cloud/catalog.json", json.dumps({"pro": ["pro.cloud_sync"], "team": list(team)}))
+        self.map["tiers"].append("team")
+        self.map["instance_limits"]["team"] = {"instances": 25, "per": "org"}
+        self.map["price_classes"]["team_paid"] = dict(self.map["price_classes"]["cloud_paid"], tier="team")
+        self.map["price_classes"]["cloud"]["plans"]["team"] = "team"
+        self.map["hosted_catalog"]["price_classes"].append("team_paid")
+
+    def test_removed_team_service_is_stated_not_silently_absent(self):
+        self.team_registry_without_service()
+        self.save_map()
+        self.assertIn("team_service is missing", self.errors())
+        self.map["legacy_hosted"]["team_service_retired"] = "service source removed"
+        self.save_map()
+        self.assertEqual(self.errors(), "")
+        # A retired service cannot keep a served list next to it.
+        self.map["team_service"] = {"declared_in": "x", "served": {}, "served_when_configured": {},
+                                    "entitled_not_served": {}}
+        self.save_map()
+        self.assertIn("team_service is listed although legacy_hosted.team_service_retired", self.errors())
+
+    def test_retired_ids_enforced_outside_the_tree_need_a_named_place(self):
+        self.map["retired"] = {"ids": {"pro.runtime.adaptive_routing": "r"}}
+        self.save_map()
+        self.assertIn("retired ids need enforced_by or enforced_outside", self.errors())
+        self.map["retired"]["enforced_outside"] = "LeanCTX Cloud"
+        self.save_map()
+        self.assertEqual(self.errors(), "")
 
     @unittest.skipIf(check.tomllib is None, "tomllib is the reference parser")
     def test_fallback_reader_matches_tomllib_on_the_real_registry(self):

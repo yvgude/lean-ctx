@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Background sync and policy enforcement evidence (3.12.3), as Local Read
-//! kinds. Read only, from local files; nothing contacts Hive.
+//! kinds. Read only, from local files; nothing contacts Cloud.
 //!
-//! - `hive.sync`: `lean-ctx hive sync status --json`, the daemon's
-//!   background vault sync (`<data>/hive/sync/status.json`).
-//! - `policy.sessions`: `lean-ctx hive policy sessions --json`, the policy
+//! - `cloud.sync`: `lean-ctx cloud sync status --json`, the daemon's
+//!   background vault sync (`<data>/cloud/sync/status.json`).
+//! - `policy.sessions`: `lean-ctx cloud policy sessions --json`, the policy
 //!   installed here and which version each app session ran under.
-//! - `policy.session`: `lean-ctx hive policy session --session ID --json`,
+//! - `policy.session`: `lean-ctx cloud policy session --session ID --json`,
 //!   one session's evidence with its receipt ids.
 //!
 //! Wired as one `local_read::Part`: its routes, kinds and commands are
@@ -14,10 +14,10 @@
 
 use serde::Serialize;
 
-use lean_ctx_hive::HiveStore;
-use lean_ctx_hive::capture::sharing::RejectedFact;
-use lean_ctx_hive::policy_sessions::{self, AppliedRow, Installed};
-use lean_ctx_hive::sync::auto::{SyncStatus, VaultSyncStatus};
+use lean_ctx_cloud::CloudStore;
+use lean_ctx_cloud::capture::sharing::RejectedFact;
+use lean_ctx_cloud::policy_sessions::{self, AppliedRow, Installed};
+use lean_ctx_cloud::sync::auto::{SyncStatus, VaultSyncStatus};
 
 use super::routes::{Method, Project, Route};
 use super::{Answer, Code, Failure, Via};
@@ -25,10 +25,10 @@ use super::{Answer, Code, Failure, Via};
 /// This part's routes (Route as in `routes.rs`).
 pub(crate) const ROUTES: &[Route] = &[
     Route {
-        kind: "hive.sync",
+        kind: "cloud.sync",
         method: Method::Get,
-        path: "/v1/local/hive/sync",
-        cli: &["hive", "sync", "status", "--json"],
+        path: "/v1/local/cloud/sync",
+        cli: &["cloud", "sync", "status", "--json"],
         action: &["status"],
         params: &[],
         project: Project::None,
@@ -37,8 +37,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "policy.sessions",
         method: Method::Get,
-        path: "/v1/local/hive/policy/sessions",
-        cli: &["hive", "policy", "sessions", "--json"],
+        path: "/v1/local/cloud/policy/sessions",
+        cli: &["cloud", "policy", "sessions", "--json"],
         action: &["sessions"],
         params: &[],
         project: Project::None,
@@ -47,8 +47,8 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         kind: "policy.session",
         method: Method::Get,
-        path: "/v1/local/hive/policy/sessions/{id}",
-        cli: &["hive", "policy", "session", "<id>", "--json"],
+        path: "/v1/local/cloud/policy/sessions/{id}",
+        cli: &["cloud", "policy", "session", "<id>", "--json"],
         action: &["session"],
         params: &[],
         project: Project::None,
@@ -57,12 +57,12 @@ pub(crate) const ROUTES: &[Route] = &[
 ];
 
 /// This part's document kinds.
-pub(crate) const KINDS: &[&str] = &["hive.sync", "policy.session", "policy.sessions"];
+pub(crate) const KINDS: &[&str] = &["cloud.sync", "policy.session", "policy.sessions"];
 
 /// Command path → CLI verbs, as `capabilities::COMMANDS`.
 pub(crate) const COMMANDS: &[(&str, &[&str])] = &[
-    ("hive.policy", &["session", "sessions"]),
-    ("hive.sync", &["status"]),
+    ("cloud.policy", &["session", "sessions"]),
+    ("cloud.sync", &["status"]),
 ];
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -82,11 +82,11 @@ pub(crate) struct VaultRow {
     pub rejected: Vec<RejectedFact>,
 }
 
-/// The `hive.sync` body of `status` at `now`; `rejected` gives a vault's
+/// The `cloud.sync` body of `status` at `now`; `rejected` gives a vault's
 /// rejected facts still waiting for a fix.
 pub(crate) fn sync_doc(
     status: SyncStatus,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
     rejected: &dyn Fn(&str) -> Vec<RejectedFact>,
 ) -> SyncDoc {
     SyncDoc {
@@ -105,16 +105,16 @@ pub(crate) fn sync_doc(
 }
 
 /// The rejected facts of the vault `vault_id` (a place id) on this machine.
-fn rejected_of(hive_data: &std::path::Path, vault_id: &str) -> Vec<RejectedFact> {
-    use lean_ctx_hive::sync::place::place_id;
-    let map = lean_ctx_hive::vault::VaultMap::load(hive_data);
+fn rejected_of(cloud_data: &std::path::Path, vault_id: &str) -> Vec<RejectedFact> {
+    use lean_ctx_cloud::sync::place::place_id;
+    let map = lean_ctx_cloud::vault::VaultMap::load(cloud_data);
     let knowledge = map
         .vaults
         .values()
         .find(|record| place_id(&record.vault_id) == vault_id)
-        .and_then(lean_ctx_hive::sync::auto::root_of)
+        .and_then(lean_ctx_cloud::sync::auto::root_of)
         .and_then(|root| lean_ctx::core::knowledge::ProjectKnowledge::load(&root));
-    lean_ctx_hive::capture::sharing::rejected_now(hive_data, vault_id, knowledge.as_ref())
+    lean_ctx_cloud::capture::sharing::rejected_now(cloud_data, vault_id, knowledge.as_ref())
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -129,7 +129,7 @@ pub(crate) struct InstalledDoc {
     /// `nudge`, `poll` or `manual`: what started the last policy pull.
     pub pulled_via: Option<String>,
     pub last_pull_at: Option<String>,
-    /// Hive sends policy nudges: a change applies at once; otherwise the
+    /// Cloud sends policy nudges: a change applies at once; otherwise the
     /// periodic pull brings it (within `pull_interval_minutes`).
     pub nudges: bool,
     /// One row per vault the policy reaches on this machine (sorted by
@@ -143,30 +143,30 @@ pub(crate) struct InstalledDoc {
 /// The installed policy as enforced on this machine (D4).
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct Enforcement {
-    /// The version enforced: verified, in force and acknowledged by Hive
+    /// The version enforced: verified, in force and acknowledged by Cloud
     /// for this version and digest; `null` otherwise (an expired,
     /// unverified or unacknowledged policy is not reported as enforced).
     pub applied_version: Option<u64>,
-    /// When Hive acknowledged that version (`null` with it).
+    /// When Cloud acknowledged that version (`null` with it).
     pub acknowledged_at: Option<String>,
     /// The live app sessions (a receipt within the last 15 minutes) whose
     /// newest receipt was made under the installed verified policy in
     /// force; sorted.
     pub sessions: Vec<String>,
-    /// When this Instance reported `applied_version` to Hive on the bus
+    /// When this Instance reported `applied_version` to Cloud on the bus
     /// (`policy.applied`); `null` until then.
     pub reported_at: Option<String>,
 }
 
 fn enforcement(
-    hive_data: &std::path::Path,
+    cloud_data: &std::path::Path,
     installed: &Installed,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) -> Enforcement {
     let enforced =
         installed.signature == "verified" && installed.state == "in_force" && installed.acked;
     let applied_version = installed.version.filter(|_| enforced);
-    let reported_at = policy_sessions::load_reported(hive_data)
+    let reported_at = policy_sessions::load_reported(cloud_data)
         .filter(|r| {
             Some(r.version) == applied_version && installed.digest.as_ref() == Some(&r.digest)
         })
@@ -174,7 +174,7 @@ fn enforcement(
     Enforcement {
         applied_version,
         acknowledged_at: installed.acked_at.clone().filter(|_| enforced),
-        sessions: policy_sessions::enforcing(hive_data, installed, now),
+        sessions: policy_sessions::enforcing(cloud_data, installed, now),
         reported_at,
     }
 }
@@ -209,7 +209,7 @@ pub(crate) struct SessionRow {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct SessionsDoc {
-    /// `null`: no Hive policy installed on this machine.
+    /// `null`: no Cloud policy installed on this machine.
     pub installed: Option<InstalledDoc>,
     pub sessions: Vec<SessionRow>,
 }
@@ -263,12 +263,12 @@ fn policy_vaults(
 }
 
 /// The vault ids with a vault-level entry in the policy installed in
-/// `hive_data` (empty: none installed); `None` when the installed files
+/// `cloud_data` (empty: none installed); `None` when the installed files
 /// cannot be checked.
-fn vault_entries(hive_data: &std::path::Path) -> Option<Vec<String>> {
-    use lean_ctx_hive::effective_floor;
+fn vault_entries(cloud_data: &std::path::Path) -> Option<Vec<String>> {
+    use lean_ctx_cloud::effective_floor;
     let (floor, required) =
-        effective_floor::read(&effective_floor::floor_dir_in(hive_data)).ok()?;
+        effective_floor::read(&effective_floor::floor_dir_in(cloud_data)).ok()?;
     let floor = effective_floor::check(floor.as_deref(), required.as_deref()).ok()?;
     Some(floor.map_or_else(Vec::new, |floor| {
         floor
@@ -282,7 +282,7 @@ fn vault_entries(hive_data: &std::path::Path) -> Option<Vec<String>> {
 
 fn installed_doc(
     installed: Installed,
-    pulls: &lean_ctx_hive::policy::PullRecord,
+    pulls: &lean_ctx_cloud::policy::PullRecord,
     vaults: Vec<PolicyVault>,
     enforcement: Enforcement,
 ) -> Option<InstalledDoc> {
@@ -310,23 +310,23 @@ fn installed_doc(
     })
 }
 
-/// The `policy.sessions` body of the Hive data in `hive_data` at `now`.
+/// The `policy.sessions` body of the Cloud data in `cloud_data` at `now`.
 pub(crate) fn sessions_doc(
-    hive_data: &std::path::Path,
-    now: chrono::DateTime<chrono::Utc>,
+    cloud_data: &std::path::Path,
+    now: lean_ctx_time::UtcDateTime,
 ) -> SessionsDoc {
-    let policy = policy_sessions::installed(hive_data, now);
-    let enforced = enforcement(hive_data, &policy, now);
+    let policy = policy_sessions::installed(cloud_data, now);
+    let enforced = enforcement(cloud_data, &policy, now);
     let installed = installed_doc(
         policy,
-        &lean_ctx_hive::policy::load_pulls(hive_data),
+        &lean_ctx_cloud::policy::load_pulls(cloud_data),
         policy_vaults(
-            &lean_ctx::core::vault_map::VaultMap::load(hive_data),
-            vault_entries(hive_data).as_deref(),
+            &lean_ctx::core::vault_map::VaultMap::load(cloud_data),
+            vault_entries(cloud_data).as_deref(),
         ),
         enforced,
     );
-    let sessions = policy_sessions::list(hive_data)
+    let sessions = policy_sessions::list(cloud_data)
         .into_iter()
         .filter_map(|evidence| {
             let row = evidence.applied.last()?;
@@ -347,8 +347,8 @@ pub(crate) fn sessions_doc(
     }
 }
 
-fn store() -> Result<HiveStore, Failure> {
-    HiveStore::open().map_err(Failure::from)
+fn store() -> Result<CloudStore, Failure> {
+    CloudStore::open().map_err(Failure::from)
 }
 
 /// The session a `policy session` request names: `--session ID`, or the
@@ -374,12 +374,12 @@ const NO_PROJECT: &str = "";
 /// socket), released through the tool run of its tool (one receipt for the
 /// bytes sent).
 pub(crate) fn answer(kind: &str, args: &[String], via: Via) -> Answer {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     match kind {
-        "hive.sync" => super::answer_released("ctx_agent", NO_PROJECT, kind, via, || {
+        "cloud.sync" => super::answer_released("ctx_agent", NO_PROJECT, kind, via, || {
             let store = store()?;
             Ok(sync_doc(
-                lean_ctx_hive::sync::auto::load_status(store.data_dir()),
+                lean_ctx_cloud::sync::auto::load_status(store.data_dir()),
                 now,
                 &|vault| rejected_of(store.data_dir(), vault),
             ))
@@ -403,18 +403,18 @@ pub(crate) fn answer(kind: &str, args: &[String], via: Via) -> Answer {
     }
 }
 
-/// `lean-ctx hive sync status --json`.
+/// `lean-ctx cloud sync status --json`.
 pub(crate) fn run_sync_status(args: &[String]) {
-    super::print(&answer("hive.sync", args, Via::Cli));
+    super::print(&answer("cloud.sync", args, Via::Cli));
 }
 
-/// `lean-ctx hive policy sessions|session … --json`.
+/// `lean-ctx cloud policy sessions|session … --json`.
 pub(crate) fn run_policy(args: &[String]) {
     let kind = match super::positionals(args).first().copied() {
         Some("sessions") => "policy.sessions",
         Some("session") => "policy.session",
         _ => super::fail(&Failure::invalid(
-            "usage: lean-ctx hive policy sessions --json | session --session ID --json",
+            "usage: lean-ctx cloud policy sessions --json | session --session ID --json",
         )),
     };
     super::print(&answer(kind, args, Via::Cli));
@@ -427,12 +427,12 @@ mod tests {
 
     #[test]
     fn a_stale_status_is_not_running_and_vaults_pass_through() {
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let status = SyncStatus {
             interval_s: 300,
             heartbeat_at: Some(
-                (now - chrono::Duration::seconds(600))
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                (now - lean_ctx_time::Duration::seconds(600))
+                    .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
             ),
             vaults: vec![VaultSyncStatus {
                 vault_id: "v".into(),
@@ -444,19 +444,44 @@ mod tests {
         let doc = sync_doc(status, now, &|_| Vec::new());
         assert!(!doc.running);
         assert_eq!(doc.vaults[0].status.pending, 4);
-        let text = super::super::document("hive.sync", &doc);
+        let text = super::super::document("cloud.sync", &doc);
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["contract"], "local-read/1");
-        assert_eq!(value["kind"], "hive.sync");
+        assert_eq!(value["kind"], "cloud.sync");
         assert!(value["last_pass_at"].is_null(), "nulls are printed: {text}");
         assert_eq!(value["vaults"][0]["pending"], 4, "the row is flat: {text}");
         assert_eq!(value["vaults"][0]["rejected"], serde_json::json!([]));
+        assert!(value["vaults"][0]["code"].is_null(), "{text}");
+        assert!(value["vaults"][0]["retry_after_s"].is_null(), "{text}");
+    }
+
+    /// Cloud contact findings D: a failed vault names its failure as a
+    /// machine-readable `code` and the cloud's wait as `retry_after_s`.
+    #[test]
+    fn a_failed_vault_carries_its_code_and_retry_after() {
+        let now = lean_ctx_time::UtcDateTime::now();
+        let status = SyncStatus {
+            vaults: vec![VaultSyncStatus {
+                vault_id: "v".into(),
+                failures: 2,
+                error: Some("the cloud asks to retry in 420 s".into()),
+                code: Some("rate_limited".into()),
+                retry_after_s: Some(420),
+                ..VaultSyncStatus::default()
+            }],
+            ..SyncStatus::default()
+        };
+        let doc = sync_doc(status, now, &|_| Vec::new());
+        let text = super::super::document("cloud.sync", &doc);
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["vaults"][0]["code"], "rate_limited", "{text}");
+        assert_eq!(value["vaults"][0]["retry_after_s"], 420, "{text}");
     }
 
     #[test]
     fn no_policy_installed_is_null_and_sessions_list_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let doc = sessions_doc(dir.path(), chrono::Utc::now());
+        let doc = sessions_doc(dir.path(), lean_ctx_time::UtcDateTime::now());
         assert_eq!(
             doc,
             SessionsDoc {
@@ -490,17 +515,17 @@ mod tests {
         for (kind, path, command, verb) in [
             (
                 "policy.sessions",
-                "/v1/local/hive/policy/sessions",
-                "hive.policy",
+                "/v1/local/cloud/policy/sessions",
+                "cloud.policy",
                 "sessions",
             ),
             (
                 "policy.session",
-                "/v1/local/hive/policy/sessions/{id}",
-                "hive.policy",
+                "/v1/local/cloud/policy/sessions/{id}",
+                "cloud.policy",
                 "session",
             ),
-            ("hive.sync", "/v1/local/hive/sync", "hive.sync", "status"),
+            ("cloud.sync", "/v1/local/cloud/sync", "cloud.sync", "status"),
         ] {
             let route = routes::all()
                 .find(|r| r.path == path)
@@ -550,11 +575,11 @@ mod tests {
     }
 
     /// Install a verified floor with vault-level entries for `vaults`.
-    fn install_floor(hive_data: &std::path::Path, vaults: &[&str]) {
-        use lean_ctx_hive::effective_floor::{
+    fn install_floor(cloud_data: &std::path::Path, vaults: &[&str]) {
+        use lean_ctx_cloud::effective_floor::{
             FLOOR_FILE, FLOOR_SCHEMA, Floor, REQUIRED_FILE, floor_dir_in,
         };
-        use lean_ctx_protocol::hive::effective_policy::{
+        use lean_ctx_protocol::cloud::effective_policy::{
             BundlePolicyV1, EffectivePolicyV1, POLICY_DOCUMENT_SCHEMA, VaultEffectivePolicyV1,
         };
         let effective = || EffectivePolicyV1 {
@@ -563,6 +588,7 @@ mod tests {
             context: Default::default(),
             sharing: Default::default(),
             agents: None,
+            orchestrator: None,
             other: Default::default(),
         };
         let floor = Floor {
@@ -581,7 +607,7 @@ mod tests {
                     .collect(),
             },
         };
-        let dir = floor_dir_in(hive_data);
+        let dir = floor_dir_in(cloud_data);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(FLOOR_FILE), serde_json::to_vec(&floor).unwrap()).unwrap();
         std::fs::write(dir.join(REQUIRED_FILE), br#"{"version":3}"#).unwrap();
@@ -604,7 +630,7 @@ mod tests {
         );
         map.save(dir.path()).unwrap();
 
-        let doc = sessions_doc(dir.path(), chrono::Utc::now());
+        let doc = sessions_doc(dir.path(), lean_ctx_time::UtcDateTime::now());
         let installed = doc
             .installed
             .as_ref()
@@ -646,20 +672,20 @@ mod tests {
         assert!(value["installed"]["vaults"][0]["ns"].is_null(), "{text}");
     }
 
-    /// D4: `installed.enforcement` names the version enforced, when Hive
+    /// D4: `installed.enforcement` names the version enforced, when Cloud
     /// acknowledged it, the live sessions under it and the bus report.
     #[test]
     fn installed_says_which_version_is_enforced_and_by_which_sessions() {
-        use lean_ctx_hive::policy_sessions::{Reported, note_reported, record};
+        use lean_ctx_cloud::policy_sessions::{Reported, note_reported, record};
         let dir = tempfile::tempdir().unwrap();
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         install_floor(dir.path(), &[]);
         record(dir.path(), "app-live", "r1", now);
         record(
             dir.path(),
             "app-old",
             "r2",
-            now - chrono::Duration::hours(1),
+            now - lean_ctx_time::Duration::hours(1),
         );
         let enforcement = |doc: &SessionsDoc| {
             let text = super::super::document("policy.sessions", doc);
@@ -670,7 +696,7 @@ mod tests {
             enforcement(&sessions_doc(dir.path(), now)),
             serde_json::json!({"applied_version": null, "acknowledged_at": null,
                 "sessions": ["app-live"], "reported_at": null}),
-            "verified and in force, not yet acknowledged by Hive"
+            "verified and in force, not yet acknowledged by LeanCTX Cloud"
         );
         let digest = format!("sha256:{}", "a".repeat(64));
         let state = serde_json::json!({"effective": {
@@ -717,6 +743,10 @@ mod tests {
         let mut kinds: Vec<&str> = ROUTES.iter().map(|r| r.kind).collect();
         kinds.sort_unstable();
         assert_eq!(kinds, KINDS);
-        assert!(ROUTES.iter().all(|r| r.path.starts_with("/v1/local/hive/")));
+        assert!(
+            ROUTES
+                .iter()
+                .all(|r| r.path.starts_with("/v1/local/cloud/"))
+        );
     }
 }

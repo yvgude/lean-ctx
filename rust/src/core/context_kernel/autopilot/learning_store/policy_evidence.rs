@@ -71,7 +71,7 @@ pub(super) fn initialize(connection: &Connection) -> Result<()> {
 
 /// Days since the Unix epoch (UTC) of an RFC 3339 timestamp.
 pub(super) fn utc_day(timestamp: &str) -> Option<u64> {
-    let seconds = chrono::DateTime::parse_from_rfc3339(timestamp)
+    let seconds = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(timestamp)
         .ok()?
         .timestamp();
     u64::try_from(seconds.div_euclid(SECONDS_PER_DAY)).ok()

@@ -205,7 +205,7 @@ mod tests {
         ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, SessionErrorLog,
     };
     use crate::core::session::Playbook;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn gotcha(trigger: &str, resolution: &str, occurrences: u32) -> Gotcha {
         let mut g = Gotcha::new(
@@ -226,11 +226,11 @@ mod tests {
     fn error_log(session: &str, sig: &str) -> SessionErrorLog {
         SessionErrorLog {
             session_id: session.to_string(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
             errors: vec![ErrorEntry {
                 signature: sig.to_string(),
                 command: "cargo test".into(),
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
             }],
             fixes: Vec::new(),
         }
@@ -284,7 +284,7 @@ mod tests {
             error_signature: "fixed error".into(),
             resolution: "added the missing import".into(),
             files_changed: vec!["src/lib.rs".into()],
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         });
         store.error_log.push(s2);
         assert!(

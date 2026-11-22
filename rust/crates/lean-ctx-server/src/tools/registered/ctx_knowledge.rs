@@ -22,7 +22,7 @@ impl McpTool for CtxKnowledgeTool {
              WORKFLOW: save after completing significant tasks; recall at session start.\n\
              action=remember value='Y' saves a fact (key optional — derived from value; content= is an accepted alias).\n\
              action=recall query='X' retrieves it (bare recall lists recent facts). action=status shows all categories.\n\
-action=consolidate imports latest session if present, runs lifecycle, then frees 25% history/patterns capacity.\n\
+action=consolidate imports latest session if present, runs lifecycle, then reclaims full history/pattern stores losslessly.\n\
              action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
              action=decisions [path=P|symbol=S] lists project decisions (.leanctx/decisions) in scope.\n\
              mode=semantic|exact for recall. category groups related facts.",
@@ -42,8 +42,8 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "content": { "type": "string", "description": "Alias for value (remember)" },
                     "sources": { "type": "array", "items": { "type": "string" }, "description": "remember: project files the fact is derived from (read now and bound to it)" },
                     "anchors": { "type": "array", "items": { "type": "string" }, "description": "remember: code the fact is about, path or path::symbol (max 16); a later change there marks the fact to verify" },
-                    "type": { "type": "string", "description": "remember: fact|decision|gotcha|procedure|finding (Hive capture)" },
-                    "refs": { "type": "array", "items": { "type": "string" }, "description": "remember: references for Hive capture (max 10): file:<path>[#L<a>-<b>], sym:<path>#<symbol>, test:<path>::<name>, commit:<sha>, https://…" },
+                    "type": { "type": "string", "description": "remember: fact|decision|gotcha|procedure|finding (LeanCTX Cloud capture)" },
+                    "refs": { "type": "array", "items": { "type": "string" }, "description": "remember: references for LeanCTX Cloud capture (max 10): file:<path>[#L<a>-<b>], sym:<path>#<symbol>, test:<path>::<name>, commit:<sha>, https://…" },
                     "evidence": { "type": "string", "description": "remember: observed|stated|imported" },
                     "steps": { "type": "array", "items": { "type": "string" }, "description": "remember type=procedure: steps (value = title)" },
                     "commands": { "type": "array", "items": { "type": "object", "properties": { "shell": { "type": "string" }, "cmd": { "type": "string" }, "cwd_hint": { "type": "string" } }, "required": ["shell", "cmd"] }, "description": "remember type=procedure: commands as data (never executed)" },
@@ -247,8 +247,8 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 crate::tools::ctx_knowledge::handle_export_okf(&project_root, out.as_deref()),
             ));
         }
-        // Hive (#270): a write that moved the knowledge journal (remember,
-        // a conflict's fact update, forget, import …) is pushed to Hive
+        // Cloud (#270): a write that moved the knowledge journal (remember,
+        // a conflict's fact update, forget, import …) is pushed to Cloud
         // from this process within about a second, off this call.
         let journal_before = journal_head(&project_root);
         if action == "import" {
@@ -306,6 +306,17 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
         );
         let failed = outcome.is_err();
         let (Ok(result) | Err(result)) = outcome;
+        // `session.stats` `knowledge.written` (rel12 WP2): a remember that
+        // stored or reinforced a fact; a refusal or a low-salience skip
+        // wrote nothing.
+        if action == "remember"
+            && !failed
+            && remember_wrote(&result)
+            && let Some(mut session) =
+                crate::server::bounded_lock::write(session_handle, "ctx_knowledge written")
+        {
+            session.record_knowledge_written();
+        }
         let named = get_str_array(args, "sources").unwrap_or_default();
         let result = if action == "remember" && !failed {
             remembered_with(
@@ -343,7 +354,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             }
             _ => result,
         };
-        // Hive capture fields (v4 V1), all or none.
+        // Cloud capture fields (v4 V1), all or none.
         let result = match (
             action == "remember" && !failed,
             category.as_deref(),
@@ -365,14 +376,14 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             },
             _ => result,
         };
-        // Hive: whether the fact goes to the team, or stays local and why
+        // Cloud: whether the fact goes to the team, or stays local and why
         // (the capture gate's rules, checked now instead of at sync).
         let result = match (action == "remember" && !failed, value.as_deref()) {
             (true, Some(value)) => {
                 let has_ref = get_str_array(args, "refs").is_some_and(|r| !r.is_empty())
                     || !anchors.is_empty();
-                match lean_ctx_hive::capture::sharing::note(&project_root, value, has_ref) {
-                    Some(line) => format!("{result}\nhive: {line}"),
+                match lean_ctx_cloud::capture::sharing::note(&project_root, value, has_ref) {
+                    Some(line) => format!("{result}\ncloud: {line}"),
                     None => result,
                 }
             }
@@ -409,6 +420,17 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
     }
 }
 
+/// Whether a `remember` reply reports a write. `handle_remember`
+/// (`ctx_knowledge/remember.rs`) answers every refusal with `Error: …` and a
+/// rejected low-salience fact (`AdmissionResult::RejectedLowSalience`) with
+/// `Skipped …`; a stored, revised, confirmed or merged fact starts otherwise.
+/// The admission result is not threaded through the shared text outcome of
+/// all actions, so the reply is read here; the tests in
+/// `session_stats_tests` pin both the counted and the refused replies.
+fn remember_wrote(reply: &str) -> bool {
+    !(reply.starts_with("Error") || reply.starts_with("Skipped "))
+}
+
 /// The newest LSN of the knowledge journal of `project_root`.
 fn journal_head(project_root: &str) -> Option<u64> {
     lean_ctx::core::knowledge::knowledge_dir_of(project_root)
@@ -416,11 +438,11 @@ fn journal_head(project_root: &str) -> Option<u64> {
         .map(|dir| lean_ctx::core::knowledge::journal::head_lsn(&dir))
 }
 
-/// Push the vault of `project_root` to Hive soon when the journal moved
+/// Push the vault of `project_root` to Cloud soon when the journal moved
 /// past `before` (the head before the action ran).
 fn push_if_written(project_root: &str, before: Option<u64>) {
     if before.is_some() && journal_head(project_root) != before {
-        lean_ctx_hive::sync::on_write::push_soon(project_root);
+        lean_ctx_cloud::sync::on_write::push_soon(project_root);
     }
 }
 
@@ -921,7 +943,7 @@ mod tests {
     /// read that writes nothing is not.
     #[test]
     fn a_remembered_fact_asks_for_a_push_and_a_recall_does_not() {
-        use lean_ctx_hive::sync::on_write::requested;
+        use lean_ctx_cloud::sync::on_write::requested;
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let root = dir
@@ -946,5 +968,98 @@ mod tests {
         assert_eq!(requested(&root), 1, "the write asks for a push");
         call(&ctx, &json!({"action": "recall", "query": "retry"}));
         assert_eq!(requested(&root), 1, "a recall writes nothing");
+    }
+}
+
+#[cfg(test)]
+mod session_stats_tests {
+    //! rel12 WP2: `session.stats` `knowledge.written` counts the remembers
+    //! that wrote a fact, never a refused one.
+    use super::*;
+
+    type Session = std::sync::Arc<tokio::sync::RwLock<lean_ctx::core::session::SessionState>>;
+
+    /// The session's persisted `knowledge_written` counter as JSON.
+    fn written(session: &Session) -> Value {
+        serde_json::to_value(&session.blocking_read().stats).unwrap()["knowledge_written"].clone()
+    }
+
+    #[test]
+    fn only_a_successful_remember_counts_as_a_knowledge_write() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let session: Session = std::sync::Arc::new(tokio::sync::RwLock::new(
+            lean_ctx::core::session::SessionState::new(),
+        ));
+        let ctx = ToolContext {
+            project_root: root,
+            session: Some(session.clone()),
+            ..ToolContext::default()
+        };
+        let run = |args: Value| {
+            let _ = CtxKnowledgeTool.handle(args.as_object().unwrap(), &ctx);
+        };
+
+        run(json!({"action": "remember", "category": "architecture",
+                   "key": "retry", "value": "payments retry three times"}));
+        assert_eq!(written(&session), json!(1), "a stored fact is a write");
+
+        run(json!({"action": "remember", "category": "architecture", "key": "retry-cap"}));
+        assert_eq!(
+            written(&session),
+            json!(1),
+            "a remember without a value is refused and wrote nothing"
+        );
+
+        run(json!({"action": "recall", "query": "retry"}));
+        assert_eq!(written(&session), json!(1), "a recall is no write");
+    }
+
+    #[test]
+    fn a_merged_near_duplicate_remember_counts_as_a_knowledge_write() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let session: Session = std::sync::Arc::new(tokio::sync::RwLock::new(
+            lean_ctx::core::session::SessionState::new(),
+        ));
+        let ctx = ToolContext {
+            project_root: root,
+            session: Some(session.clone()),
+            ..ToolContext::default()
+        };
+        let run = |args: Value| {
+            CtxKnowledgeTool
+                .handle(args.as_object().unwrap(), &ctx)
+                .map(|output| output.text)
+                .unwrap()
+        };
+        let value = "use postgres for the primary datastore";
+
+        let stored = run(json!({"action": "remember", "category": "architecture",
+                                "key": "db-primary", "value": value}));
+        assert!(stored.starts_with("Remembered"), "{stored}");
+        assert_eq!(written(&session), json!(1), "a stored fact is a write");
+
+        // The same statement under another key reinforces the stored fact.
+        let merged = run(json!({"action": "remember", "category": "architecture",
+                                "key": "db-store", "value": value}));
+        assert!(merged.starts_with("Merged"), "{merged}");
+        assert_eq!(
+            written(&session),
+            json!(2),
+            "a merge into a near-duplicate is a write"
+        );
     }
 }

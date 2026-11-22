@@ -1,9 +1,0 @@
-{
-  "base_version": 3,
-  "labels": [
-    "cleanup",
-    "docs"
-  ],
-  "priority": "high",
-  "schema": "leanctx.hive.task-fields/v1"
-}

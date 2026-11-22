@@ -1,0 +1,82 @@
+{
+  "model_credit": {
+    "agent_hour_usd_micros": 250000,
+    "allowance_usd_micros": 8000000,
+    "left_agent_hours": 27.0,
+    "left_usd_micros": 6750000,
+    "limit_agent_hours": 32.0,
+    "limit_usd_micros": 8000000,
+    "reset_at": "2026-12-01T00:00:00Z",
+    "state": "ok",
+    "topup_available_usd_micros": 0,
+    "used_agent_hours": 5.0,
+    "used_usd_micros": 1250000
+  },
+  "notices": [
+    {
+      "at": "2026-11-12T08:30:00Z",
+      "level": 80,
+      "resource": "storage_bytes"
+    },
+    {
+      "at": "2026-11-16T19:05:00Z",
+      "level": 100,
+      "resource": "transfer_bytes"
+    }
+  ],
+  "plan": "personal",
+  "quotas": {
+    "bus_messages": {
+      "limit": 200000,
+      "next_step": "upgrade_team",
+      "reset_at": "2026-12-01T00:00:00Z",
+      "state": "ok",
+      "used": 1200
+    },
+    "connected_instances": {
+      "limit": 2,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 1
+    },
+    "model_credit_usd_micros": {
+      "limit": 8000000,
+      "next_step": "top_up",
+      "reset_at": "2026-12-01T00:00:00Z",
+      "state": "ok",
+      "used": 1250000
+    },
+    "private_vaults": {
+      "limit": 20,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 3
+    },
+    "registered_instances": {
+      "limit": 3,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 2
+    },
+    "storage_bytes": {
+      "limit": 42949672960,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "warn",
+      "used": 36507222016
+    },
+    "transfer_bytes": {
+      "limit": 42949672960,
+      "next_step": "upgrade_team",
+      "reset_at": "2026-12-01T00:00:00Z",
+      "state": "full",
+      "used": 42949672960
+    }
+  },
+  "read_only": false,
+  "schema": "leanctx.cloud.usage/v1",
+  "suggest_team": false
+}

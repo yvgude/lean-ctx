@@ -110,6 +110,25 @@ per machine, memory runs out. Therefore:
   once per integrated batch, on one machine at a time.
 - A worker that needs a runnable binary asks the lead instead of building one.
 
+### Never wait on a build (owner 2026-11-20)
+
+On a shared target, Cargo's build-dir lock serializes every cargo process on
+the machine, so most check wall time is waiting for other builds. Where the
+local `verifyd` service is installed, use it instead of your own `cargo check`:
+- `verifyd submit --no-wait` hands the exact working tree (tracked +
+  untracked) to the one warm verifier and returns in about 1 s; it checks the
+  affected workspace packages and their reverse dependencies. Keep working,
+  then `verifyd result`: exit 0 green, 1 red, 3 pending or stale (the tree
+  changed since the submit; submit again). Plain `verifyd submit` blocks.
+- A verified tree answers at once from the signed local ledger; identical
+  requests share one compile. `--cmd clippy` runs clippy with `-D warnings`.
+- Never poll another agent's cargo process with `sleep` loops. Without
+  verifyd, run the `cargo check` above once and do other work while it queues.
+- verifyd evidence is local only: it never replaces the MR pipeline and is
+  never landing evidence.
+- CI: when a pipeline goes red, retry only its failed jobs. Never start a new
+  pipeline for the same commit.
+
 ### Split before you grow (owner 2026-11-01)
 
 The engine crate `lean_ctx` is being split into workspace crates; Rust stays

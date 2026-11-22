@@ -24,13 +24,33 @@ pub fn check_substitution_in_args(command: &str) -> Result<(), ShellError> {
     // Scan the case-rewritten text as well, so the bodies are what gets
     // checked; the raw scan stays, since it alone still sees substitutions in
     // the case subject and patterns, which the rewrite drops. If the rewrite
-    // fails, the fragment keeps flagging `case` as before.
-    if let Ok(rewritten) = super::rewrite_case_constructs(command)
-        && rewritten != command
-    {
+    // fails, the fragment keeps flagging `case` as before. The case parser
+    // knows quotes but not comments, so the line is read both as it is and
+    // without its comments, and the bodies of both readings are checked. A
+    // `case` in a substitution that either reading cannot parse is refused:
+    // its bodies would go unchecked in every mode.
+    let commentless = super::enforcement::without_comments(command)?;
+    let has_case_fragment = inner_cmds
+        .iter()
+        .any(|inner| matches!(extract_base_from_segment(inner).as_str(), "case" | "esac"));
+    let mut readings = vec![command];
+    if *commentless != *command {
+        readings.push(&commentless);
+    }
+    let mut body_cmds = Vec::new();
+    for reading in readings {
+        match super::rewrite_case_constructs(reading) {
+            Ok(rewritten) if rewritten != reading => {
+                body_cmds.extend(extract_substitution_commands(&rewritten)?);
+            }
+            Err(err) if has_case_fragment => return Err(err),
+            Ok(_) | Err(_) => {}
+        }
+    }
+    if !body_cmds.is_empty() {
         inner_cmds
             .retain(|inner| !matches!(extract_base_from_segment(inner).as_str(), "case" | "esac"));
-        inner_cmds.extend(extract_substitution_commands(&rewritten)?);
+        inner_cmds.extend(body_cmds);
     }
     if inner_cmds.is_empty() {
         return Ok(());

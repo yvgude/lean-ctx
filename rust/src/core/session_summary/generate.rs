@@ -59,7 +59,7 @@ pub(crate) fn build_candidate(session: &SessionState) -> SummaryCandidate {
 
     SummaryCandidate {
         session_id: session.id.clone(),
-        created_at: chrono::Utc::now(),
+        created_at: lean_ctx_time::UtcDateTime::now(),
         title,
         body,
         files,

@@ -10,7 +10,7 @@
 //! - Linux and other Unix: the file [`LINUX_FILE_PATH`].
 //!
 //! This module only turns the carrier into JSON members; the schema
-//! (`lean_ctx_protocol::hive::managed`) decides what they mean. Every reader
+//! (`lean_ctx_protocol::cloud::managed`) decides what they mean. Every reader
 //! takes its location as an argument so tests read a sandboxed copy; the
 //! machine location is fixed ([`system_carrier`]) and no environment variable
 //! moves it, so a user cannot point the engine at a file of their own.
@@ -52,14 +52,14 @@ pub enum RegistryRoot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Owner {
     /// Owned by root and writable by nobody else (the machine carrier: a
-    /// file anyone else can write could redirect the Hive trust root).
+    /// file anyone else can write could redirect the Cloud trust root).
     Root,
     /// Any owner (sandboxed tests).
     Any,
 }
 
 impl Carrier {
-    /// Where the carrier lives, as `hive status` names it.
+    /// Where the carrier lives, as `cloud status` names it.
     pub fn location(&self) -> String {
         match self {
             Self::MacosProfile(path) | Self::File(path) => path.display().to_string(),
@@ -397,14 +397,14 @@ mod tests {
         std::fs::write(
             &path,
             "schema = \"leanctx.managed-config/v1\"\n\"updates.mode\" = \"mdm\"\n\
-             [hive]\nurl = \"https://hive.example.com\"\nrequire = true\n",
+             [cloud]\nurl = \"https://cloud.example.com\"\nrequire = true\n",
         )
         .expect("write");
         let members = read(&Carrier::File(path), Owner::Any)
             .expect("readable")
             .expect("present");
-        assert_eq!(members["hive"]["url"], "https://hive.example.com");
-        assert_eq!(members["hive"]["require"], true);
+        assert_eq!(members["cloud"]["url"], "https://cloud.example.com");
+        assert_eq!(members["cloud"]["require"], true);
         assert_eq!(members["updates.mode"], "mdm");
     }
 
@@ -412,7 +412,7 @@ mod tests {
     fn an_unparsable_file_is_an_error_not_absent() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("managed.toml");
-        std::fs::write(&path, "[hive\nurl = ").expect("write");
+        std::fs::write(&path, "[cloud\nurl = ").expect("write");
         assert!(read(&Carrier::File(path), Owner::Any).is_err());
     }
 
@@ -422,7 +422,7 @@ mod tests {
         use std::os::unix::fs::MetadataExt;
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("managed.toml");
-        std::fs::write(&path, "[hive]\nrequire = true\n").expect("write");
+        std::fs::write(&path, "[cloud]\nrequire = true\n").expect("write");
         if std::fs::metadata(&path).expect("meta").uid() == 0 {
             return; // running as root: the file is legitimately root-owned
         }
@@ -445,7 +445,7 @@ mod tests {
     fn a_symlinked_carrier_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let target = dir.path().join("elsewhere.toml");
-        std::fs::write(&target, "[hive]\nrequire = true\n").expect("write");
+        std::fs::write(&target, "[cloud]\nrequire = true\n").expect("write");
         let path = dir.path().join("managed.toml");
         std::os::unix::fs::symlink(&target, &path).expect("symlink");
         let error = read(&Carrier::File(path), Owner::Any).expect_err("symlink");
@@ -463,8 +463,8 @@ mod tests {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>PayloadUUID</key><string>0F2D</string>
-<key>hive.org</key><string>acme</string>
-<key>hive</key><dict><key>require</key><true/></dict>
+<key>cloud.org</key><string>acme</string>
+<key>cloud</key><dict><key>require</key><true/></dict>
 <key>workspace.vaults</key><array><string>acme/main</string></array>
 </dict></plist>"#,
         )
@@ -472,8 +472,8 @@ mod tests {
         let members = read(&Carrier::MacosProfile(path), Owner::Any)
             .expect("readable")
             .expect("present");
-        assert_eq!(members["hive.org"], "acme");
-        assert_eq!(members["hive"]["require"], true);
+        assert_eq!(members["cloud.org"], "acme");
+        assert_eq!(members["cloud"]["require"], true);
         assert_eq!(members["workspace.vaults"][0], "acme/main");
         assert!(!members.contains_key("PayloadUUID"));
     }
@@ -514,11 +514,11 @@ mod tests {
         unsafe { RegCreateKeyW(HKEY_CURRENT_USER, wide(&key).as_ptr(), &raw mut handle) };
         set(
             handle,
-            "hive.url",
+            "cloud.url",
             REG_SZ,
-            &bytes("https://hive.example.com"),
+            &bytes("https://cloud.example.com"),
         );
-        set(handle, "hive.require", REG_DWORD, &1u32.to_le_bytes());
+        set(handle, "cloud.require", REG_DWORD, &1u32.to_le_bytes());
         let mut multi = bytes("acme/main");
         multi.extend(bytes("acme/docs"));
         multi.extend([0, 0]);
@@ -533,8 +533,8 @@ mod tests {
         // SAFETY: the key name is NUL-terminated.
         unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, wide(&key).as_ptr()) };
         let members = members.expect("readable").expect("present");
-        assert_eq!(members["hive.url"], "https://hive.example.com");
-        assert_eq!(members["hive.require"], 1);
+        assert_eq!(members["cloud.url"], "https://cloud.example.com");
+        assert_eq!(members["cloud.require"], 1);
         assert_eq!(members["workspace.vaults"][1], "acme/docs");
     }
 }

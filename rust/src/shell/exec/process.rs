@@ -150,12 +150,7 @@ pub fn wait_with_limits_captured(
         || reader_join_failed;
 
     if timed_out || stdout_truncated {
-        let notice = format!(
-            "\n[lean-ctx: output truncated at {} MB / {}s limit]\n",
-            max_bytes / (1024 * 1024),
-            timeout.as_secs()
-        );
-        stdout_buf.extend_from_slice(notice.as_bytes());
+        stdout_buf.extend_from_slice(output_limit_notice(max_bytes, timeout).as_bytes());
     }
     if stderr_truncated {
         let notice = format!(
@@ -191,6 +186,56 @@ pub fn wait_with_limits_captured(
             decode_lossy,
         },
     }
+}
+
+/// The notice a run that hit its byte or time limit reports.
+pub fn output_limit_notice(max_bytes: usize, timeout: std::time::Duration) -> String {
+    format!(
+        "\n[lean-ctx: output truncated at {} MB / {}s limit]\n",
+        max_bytes / (1024 * 1024),
+        timeout.as_secs()
+    )
+}
+
+/// Wait for a child whose stdio is inherited (its output goes straight to the
+/// caller's file, pipe or terminal), ending it at `timeout` with the same
+/// kill as [`wait_with_limits_captured`]: the child's own process group when
+/// it leads one (`kill_group`), else the child alone (#2268). Returns the
+/// exit status and whether the deadline fired.
+pub fn wait_inherited_with_timeout(
+    mut child: Child,
+    timeout: std::time::Duration,
+    kill_group: bool,
+) -> (std::process::ExitStatus, bool) {
+    const REAP_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+    const MAX_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+    let own_group = owned_group(&mut child, kill_group);
+    let start = std::time::Instant::now();
+    // Short first polls keep a quick command as fast as a plain `wait`.
+    let mut poll = std::time::Duration::from_millis(1);
+    let mut timed_out = false;
+    loop {
+        if start.elapsed() > timeout {
+            // Not reaped yet: the leader still pins its group id.
+            kill_child(&mut child, own_group);
+            timed_out = true;
+            break;
+        }
+        match exited_unreaped(&mut child) {
+            Ok(true) => break,
+            Err(_) => {
+                kill_child(&mut child, own_group);
+                break;
+            }
+            Ok(false) => {
+                std::thread::sleep(poll.min(timeout.saturating_sub(start.elapsed())));
+                poll = (poll * 2).min(MAX_POLL);
+            }
+        }
+    }
+    let status = reap_within(&mut child, REAP_BUDGET).unwrap_or_else(synthetic_failure_status);
+    (status, timed_out)
 }
 
 /// What one reader has read of its stream so far, shared with the waiting

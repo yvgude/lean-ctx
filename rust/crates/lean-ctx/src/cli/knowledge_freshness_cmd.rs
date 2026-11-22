@@ -48,7 +48,8 @@ pub(crate) fn run(action: &str, args: &[String]) {
         "outdated" => local_read::emit_released("ctx_knowledge", root, &kind, || {
             let limit = local_read::limit(args, freshness::DEFAULT_LIMIT, freshness::MAX_LIMIT)?;
             let days = number::<u32>(args, "--days")?;
-            freshness::outdated(root, days, Some(limit), chrono::Utc::now()).map_err(failure)
+            freshness::outdated(root, days, Some(limit), lean_ctx_time::UtcDateTime::now())
+                .map_err(failure)
         }),
         "conflicts" => local_read::emit_released("ctx_knowledge", root, &kind, || {
             Ok(freshness::conflicts(root))

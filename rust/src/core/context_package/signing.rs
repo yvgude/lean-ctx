@@ -159,7 +159,7 @@ mod tests {
     use crate::core::context_package::manifest::{
         PackageIntegrity, PackageLayer, PackageProvenance,
     };
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn test_manifest() -> PackageManifest {
         PackageManifest {
@@ -171,7 +171,7 @@ mod tests {
             description: "test".into(),
             author: None,
             scope: None,
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
             updated_at: None,
             layers: vec![PackageLayer::Knowledge],
             dependencies: vec![],

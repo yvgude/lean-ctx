@@ -34,7 +34,8 @@ pub fn ureq_agent_with_timeouts(
 }
 
 /// Source credentials and request bodies must stay at the selected endpoint.
-pub(crate) fn ureq_agent_without_redirects(
+#[doc(hidden)]
+pub fn ureq_agent_without_redirects(
     timeout_resolve: Option<Duration>,
     timeout_connect: Option<Duration>,
     timeout_recv_response: Option<Duration>,

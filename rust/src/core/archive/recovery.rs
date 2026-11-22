@@ -155,7 +155,7 @@ pub fn store_recovery_with_lineage(
             "recovery-copy",
             original,
             None,
-            chrono::Utc::now(),
+            lean_ctx_time::UtcDateTime::now(),
         );
         // With the content-free reference of the presenter this copy was
         // first stored for (a digest of a verifier; authorizes nothing).

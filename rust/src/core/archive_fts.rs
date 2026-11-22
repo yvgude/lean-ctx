@@ -234,7 +234,7 @@ pub fn index_entry(archive_id: &str, tool: &str, command: &str, content: &str) {
         return;
     }
 
-    let created_at = chrono::Utc::now().to_rfc3339();
+    let created_at = lean_ctx_time::UtcDateTime::now().to_rfc3339();
     let _ = conn.execute(
         "INSERT OR IGNORE INTO archive_meta (archive_id, tool, command, created_at) VALUES (?1, ?2, ?3, ?4)",
         params![archive_id, tool, command, created_at],

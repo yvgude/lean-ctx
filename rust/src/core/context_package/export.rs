@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::bundle::{ContextPackage, FORMAT_VERSION, KnowledgeFact, PackageMetadata, SessionSlice};
 use crate::core::session::SessionState;
@@ -52,7 +52,7 @@ fn build_package(
 
     ContextPackage {
         format_version: FORMAT_VERSION,
-        created_at: Utc::now(),
+        created_at: UtcDateTime::now(),
         project_root: project_root.to_string(),
         session_id: session.id.clone(),
         metadata: PackageMetadata {

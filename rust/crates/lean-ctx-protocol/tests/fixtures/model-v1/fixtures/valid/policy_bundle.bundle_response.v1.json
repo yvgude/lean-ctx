@@ -1,0 +1,15 @@
+{
+  "filter_packs": [
+    {
+      "envelope": {
+        "kid": "552e43422b3589fa",
+        "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "statement_b64": "e30="
+      },
+      "pack_id": "secrets",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "version": 2
+    }
+  ],
+  "schema": "leanctx.cloud.policy-bundle/v1"
+}

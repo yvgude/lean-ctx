@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/vault.schema.json",
+  "title": "Vault: the shared side of a project in a team (knowledge, tasks, policy scope)",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "vault_id (32 lowercase hex); addressed as @ns/name",
+    "views": {
+      "vault": "resolve, match and link answers (VaultV1)",
+      "ref": "@ns/name"
+    }
+  },
+  "$defs": {
+    "ref": {
+      "description": "@ns/name of a vault",
+      "x-producers": ["p37 crates/cloud-wire/src/knowledge.rs VaultRef", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultRefV1"],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/vault.schema.json#/$defs/vault_ref"
+    },
+    "vault": {
+      "description": "A vault as the server answers POST /v1/vaults/resolve and match. The server never sends `sealed`; core reads it with default false and the C0 1.x fixture carries it.",
+      "type": "object",
+      "required": ["schema", "vault_id", "vault"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.vault/v1",
+          "x-producers": ["p37 crates/cloud-server/src/routes/projects.rs project_json", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultV1.schema"]
+        },
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/vault_id",
+          "x-producers": ["p37 crates/cloud-server/src/routes/projects.rs project_json", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultV1.vault_id"]
+        },
+        "vault": {
+          "$ref": "#/$defs/ref",
+          "x-producers": ["p37 crates/cloud-server/src/routes/projects.rs project_json", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultV1.vault"]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "x-producers": ["p37 crates/cloud-server/src/routes/projects.rs project_json", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultV1.label"]
+        },
+        "code_graph": {
+          "description": "absent = anchors only",
+          "const": "full",
+          "x-producers": ["p37 crates/cloud-server/src/routes/projects.rs project_json", "p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultV1.code_graph"]
+        },
+        "sealed": {
+          "description": "core-side only; always false",
+          "const": false,
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/vault.rs VaultV1.sealed"]
+        }
+      }
+    }
+  }
+}

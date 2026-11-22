@@ -150,7 +150,9 @@ impl LeanCtxServer {
         {
             tracing::debug!("lean-ctx: failed to renew agent {worker}: {error}");
         }
-        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let ts = lean_ctx_time::LocalDateTime::now()
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
         let mut calls = self.tool_calls.write().await;
         calls.push(ToolCallRecord {
             tool: tool.to_string(),
@@ -264,6 +266,11 @@ impl LeanCtxServer {
             session.record_tool_call(saved as u64, original as u64);
             if tool == "ctx_shell" {
                 session.record_command();
+            }
+            // `dispatch_inner` records a `ctx_call` under the inner tool's
+            // name, so a routed `ctx_compose` is counted here as well.
+            if tool == "ctx_compose" {
+                session.record_compose();
             }
         }
         let save_due = session.should_save();
@@ -634,7 +641,7 @@ impl LeanCtxServer {
             "tokens_original": cs.total_original,
             "tool_calls": cs.tool_call_count,
             "started_at": started_at,
-            "updated_at": chrono::Local::now().to_rfc3339(),
+            "updated_at": lean_ctx_time::LocalDateTime::now().to_rfc3339(),
         });
 
         if let Ok(dir) = lean_ctx::core::paths::state_dir() {
@@ -678,7 +685,7 @@ impl LeanCtxServer {
             .or_else(|| session.findings.last().map(|f| f.timestamp));
 
         if let Some(ts) = last_doc_ts {
-            let age = chrono::Utc::now() - ts;
+            let age = lean_ctx_time::UtcDateTime::now() - ts;
             if age.num_minutes() < 8 {
                 return "";
             }
@@ -708,7 +715,7 @@ impl LeanCtxServer {
 
     fn compute_activity_score(
         calls: &[ToolCallRecord],
-        last_doc_ts: Option<chrono::DateTime<chrono::Utc>>,
+        last_doc_ts: Option<lean_ctx_time::UtcDateTime>,
     ) -> (u32, u32, bool, bool) {
         let mut weighted_score: u32 = 0;
         let mut significant_tools: u32 = 0;

@@ -3,7 +3,7 @@ use crate::core::context_package::content::PackageContent;
 use crate::core::context_package::manifest::{
     CompatibilitySpec, PackageIntegrity, PackageLayer, PackageProvenance, PackageStats,
 };
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 #[test]
 fn self_hashed_but_malformed_content_fails_structure() {
@@ -40,7 +40,7 @@ fn signed_bundle_doc() -> String {
         description: "verify test".into(),
         author: None,
         scope: None,
-        created_at: Utc::now(),
+        created_at: UtcDateTime::now(),
         updated_at: None,
         layers: vec![PackageLayer::Knowledge],
         dependencies: vec![],
@@ -532,7 +532,7 @@ fn kinded_manifest(kind: super::PackageKind, name: &str, version: &str) -> Packa
         description: "coherence test".into(),
         author: None,
         scope: None,
-        created_at: Utc::now(),
+        created_at: UtcDateTime::now(),
         updated_at: None,
         layers: vec![],
         dependencies: vec![],

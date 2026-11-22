@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "dbfcb518430bb1236ce66b4bfaee3a12a5e77531175c19d8247f1026d2f65e08"
+approved_content_sha256 = "07f269f37037683bbc583fba860dc4fcef60363e3ae3339a250c4824fb9faac1"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.6 after the version bump (engine 3.12.6, lean-ctx-syntax 0.1.1) and the offline workspace lockfile update: pending variant edadbf8f534dbbf0fbf4ce3fae080975115abf49bf2a0438f2bf3e4c35f88921, approved variant dbfcb518430bb1236ce66b4bfaee3a12a5e77531175c19d8247f1026d2f65e08; license texts and package inventory unchanged from 3.12.5, only the Cargo.lock, SBOM, asset manifest and npm lock input digests changed. Owner approval in the 3.12.6 release session on 2026-11-15 (answer \"Approve dbfcb518...\")."
-approved_at = "2026-11-15"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for release 3.12.7 after the dependency patch updates rustix 1.1.4 -> 1.1.6 (RUSTSEC-2026-0486) and quinn-udp 0.5.15 -> 0.5.16 (RUSTSEC-2026-0538); no third-party package added or removed, no license changed. Pending variant file sha256 abeafdfcf3de72dbc319752ce839fa4ca4929540c5cdf366e33e615b85a8fe1e (Content-Digest sha256:684630a70bfdbe673a311d4b7abbd7b8a9a5ddcecd36234575adc934aec26831), approved variant file sha256 07f269f37037683bbc583fba860dc4fcef60363e3ae3339a250c4824fb9faac1. Owner approval in the release session on 2026-11-22 (answer \"Freigeben\")."
+approved_at = "2026-11-22"

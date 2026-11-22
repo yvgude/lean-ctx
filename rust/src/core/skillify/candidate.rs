@@ -96,10 +96,10 @@ pub fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
     let deliverable = knowledge.delivery_filter();
     for fact in &knowledge.facts {
         // A skill is an instruction to agents: other members' knowledge
-        // pulled from Hive is data (X5) and never becomes one.
+        // pulled from Cloud is data (X5) and never becomes one.
         if !knowledge_category_is_skillable(&fact.category)
             || !deliverable(fact)
-            || fact.hive_origin().is_some()
+            || fact.cloud_origin().is_some()
         {
             continue;
         }

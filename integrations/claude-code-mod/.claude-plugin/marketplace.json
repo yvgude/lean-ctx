@@ -8,7 +8,7 @@
     {
       "name": "lean-ctx",
       "source": ".",
-      "description": "Wake on background job completion, shape native Bash output, keep lean-ctx's core tools in front, and show per-session request usage."
+      "description": "Keep lean-ctx's core tools in front, drop duplicate hook context, coordinate compactions, and show the cockpit and per-session usage. Code Mode compatible. The background-job companion lives in ../claude-code-mod-jobs (load it with --plugin-dir)."
     }
   ]
 }

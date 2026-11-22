@@ -345,7 +345,7 @@ fn build_triage_response() -> (&'static str, &'static str, String) {
     let band = budget_band(pressure.utilization);
     let recommendation = band_recommendation(band);
 
-    let now = chrono::Utc::now().timestamp();
+    let now = lean_ctx_time::UtcDateTime::now().timestamp();
 
     let project_root = detect_project_root_for_dashboard();
     let overlay_store = lean_ctx::core::context_overlay::OverlayStore::load_project(
@@ -397,8 +397,10 @@ fn build_triage_response() -> (&'static str, &'static str, String) {
             let heat = heatmap.entries.get(&entry.path);
             let access_count = heat.map_or(1, |h| h.access_count);
             let last_access_ts = heat
-                .and_then(|h| chrono::DateTime::parse_from_rfc3339(&h.last_access).ok())
-                .map_or(entry.timestamp, |dt| dt.timestamp());
+                .and_then(|h| {
+                    lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&h.last_access).ok()
+                })
+                .map_or(entry.timestamp, lean_ctx_time::OffsetDateTime::timestamp);
 
             let is_pinned = pinned_paths.contains(&entry.path)
                 || entry.state == Some(lean_ctx::core::context_field::ContextState::Pinned);

@@ -16,22 +16,22 @@ use crate::core::telemetry_v2::{
 /// History for the batch, or `None` when the installation never recorded use.
 /// Summed over the user's data directories, like `lean-ctx gain`: the
 /// installation ID is shared across them, so the record must be too.
-pub(super) fn usage_history(today: chrono::NaiveDate) -> Option<UsageHistoryMetrics> {
+pub(super) fn usage_history(today: lean_ctx_time::Date) -> Option<UsageHistoryMetrics> {
     usage_history_from(&crate::core::stats::load_for_display(), today)
 }
 
 pub(super) fn usage_history_from(
     store: &StatsStore,
-    today: chrono::NaiveDate,
+    today: lean_ctx_time::Date,
 ) -> Option<UsageHistoryMetrics> {
-    let horizon = today - chrono::Days::new(MAX_HISTORY_DAYS as u64 - 1);
+    let horizon = today - lean_ctx_time::Duration::days(MAX_HISTORY_DAYS as i64 - 1);
     // Local days may run one ahead of UTC; anything later is a clock error.
-    let latest = today + chrono::Days::new(1);
+    let latest = today + lean_ctx_time::Duration::days(1);
     let mut days: Vec<UsageDay> = store
         .daily
         .iter()
         .filter_map(|day| {
-            let date = chrono::NaiveDate::parse_from_str(&day.date, "%Y-%m-%d").ok()?;
+            let date = lean_ctx_time::parse_date(&day.date, "%Y-%m-%d").ok()?;
             (date >= horizon && date <= latest && day.commands > 0).then(|| usage_day(date, day))
         })
         .collect();
@@ -52,15 +52,15 @@ pub(super) fn usage_history_from(
             first_use_month: store
                 .first_use
                 .as_deref()
-                .and_then(|stamp| chrono::DateTime::parse_from_rfc3339(stamp).ok())
+                .and_then(|stamp| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(stamp).ok())
                 .map(|stamp| stamp.format("%Y-%m").to_string()),
         },
     })
 }
 
-fn usage_day(date: chrono::NaiveDate, day: &DayStats) -> UsageDay {
+fn usage_day(date: lean_ctx_time::Date, day: &DayStats) -> UsageDay {
     UsageDay {
-        date: date.format("%Y-%m-%d").to_string(),
+        date: date.strftime("%Y-%m-%d").to_string(),
         commands: day.commands.min(MAX_COUNT),
         original_tokens: day.input_tokens.min(MAX_TOKENS),
         delivered_tokens: day.output_tokens.min(MAX_TOKENS),
@@ -81,8 +81,8 @@ mod tests {
         }
     }
 
-    fn today() -> chrono::NaiveDate {
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 8).unwrap()
+    fn today() -> lean_ctx_time::Date {
+        lean_ctx_time::Date::new(2026, 10, 8).unwrap()
     }
 
     #[test]

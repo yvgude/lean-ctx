@@ -1,0 +1,69 @@
+{
+  "route": "W110",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/policies/deliveries?instance=inst_8899aabbccddeeff0011223344556677",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "version": 3,
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "key_id": "3f9a1c0e5b7d2a64",
+          "issued_at": "2026-10-25T21:14:39Z",
+          "not_after": "2026-11-08T21:14:39Z"
+        },
+        {
+          "version": 2,
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "key_id": "3f9a1c0e5b7d2a64",
+          "issued_at": "2026-10-24T18:02:10Z",
+          "not_after": "2026-11-07T18:02:10Z"
+        }
+      ],
+      "acks": [
+        {
+          "version": 2,
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "unenforced": [],
+          "acked_at": "2026-10-24T18:02:11Z"
+        }
+      ],
+      "refusals": [
+        {
+          "version": 3,
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "reason_code": "key_unavailable",
+          "detail": "effective policy: no valid policy key for this key_id",
+          "refused_at": "2026-10-25T21:14:40Z",
+          "settled_at": null
+        }
+      ],
+      "instance_id": "inst_8899aabbccddeeff0011223344556677",
+      "label": "bob-mbp",
+      "next_cursor": null
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this is another member's instance",
+          "required_role": "admin"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "unknown policy scope"
+        }
+      }
+    }
+  ]
+}

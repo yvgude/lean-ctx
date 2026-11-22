@@ -15,6 +15,8 @@
 //! cwd first, so `lean-ctx grep` / `lean-ctx ls` from inside a real project
 //! keep working unchanged.
 
+use lean_ctx::core::pathjail_scope::AGENT_BIND_ACTION;
+
 /// Returns an actionable `ERROR:` message when `dir` must not be walked,
 /// or `None` when the walk is safe to proceed.
 pub fn deny_unsafe_walk_root(dir: &str) -> Option<String> {
@@ -35,7 +37,7 @@ pub fn deny_unsafe_walk_root(dir: &str) -> Option<String> {
         return None;
     }
     Some(format!(
-        "ERROR: refusing to scan '{dir}' — it resolves to a broad or privacy-protected directory ({abs}). Pass a specific project directory as `path`, or grant this directory with `lean-ctx allow-path <dir>`."
+        "ERROR: refusing to scan '{dir}'. {AGENT_BIND_ACTION}. '{dir}' resolves to a broad or privacy-protected directory ({abs}); to walk it anyway, the user grants it with `lean-ctx allow-path {abs}`."
     ))
 }
 
@@ -121,10 +123,10 @@ pub(crate) fn broad_root_guidance(requested: &str, project_root: &str) -> String
         )
     } else {
         format!(
-            "refusing to scan '{requested}' ({abs}) — it is a broad or privacy-protected \
-             directory, and lean-ctx has not bound this session to a project (the host \
-             reported no project directory). Pass the absolute path of the project directory \
-             as `path`, e.g. path=\"/home/me/code/my-app\"; it then stays the session project."
+            "refusing to scan '{requested}' ({abs}). {AGENT_BIND_ACTION}, e.g. \
+             path=\"/home/me/code/my-app\"; it then stays the session project. '{requested}' \
+             is a broad or privacy-protected directory, and lean-ctx has not bound this \
+             session to a project (the host reported no project directory)."
         )
     }
 }
@@ -171,13 +173,17 @@ mod tests {
         assert_eq!(narrow_to_project("/", ""), None);
         let msg = broad_root_guidance("/", "");
         assert!(msg.contains("not bound this session"), "{msg}");
-        assert!(msg.contains("absolute path"), "{msg}");
+        assert!(msg.contains(super::AGENT_BIND_ACTION), "{msg}");
     }
 
     #[test]
     fn refuses_filesystem_root() {
         let msg = deny_unsafe_walk_root("/").expect("filesystem root must be refused");
         assert!(msg.starts_with("ERROR:"), "actionable error: {msg}");
+        // The agent's next step comes before the user's allow-path grant.
+        let agent = msg.find(super::AGENT_BIND_ACTION).expect("agent action");
+        let user = msg.find("allow-path").expect("user hint");
+        assert!(agent < user, "{msg}");
     }
 
     #[test]

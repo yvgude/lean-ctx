@@ -72,7 +72,7 @@ fn export_prune_and_concurrent_task_mutations_both_survive() {
     stale.transition(TaskState::Working, None).unwrap();
     stale.transition(TaskState::Completed, None).unwrap();
     // Age the whole task consistently: the store refuses timestamps outside its lifetime.
-    let age = chrono::Duration::hours(100);
+    let age = lean_ctx_time::Duration::hours(100);
     stale.created_at -= age;
     stale.updated_at -= age;
     for step in &mut stale.history {
@@ -282,14 +282,14 @@ fn bound_handoff_posts_before_finishing_presence() {
 }
 
 #[test]
-fn hive_vetoes_pause_only_the_hive_side_of_a_lease_and_handoff() {
-    use lean_ctx_hive::bus::control;
+fn cloud_vetoes_pause_only_the_cloud_side_of_a_lease_and_handoff() {
+    use lean_ctx_cloud::bus::control;
     let iso = lean_ctx::core::data_dir::isolated_data_dir();
     let project = iso.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("a.rs"), "fn a() {}\n").unwrap();
     let root = project.to_str().unwrap();
-    let store = lean_ctx_hive::HiveStore::open().unwrap();
+    let store = lean_ctx_cloud::CloudStore::open().unwrap();
     control::enroll_for_tests(&store, 1);
     let call = |action: &str, agent: Option<&str>, message: Option<&str>, to: Option<&str>| {
         handle(
@@ -318,7 +318,7 @@ fn hive_vetoes_pause_only_the_hive_side_of_a_lease_and_handoff() {
     let peer = peer.split_whitespace().nth(2).unwrap().to_string();
     let (_, vetoed_ref) = super::lease_resource(root, "a.rs").unwrap();
     let mut veto = control::control_for_tests("bus", "veto", "ctl_1");
-    veto.target_ref = Some(lean_ctx_hive::bus::v2::ControlRef {
+    veto.target_ref = Some(lean_ctx_cloud::bus::v2::ControlRef {
         kind: "lease".into(),
         id: vetoed_ref,
     });
@@ -328,7 +328,7 @@ fn hive_vetoes_pause_only_the_hive_side_of_a_lease_and_handoff() {
     );
 
     // Local work is never gated: the vetoed lease holds on this machine and
-    // says that Hive was not asked; the handoff here completes.
+    // says that Cloud was not asked; the handoff here completes.
     let local = call("lease_acquire", Some(&agent), Some("a.rs"), None);
     assert!(local.starts_with("Lease granted:"), "{local}");
     assert!(local.contains("scope=local (claim_vetoed:"), "{local}");
@@ -340,12 +340,12 @@ fn hive_vetoes_pause_only_the_hive_side_of_a_lease_and_handoff() {
     assert!(handoff.starts_with("Handoff complete:"), "{handoff}");
 }
 
-/// A refusal or veto Hive sends after the call answered releases the local
+/// A refusal or veto Cloud sends after the call answered releases the local
 /// lease and reaches the agent once, with its next `ctx_agent` call.
 #[test]
-fn a_late_hive_veto_releases_the_local_lease_and_reaches_the_next_call() {
-    use lean_ctx_hive::background;
-    use lean_ctx_hive::bus::leases::{Outcome, caller};
+fn a_late_cloud_veto_releases_the_local_lease_and_reaches_the_next_call() {
+    use lean_ctx_cloud::background;
+    use lean_ctx_cloud::bus::leases::{Outcome, caller};
     let iso = lean_ctx::core::data_dir::isolated_data_dir();
     let project = iso.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
@@ -394,7 +394,7 @@ fn a_late_hive_veto_releases_the_local_lease_and_reaches_the_next_call() {
 
     let next = call("control_status", Some(&agent), None);
     assert!(
-        next.starts_with("Hive answered your earlier requests:"),
+        next.starts_with("LeanCTX Cloud answered your earlier requests:"),
         "{next}"
     );
     assert!(next.contains("a workspace veto bars this agent"), "{next}");
@@ -404,7 +404,10 @@ fn a_late_hive_veto_releases_the_local_lease_and_reaches_the_next_call() {
         "the local lease was released: {taken}"
     );
     let again = call("control_status", Some(&agent), None);
-    assert!(!again.contains("Hive answered"), "shown once: {again}");
+    assert!(
+        !again.contains("LeanCTX Cloud answered"),
+        "shown once: {again}"
+    );
 }
 
 #[cfg(unix)]
@@ -479,7 +482,7 @@ fn a2a_snapshot_export_refuses_symlinked_destinations() {
 #[test]
 fn post_routes_queen_refuses_a_kind_from_others_and_stores_task_and_thread() {
     use lean_ctx::core::agents::AgentRegistry;
-    use lean_ctx_hive::bus::queen_kinds::{KIND_KEY, THREAD_KEY};
+    use lean_ctx_cloud::bus::queen_kinds::{KIND_KEY, THREAD_KEY};
     let _iso = lean_ctx::core::data_dir::isolated_data_dir();
     let project = "/work/app";
     let post = |from: &str, to: Option<&str>, fields: super::PostFields<'_>| {
@@ -524,8 +527,8 @@ fn post_routes_queen_refuses_a_kind_from_others_and_stores_task_and_thread() {
     );
     assert!(refused.contains("no_queen"), "{refused}");
 
-    lean_ctx_hive::queens::register_in(
-        &lean_ctx_hive::queens::data_dir().unwrap(),
+    lean_ctx_cloud::queens::register_in(
+        &lean_ctx_cloud::queens::data_dir().unwrap(),
         "app-session-queen-1",
         Some("Queen"),
         "2026-11-09T10:00:00Z",
@@ -595,6 +598,106 @@ fn post_routes_queen_refuses_a_kind_from_others_and_stores_task_and_thread() {
     assert_eq!(entry.task_id.as_deref(), Some("67"));
 }
 
+/// QN2 over `ctx_agent post`: while the team policy turns
+/// `orchestrator.network` off, the registered Queen's kind is refused with
+/// the CLI's refusal and filed nowhere; with the network on, or without the
+/// member, it is posted. A plain post is never affected.
+#[test]
+fn post_refuses_a_kind_while_the_orchestrator_network_is_off() {
+    use lean_ctx::core::agents::AgentRegistry;
+    use lean_ctx::core::policy::{cloud_floor, cloud_orchestrator};
+    let iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = "/work/app";
+    let floor_dir = iso.path().join("cloud").join("policy").join("effective");
+    std::fs::create_dir_all(&floor_dir).unwrap();
+    let install = |orchestrator: Option<serde_json::Value>| {
+        let mut effective = serde_json::json!({
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {}, "context": {}, "sharing": {}
+        });
+        if let Some(orchestrator) = orchestrator {
+            effective["orchestrator"] = orchestrator;
+        }
+        let floor = serde_json::json!({
+            "schema": cloud_floor::FLOOR_SCHEMA, "version": 3,
+            "digest": format!("sha256:{}", "a".repeat(64)),
+            "not_after": "2099-01-01T00:00:00Z",
+            "policy": {"effective": effective, "vaults": []}
+        });
+        std::fs::write(floor_dir.join(cloud_floor::FLOOR_FILE), floor.to_string()).unwrap();
+        std::fs::write(
+            floor_dir.join(cloud_floor::REQUIRED_FILE),
+            r#"{"version":3}"#,
+        )
+        .unwrap();
+    };
+    let post = |from: &str, kind: Option<&'static str>| {
+        super::handle_with(
+            "post",
+            None,
+            None,
+            None,
+            project,
+            Some(from),
+            Some("stop the run"),
+            Some("status"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            super::PostFields {
+                kind,
+                ..Default::default()
+            },
+        )
+    };
+
+    let mut registry = AgentRegistry::load_or_create();
+    let queen = registry
+        .register("claude", Some("queen"), project, None)
+        .unwrap();
+    registry
+        .agents
+        .iter_mut()
+        .find(|a| a.agent_id == queen)
+        .unwrap()
+        .app_session_id = Some("app-session-queen-1".into());
+    registry.save().unwrap();
+    lean_ctx_cloud::queens::register_in(
+        &lean_ctx_cloud::queens::data_dir().unwrap(),
+        "app-session-queen-1",
+        Some("Queen"),
+        "2026-11-09T10:00:00Z",
+    )
+    .unwrap();
+
+    install(Some(serde_json::json!({"network": false})));
+    let before = AgentRegistry::load_or_create().scratchpad.len();
+    let refused = post(&queen, Some("stop"));
+    assert!(refused.starts_with("Error: not posted"), "{refused}");
+    assert!(
+        refused.contains(cloud_orchestrator::NETWORK_OFF),
+        "{refused}"
+    );
+    assert!(refused.contains("orchestrator.network"), "{refused}");
+    assert_eq!(AgentRegistry::load_or_create().scratchpad.len(), before);
+    let plain = post(&queen, None);
+    assert!(plain.starts_with("Posted"), "{plain}");
+
+    install(Some(serde_json::json!({"network": true})));
+    let on = post(&queen, Some("stop"));
+    assert!(on.starts_with("Posted"), "{on}");
+
+    install(None);
+    let absent = post(&queen, Some("stop"));
+    assert!(absent.starts_with("Posted"), "{absent}");
+}
+
 /// The per-sender budget holds for every post, not only one with a kind:
 /// the 21st plain post within a minute is refused and filed nowhere.
 #[test]
@@ -641,4 +744,30 @@ fn the_21st_plain_post_within_a_minute_is_refused() {
         .filter(|e| e.from_agent == worker)
         .count();
     assert_eq!(filed, 20);
+}
+
+#[test]
+fn ack_refuses_before_touching_the_directives_without_an_agent_id_or_verdict() {
+    use super::handle_ack;
+    let unregistered = handle_ack(
+        None,
+        Some("plan_K7mQ2xVb9Z:3:api"),
+        Some("accept"),
+        None,
+        None,
+    );
+    assert!(unregistered.unwrap_err().contains("registered first"));
+    let no_id = handle_ack(Some("agent-a"), Some("  "), Some("accept"), None, None);
+    assert_eq!(no_id.unwrap_err(), "Error: ack needs directive_id");
+    let no_verdict = handle_ack(
+        Some("agent-a"),
+        Some("plan_K7mQ2xVb9Z:3:api"),
+        Some("maybe"),
+        None,
+        None,
+    );
+    assert_eq!(
+        no_verdict.unwrap_err(),
+        "Error: ack needs verdict=accept or verdict=refuse"
+    );
 }

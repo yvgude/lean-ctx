@@ -23,6 +23,16 @@ pub fn contains_marker_line(content: &str, marker: &str) -> bool {
     marker_line_span(content, marker).is_some()
 }
 
+/// `text` with `original`'s line endings: a file the user keeps in CRLF gets
+/// CRLF back from a rewrite instead of mixed endings.
+pub fn with_line_endings_of(original: &str, text: String) -> String {
+    if original.contains("\r\n") {
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        text
+    }
+}
+
 pub fn upsert(path: &Path, start: &str, end: &str, block: &str, quiet: bool, label: &str) {
     let existing = std::fs::read_to_string(path).unwrap_or_default();
 

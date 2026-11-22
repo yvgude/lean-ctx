@@ -18,7 +18,7 @@ der beide einbettet.
   deterministischen Planer ihn rechtfertigt; er ist keine bezahlte Stufe.
 - Keine lizenzierte Laufzeit bewertet, ordnet oder wählt Kontext, Gedächtnis
   oder Lesestrategien; Ranking, Memory-Auswahl und Lesestrategie bleiben lokal.
-- LeanCTX Hive (Personal · Team · Enterprise) ergänzt Kontrolle und Nachweis —
+- LeanCTX Cloud (Personal · Team · Enterprise) ergänzt Kontrolle und Nachweis —
   Filter-Packs, Org-Policy, Compliance, Cockpit, Team-Koordination —, keine
   konkurrierende Planerarchitektur.
 

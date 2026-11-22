@@ -13,7 +13,12 @@
 
 **Context Gateway for AI Systems.**
 
-### **Control what your AI can see.**
+### **Less context. More intelligence.**
+
+**Make every agent more effective.**
+
+The claim is a stance, not a measured quality or savings promise, until a
+published cost-per-accepted-outcome (CPAO) study exists.
 
 LeanCTX sits between AI tools and the information they read. It selects
 task-relevant context, applies supported access and content controls before
@@ -21,7 +26,7 @@ delivery, and records the context operations and delivery evidence it can observ
 Your application, agent loop and model stay yours.
 
 The open-source **LeanCTX | OSS** runs locally through CLI, MCP, hooks and proxy paths.
-The **LeanCTX SDK** embeds supported Engine capabilities in your application.
+The **LeanCTX | SDK** embeds supported LeanCTX | OSS capabilities in your application.
 
 ---
 
@@ -81,7 +86,7 @@ first-class paths from other compatibility references.
 |---|---|
 | Improve the context path of existing AI tools | [Community setup](#get-started-30-seconds) |
 | Apply shared context controls across an organization | [Enterprise](https://leanctx.com/enterprise/) — licensed controls and deployment scope |
-| Build context control into your application | [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk) — stable interfaces and separate SDK/OEM terms |
+| Build context control into your application | [LeanCTX \| SDK](https://github.com/Thinkery-AG/leanctx-sdk) — stable interfaces and separate SDK/OEM terms |
 
 [What is LeanCTX?](docs/what-is-leanctx.md) ·
 [Where LeanCTX fits](docs/where-leanctx-fits.md) ·
@@ -145,7 +150,7 @@ Search and structural views help an agent find relevant information before
 reading entire files. Supported read and shell paths can return focused views
 of files and command output, with references for recovering detail.
 
-- **File reads**: 16 read modes (`full`, `map`, `signatures`, `diff`, `lines:N-M`, `density:X`, …) — eligible cached re-reads return a compact reference instead of repeating content
+- **File reads**: 16 read modes — 10 core modes (`auto`, `full`, `map`, `signatures`, `diff`, `aggressive`, `entropy`, `task`, `reference`, `lines:N-M`), the `anchored`, `full-compact`, `raw` and `density:X` variants, and `cognitive` and `mdl` as aliases of `map` — eligible cached re-reads return a compact reference instead of repeating content
 - **Target density** (`density:0.4`): SDE-style budget compression — keeps the highest-entropy lines until ~40% of the original tokens remain, deterministic
 - **JIT disclosure**: `signatures` carries line spans and points at `lines:N-M` for targeted expansion — outline first, bodies on demand
 - **Shell output**: 85+ shell-output patterns compress git, npm, cargo, docker, kubectl, terraform and more (250+ passthrough rules)
@@ -505,7 +510,7 @@ Shared message bus, diaries, knowledge, and deterministic handoffs.
 ```bash
 lean-ctx bootstrap            # zero-prompt CI setup
 ```
-Everything local works without an account. LeanCTX Hive (shared knowledge for teams
+Everything local works without an account. LeanCTX Cloud (shared knowledge for teams
 and your own machines) follows with 3.12.1.
 
 </td>

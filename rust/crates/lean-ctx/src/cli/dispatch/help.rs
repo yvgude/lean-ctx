@@ -161,7 +161,8 @@ COMMANDS:
     statusline [--wrap \"<cmd>\"]    Claude Code status line (set up by `init --agent claude`)
     inspect [--last <N>|--task <ID>] [--json]  Why the Context Gateway delivered, changed or withheld sources; --task: one task's plan→delivery→outcome
     gateway why|list|allow-once|revoke <id>  A withheld block of a model request: why, and the human-only override
-    claude-mod [status|install|uninstall]  Claude Code mod: wake-not-poll, Bash shaping, /leanctx (opt-in)
+    run \"<task>\" [--cloud --model-access own|balance] | list|status|events|logs|stop|fetch <id>  A coding agent on a task in a fresh worktree, here or on your LeanCTX computer
+    claude-mod [status|install|uninstall|code-mode]  Claude Code mod: cockpit, /leanctx, wake-not-poll; Code Mode launcher
     prompt-segment [--shell zsh|bash|fish|plain]  Shell prompt segment (set up by `init --prompt`)
     learning [status]                Local learning-efficacy evidence (export/import: retired, no effect)
     autopilot [status|explain|history|export|evidence|reset]  Personal receipt-validated learning; evidence: per-workload strategy evidence (help for options)
@@ -219,13 +220,14 @@ COMMANDS:
     knowledge import <path> [--merge replace|append|skip-existing]   Import knowledge
     knowledge remove --category <c> --key <k>             Remove a fact
     knowledge status               Knowledge base summary
-    tasks [list|show|propose|decide|claim|update|submit|release|verify|stop] [--json]  The project's tasks (local, or its Hive vault)
-    docs list|show|history|write|move|delete [--json]  The project's doc pages (local, or its Hive vault)
+    tasks [list|show|propose|decide|claim|update|submit|release|verify|stop] [--json]  The project's tasks (local, or its LeanCTX Cloud vault)
+    docs list|show|history|write|move|delete [--json]  The project's doc pages (local, or its LeanCTX Cloud vault)
     activity list --json [--session <id>] [--project-root <p>] [--since <ts>] [--kind <k>]  Per-session activity stream
     agents [--json]                Coding agents on this machine (version, sign-in, LeanCTX attachment, ACP)
-    bus list|read|post|leases|claim|release --json  The local agent bus (agent-bus/1)
+    bus list|read|post|leases|claim|release|revision --json  The local agent bus (agent-bus/1)
     presence list --json [--all] [--all-projects]  Local agents on the bus with liveness
     capabilities --json            Local Read kinds and verbs this Instance supports
+    archive show <id> --json       One archived tool result of this project (archive.entry)
     overview [task]                Project overview (task-contextualized if given)
     explore <query> [--citation] [--depth=N]  Iterative code exploration → file:line citations
     compress [--signatures]        Context compression checkpoint
@@ -309,9 +311,10 @@ PROJECT & AGENT TOOLS:
     untrust [<path>]               Remove a workspace from the trust store
     harden [options]               Deny native Read/Grep/Glob in IDE configs
   telemetry [status|on|off|show|reset-id|history]  Inspect and control product telemetry
-{hive}    completions <zsh|bash|fish>    Print the shell completion script
+{cloud}    completions <zsh|bash|fish>    Print the shell completion script
     report-issue [--title T] [--description D] [--dry-run] [--include-tee]
                                    Open a GitHub issue with diagnostics (alias: report)
+    report sign|verify --json      Sign the savings report digest, or verify a signed report
                                    Plan, entitlement and usage details
 
 EVIDENCE & MEASUREMENT:
@@ -480,8 +483,8 @@ GITHUB:  https://github.com/yvgude/lean-ctx
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),
         rc_file = lean_ctx::shell_hook::shell_rc_file(),
-        hive = if lean_ctx_hive::HIVE_AVAILABLE {
-            "    hive connect|status|disconnect|link  Connect this machine to LeanCTX | Hive\n    models                         List the models your Hive plan includes\n"
+        cloud = if lean_ctx_cloud::CLOUD_AVAILABLE {
+            "    cloud connect|status|disconnect|link  Connect this machine to LeanCTX Cloud\n    models                         List the models your LeanCTX Cloud plan includes\n"
         } else {
             ""
         },
@@ -510,12 +513,45 @@ mod tests {
         );
     }
 
-    /// 3.12.0 ships without Hive: `help all` lists it only once the release
+    /// 3.12.0 ships without Cloud: `help all` lists it only once the release
     /// switch is on.
     #[test]
-    fn full_help_lists_hive_only_when_available() {
+    fn full_help_lists_cloud_only_when_available() {
         let text = super::full_help_text();
-        assert_eq!(text.contains("hive connect"), lean_ctx_hive::HIVE_AVAILABLE);
+        assert_eq!(
+            text.contains("cloud connect"),
+            lean_ctx_cloud::CLOUD_AVAILABLE
+        );
         assert!(text.contains("    completions <zsh|bash|fish>"));
+    }
+
+    /// Owner decisions 15.11./18.11.: help names no bare "Cloud" and no "Pro"
+    /// product. Allowed are the lowercase `cloud` command name and the
+    /// product name "LeanCTX Cloud".
+    #[test]
+    fn help_texts_name_no_cloud_or_pro_product() {
+        const ALLOWED: &[&str] = &["cloud"];
+        fn words(text: &str) -> impl Iterator<Item = &str> {
+            text.split(|c: char| !c.is_ascii_alphanumeric())
+                .filter(|w| !w.is_empty())
+        }
+        for (name, text) in [
+            ("full", super::full_help_text()),
+            ("concise", super::concise_help_text()),
+        ] {
+            let mut previous = "";
+            for word in words(&text) {
+                let product = word == "Cloud" && previous == "LeanCTX";
+                previous = word;
+                assert!(
+                    !word.eq_ignore_ascii_case("cloud") || ALLOWED.contains(&word) || product,
+                    "{name} help names the retired product `{word}`"
+                );
+                assert!(
+                    !word.eq_ignore_ascii_case("pro"),
+                    "{name} help names the retired `{word}` plan"
+                );
+            }
+        }
     }
 }

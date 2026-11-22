@@ -12,7 +12,7 @@ pub struct VerificationObservabilityV1 {
 }
 
 pub fn snapshot_v1() -> VerificationObservabilityV1 {
-    let created_at = chrono::Utc::now().to_rfc3339();
+    let created_at = lean_ctx_time::UtcDateTime::now().to_rfc3339();
     let role = crate::core::roles::active_role_name();
     let profile = crate::core::profiles::active_profile_name();
 

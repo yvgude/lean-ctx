@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx knowledge list --json`: the project's knowledge for a local
 //! reader — local facts, gotchas, and the knowledge of the vault linked to
-//! this checkout (from its local replica, with the state Hive derives too).
+//! this checkout (from its local replica, with the state Cloud derives too).
 //! Automatic read-noise is left out unless `--include-noise` asks for it.
 
 use serde::Serialize;
@@ -10,8 +10,8 @@ use serde_json::Value;
 use lean_ctx::core::knowledge::{
     FactOrigin, FactReviewReason, FactReviewState, KnowledgeArchetype, KnowledgeFact, NodeType,
 };
-use lean_ctx_hive::delivery::knowledge_state::{Index, State};
-use lean_ctx_hive::replica::fold::{Graph, Node};
+use lean_ctx_cloud::delivery::knowledge_state::{Index, State};
+use lean_ctx_cloud::replica::fold::{Graph, Node};
 
 use super::{Failure, rfc3339};
 
@@ -252,7 +252,7 @@ fn node_text(node: &Node) -> Option<String> {
 /// The knowledge states of a vault graph: its edges and the fact links the
 /// replica's save history resolves, so two Instances' concurrent values of
 /// one fact read `conflicting` as soon as both are here (#286).
-pub(crate) fn vault_states(graph: &Graph, replica: &lean_ctx_hive::replica::Replica) -> Index {
+pub(crate) fn vault_states(graph: &Graph, replica: &lean_ctx_cloud::replica::Replica) -> Index {
     match replica.first_saves() {
         Ok(saves) => Index::with_saves(graph, &saves),
         Err(_) => Index::new(graph),
@@ -261,9 +261,9 @@ pub(crate) fn vault_states(graph: &Graph, replica: &lean_ctx_hive::replica::Repl
 
 /// The knowledge nodes of a vault graph as rows: rejected and superseded
 /// nodes are left out (they are no longer knowledge), the rest carry the
-/// state Hive derives from the same log.
+/// state Cloud derives from the same log.
 pub(crate) fn vault_rows(graph: &Graph, states: &Index, address: &str) -> Vec<FactRow> {
-    let category = format!("hive/{address}");
+    let category = format!("cloud/{address}");
     graph
         .live_nodes()
         .filter(|(_, node)| VAULT_TYPES.contains(&node.node_type.as_str()))
@@ -388,7 +388,7 @@ fn collect(project_root: &str, include_noise: bool) -> (Vec<FactRow>, usize) {
     if let Some(k) = lean_ctx::core::knowledge::ProjectKnowledge::load(project_root) {
         (rows, noise) = local_rows(&k.facts, include_noise);
     }
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let gotchas = lean_ctx::core::gotcha_tracker::GotchaStore::load(project_root);
     rows.extend(
         gotchas

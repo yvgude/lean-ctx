@@ -159,7 +159,7 @@ fn issuance_requires_host_grant_and_current_persisted_attempt() {
             )
             .map_err(|e| e.to_string())?;
         store.create("graph", graph)?;
-        let now = chrono::Utc::now().timestamp_millis() as u64;
+        let now = lean_ctx_time::UtcDateTime::now().timestamp_millis() as u64;
         let ClaimNodeExecution::Claimed(node) =
             store.claim_node_execution("graph", "node", now, now + 600_000)?
         else {

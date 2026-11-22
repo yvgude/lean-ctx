@@ -70,7 +70,7 @@ before interpreting them as a current product or licensing statement.
 ### Evidence & Billing
 
 - [billing-plane-v1-catalog.json](billing-plane-v1-catalog.json) — Billing-plane v1 catalog.
-- [billing-plane-v2-catalog.json](billing-plane-v2-catalog.json) — v4 plan catalog with the legacy wire names Community/Pro/Team/Enterprise (today: LeanCTX OSS and LeanCTX Hive Personal · Team · Enterprise); v1 remains frozen for compatibility.
+- [billing-plane-v2-catalog.json](billing-plane-v2-catalog.json) — v4 plan catalog with the legacy wire names `community`/`pro`/`team`/`enterprise` (internal ids, not prices or plan names: today the free engine and app, and the LeanCTX Cloud plans Personal · Team · Enterprise); v1 remains frozen for compatibility.
 - [delivery-evidence-v1.json](delivery-evidence-v1.json) — Delivery evidence.
 - [delivery-evidence-v1.schema.json](delivery-evidence-v1.schema.json) — Delivery evidence schema.
 - [delivery-manifest-v1.md](delivery-manifest-v1.md) — Delivery manifest.
@@ -131,7 +131,7 @@ before interpreting them as a current product or licensing statement.
 - [deployment-rehearsal-v1.md](deployment-rehearsal-v1.md) — Deployment rehearsal.
 - [graph-reproducibility-contract-v1.md](graph-reproducibility-contract-v1.md) — Graph reproducibility.
 - [local-free-invariant-v1.md](local-free-invariant-v1.md) — Local-free invariant.
-- [local-free-invariant-v2.md](local-free-invariant-v2.md) — Local-free invariant v2 (3.12, LeanCTX Hive).
+- [local-free-invariant-v2.md](local-free-invariant-v2.md) — Local-free invariant v2 (3.12, LeanCTX Cloud).
 - [logical-session-presence-v1.md](logical-session-presence-v1.md) — Logical session presence.
 - [memory-boundary-contract-v1.md](memory-boundary-contract-v1.md) — Memory boundary.
 - [multi-agent-efficiency-benchmark-v1.md](multi-agent-efficiency-benchmark-v1.md) — Multi-agent efficiency benchmark.

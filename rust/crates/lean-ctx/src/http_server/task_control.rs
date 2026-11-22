@@ -75,12 +75,14 @@ pub(super) fn accept(
     })?;
     // An expired response is never disclosed. A post-persistence failure is an
     // uncertain acknowledgement, not rollback: retry/poll the same task safely.
-    let reply = signer.sign(status, chrono::Utc::now()).map_err(|_| {
-        error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "task_response_signer_unavailable",
-        )
-    })?;
+    let reply = signer
+        .sign(status, lean_ctx_time::UtcDateTime::now())
+        .map_err(|_| {
+            error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "task_response_signer_unavailable",
+            )
+        })?;
     let value = serde_json::to_value(reply).map_err(|_| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,

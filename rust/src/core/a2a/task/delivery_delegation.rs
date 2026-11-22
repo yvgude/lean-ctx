@@ -4,8 +4,8 @@
 //! live execution identity before deriving a child's operation policy.
 
 use super::delivery_authority::{DELIVERY_CHECK, DELIVERY_RECORD};
-use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -50,8 +50,8 @@ pub struct DeliveryDelegationV1 {
     pub read_grant_id: String,
     pub write_grant_id: Option<String>,
     pub execution: DeliveryExecutionBindingV1,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: UtcDateTime,
+    pub expires_at: UtcDateTime,
     pub signature: String,
 }
 
@@ -99,7 +99,7 @@ impl DeliveryDelegationV1 {
             || self.execution.attempt == 0
             || self.execution.attempt > crate::core::work_graph::MAX_DELIVERY_ATTEMPTS
             || self.expires_at <= self.issued_at
-            || self.expires_at - self.issued_at > chrono::Duration::hours(1)
+            || self.expires_at - self.issued_at > lean_ctx_time::Duration::hours(1)
         {
             return Err(TaskAuthorityError::MalformedBounds);
         }

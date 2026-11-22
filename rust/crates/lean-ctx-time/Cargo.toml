@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "lean-ctx-time"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "Apache-2.0"
+description = "Time for LeanCTX | OSS: UTC instants, durations and the RFC 3339 formats LeanCTX stores and signs, over jiff."
+repository = "https://github.com/yvgude/lean-ctx"
+
+# A leaf crate: it never depends on another LeanCTX crate. It replaced
+# chrono (RUSTSEC-2026-0543, unmaintained) and keeps chrono's text formats
+# byte for byte, so stored state and signed receipts read the same.
+[dependencies]
+jiff = "0.2.23"
+serde = "1.0"
+schemars = { version = "1.0", optional = true, default-features = false }
+
+[features]
+# JSON Schema for UtcDateTime, identical to schemars' chrono04 output.
+schemars = ["dep:schemars"]
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[lints]
+workspace = true

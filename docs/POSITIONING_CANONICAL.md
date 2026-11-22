@@ -6,7 +6,12 @@ Status: Active public product and claims policy.
 
 **LeanCTX — Context Gateway for AI Systems**
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
+
+**Make every agent more effective.**
+
+The claim is a stance, not a measured quality or savings promise, until a
+published cost-per-accepted-outcome (CPAO) study exists.
 
 LeanCTX sits between your AI and the systems it reads. It selects task-relevant
 context, applies supported access and content controls before delivery, and
@@ -33,7 +38,7 @@ inside the product. Other deeper lifecycles must not replace the primary story.
 
 ## Names and boundaries
 
-The product components are LeanCTX | OSS and LeanCTX SDK; LeanCTX running on a
+The product components are LeanCTX | OSS and LeanCTX | SDK; LeanCTX running on a
 machine is an instance.
 
 | Name | Meaning |
@@ -41,9 +46,9 @@ machine is an instance.
 | **LeanCTX** | The product and brand |
 | **Context Gateway for AI Systems** | The primary category |
 | **LeanCTX \| OSS** | The open-source runtime implementing context capabilities, free and complete on its supported local paths, under Apache-2.0 (formerly "Community") |
-| **LeanCTX SDK** | The integration surface for embedding supported LeanCTX \| OSS capabilities |
+| **LeanCTX \| SDK** | The integration surface for embedding supported LeanCTX \| OSS capabilities |
 | **Context Intelligence** | Context selection and preparation capabilities inside LeanCTX |
-| **LeanCTX Hive** | The paid version (Personal · Team · Enterprise): control and proof on top of OSS — filter packs, org policy, compliance, Cockpit across instances, shared context and team coordination — scoped to the licensed release and agreement |
+| **LeanCTX Cloud** | The paid version (Personal · Team · Enterprise): control and proof on top of OSS — filter packs, org policy, compliance, Cockpit across instances, shared context and team coordination — scoped to the licensed release and agreement |
 | **SDK / OEM** | Embedding and distribution scope under the applicable SDK/runtime licenses and commercial agreement |
 
 Keep the customer's application, agent loop, model choice and UI. Coding agents
@@ -69,7 +74,7 @@ controls apply only to supported calls routed through the configured runtime.
 Enterprise identity, organization policy, retention, connector coverage and
 operations must be described against that edition's supported release.
 No local context behaviour (ranking, memory selection, read strategy, planning)
-has a paid-better variant; LeanCTX Hive adds governance, not better local
+has a paid-better variant; LeanCTX Cloud adds governance, not better local
 results.
 
 ## Evidence and security claims

@@ -1,7 +1,7 @@
 //! Persisted session-summary record + the lock-free candidate built under the
 //! session lock (#292).
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 /// A persisted, recallable session summary.
@@ -10,7 +10,7 @@ pub struct SummaryRecord {
     /// Stable id: `<session-id>-<seq>`.
     pub id: String,
     pub session_id: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     /// One-line headline (task description or inferred focus).
     pub title: String,
     /// Deterministic multi-line narrative of the session.
@@ -83,7 +83,7 @@ impl SummaryRecord {
 #[derive(Debug, Clone)]
 pub struct SummaryCandidate {
     pub session_id: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     pub title: String,
     pub body: String,
     pub files: Vec<String>,

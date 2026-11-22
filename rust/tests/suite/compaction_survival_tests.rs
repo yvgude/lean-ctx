@@ -22,7 +22,7 @@ fn make_session_with_data() -> SessionState {
     session.decisions.push(lean_ctx::core::session::Decision {
         summary: "Use JWT for auth".to_string(),
         rationale: None,
-        timestamp: chrono::Utc::now(),
+        timestamp: lean_ctx_time::UtcDateTime::now(),
     });
     session.next_steps = vec!["Write tests".to_string(), "Deploy".to_string()];
     session.stats.total_tool_calls = 42;

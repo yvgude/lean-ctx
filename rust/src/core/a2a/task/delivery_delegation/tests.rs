@@ -41,7 +41,7 @@ fn verify(
             recipient: "daemon",
             tenant_id: "account",
             project_id: "project",
-            now: Utc::now(),
+            now: lean_ctx_time::UtcDateTime::now(),
         },
         live,
         "child",
@@ -99,7 +99,7 @@ fn delegation_requires_current_independent_host_authority() {
             0 => denied.grants.clear(),
             1 => denied.grants[0].revoked = true,
             2 => denied.peers[0].revoked = true,
-            3 => denied.grants[0].expires_at = c.issued_at + chrono::Duration::seconds(1),
+            3 => denied.grants[0].expires_at = c.issued_at + lean_ctx_time::Duration::seconds(1),
             _ => {
                 denied.peers[0].allowed_actions = vec![DELIVERY_CHECK.into()];
                 denied.grants[0].action = DELIVERY_CHECK.into();
@@ -116,7 +116,7 @@ fn delegation_rejects_resigned_invalid_bounds_scope_and_keys() {
         let mut invalid = c.clone();
         match mutation {
             0 => invalid.schema_version = 2,
-            1 => invalid.expires_at = invalid.issued_at + chrono::Duration::hours(2),
+            1 => invalid.expires_at = invalid.issued_at + lean_ctx_time::Duration::hours(2),
             2 => invalid.expires_at = invalid.issued_at,
             3 => invalid.execution.attempt = 0,
             4 => invalid.tenant_id = "other-account".into(),

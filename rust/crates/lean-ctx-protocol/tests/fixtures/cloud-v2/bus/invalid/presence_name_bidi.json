@@ -1,0 +1,14 @@
+{
+  "case": "presence_name_bidi",
+  "base": "bus/frame.presence_update.names.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/display_name",
+      "value": "Reviewer ‮gnp.exe"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

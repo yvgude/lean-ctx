@@ -158,7 +158,7 @@ mod tests {
     fn redact_masks_card_and_leaves_an_iban_to_filter_packs() {
         let red = redact_sensitive("card 4111 1111 1111 1111 iban DE89370400440532013000 end");
         assert!(red.contains("[REDACTED:card]"));
-        // IBANs are a Hive filter pack, not a built-in detector.
+        // IBANs are a Cloud filter pack, not a built-in detector.
         assert!(red.contains("DE89370400440532013000"));
         assert!(red.contains("end"));
         assert!(!red.contains("4111 1111 1111 1111"));

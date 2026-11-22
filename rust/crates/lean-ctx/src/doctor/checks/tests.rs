@@ -16,11 +16,11 @@ fn check(home: &Path, scope: RulesScope, injection: RulesInjection) -> Outcome {
 #[test]
 fn recent_sessions_line_names_each_workspace_once_with_age() {
     use lean_ctx::core::session::SessionSummary;
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let mk = |root: Option<&str>, mins_ago: i64| SessionSummary {
         id: format!("s{mins_ago}"),
-        started_at: now - chrono::Duration::minutes(mins_ago + 5),
-        updated_at: now - chrono::Duration::minutes(mins_ago),
+        started_at: now - lean_ctx_time::Duration::minutes(mins_ago + 5),
+        updated_at: now - lean_ctx_time::Duration::minutes(mins_ago),
         version: 1,
         task: None,
         tool_calls: 3,
@@ -46,13 +46,13 @@ fn recent_sessions_line_names_each_workspace_once_with_age() {
 
 #[test]
 fn recent_sessions_line_is_none_without_any_rooted_session() {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     assert_eq!(environment::format_recent_sessions(vec![], now), None);
 }
 
 #[test]
 fn humanized_ages_cover_all_magnitudes() {
-    use chrono::Duration;
+    use lean_ctx_time::Duration;
     assert_eq!(environment::humanize_age(Duration::seconds(20)), "just now");
     assert_eq!(environment::humanize_age(Duration::minutes(59)), "59m ago");
     assert_eq!(environment::humanize_age(Duration::hours(47)), "47h ago");
@@ -292,4 +292,18 @@ fn output_triage_active_states_level_and_disable_command() {
         "the line must name the command that turns it off: {}",
         out.line
     );
+}
+
+/// The governor-mcp hint reads Claude settings as Claude Code does: JSONC
+/// (comments, trailing commas) still says whether the core plugin is on.
+#[test]
+fn governor_hint_reads_jsonc_settings() {
+    let on = "{\n  // mine\n  \"enabledPlugins\": { \"lean-ctx@lean-ctx\": true, },\n}\n";
+    assert!(environment::core_plugin_enabled(on));
+    assert!(!environment::core_plugin_enabled(
+        &on.replace("true", "false")
+    ));
+    assert!(!environment::core_plugin_enabled(
+        r#"{"enabledPlugins": {"lean-ctx-jobs@lean-ctx": true}}"#
+    ));
 }

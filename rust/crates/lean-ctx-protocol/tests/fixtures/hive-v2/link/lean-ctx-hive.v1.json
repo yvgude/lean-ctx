@@ -1,7 +1,0 @@
-{
-  "schema": "leanctx.hive.link/v1",
-  "repo": {
-    "ns": "acme",
-    "name": "payments"
-  }
-}

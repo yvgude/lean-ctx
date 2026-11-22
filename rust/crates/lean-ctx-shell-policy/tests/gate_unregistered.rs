@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The Engine's exec gate before any policy is registered.
 //!
-//! This file is its own test binary on purpose: it never calls
+//! Its test runs in a process of its own (fresh_process) on purpose: it never calls
 //! `lean_ctx_shell_policy::install()`, so the process-wide gate stays
 //! unregistered whatever the test runner (cargo test or nextest).
 
@@ -9,7 +9,10 @@
 /// no policy registered there is nothing to warn about: the gate refuses (126).
 #[test]
 fn allowlist_gate_refuses_in_warn_only_mode_without_a_registered_policy() {
-    // SAFETY: the only test in this binary; nothing else reads the environment.
+    if !crate::fresh_process::enter() {
+        return;
+    }
+    // SAFETY: the only test in its process (fresh_process); nothing else reads the environment.
     unsafe {
         std::env::set_var("LEAN_CTX_ALLOWLIST_WARN_ONLY", "1");
         std::env::set_var("LEAN_CTX_SHELL_SECURITY", "warn");

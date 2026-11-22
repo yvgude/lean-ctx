@@ -535,6 +535,53 @@ pub(super) fn strip_lean_ctx_hooks(pre_arr: &mut Vec<serde_json::Value>, action:
     });
 }
 
+/// The lean-ctx `PreToolUse` actions that fail open on their own (15 s
+/// internal budget, any error → no decision).
+const FAIL_OPEN_PRE_ACTIONS: &[&str] = &["hook rewrite", "hook redirect", "hook rewrite-enforce"];
+
+/// Mark every lean-ctx `PreToolUse` hook `"onFailure": "continue"`.
+///
+/// Outside Code Mode a hook that cannot start or crashes is a non-blocking
+/// error and the tool call goes ahead. In Code Mode the same failure refuses
+/// the call unless the hook says `continue` (Claude Code 2.1.295+; older
+/// versions ignore the field). Setting it keeps one contract in both modes:
+/// a broken lean-ctx install never stops the agent's tools. Other hooks and a
+/// user's own `onFailure` on a non-lean-ctx hook are untouched.
+pub(super) fn fail_open_pre_hooks(pre_arr: &mut [serde_json::Value]) {
+    for hook in pre_arr
+        .iter_mut()
+        .filter_map(|g| g.get_mut("hooks").and_then(|h| h.as_array_mut()))
+        .flatten()
+    {
+        if FAIL_OPEN_PRE_ACTIONS
+            .iter()
+            .any(|action| is_lean_ctx_command_for(hook, action))
+            && let Some(obj) = hook.as_object_mut()
+        {
+            obj.insert("onFailure".to_string(), serde_json::json!("continue"));
+        }
+    }
+}
+
+/// Whether `settings` holds a lean-ctx `PreToolUse` hook without
+/// `"onFailure": "continue"` — written by a version before
+/// [`fail_open_pre_hooks`]; in Code Mode its failure would refuse tool calls.
+pub(super) fn has_blocking_pre_hook(settings: &serde_json::Value) -> bool {
+    settings
+        .pointer("/hooks/PreToolUse")
+        .and_then(|p| p.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|g| g.get("hooks").and_then(|h| h.as_array()))
+        .flatten()
+        .any(|hook| {
+            FAIL_OPEN_PRE_ACTIONS
+                .iter()
+                .any(|action| is_lean_ctx_command_for(hook, action))
+                && hook.get("onFailure").and_then(|v| v.as_str()) != Some("continue")
+        })
+}
+
 /// Ensure exactly one lean-ctx hook for `command`'s action exists under `matcher`.
 ///
 /// Earlier versions deduped on the *full* command string, but `resolve_binary_path()` renders
@@ -642,6 +689,25 @@ pub(super) fn ensure_observe_on_events(
     }
 }
 
+fn desired_pretooluse(
+    bash_matcher: &str,
+    rewrite_cmd: &str,
+    redirect_cmd: &str,
+) -> serde_json::Value {
+    let mut pre = vec![
+        serde_json::json!({
+            "matcher": bash_matcher,
+            "hooks": [crate::hooks::claude_command_hook(rewrite_cmd)]
+        }),
+        serde_json::json!({
+            "matcher": REDIRECT_MATCHER,
+            "hooks": [crate::hooks::claude_command_hook(redirect_cmd)]
+        }),
+    ];
+    fail_open_pre_hooks(&mut pre);
+    serde_json::Value::Array(pre)
+}
+
 pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
     if crate::hooks::refuses_transient_hook_binary(home) {
         return;
@@ -671,16 +737,7 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
         "Bash"
     };
 
-    let desired_pretooluse = serde_json::json!([
-        {
-            "matcher": bash_matcher,
-            "hooks": [crate::hooks::claude_command_hook(&rewrite_cmd)]
-        },
-        {
-            "matcher": REDIRECT_MATCHER,
-            "hooks": [crate::hooks::claude_command_hook(&redirect_cmd)]
-        }
-    ]);
+    let desired_pretooluse = desired_pretooluse(bash_matcher, &rewrite_cmd, &redirect_cmd);
 
     if !settings_content.trim().is_empty()
         && let Err(error) = lean_ctx::core::jsonc::parse_jsonc(&settings_content)
@@ -716,6 +773,7 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
                 if let Some(pre_arr) = pre.as_array_mut() {
                     ensure_bash_rewrite_hook(pre_arr, bash_matcher, &rewrite_cmd, home);
                     ensure_command_hook(pre_arr, REDIRECT_MATCHER, &redirect_cmd);
+                    fail_open_pre_hooks(pre_arr);
                 }
                 super::governor_hosts::ensure_write_guard(
                     hooks_obj,
@@ -756,16 +814,7 @@ pub(crate) fn install_claude_project_hooks(cwd: &std::path::Path) {
         "Bash"
     };
 
-    let desired_pretooluse = serde_json::json!([
-        {
-            "matcher": bash_matcher,
-            "hooks": [crate::hooks::claude_command_hook(&rewrite_cmd)]
-        },
-        {
-            "matcher": REDIRECT_MATCHER,
-            "hooks": [crate::hooks::claude_command_hook(&redirect_cmd)]
-        }
-    ]);
+    let desired_pretooluse = desired_pretooluse(bash_matcher, &rewrite_cmd, &redirect_cmd);
 
     if !existing.trim().is_empty()
         && let Err(error) = lean_ctx::core::jsonc::parse_jsonc(&existing)
@@ -798,6 +847,7 @@ pub(crate) fn install_claude_project_hooks(cwd: &std::path::Path) {
                     let home = lean_ctx::core::home::resolve_home_dir().unwrap_or_default();
                     ensure_bash_rewrite_hook(pre_arr, bash_matcher, &rewrite_cmd, &home);
                     ensure_command_hook(pre_arr, REDIRECT_MATCHER, &redirect_cmd);
+                    fail_open_pre_hooks(pre_arr);
                 }
                 ensure_claude_project_observe_hooks(hooks_obj, &observe_cmd);
                 ensure_read_dedup_hook(hooks_obj, &read_dedup_cmd);

@@ -1,0 +1,1 @@
+Give an overview of the Rust crate rust/crates/lean-ctx-hooks in this repository: read its source tree and list its top-level modules under src with one line each on what they do. Keep it compact. The last line of your answer must be exactly ANSWER= followed by the number of top-level modules you listed.

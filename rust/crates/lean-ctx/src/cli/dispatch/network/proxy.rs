@@ -611,6 +611,14 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                         println!("  Fix:  lean-ctx proxy cleanup   (remove stale URL)");
                         println!("        lean-ctx proxy enable    (enable the proxy)");
                     }
+                } else {
+                    // Claude Code's Code Mode only talks to Anthropic directly;
+                    // say how to run it beside the proxy instead of leaving
+                    // users to disable the proxy globally.
+                    println!();
+                    println!(
+                        "  \x1b[2mClaude Code Code Mode runs past this proxy: lean-ctx claude-mod code-mode\x1b[0m"
+                    );
                 }
             }
             "enable" => {

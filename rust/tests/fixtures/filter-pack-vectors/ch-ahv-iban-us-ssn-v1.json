@@ -1,6 +1,6 @@
 {
   "schema": "leanctx.filter-pack-vectors/v1",
-  "note": "Detectors removed from the OSS engine in Hive B5. They need a checksum the OSS regex packs cannot express: ch_ahv = EAN-13 check digit over 13 digits starting 756; iban = ISO 7064 mod-97 == 1 over 15-34 alphanumerics; ssn = no validator. A regex-only pack must accept more false positives or be delivered as a runtime detector.",
+  "note": "Detectors removed from the OSS engine in Cloud B5. They need a checksum the OSS regex packs cannot express: ch_ahv = EAN-13 check digit over 13 digits starting 756; iban = ISO 7064 mod-97 == 1 over 15-34 alphanumerics; ssn = no validator. A regex-only pack must accept more false positives or be delivered as a runtime detector.",
   "detectors": [
     {
       "label": "ch_ahv",

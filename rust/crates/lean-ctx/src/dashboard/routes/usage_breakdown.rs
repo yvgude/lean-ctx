@@ -101,8 +101,8 @@ fn local_snapshot(cfg: &Config) -> serde_json::Value {
         .collect();
 
     let ledger = lean_ctx::core::savings_ledger::summary();
-    let now = chrono::Utc::now();
-    let cutoff = (now - chrono::Duration::days(30))
+    let now = lean_ctx_time::UtcDateTime::now();
+    let cutoff = (now - lean_ctx_time::Duration::days(30))
         .format("%Y-%m-%d")
         .to_string();
     // Ledger savings over the last 30 days: the projection window matches the
@@ -123,7 +123,7 @@ fn local_snapshot(cfg: &Config) -> serde_json::Value {
         .map(|seats| saved_usd_30d * f64::from(seats));
 
     let mut json = serde_json::json!({
-        "from": (now - chrono::Duration::days(30)).to_rfc3339(),
+        "from": (now - lean_ctx_time::Duration::days(30)).to_rfc3339(),
         "to": now.to_rfc3339(),
         "rows": rows,
         "totals": {

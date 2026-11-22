@@ -159,7 +159,7 @@ pub fn hint_lines() -> Vec<String> {
         |path| path.display().to_string(),
     );
     vec![
-        "Anonymous usage telemetry is on (daily counts only — no code, paths or prompts)."
+        "Pseudonymous usage telemetry is on (daily counts only — no code, paths or prompts)."
             .to_string(),
         format!(
             "Turn off: lean-ctx telemetry off · or set `enabled = false` under [telemetry] in {config}"

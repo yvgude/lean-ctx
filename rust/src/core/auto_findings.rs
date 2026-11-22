@@ -879,12 +879,12 @@ mod tests {
     #[test]
     fn session_watermark_filters_old_findings() {
         use crate::core::session::SessionState;
-        use chrono::Utc;
+        use lean_ctx_time::UtcDateTime;
 
         let mut session = SessionState::new();
         session.add_finding(Some("old.rs"), None, "old finding");
 
-        let watermark = Utc::now();
+        let watermark = UtcDateTime::now();
         session.last_consolidate_ts = Some(watermark);
 
         std::thread::sleep(std::time::Duration::from_millis(10));

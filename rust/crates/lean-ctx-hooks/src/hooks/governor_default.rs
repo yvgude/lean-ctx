@@ -8,7 +8,7 @@
 //! - an **existing** setup is never switched: an update or a setup refresh
 //!   keeps the MCP, hybrid or replace setup it finds ([`Outcome::Standard`]);
 //! - a **new** install of Claude Code gets `governor-mcp` (governor hooks plus
-//!   the lean-ctx MCP server with deferred tools, so Hive, the agent bus and
+//!   the lean-ctx MCP server with deferred tools, so Cloud, the agent bus and
 //!   knowledge work from the first session); a new install of any other host
 //!   gets the standard MCP setup;
 //! - a host the user **pinned** (`init --agent <host> --mode <m>` writes
@@ -199,7 +199,7 @@ impl Outcome {
             }
             Self::Installed(GovernorArm::McpDeferred) => Some(format!(
                 "{} uses the lean-ctx governor-mcp setup: native tools governed by hooks, plus \
-                 the lean-ctx MCP server with deferred tools (Hive, agent bus, knowledge). \
+                 the lean-ctx MCP server with deferred tools (LeanCTX Cloud, agent bus, knowledge). \
                  Standard MCP tools: {}",
                 host.name, host.switch_back
             )),

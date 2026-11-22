@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Dry run of an emspace → Hive move: reads an export and prints the report.
+//! Dry run of an emspace → Cloud move: reads an export and prints the report.
 //!
 //!   cargo run -p lean-ctx-doc --example plan_emspace -- EXPORT.json CHECKOUT DIR=PREFIX...
 //!

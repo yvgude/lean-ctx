@@ -5,7 +5,7 @@
 //! A hit never blocks honest work by itself and never lets work through: the
 //! caller routes a task with hits to a person (process-v1 minor 1.1, the G6
 //! record's `p4`). The crate is pure: no I/O, no clock, no environment, no
-//! network. The caller (lean-ctx-hive, hardened git) supplies the file pairs and
+//! network. The caller (lean-ctx-cloud, hardened git) supplies the file pairs and
 //! the Instance's write counts; [`analyze`] returns a [`TripwireReportV1`].
 //!
 //! There is no suppression mechanism: comments such as `// tripwire: allow`,

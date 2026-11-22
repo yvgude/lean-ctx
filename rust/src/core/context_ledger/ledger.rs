@@ -67,7 +67,7 @@ impl ContextLedger {
             existing.mode = mode.to_string();
             existing.original_tokens = original_tokens;
             existing.sent_tokens = sent_tokens;
-            existing.timestamp = chrono::Utc::now().timestamp();
+            existing.timestamp = lean_ctx_time::UtcDateTime::now().timestamp();
             existing.access_count = existing.access_count.saturating_add(1);
             existing.active_view = Some(ViewKind::parse(mode));
             if existing.id.is_none() {
@@ -92,7 +92,7 @@ impl ContextLedger {
                 mode: mode.to_string(),
                 original_tokens,
                 sent_tokens,
-                timestamp: chrono::Utc::now().timestamp(),
+                timestamp: lean_ctx_time::UtcDateTime::now().timestamp(),
                 id: Some(item_id),
                 kind: Some(ContextKind::File),
                 source_hash: None,
@@ -541,7 +541,7 @@ impl ContextLedger {
 
     pub fn prune(&mut self) -> usize {
         let before = self.entries.len();
-        let now = chrono::Utc::now().timestamp();
+        let now = lean_ctx_time::UtcDateTime::now().timestamp();
 
         for entry in &mut self.entries {
             if let Some(phi) = entry.phi {

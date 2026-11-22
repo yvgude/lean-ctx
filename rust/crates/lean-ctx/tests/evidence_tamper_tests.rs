@@ -39,7 +39,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn generate_test_bundle(temp: &tempfile::TempDir) -> PathBuf {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     audit_trail::record(AuditEntryData {
         agent_id: "tamper-test-agent".into(),
         tool: "ctx_read".into(),
@@ -52,8 +52,8 @@ fn generate_test_bundle(temp: &tempfile::TempDir) -> PathBuf {
 
     let path = temp.path().join("evidence.zip");
     generate(&BundleSpec {
-        from: (now - chrono::Duration::hours(1)).to_rfc3339(),
-        to: (now + chrono::Duration::hours(1)).to_rfc3339(),
+        from: (now - lean_ctx_time::Duration::hours(1)).to_rfc3339(),
+        to: (now + lean_ctx_time::Duration::hours(1)).to_rfc3339(),
         pack: None,
         out: Some(path.clone()),
     })

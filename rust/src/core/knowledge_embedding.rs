@@ -404,7 +404,7 @@ fn lexical_fallback<'a>(
 
 #[cfg(feature = "embeddings")]
 fn recency_decay(fact: &KnowledgeFact) -> f32 {
-    let days_old = chrono::Utc::now()
+    let days_old = lean_ctx_time::UtcDateTime::now()
         .signed_duration_since(fact.last_confirmed)
         .num_days() as f32;
     (1.0 - days_old / MAX_RECENCY_DAYS).max(0.0)
@@ -660,7 +660,7 @@ mod tests {
     use crate::core::knowledge::KnowledgeArchetype;
 
     fn fact_with(category: &str, key: &str, source: &str) -> KnowledgeFact {
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         KnowledgeFact {
             anchors: Vec::new(),
             review: None,
@@ -825,7 +825,7 @@ mod tests {
     fn compact_drops_missing_or_archived_facts() {
         let knowledge_root = tempfile::tempdir().unwrap();
         let mut knowledge = ProjectKnowledge::new(knowledge_root.path().to_str().unwrap());
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         knowledge.facts.push(KnowledgeFact {
             anchors: Vec::new(),
             review: None,
@@ -909,7 +909,7 @@ mod tests {
         let mut low = fact_with("arch", "low", "s");
         low.confidence = 0.5;
         let mut archived = fact_with("arch", "archived", "s");
-        archived.valid_until = Some(chrono::Utc::now());
+        archived.valid_until = Some(lean_ctx_time::UtcDateTime::now());
         knowledge.facts.extend([indexed, high, low, archived]);
 
         let mut idx = KnowledgeEmbeddingIndex::new("test");
@@ -969,8 +969,8 @@ mod tests {
             value: "v".to_string(),
             source_session: "s".to_string(),
             confidence: 0.9,
-            created_at: chrono::Utc::now(),
-            last_confirmed: chrono::Utc::now(),
+            created_at: lean_ctx_time::UtcDateTime::now(),
+            last_confirmed: lean_ctx_time::UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
             valid_from: None,
@@ -999,7 +999,7 @@ mod tests {
     #[cfg(feature = "embeddings")]
     #[test]
     fn recency_decay_old() {
-        let old_date = chrono::Utc::now() - chrono::Duration::days(100);
+        let old_date = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(100);
         let fact = KnowledgeFact {
             anchors: Vec::new(),
             review: None,
@@ -1065,8 +1065,8 @@ mod tests {
             value: "PostgreSQL".to_string(),
             source_session: "s1".to_string(),
             confidence: 0.95,
-            created_at: chrono::Utc::now(),
-            last_confirmed: chrono::Utc::now(),
+            created_at: lean_ctx_time::UtcDateTime::now(),
+            last_confirmed: lean_ctx_time::UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
             valid_from: None,
@@ -1170,7 +1170,7 @@ mod tests {
             key_a: "arch/database".to_string(),
             key_b: "arch/db".to_string(),
             verdict: "unrelated".to_string(),
-            judged_at: chrono::Utc::now(),
+            judged_at: lean_ctx_time::UtcDateTime::now(),
         });
         let judged = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
         assert!(judged.is_empty(), "already-judged pairs are not re-flagged");

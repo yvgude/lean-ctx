@@ -109,13 +109,13 @@ fn fixture_with_source(root: &Path, source: &Value) -> (Value, Value, SigningKey
     );
     let planned: Value = serde_json::from_slice(&output.stdout).unwrap();
     let key = SigningKey::from_bytes(&[47; 32]);
-    let current = chrono::Utc::now();
+    let current = lean_ctx_time::UtcDateTime::now();
     let settings = json!({"schema_version": 1,
         "signing_key_hex": hex_bytes(&key.to_bytes()),
         "signer": {"key_id": "source-receipts-key",
             "public_key_digest": digest(key.verifying_key().as_bytes()),
-            "admitted_at": (current-chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            "expires_at": (current+chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "admitted_at": (current-lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
+            "expires_at": (current+lean_ctx_time::Duration::days(1)).to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
             "revoked_at": null},
         "ledger_path": root.join("host-ledger.jsonl"), "allow_context_decision_signing": true});
     let request = json!({"schema_version": 1, "transport_version": 1, "engine_interface_version": "1.0.0",

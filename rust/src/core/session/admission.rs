@@ -767,7 +767,7 @@ mod tests {
                 file: Some("notes/release.md".into()),
                 line: Some(call),
                 summary: format!("pay with {card}"),
-                timestamp: chrono::Utc::now(),
+                timestamp: lean_ctx_time::UtcDateTime::now(),
             });
         }
 
@@ -831,7 +831,7 @@ mod tests {
             file: Some("src/lib.rs".into()),
             line: Some(7),
             summary: "TOP SECRET\nfinding".into(),
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
 
         let store = store_policy(FilterAction::Warn);

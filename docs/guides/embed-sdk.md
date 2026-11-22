@@ -1,9 +1,9 @@
 # Embed LeanCTX in your application
 
-**LeanCTX SDK — embed context control into your application.**
+**LeanCTX | SDK — embed context control into your application.**
 
 Keep your model, workflow and UI. LeanCTX is the **Context Gateway for AI Systems**:
-**Control what your AI can see.** The SDK connects your code to supported
+**Less context. More intelligence.** The SDK connects your code to supported
 LeanCTX | OSS interfaces within **Select → Control → Learn → Prove**.
 Learn describes local task and knowledge continuity; each SDK surface exposes
 only its documented capabilities.

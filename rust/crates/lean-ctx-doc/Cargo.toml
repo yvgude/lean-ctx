@@ -1,10 +1,10 @@
 [package]
 name = "lean-ctx-doc"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
-description = "The documentation model of lean-ctx: pages, sections, notes and code anchors, replicated through LeanCTX | Hive."
+description = "The documentation model of lean-ctx: pages, sections, notes and code anchors, replicated through LeanCTX Cloud."
 repository = "https://github.com/yvgude/lean-ctx"
 
 # A leaf crate: it never depends on `lean-ctx`. The engine implements the

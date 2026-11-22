@@ -1,0 +1,25 @@
+{
+  "alias_key_id": "d5cb1cf731585565",
+  "worker": {
+    "card": {
+      "availability": "idle",
+      "budget": {},
+      "history": {
+        "done": 0,
+        "median_minutes": null,
+        "reverted": 0
+      },
+      "host_app": "codex",
+      "model": "unknown",
+      "model_source": "unknown",
+      "tools": []
+    },
+    "host_app": "codex",
+    "id": "wkr_hzagnwpiaatupo6tzfhs",
+    "name": "Codex · general",
+    "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "registered_at": 1792796400000,
+    "role": "general",
+    "status": "idle"
+  }
+}

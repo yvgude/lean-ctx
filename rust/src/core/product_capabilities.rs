@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::ocla::OclaCapabilityKind;
 
 /// The plan ladder a capability's minimum is ranked on. Account plans live
-/// in LeanCTX | Hive; the engine only orders them.
+/// in LeanCTX | Cloud; the engine only orders them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Plan {
@@ -64,9 +64,10 @@ pub const REGISTRY_SOURCE: &str = include_str!("../../data/product-capabilities.
 #[serde(rename_all = "snake_case")]
 pub enum UserPriceClass {
     Free,
-    /// Paid right granted by a LeanCTX | Hive plan; the record's
-    /// [`ProductCapability::hive_plan`] names the plan.
-    Hive,
+    /// Paid right granted by a LeanCTX Cloud plan; the record's
+    /// [`ProductCapability::cloud_plan`] names the plan (`cloud` is the
+    /// internal wire name, not a product name).
+    Cloud,
     /// Withdrawn capability: still a known lookup name, never granted.
     Retired,
     /// Legacy (schema 2) class. Kept so the frozen hosted services and old
@@ -82,16 +83,17 @@ pub enum UserPriceClass {
     SdkOemCommercial,
 }
 
-/// The Hive plan that grants an `hive` capability (Enterprise ⊇ Team ⊇ Personal).
+/// The LeanCTX Cloud plan that grants an `cloud` capability (Enterprise ⊇ Team ⊇ Personal).
+/// `Personal` maps to the internal [`Plan::Pro`] id, which is not a price or tier name.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HivePlan {
+pub enum CloudPlan {
     Personal,
     Team,
     Enterprise,
 }
 
-impl HivePlan {
+impl CloudPlan {
     #[must_use]
     pub const fn plan(self) -> Plan {
         match self {
@@ -102,7 +104,7 @@ impl HivePlan {
     }
 }
 
-/// Registry schema this Engine reads (3: `hive` and `retired` classes).
+/// Registry schema this Engine reads (3: `cloud` and `retired` classes).
 pub const REGISTRY_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -121,9 +123,9 @@ pub enum RuntimeDelivery {
     LocalService,
     ManagedCloudService,
     EnterprisePrivateImage,
-    /// Delivered and controlled by the LeanCTX | Hive service (filter packs,
+    /// Delivered and controlled by the LeanCTX | Cloud service (filter packs,
     /// shared team state, governance), consumed by the local Engine.
-    HiveService,
+    CloudService,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -209,9 +211,9 @@ pub struct ProductCapability {
     pub id: String,
     pub name: String,
     pub price_class: UserPriceClass,
-    /// Present exactly on `hive` records: the Hive plan that grants it.
+    /// Present exactly on `cloud` records: the Cloud plan that grants it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hive_plan: Option<HivePlan>,
+    pub cloud_plan: Option<CloudPlan>,
     pub source_visibility: SourceVisibility,
     pub runtime_delivery: RuntimeDelivery,
     pub aha_criticality: AhaCriticality,
@@ -236,7 +238,7 @@ impl ProductCapability {
     pub const fn minimum_plan(&self) -> Plan {
         match self.price_class {
             UserPriceClass::Free => Plan::Community,
-            UserPriceClass::Hive => match self.hive_plan {
+            UserPriceClass::Cloud => match self.cloud_plan {
                 Some(plan) => plan.plan(),
                 // Unreachable for a validated record; fail toward the top plan.
                 None => Plan::Enterprise,
@@ -257,8 +259,8 @@ impl ProductCapability {
     pub const fn is_enterprise(&self) -> bool {
         matches!(self.price_class, UserPriceClass::EnterprisePaid)
             || matches!(
-                (self.price_class, self.hive_plan),
-                (UserPriceClass::Hive, Some(HivePlan::Enterprise))
+                (self.price_class, self.cloud_plan),
+                (UserPriceClass::Cloud, Some(CloudPlan::Enterprise))
             )
     }
 }
@@ -369,7 +371,7 @@ impl ProductCapabilityRegistry {
         let mut output = String::from(
             "<!-- Generated from product/capabilities.toml; do not edit by hand. -->\n\n\
              # Product capabilities\n\n\
-             | ID | Name | Price | Hive plan | Source visibility | Delivery | Aha | Moat | License | Self-host | Managed cloud | Enterprise entitlement | Account | Commercial use | Redistribution/OEM | Data boundary | Telemetry | Maturity | Source path |\n\
+             | ID | Name | Price | Cloud plan | Source visibility | Delivery | Aha | Moat | License | Self-host | Managed cloud | Enterprise entitlement | Account | Commercial use | Redistribution/OEM | Data boundary | Telemetry | Maturity | Source path |\n\
              |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
         );
         for capability in entries {
@@ -380,7 +382,7 @@ impl ProductCapabilityRegistry {
                 capability.name.replace('|', "\\|"),
                 enum_name(&capability.price_class),
                 capability
-                    .hive_plan
+                    .cloud_plan
                     .as_ref()
                     .map_or_else(|| "-".to_string(), enum_name),
                 enum_name(&capability.source_visibility),
@@ -503,21 +505,23 @@ fn validate_record(capability: &ProductCapability) -> Result<(), String> {
         Some("non-Enterprise capability must not require governance entitlement")
     } else if !capability.self_host_available && !capability.managed_cloud_available {
         Some("capability has no delivery path")
-    } else if (capability.price_class == UserPriceClass::Hive) != capability.hive_plan.is_some() {
-        Some("Hive plan is required exactly on hive capabilities")
-    } else if capability.price_class == UserPriceClass::Hive
+    } else if (capability.price_class == UserPriceClass::Cloud) != capability.cloud_plan.is_some() {
+        Some("LeanCTX Cloud plan is required exactly on cloud capabilities")
+    } else if capability.price_class == UserPriceClass::Cloud
         && (capability.source_visibility != SourceVisibility::PrivateSource
             || !capability.account_required
             || !matches!(
                 capability.runtime_delivery,
-                RuntimeDelivery::HiveService | RuntimeDelivery::SignedBinary
+                RuntimeDelivery::CloudService | RuntimeDelivery::SignedBinary
             ))
     {
-        Some("Hive capability needs private source, an account and the Hive or signed path")
-    } else if capability.runtime_delivery == RuntimeDelivery::HiveService
-        && (capability.price_class != UserPriceClass::Hive || !capability.managed_cloud_available)
+        Some(
+            "LeanCTX Cloud capability needs private source, an account and the LeanCTX Cloud service or signed path",
+        )
+    } else if capability.runtime_delivery == RuntimeDelivery::CloudService
+        && (capability.price_class != UserPriceClass::Cloud || !capability.managed_cloud_available)
     {
-        Some("Hive service delivery requires a Hive plan and the managed service")
+        Some("LeanCTX Cloud service delivery requires a LeanCTX Cloud plan and the managed service")
     } else if matches!(
         capability.price_class,
         UserPriceClass::CloudPaid
@@ -525,7 +529,7 @@ fn validate_record(capability: &ProductCapability) -> Result<(), String> {
             | UserPriceClass::TeamPaid
             | UserPriceClass::EnterprisePaid
     ) {
-        Some("legacy price class is not valid in schema 3; use free, hive or retired")
+        Some("legacy price class is not valid in schema 3; use free, cloud or retired")
     } else {
         None
     };
@@ -725,16 +729,16 @@ mod tests {
         let document: toml::Value = toml::from_str(REGISTRY_SOURCE).unwrap();
         let records = document["capability"].as_array().unwrap();
         for record in records {
-            let hive = record["price_class"].as_str() == Some("hive");
+            let cloud = record["price_class"].as_str() == Some("cloud");
             assert_eq!(
                 record.as_table().unwrap().len(),
-                18 + usize::from(hive),
+                18 + usize::from(cloud),
                 "{record}"
             );
             for field in record.as_table().unwrap().keys() {
                 let mut incomplete = record.clone();
                 incomplete.as_table_mut().unwrap().remove(field);
-                if field == "hive_plan" {
+                if field == "cloud_plan" {
                     // Optional in the record format, required by validation.
                     let parsed: ProductCapability = incomplete.try_into().unwrap();
                     assert!(validate_record(&parsed).is_err(), "missing {field}");
@@ -782,8 +786,8 @@ mod tests {
     fn shared_team_capabilities_need_team_and_enterprise_self_hosts_them() {
         let registry = registry();
         let entry = registry.find("team.context.shared").unwrap();
-        assert_eq!(entry.price_class, UserPriceClass::Hive);
-        assert_eq!(entry.hive_plan, Some(HivePlan::Team));
+        assert_eq!(entry.price_class, UserPriceClass::Cloud);
+        assert_eq!(entry.cloud_plan, Some(CloudPlan::Team));
         assert!(entry.managed_cloud_available && entry.self_host_available);
         assert!(!registry.allows(Plan::Pro, &entry.id));
         assert!(registry.allows(Plan::Team, &entry.id));
@@ -801,13 +805,13 @@ mod tests {
             "team.runtime.artifact_author",
         ] {
             let entry = registry.find(id).unwrap();
-            assert_eq!(entry.price_class, UserPriceClass::Hive);
-            assert_eq!(entry.hive_plan, Some(HivePlan::Team));
+            assert_eq!(entry.price_class, UserPriceClass::Cloud);
+            assert_eq!(entry.cloud_plan, Some(CloudPlan::Team));
             assert_eq!(entry.runtime_delivery, RuntimeDelivery::SignedBinary);
             assert!(entry.self_host_available && !entry.managed_cloud_available);
             assert!(!registry.allows(Plan::Pro, id));
             assert!(registry.allows(Plan::Team, id));
-            // Each condition of the Hive rule refuses on its own.
+            // Each condition of the Cloud rule refuses on its own.
             let breaks: [fn(&mut ProductCapability); 3] = [
                 |record| {
                     record.source_visibility = SourceVisibility::PublicEnterpriseSourceAvailable;
@@ -819,7 +823,7 @@ mod tests {
                 let mut broken = entry.clone();
                 change(&mut broken);
                 let refusal = validate_record(&broken).unwrap_err();
-                assert!(refusal.contains("Hive capability"), "{refusal}");
+                assert!(refusal.contains("LeanCTX Cloud capability"), "{refusal}");
             }
         }
     }
@@ -828,9 +832,9 @@ mod tests {
     fn hosted_seat_authority_is_classified_for_team_and_enterprise_only() {
         let registry = registry();
         let entry = registry.find("team.seat_management").unwrap();
-        assert_eq!(entry.price_class, UserPriceClass::Hive);
-        assert_eq!(entry.hive_plan, Some(HivePlan::Team));
-        assert_eq!(entry.runtime_delivery, RuntimeDelivery::HiveService);
+        assert_eq!(entry.price_class, UserPriceClass::Cloud);
+        assert_eq!(entry.cloud_plan, Some(CloudPlan::Team));
+        assert_eq!(entry.runtime_delivery, RuntimeDelivery::CloudService);
         assert!(entry.account_required && entry.managed_cloud_available);
         assert_eq!(entry.enterprise_entitlement, "none");
         assert!(!registry.allows(Plan::Community, &entry.id));
@@ -926,13 +930,23 @@ mod tests {
                 );
             }
         }
+        // Governance stays Enterprise; SSO and SCIM are in Team (owner
+        // decision), but never free.
         for id in [
             "enterprise.execution_policy",
-            "enterprise.sso_scim",
-            "team.sso_oidc",
+            "enterprise.agent_bus.governed",
         ] {
             assert!(!registry().allows(Plan::Community, id));
             assert!(!registry().allows(Plan::Team, id));
+        }
+        for id in [
+            "enterprise.sso_scim",
+            "team.sso_oidc",
+            "team.audit_retention",
+        ] {
+            assert!(!registry().allows(Plan::Community, id));
+            assert!(!registry().allows(Plan::Pro, id));
+            assert!(registry().allows(Plan::Team, id));
         }
     }
 
@@ -1021,18 +1035,18 @@ mod tests {
         }
     }
 
-    /// A3 (Hive): local cockpit views are free, filter packs and team or
-    /// governance rights are Hive plans, Personal Cloud is retired, and no
+    /// A3 (Cloud): local cockpit views are free, filter packs and team or
+    /// governance rights are Cloud plans, Personal Cloud is retired, and no
     /// schema-3 record keeps a legacy price class.
     #[test]
-    fn hive_classification_keeps_local_free_and_retires_personal_cloud() {
+    fn cloud_classification_keeps_local_free_and_retires_personal_cloud() {
         let registry = registry();
         for entry in registry.entries() {
             assert!(
                 matches!(
                     entry.price_class,
                     UserPriceClass::Free
-                        | UserPriceClass::Hive
+                        | UserPriceClass::Cloud
                         | UserPriceClass::Retired
                         | UserPriceClass::SdkOemCommercial
                 ),
@@ -1054,21 +1068,22 @@ mod tests {
             assert!(registry.allows(Plan::Community, id), "{id}");
         }
         for (id, plan) in [
-            ("pro.runtime.semantic_detectors", HivePlan::Personal),
-            ("pro.runtime.code_security", HivePlan::Personal),
-            ("pro.runtime.personal_protection", HivePlan::Personal),
-            ("team.private_registry", HivePlan::Team),
-            ("team.managed_connectors", HivePlan::Team),
-            ("team.sso_oidc", HivePlan::Enterprise),
-            ("team.audit_retention", HivePlan::Enterprise),
+            ("pro.runtime.semantic_detectors", CloudPlan::Personal),
+            ("pro.runtime.code_security", CloudPlan::Personal),
+            ("pro.runtime.personal_protection", CloudPlan::Personal),
+            ("team.private_registry", CloudPlan::Team),
+            ("team.managed_connectors", CloudPlan::Team),
+            ("team.sso_oidc", CloudPlan::Team),
+            ("enterprise.sso_scim", CloudPlan::Team),
+            ("team.audit_retention", CloudPlan::Team),
             (
                 "enterprise.runtime.org_policy_verifier",
-                HivePlan::Enterprise,
+                CloudPlan::Enterprise,
             ),
         ] {
             let entry = registry.find(id).unwrap();
-            assert_eq!(entry.price_class, UserPriceClass::Hive, "{id}");
-            assert_eq!(entry.hive_plan, Some(plan), "{id}");
+            assert_eq!(entry.price_class, UserPriceClass::Cloud, "{id}");
+            assert_eq!(entry.cloud_plan, Some(plan), "{id}");
             assert_eq!(entry.minimum_plan(), plan.plan(), "{id}");
             assert!(!registry.allows(Plan::Community, id), "{id}");
             assert!(registry.allows(Plan::Enterprise, id), "{id}");
@@ -1085,25 +1100,25 @@ mod tests {
         assert_eq!(registry.find("cloud_sync").unwrap().id, "pro.cloud_sync");
         assert_eq!(registry.find("sso_oidc").unwrap().id, "team.sso_oidc");
 
-        let hive = registry.find("team.context.shared").unwrap().clone();
+        let cloud = registry.find("team.context.shared").unwrap().clone();
         for legacy in [
             UserPriceClass::CloudPaid,
             UserPriceClass::ProPaid,
             UserPriceClass::TeamPaid,
         ] {
-            let mut broken = hive.clone();
+            let mut broken = cloud.clone();
             broken.price_class = legacy;
-            broken.hive_plan = None;
+            broken.cloud_plan = None;
             broken.runtime_delivery = RuntimeDelivery::ManagedCloudService;
             assert!(validate_record(&broken).is_err(), "{legacy:?} accepted");
         }
-        let mut planless = hive.clone();
-        planless.hive_plan = None;
+        let mut planless = cloud.clone();
+        planless.cloud_plan = None;
         assert!(validate_record(&planless).is_err());
         let mut stray = registry.find("free.cockpit.ui").unwrap().clone();
-        stray.hive_plan = Some(HivePlan::Personal);
+        stray.cloud_plan = Some(CloudPlan::Personal);
         assert!(validate_record(&stray).is_err());
-        let mut local = hive;
+        let mut local = cloud;
         local.managed_cloud_available = false;
         assert!(validate_record(&local).is_err());
     }

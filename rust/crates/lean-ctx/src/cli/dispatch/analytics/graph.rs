@@ -182,6 +182,10 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                 )
             );
         }
+        "landing" => println!(
+            "{}",
+            tools::ctx_graph_landing::cli(&rest[1..], &resolve_graph_root(None), fmt)
+        ),
         // Team graph — Context-as-Code (GL#451): a committable, diffable,
         // mergeable snapshot of the property graph.
         "snapshot" | "import" | "check" => cmd_graph_snapshot(sub, &rest[1..]),
@@ -197,6 +201,7 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                  lean-ctx graph path <from> <to> [--json]\n  \
                  lean-ctx graph explain <file> [--json]\n  \
                  lean-ctx graph diff [since-ref] [--json]\n  \
+                 lean-ctx graph landing <base> [head] [--other <ref>] [--depth <n>] [--json]\n  \
                  lean-ctx graph status\n  \
                  lean-ctx graph export-html --out <path> [--root <path>] [--max-nodes <n>]\n  \
                  lean-ctx graph snapshot [--out <path>]      (export committable team snapshot)\n  \

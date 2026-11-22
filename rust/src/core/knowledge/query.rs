@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use lean_ctx_protocol::knowledge::{ClassificationLevel, KnowledgeObjectV1};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 
 use super::ranking::sort_fact_for_output;
 use super::types::{KnowledgeFact, ProjectKnowledge};
@@ -9,13 +9,13 @@ use super::types::{KnowledgeFact, ProjectKnowledge};
 pub struct KnowledgeQuery {
     pub source: Option<String>,
     pub classification: Option<ClassificationLevel>,
-    pub valid_at: Option<DateTime<Utc>>,
+    pub valid_at: Option<UtcDateTime>,
     pub tags: Vec<String>,
 }
 
 impl KnowledgeQuery {
     /// Match objects that are valid and not superseded at `timestamp`.
-    pub fn valid_at(timestamp: DateTime<Utc>) -> Self {
+    pub fn valid_at(timestamp: UtcDateTime) -> Self {
         Self {
             valid_at: Some(timestamp),
             ..Self::default()
@@ -47,17 +47,17 @@ impl KnowledgeQuery {
             if validity.superseded_by.is_some() {
                 return false;
             }
-            let Ok(valid_from) = DateTime::parse_from_rfc3339(&validity.valid_from) else {
+            let Ok(valid_from) = OffsetDateTime::parse_from_rfc3339(&validity.valid_from) else {
                 return false;
             };
-            if timestamp < valid_from.with_timezone(&Utc) {
+            if timestamp < valid_from.to_utc() {
                 return false;
             }
             if let Some(valid_until) = &validity.valid_until {
-                let Ok(valid_until) = DateTime::parse_from_rfc3339(valid_until) else {
+                let Ok(valid_until) = OffsetDateTime::parse_from_rfc3339(valid_until) else {
                     return false;
                 };
-                if timestamp > valid_until.with_timezone(&Utc) {
+                if timestamp > valid_until.to_utc() {
                     return false;
                 }
             }
@@ -264,7 +264,7 @@ impl ProjectKnowledge {
             .collect()
     }
 
-    pub fn recall_at_time(&self, query: &str, at: DateTime<Utc>) -> Vec<&KnowledgeFact> {
+    pub fn recall_at_time(&self, query: &str, at: UtcDateTime) -> Vec<&KnowledgeFact> {
         let terms = query_terms(query);
         if terms.is_empty() {
             return Vec::new();
@@ -373,7 +373,7 @@ impl ProjectKnowledge {
         let total = scored.len();
         scored.truncate(limit);
 
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let mut out: Vec<KnowledgeFact> = Vec::new();
         for s in scored {
             if let Some(f) = self.facts.get_mut(s.idx) {
@@ -425,7 +425,7 @@ impl ProjectKnowledge {
         let total = idxs.len();
         let idxs: Vec<usize> = idxs.into_iter().skip(offset).take(limit).collect();
 
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let mut out = Vec::new();
         for idx in idxs {
             if let Some(f) = self.facts.get_mut(idx) {

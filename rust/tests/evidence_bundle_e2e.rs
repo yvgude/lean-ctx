@@ -28,10 +28,10 @@ fn bundle_is_deterministic_and_complete() {
         });
     }
 
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let spec = |out: &std::path::Path| BundleSpec {
-        from: (now - chrono::Duration::hours(1)).to_rfc3339(),
-        to: (now + chrono::Duration::hours(1)).to_rfc3339(),
+        from: (now - lean_ctx_time::Duration::hours(1)).to_rfc3339(),
+        to: (now + lean_ctx_time::Duration::hours(1)).to_rfc3339(),
         pack: None,
         out: Some(out.to_path_buf()),
     };

@@ -29,7 +29,9 @@ pub fn handle_export(
     let mut written_architecture_html: Option<String> = None;
     if write {
         let root = Path::new(project_root);
-        let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string();
+        let ts = lean_ctx_time::UtcDateTime::now()
+            .format("%Y-%m-%d_%H%M%S")
+            .to_string();
         let default_proof_name = format!("context-proof-v1_{ts}.json");
         let ir_name = format!("context-ir-v1_{ts}.json");
         let architecture_json_name = format!("architecture-overview-v1_{ts}.json");

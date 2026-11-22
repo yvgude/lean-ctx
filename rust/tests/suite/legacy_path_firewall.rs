@@ -43,6 +43,10 @@ const ALLOWLIST: &[&str] = &[
     // It never creates or reads the legacy path. Keys are root-relative; this
     // one lives under crates/lean-ctx-shell-policy/src.
     "self_config.rs",
+    // Refuses reads from agent shells: the shell-policy records guard
+    // recognises the legacy record locations so it can refuse reads of them.
+    // It never creates or writes the legacy path (crates/lean-ctx-shell-policy/src).
+    "records_guard.rs",
     // Group 2: pre-existing direct home-writers/readers (tracked debt).
     "report.rs",
     "core/providers/config_provider/discovery.rs",

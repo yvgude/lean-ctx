@@ -1,13 +1,13 @@
 # Managed configuration v1 (`leanctx.managed-config/v1`)
 
 **Status:** Current (engine 3.12.3). Wire type:
-`lean_ctx_protocol::hive::managed::ManagedConfigV1`. Carrier IO:
+`lean_ctx_protocol::cloud::managed::ManagedConfigV1`. Carrier IO:
 `lean_ctx_fs::managed`. Engine overlay and gates: `lean_ctx::core::config::managed`.
 
 An organisation preconfigures machines through its device management (MDM).
-The managed configuration names the Hive, the org, an identity-provider hint
+The managed configuration names the LeanCTX Cloud server, the org, an identity-provider hint
 and the update mode. It carries **no secret and no policy content**: policy
-stays in the signed policy bundle the Hive delivers.
+stays in the signed policy bundle the LeanCTX Cloud server delivers.
 
 ## Carriers
 
@@ -32,22 +32,22 @@ Absent carrier, or a carrier with no members: the machine is not managed.
 
 ## Members
 
-Members may be nested (`[hive] url = …`) or dotted (`"hive.url" = …`); both
+Members may be nested (`[cloud] url = …`) or dotted (`"cloud.url" = …`); both
 mean the same thing. A `schema` member, when present, must be
 `leanctx.managed-config/v1`.
 
 | Member | Type | Effect |
 |---|---|---|
-| `hive.url` | origin (`https://…`; `http://` only for loopback) | Wins over `[hive] url`. Enrollment with another origin is refused. |
-| `hive.root_key` | base64 Ed25519 public key | Wins over `[hive] root_key`. |
-| `hive.org` | org wire id | Enrollment or a stored session for another org is refused: "this machine is managed by <org>". |
-| `hive.idp_hint` | text | Sign-in hint (consumed by the sign-in flow; reserved here). |
-| `hive.require` | bool | Every tool refuses until the machine is signed in (lease valid or in grace) **and** a policy floor is installed. |
+| `cloud.url` | origin (`https://…`; `http://` only for loopback) | Wins over `[cloud] url`. Enrollment with another origin is refused. |
+| `cloud.root_key` | base64 Ed25519 public key | Wins over `[cloud] root_key`. |
+| `cloud.org` | org wire id | Enrollment or a stored session for another org is refused: "this machine is managed by <org>". |
+| `cloud.idp_hint` | text | Sign-in hint (consumed by the sign-in flow; reserved here). |
+| `cloud.require` | bool | Every tool refuses until the machine is signed in (lease valid or in grace) **and** a policy floor is installed. |
 | `workspace.vaults` | list of vault ids (or one comma-joined string) | Reserved for vault provisioning. |
-| `updates.mode` | `mdm` · `hive` · `user` | Reserved for the update channel (ent4-3). |
+| `updates.mode` | `mdm` · `cloud` · `user` | Reserved for the update channel (ent4-3). |
 | `updates.feed_base` | `https://` URL | Reserved for the update channel (ent4-3). |
-| `telemetry.metrics_upload` | bool | Tighten-only: `false` forces `[hive] metrics_upload` off. |
-| `telemetry.receipts_upload` | bool | Tighten-only: `false` forces `[hive] receipts_upload` off. |
+| `telemetry.metrics_upload` | bool | Tighten-only: `false` forces `[cloud] metrics_upload` off. |
+| `telemetry.receipts_upload` | bool | Tighten-only: `false` forces `[cloud] receipts_upload` off. |
 
 Registry and plist carriers may give booleans as `0`/`1` or
 `"true"`/`"false"`.
@@ -59,23 +59,56 @@ Registry and plist carriers may give booleans as `0`/`1` or
   is refused and the message names the managing org and the carrier.
 - **Fail closed.** A carrier that exists but cannot be read or validated (an
   unknown member, a wrong type, another schema, a wrong owner) is refused as a
-  whole. While it is refused, the Hive origin and root key are unavailable,
-  and under `hive.require` (or any refused carrier) tools refuse.
-- **No probe, no tools.** The `hive.require` gate asks the Hive connector
+  whole. While it is refused, the LeanCTX Cloud server origin and root key are unavailable,
+  and under `cloud.require` (or any refused carrier) tools refuse.
+- **No probe, no tools.** The `cloud.require` gate asks the LeanCTX Cloud connector
   whether the machine is signed in. A build without the connector refuses.
+
+## Unattended enrollment (enrollment token)
+
+The managed configuration carries no secret, so it does not enroll a machine
+by itself. A team admin creates a one-time **enrollment token** on the team's
+Hosts page (`het_` followed by 64 hex digits, shown once) and provisions it
+separately, e.g. through the MDM enrollment carrier that LeanCTX Code reads.
+`lean-ctx cloud connect` then enrolls the machine without the browser
+approval, with one `POST /v1/device/token` whose `device_code` is the token:
+
+```sh
+# from a provisioning script (one line on stdin)
+printf '%s\n' "$TOKEN" | lean-ctx cloud connect --enrollment-token-stdin --label ci-runner-7
+# from a launcher (LeanCTX Code passes it this way)
+LEAN_CTX_CLOUD_ENROLLMENT_TOKEN=het_… lean-ctx cloud connect
+```
+
+- `--enrollment-token-stdin` reads one line from stdin and wins over
+  `LEAN_CTX_CLOUD_ENROLLMENT_TOKEN`; an empty variable counts as unset.
+- The token is never accepted as a command-line value (`--enrollment-token
+  <value>` is refused): other users of the machine could read it in `ps`.
+  It is never logged or echoed, and the variable is removed from the
+  process before connect starts any child (the daemon, the runtime
+  installer).
+- The format is checked before anything is sent. Cloud answers
+  `expired_token` for an unknown, expired, revoked or used-up token; connect
+  then says so and asks for a new token from a team admin.
+- The machine joins the team the token was issued for. `cloud.url` decides
+  the origin as for every connect, and `cloud.org` refuses an enrollment for
+  another org before anything is stored. The enrollment is verified and
+  stored exactly as after a browser approval; sharing for the current
+  project is asked afterwards in a terminal (or answered by `--yes`).
+- An already connected machine stays as it is; the token is not used.
 
 ## Status
 
-`lean-ctx hive status` prints a `Managed:` block (carrier, location, each
+`lean-ctx cloud status` prints a `Managed:` block (carrier, location, each
 member and its value, a refusal reason if any). The cockpit and Local Service
-shape `HiveCliStatusV1` carries it as the additive `managed` field (since 1.7,
+shape `CloudCliStatusV1` carries it as the additive `managed` field (since 1.7,
 omitted when the machine is not managed):
 
 ```json
 "managed": {
   "carrier": "linux_file",
   "location": "/etc/lean-ctx/managed.toml",
-  "members": [{ "member": "hive.org", "value": "org_…" }],
+  "members": [{ "member": "cloud.org", "value": "org_…" }],
   "digest": "<sha256 of the canonical configuration>",
   "error": null
 }
@@ -84,8 +117,8 @@ omitted when the machine is not managed):
 ## Out of scope for v1
 
 - Update enforcement for `updates.*` (ent4-3).
-- Use of `workspace.vaults` and `hive.idp_hint` (ent4-7, ent1-5).
+- Use of `workspace.vaults` and `cloud.idp_hint` (ent4-7, ent1-5).
 - Recording the managed digest in audit receipts (ent3).
-- **Revocation on member removal.** Removing a member from an org in the Hive
-  does not revoke that member's instances today. This is a Hive server change
+- **Revocation on member removal.** Removing a member from an org in the LeanCTX Cloud server
+  does not revoke that member's instances today. This is a LeanCTX Cloud server change
   (ent4-6), not part of the engine contract.

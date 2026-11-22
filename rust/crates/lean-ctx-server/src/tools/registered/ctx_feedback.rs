@@ -115,7 +115,7 @@ impl McpTool for CtxFeedbackTool {
                     note: get_str(args, "note"),
                     ctx_read_last_mode,
                     ctx_read_modes,
-                    timestamp: chrono::Local::now().to_rfc3339(),
+                    timestamp: lean_ctx_time::LocalDateTime::now().to_rfc3339(),
                 };
                 crate::tools::ctx_feedback::record(&ev)
                     .unwrap_or_else(|e| format!("Error recording feedback: {e}"))

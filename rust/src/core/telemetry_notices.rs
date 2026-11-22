@@ -121,7 +121,8 @@ pub(crate) fn remember(notices: Vec<Notice>) {
         return;
     }
     let mut store = load();
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let now =
+        lean_ctx_time::UtcDateTime::now().to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true);
     for notice in notices {
         if !store
             .received
@@ -248,7 +249,9 @@ mod tests {
         let received = load().received;
         assert_eq!(received.len(), 1, "recorded once, kept after showing");
         assert_eq!(received[0].message, "Fix is in 3.11.5");
-        assert!(chrono::DateTime::parse_from_rfc3339(&received[0].received_at).is_ok());
+        assert!(
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&received[0].received_at).is_ok()
+        );
 
         for n in 0..(MAX_RECEIVED + 5) {
             remember(vec![Notice {

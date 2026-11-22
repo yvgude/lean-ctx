@@ -13,7 +13,6 @@ mod configuration;
 pub(crate) mod dashboard_pro;
 mod exchange;
 pub(crate) mod org_policy_verifier;
-pub mod personal_protection;
 pub(crate) mod semantic_coverage;
 pub mod semantic_detectors;
 
@@ -68,7 +67,7 @@ pub use configuration::{DISCLOSURE, inspect_setup};
 mod health;
 mod install;
 mod license;
-// The Hive connector's runtime lease registers the source.
+// The Cloud connector's runtime lease registers the source.
 pub mod lease;
 mod manifest;
 mod rotation;

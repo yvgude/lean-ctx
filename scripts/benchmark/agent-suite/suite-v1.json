@@ -1,0 +1,88 @@
+{
+ "agents": [
+  {"class": "claude", "id": "claude"},
+  {"class": "acp", "id": "codex"}
+ ],
+ "id": "rel12-agent-suite-v1",
+ "regression_limit_pp": 5.0,
+ "schema": "leanctx.agent-suite/v1",
+ "targets": {
+  "compose_first": 70.0,
+  "step_share.acp": 60.0,
+  "step_share.claude": 80.0,
+  "tokens_saved_median": 40.0
+ },
+ "targets_block": false,
+ "tasks": [
+  {
+   "done_when": "The answer names the module that builds session.stats and every counter group it reports (tokens, kept_out, waste).",
+   "id": "lc-session-stats-explain",
+   "kind": "explain",
+   "prompt": "Where is the session.stats document of the Local Read contract assembled, and which counters does it report?",
+   "repo": "lean-ctx"
+  },
+  {
+   "done_when": "The list matches the call sites of the shell output redaction entry point.",
+   "id": "lc-redact-callers",
+   "kind": "locate",
+   "prompt": "List every caller of the shell output redaction entry point and say which of them run before output is written to the tee log.",
+   "repo": "lean-ctx"
+  },
+  {
+   "done_when": "The answer names the proxy modules in request order from accept to upstream forward.",
+   "id": "lc-proxy-request-path",
+   "kind": "explain",
+   "prompt": "Explain the path of one request through the LeanCTX proxy, from accepting the connection to forwarding it upstream, naming each module.",
+   "repo": "lean-ctx"
+  },
+  {
+   "done_when": "The impact list contains the modules that read the hook_mode setting.",
+   "id": "lc-hook-mode-impact",
+   "kind": "impact",
+   "prompt": "Which modules would break if the configuration key hook_mode were renamed? Give the impact list.",
+   "repo": "lean-ctx"
+  },
+  {
+   "done_when": "A new unit test exists, `cargo test` for it passes, and it fails when a kind is removed from the kinds list.",
+   "id": "lc-kinds-routes-test",
+   "kind": "change",
+   "prompt": "Add a unit test that asserts every Local Read kind listed in kinds.rs has a route in routes.rs.",
+   "repo": "lean-ctx"
+  },
+  {
+   "done_when": "The project knowledge holds one new entry summarising the Local Read kinds; the answer cites it.",
+   "id": "lc-local-read-knowledge",
+   "kind": "knowledge",
+   "prompt": "Summarise the kinds the Local Read contract serves today and record the summary as project knowledge for the next agent.",
+   "repo": "lean-ctx"
+  },
+  {
+   "done_when": "The answer names where Hybrid and Replace are chosen and where each agent profile applies the mode.",
+   "id": "app-attach-modes",
+   "kind": "explain",
+   "prompt": "How does the app choose between Hybrid and Replace mode when it attaches LeanCTX, and where is the mode applied per agent profile?",
+   "repo": "leanctl"
+  },
+  {
+   "done_when": "The answer names the rendering function of the session usage card and every session.stats field it reads.",
+   "id": "app-usage-card-fields",
+   "kind": "locate",
+   "prompt": "Find where the session usage card is rendered and list the session.stats fields it reads.",
+   "repo": "leanctl"
+  },
+  {
+   "done_when": "The answer traces Code > Search from the UI handler through the Tauri command to the LeanCTX call.",
+   "id": "app-search-flow",
+   "kind": "explain",
+   "prompt": "Trace Code > Search from the user interface to the LeanCTX call that answers it.",
+   "repo": "leanctl"
+  },
+  {
+   "done_when": "A new unit test exists, passes, and fails when one ACP profile loses its MCP server.",
+   "id": "app-acp-profile-test",
+   "kind": "change",
+   "prompt": "Add a unit test in agents.rs asserting that every ACP agent profile receives the LeanCTX MCP server.",
+   "repo": "leanctl"
+  }
+ ]
+}

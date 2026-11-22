@@ -1,0 +1,10 @@
+{
+  "answer": "deny",
+  "answered_at": 1792800180000,
+  "consent_id": "cns_bcdefgh234567abc",
+  "key_id": "b7bda707a8979c46",
+  "schema": "leanctx.cloud.consent.v1",
+  "signature": "74f36b30bb60d3da22070b12d83d7faaf66b804f9bd3da932eed9bf67af33d1b17544966bbbb8da95afd5d78de82773a5cf965670b0a4203aab6a3d5bb5f5f00",
+  "subject_digest": "453d83bb1900960e3e7b870ac1912faf8f03b95d408b14f0e55972cb5084263e",
+  "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+}

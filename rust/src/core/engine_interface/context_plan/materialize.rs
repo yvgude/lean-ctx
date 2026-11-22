@@ -7,12 +7,12 @@
 
 use std::{fmt::Write as _, path::Path};
 
-use chrono::DateTime;
 use lean_ctx_protocol::{
     EngineContextSourceDescriptorV1, EngineContextSourceMaterializationRequestV1,
     EngineContextSourceMaterializationResponseV1, EngineContextSourcePlanResponseV1,
     MAX_ENGINE_SOURCE_MATERIALIZED_CONTEXT_BYTES, Sha256Digest,
 };
+use lean_ctx_time::OffsetDateTime;
 
 use super::sources;
 
@@ -48,7 +48,8 @@ pub(super) fn materialize_source_plan_with_decision(
         .planning_evaluation_time
         .as_ref()
         .map(|value| {
-            DateTime::parse_from_rfc3339(value.as_str()).map_err(|_| "source_plan_epoch_invalid")
+            OffsetDateTime::parse_from_rfc3339(value.as_str())
+                .map_err(|_| "source_plan_epoch_invalid")
         })
         .transpose()?;
     let handoff = sources::plan_for_materialization(root, source_plan.clone(), evaluation_time)?;

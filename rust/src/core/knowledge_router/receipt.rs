@@ -1,5 +1,5 @@
 use super::{context_bundle::ContextBundle, planner::ContextCandidate};
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use std::collections::BTreeSet;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct KnowledgeReceipt {
@@ -38,7 +38,7 @@ pub fn create_receipt(
         candidates_selected: bundle.candidates.len() as u32,
         sources_used,
         strategy: format!("{:?}", bundle.strategy).to_lowercase(),
-        timestamp: Utc::now().to_rfc3339(),
+        timestamp: UtcDateTime::now().to_rfc3339(),
     }
 }
 #[cfg(test)]

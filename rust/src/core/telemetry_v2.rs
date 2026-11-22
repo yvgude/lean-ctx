@@ -2,7 +2,6 @@
 
 //! Privacy-bounded, versioned telemetry event contract.
 
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -66,7 +65,7 @@ impl TelemetryEnvelopeV2 {
         if self.schema_version != SCHEMA_VERSION {
             return Err(TelemetryValidationError::SchemaVersion);
         }
-        NaiveDate::parse_from_str(&self.timestamp_bucket, "%Y-%m-%d")
+        lean_ctx_time::parse_date(&self.timestamp_bucket, "%Y-%m-%d")
             .map_err(|_| TelemetryValidationError::TimestampBucket)?;
         Uuid::parse_str(&self.installation_id)
             .map_err(|_| TelemetryValidationError::InstallationId)?;
@@ -315,8 +314,8 @@ fn tokens_bounded(values: &[u64]) -> Result<(), TelemetryValidationError> {
 /// A real calendar day written exactly as `YYYY-MM-DD`.
 fn valid_day(value: &str) -> bool {
     value.len() == 10
-        && chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-            .is_ok_and(|date| date.format("%Y-%m-%d").to_string() == value)
+        && lean_ctx_time::parse_date(value, "%Y-%m-%d")
+            .is_ok_and(|date| date.strftime("%Y-%m-%d").to_string() == value)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(v.uncovered, want.2, "{name}");
     }
 
-    // C0 2.2 vectors (hive-v2 vectors/doc_state).
+    // C0 2.2 vectors (cloud-v2 vectors/doc_state).
     #[test]
     fn doc_state_vectors() {
         use DocState::{Fresh, Noted, Stale};

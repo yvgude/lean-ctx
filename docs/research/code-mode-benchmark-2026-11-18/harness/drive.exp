@@ -1,0 +1,57 @@
+#!/usr/bin/expect -f
+# SPDX-License-Identifier: Apache-2.0
+#
+# One benchmark run: start an interactive Claude Code session, type one task
+# prompt, wait for the `ANSWER=` line, then `/exit`.
+# argv: variant(native|code_mode|code_mode_leanctx) session-uuid prompt-file log-file model
+# env:  BENCH_REPO  checkout the session works in (required)
+#       BENCH_DIR   directory holding this script and leanctx-settings.json
+set variant [lindex $argv 0]
+set sid [lindex $argv 1]
+set pfile [lindex $argv 2]
+set lfile [lindex $argv 3]
+set model [lindex $argv 4]
+set fh [open $pfile r]; set prompt [string trim [read $fh]]; close $fh
+set timeout 900
+log_file -noappend $lfile
+cd $env(BENCH_REPO)
+set env(COLUMNS) 160
+set env(LINES) 50
+set env(CLAUDE_CODE_FORCE_SESSION_PERSISTENCE) 1
+# A proxy base URL would change what is measured (and Code Mode refuses one).
+catch {unset env(ANTHROPIC_BASE_URL)}
+set common [list --session-id $sid --model $model --permission-mode bypassPermissions]
+# Isolation: no user settings, plugins or MCP servers; each variant brings only its own hooks.
+set isolate [list --setting-sources project,local --strict-mcp-config --mcp-config {{"mcpServers":{}}}]
+set settings [file join $env(BENCH_DIR) leanctx-settings.json]
+switch $variant {
+  native            { set cmd [concat [list claude] $isolate $common] }
+  code_mode         { set env(CLAUDE_CODE_EXPERIMENTAL_CODE_MODE) 1
+                      set cmd [concat [list claude] $isolate $common] }
+  code_mode_leanctx { set env(CLAUDE_CODE_EXPERIMENTAL_CODE_MODE) 1
+                      set cmd [concat [list claude] $isolate [list --settings $settings] $common] }
+  default           { puts "unknown variant $variant"; exit 2 }
+}
+eval spawn -noecho $cmd
+stty rows 50 columns 160 < $spawn_out(slave,name)
+# First-start dialogs (bypass-permissions notice, folder trust).
+set timeout 25
+expect {
+  -re {Yes,.{0,12}I.{0,12}accept} { sleep 1; send "\033\[B"; sleep 1; send "\r"; exp_continue }
+  -re {trust.{0,12}this.{0,12}folder} { sleep 1; send "\033\[B"; sleep 1; send "\r"; exp_continue }
+  timeout { }
+}
+send -- $prompt
+sleep 1
+send "\r"
+set timeout 900
+expect {
+  -re {ANSWER=[A-Za-z0-9]} { }
+  timeout { puts "\nBENCH_TIMEOUT" }
+  eof { puts "\nBENCH_EOF" }
+}
+# Let the transcript flush before leaving.
+sleep 8
+send "/exit\r"
+set timeout 30
+expect eof

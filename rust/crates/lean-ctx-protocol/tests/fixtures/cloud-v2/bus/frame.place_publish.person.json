@@ -1,0 +1,15 @@
+{
+  "body": {
+    "deadline": 1792803600000,
+    "text": "Can the export wait until the ledger close is done?"
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000002",
+  "presence_signature": "Ne6ZEAgtjyY2-K0geGNagTckI3Fy6AmltkM5o6dxypiqqAcq7o0kU0OhKvI2FRtjkLfDQ4Aznpmw19ZWuQ6HBw",
+  "schema": "leanctx.cloud.bus/v2",
+  "sender": {
+    "kind": "person"
+  },
+  "t": "place.publish",
+  "to": "#acme/payments",
+  "type": "question"
+}

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -143,7 +143,7 @@ impl KnowledgeArchetype {
 pub struct FidelityScore {
     pub structural: f64,
     pub semantic: f64,
-    pub computed_at: DateTime<Utc>,
+    pub computed_at: UtcDateTime,
 }
 
 impl Default for FidelityScore {
@@ -151,7 +151,7 @@ impl Default for FidelityScore {
         Self {
             structural: 0.0,
             semantic: 0.0,
-            computed_at: Utc::now(),
+            computed_at: UtcDateTime::now(),
         }
     }
 }
@@ -240,7 +240,7 @@ pub struct ProjectKnowledge {
     pub facts: Vec<KnowledgeFact>,
     pub patterns: Vec<ProjectPattern>,
     pub history: Vec<ConsolidatedInsight>,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
     #[serde(default)]
     pub judged_pairs: Vec<JudgedPair>,
     /// Ephemeral recall index. It is rebuilt after JSON load and never persisted,
@@ -367,7 +367,7 @@ pub struct JudgedPair {
     pub key_a: String,
     pub key_b: String,
     pub verdict: String,
-    pub judged_at: DateTime<Utc>,
+    pub judged_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -379,16 +379,16 @@ pub struct KnowledgeFact {
     pub value: String,
     pub source_session: String,
     pub confidence: f32,
-    pub created_at: DateTime<Utc>,
-    pub last_confirmed: DateTime<Utc>,
+    pub created_at: UtcDateTime,
+    pub last_confirmed: UtcDateTime,
     #[serde(default)]
     pub retrieval_count: u32,
     #[serde(default)]
-    pub last_retrieved: Option<DateTime<Utc>>,
+    pub last_retrieved: Option<UtcDateTime>,
     #[serde(default)]
-    pub valid_from: Option<DateTime<Utc>>,
+    pub valid_from: Option<UtcDateTime>,
     #[serde(default)]
-    pub valid_until: Option<DateTime<Utc>>,
+    pub valid_until: Option<UtcDateTime>,
     #[serde(default)]
     pub supersedes: Option<String>,
     #[serde(default)]
@@ -398,7 +398,7 @@ pub struct KnowledgeFact {
     #[serde(default)]
     pub feedback_down: u32,
     #[serde(default)]
-    pub last_feedback: Option<DateTime<Utc>>,
+    pub last_feedback: Option<UtcDateTime>,
     #[serde(default)]
     pub privacy: FactPrivacy,
     /// Per-item sensitivity classification (#212). Defaults to `Public`; set at
@@ -434,14 +434,14 @@ pub struct KnowledgeFact {
     /// verified fact can be to verify. Omitted when absent (byte-compatible).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<FactReview>,
-    /// What the Hive capture gate reads (v4 V1): node type, procedure
+    /// What the Cloud capture gate reads (v4 V1): node type, procedure
     /// steps and commands, references, evidence. Every field is omitted
     /// when empty (byte-compatible).
     #[serde(flatten)]
     pub capture: FactCapture,
 }
 
-/// Structured fields of a fact for the Hive capture gate (SPEC-ENGINE
+/// Structured fields of a fact for the Cloud capture gate (SPEC-ENGINE
 /// §3.1.3), written by `ctx_knowledge remember type= steps= commands=
 /// refs= evidence=`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,7 +466,7 @@ pub struct FactCapture {
         rename = "capture_changed_at",
         skip_serializing_if = "Option::is_none"
     )]
-    pub changed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub changed_at: Option<lean_ctx_time::UtcDateTime>,
 }
 
 /// Node types a fact can be captured as.
@@ -547,7 +547,7 @@ pub struct ProcedureCommand {
 pub struct FactReview {
     pub state: FactReviewState,
     pub reason: FactReviewReason,
-    pub since: DateTime<Utc>,
+    pub since: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -597,7 +597,7 @@ impl KnowledgeFact {
         &mut self,
         state: FactReviewState,
         reason: FactReviewReason,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) {
         match &mut self.review {
             Some(review) if review.state == state && review.reason == reason => {}
@@ -662,14 +662,14 @@ pub struct ProjectPattern {
     pub description: String,
     pub examples: Vec<String>,
     pub source_session: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsolidatedInsight {
     pub summary: String,
     pub from_sessions: Vec<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 #[cfg(test)]
@@ -744,8 +744,8 @@ mod archetype_tests {
             value: "v".into(),
             source_session: "sess1".into(),
             confidence: 0.9,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
+            created_at: UtcDateTime::now(),
+            last_confirmed: UtcDateTime::now(),
             retrieval_count: 0,
             last_retrieved: None,
             valid_from: None,

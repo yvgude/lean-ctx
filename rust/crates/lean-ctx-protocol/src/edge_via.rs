@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
-use chrono::DateTime;
+use lean_ctx_time::OffsetDateTime;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{Error as DeError, MapAccess, SeqAccess, Visitor},
@@ -111,9 +111,9 @@ fn validate_content_ttl(
     now: &UtcTimestamp,
     expires_at: &UtcTimestamp,
 ) -> Result<(), ValidationError> {
-    let now = DateTime::parse_from_rfc3339(now.as_str())
+    let now = OffsetDateTime::parse_from_rfc3339(now.as_str())
         .map_err(|_| ValidationError::new("content request time is invalid"))?;
-    let expires_at = DateTime::parse_from_rfc3339(expires_at.as_str())
+    let expires_at = OffsetDateTime::parse_from_rfc3339(expires_at.as_str())
         .map_err(|_| ValidationError::new("content request expiry is invalid"))?;
     let seconds = expires_at.signed_duration_since(now).num_seconds();
     if !(1..=MAX_VIA_CONTENT_REQUEST_TTL_SECONDS as i64).contains(&seconds) {
@@ -125,9 +125,9 @@ fn validate_content_ttl(
 }
 
 fn validate_plan_ttl(now: &UtcTimestamp, expires_at: &UtcTimestamp) -> Result<(), ValidationError> {
-    let now = DateTime::parse_from_rfc3339(now.as_str())
+    let now = OffsetDateTime::parse_from_rfc3339(now.as_str())
         .map_err(|_| ValidationError::new("plan time is invalid"))?;
-    let expires_at = DateTime::parse_from_rfc3339(expires_at.as_str())
+    let expires_at = OffsetDateTime::parse_from_rfc3339(expires_at.as_str())
         .map_err(|_| ValidationError::new("plan expiry is invalid"))?;
     let seconds = expires_at.signed_duration_since(now).num_seconds();
     if !(1..=MAX_VIA_PLAN_TTL_SECONDS as i64).contains(&seconds) {

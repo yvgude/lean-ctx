@@ -224,10 +224,23 @@ struct Stamp {
     /// store is another one.
     store: Option<String>,
     full: bool,
+    /// The bytes the pass left. A reader judges them against ITS ceiling
+    /// ([`leaves_no_room`]): a pass under another (smaller) ceiling proves
+    /// nothing about this one. `None`: a stamp of an older version, which
+    /// proves no store full.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bytes: Option<u64>,
     /// Finished passes in a row that freed nothing while the store was full
     /// (or that failed): an urgent pass backs off by this count.
     #[serde(default)]
     fruitless: u32,
+}
+
+/// `bytes` leave no room for one more lifecycle under `ceiling`: the one
+/// rule a pass decides `full` by and every reader of its stamp applies.
+pub(crate) fn leaves_no_room(bytes: u64, ceiling: Option<u64>) -> bool {
+    ceiling
+        .is_some_and(|ceiling| bytes.saturating_add(super::capacity::LIFECYCLE_RESERVE) > ceiling)
 }
 
 /// A pass that started and was not stamped (yet).
@@ -320,9 +333,36 @@ fn pass_due(dir: &Path, urgent: bool) -> bool {
 }
 
 /// The last pass over this store, which ended within the hour, counted its
-/// files and found the protected evidence alone filling the ceiling.
+/// files and found the protected evidence alone filling the ceiling that
+/// applies in this process ([`super::capacity::ceiling_bytes`]).
 pub fn proven_full(dir: &Path) -> bool {
-    own_stamp(dir).is_some_and(|(stamp, age)| stamp.full && age < MAINTAIN_EVERY)
+    proven_full_under(dir, super::capacity::ceiling_bytes())
+}
+
+/// [`proven_full`] against `ceiling`: the last pass over this store, within
+/// the hour, found it full AND the bytes it left leave no room under
+/// `ceiling`. A full stamp written under a smaller ceiling (another
+/// configuration, an override) is stale for a larger one.
+pub fn proven_full_under(dir: &Path, ceiling: Option<u64>) -> bool {
+    own_stamp(dir).is_some_and(|(stamp, age)| {
+        stamp.full
+            && age < MAINTAIN_EVERY
+            && stamp
+                .bytes
+                .is_some_and(|bytes| leaves_no_room(bytes, ceiling))
+    })
+}
+
+/// The operator's view of a full store (`lean-ctx doctor`): new entries are
+/// refused now — the store as measured leaves no room under
+/// `usage.limit_bytes` AND the last pass proved protected evidence filling
+/// that same ceiling. These are the two conditions the write path refuses
+/// on; a store measured below its ceiling is never reported full.
+pub fn refuses_entries(dir: &Path, usage: &super::capacity::Usage) -> bool {
+    leaves_no_room(
+        usage.bytes.saturating_add(usage.reserved),
+        usage.limit_bytes,
+    ) && proven_full_under(dir, usage.limit_bytes)
 }
 
 /// Background passes are run by long-lived processes only: a hook process
@@ -446,6 +486,7 @@ pub fn maintain_in(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
     let stamp = Stamp {
         store,
         full: result.as_ref().is_ok_and(|done| done.full),
+        bytes: result.as_ref().ok().map(|done| done.bytes),
         fruitless,
     };
     if let Ok(bytes) = serde_json::to_vec(&stamp) {
@@ -871,9 +912,7 @@ fn maintain_locked(
     report.planned = std::mem::take(&mut pending.planned);
 
     report.bytes = total;
-    report.full = policy
-        .ceiling_bytes
-        .is_some_and(|ceiling| total.saturating_add(super::capacity::LIFECYCLE_RESERVE) > ceiling);
+    report.full = leaves_no_room(total, policy.ceiling_bytes);
     Ok(report)
 }
 

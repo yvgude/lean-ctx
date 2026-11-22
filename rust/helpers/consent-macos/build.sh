@@ -17,7 +17,7 @@ umask 077
 version=${1:?version}
 out=${2:?out dir}
 here=$(cd "$(dirname "$0")" && pwd)
-vectors="$here/../../crates/lean-ctx-protocol/tests/fixtures/hive-v2/vectors/consent_subject.vectors.json"
+vectors="$here/../../crates/lean-ctx-protocol/tests/fixtures/cloud-v2/vectors/consent_subject.vectors.json"
 app="$out/LeanCTX Consent.app"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

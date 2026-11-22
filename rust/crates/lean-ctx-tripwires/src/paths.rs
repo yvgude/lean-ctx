@@ -206,7 +206,7 @@ mod tests {
             ".gitlab-ci.yml",
             ".github/workflows/ci.yml",
             "ci/run.sh",
-            "scripts/pounce/hive-gate.sh",
+            "scripts/pounce/cloud-gate.sh",
             "scripts/x/gate-run.sh",
             "rust/tests/w1_pz6_rights.rs",
             ".leanctx/protected-paths.toml",

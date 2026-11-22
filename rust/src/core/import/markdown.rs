@@ -18,8 +18,8 @@
 //! exactly the categories they were rendered from, so export and import
 //! round-trip.
 //!
-//! On a machine connected to Hive, `lean-ctx import docs` queues the facts
-//! it added or changed as import drafts (the Hive connector's knowledge
+//! On a machine connected to Cloud, `lean-ctx import docs` queues the facts
+//! it added or changed as import drafts (the Cloud connector's knowledge
 //! import drafts).
 
 use std::collections::HashSet;

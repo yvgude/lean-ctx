@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{Duration, Utc};
 use ed25519_dalek::SigningKey;
 use lean_ctx::core::a2a::task::*;
 use lean_ctx::core::a2a::task_control::{TaskControlError, get_status};
+use lean_ctx_time::{Duration, UtcDateTime};
 use std::fmt::Write;
 
 #[test]
 fn signed_get_reads_only_the_bound_task_without_mutating_storage() {
     let root = tempfile::tempdir().expect("temporary directory");
     let path = root.path().join("tasks.json");
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     let key = SigningKey::from_bytes(&[7; 32]);
     let mut public_key = String::with_capacity(64);
     for byte in key.verifying_key().to_bytes() {

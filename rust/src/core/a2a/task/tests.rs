@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 #[test]
 fn task_lifecycle_happy_path() {
@@ -116,7 +116,7 @@ fn transition_uses_one_timestamp_and_rejects_clock_rollback_without_mutation() {
     let mut task = Task::new("owner", "receiver", "clock safety");
     task.transition(TaskState::Working, None).unwrap();
     assert_eq!(task.history.last().unwrap().timestamp, task.updated_at);
-    task.updated_at = Utc::now() + chrono::Duration::hours(1);
+    task.updated_at = UtcDateTime::now() + lean_ctx_time::Duration::hours(1);
     let before = serde_json::to_vec(&task).unwrap();
     assert_eq!(
         task.transition(TaskState::Canceled, None).unwrap_err(),
@@ -130,7 +130,7 @@ fn invalid_mutations_cannot_replace_a_readable_store() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("tasks.json");
     let mut future = Task::new("owner", "receiver", "restored from a fast clock");
-    let timestamp = Utc::now() + chrono::Duration::hours(1);
+    let timestamp = UtcDateTime::now() + lean_ctx_time::Duration::hours(1);
     future.created_at = timestamp;
     future.updated_at = timestamp;
     future.history[0].timestamp = timestamp;
@@ -198,7 +198,7 @@ fn restored_store_rejects_duplicate_task_ids() {
     let task = Task::new("sender", "receiver", "bounded task");
     let store = TaskStore {
         tasks: vec![task.clone(), task],
-        updated_at: Some(Utc::now()),
+        updated_at: Some(UtcDateTime::now()),
         idempotency: Vec::new(),
     };
     std::fs::write(&path, serde_json::to_vec(&store).unwrap()).unwrap();
@@ -216,7 +216,7 @@ fn restored_store_rejects_oversized_fields_and_collections() {
     task.from_agent = "x".repeat(MAX_ID_BYTES + 1);
     let store = TaskStore {
         tasks: vec![task],
-        updated_at: Some(Utc::now()),
+        updated_at: Some(UtcDateTime::now()),
         idempotency: Vec::new(),
     };
     std::fs::write(&path, serde_json::to_vec(&store).unwrap()).unwrap();
@@ -226,7 +226,7 @@ fn restored_store_rejects_oversized_fields_and_collections() {
     task.messages = vec![task.messages[0].clone(); MAX_MESSAGES + 1];
     let store = TaskStore {
         tasks: vec![task],
-        updated_at: Some(Utc::now()),
+        updated_at: Some(UtcDateTime::now()),
         idempotency: Vec::new(),
     };
     std::fs::write(&path, serde_json::to_vec(&store).unwrap()).unwrap();
@@ -241,7 +241,7 @@ fn restored_store_rejects_inconsistent_history() {
     task.state = TaskState::Completed;
     let store = TaskStore {
         tasks: vec![task],
-        updated_at: Some(Utc::now()),
+        updated_at: Some(UtcDateTime::now()),
         idempotency: Vec::new(),
     };
     std::fs::write(&path, serde_json::to_vec(&store).unwrap()).unwrap();
@@ -251,10 +251,10 @@ fn restored_store_rejects_inconsistent_history() {
     assert!(error.to_string().contains("does not match history"));
 
     let mut task = Task::new("sender", "receiver", "bounded task");
-    task.messages[0].timestamp = task.created_at - chrono::Duration::seconds(1);
+    task.messages[0].timestamp = task.created_at - lean_ctx_time::Duration::seconds(1);
     let store = TaskStore {
         tasks: vec![task],
-        updated_at: Some(Utc::now()),
+        updated_at: Some(UtcDateTime::now()),
         idempotency: Vec::new(),
     };
     std::fs::write(&path, serde_json::to_vec(&store).unwrap()).unwrap();

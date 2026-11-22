@@ -1,0 +1,479 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Capture step 6 (SPEC-ENGINE §3.1.2): what the gate let through becomes
+//! signed `node.add` events in the place's replica — queued as pending (the
+//! offline queue the sync driver pushes), with the keyed dedupe key, the
+//! encrypted MinHash signature and an `own_sources` row, so a later run
+//! never sends the same claim twice and a purge can find the local text.
+
+use serde_json::json;
+
+use super::refs::Checkout;
+use super::{CapturedFact, dedupe};
+use crate::CloudError;
+use crate::events::build::{self, Place, Signer};
+use crate::events::hlc::{self, Stamp};
+use crate::replica::Replica;
+use lean_ctx::core::knowledge::NodeType;
+
+/// What [`emit`] queued.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Emitted {
+    /// `(event_id, node_id)` of every queued event.
+    pub queued: Vec<(String, String)>,
+    /// Claims the place already holds (exact key in the replica).
+    pub duplicates: usize,
+    /// Claims a purge removed (`purged_content`).
+    pub purged: usize,
+    /// `(event_id, to)` of every `derived_from` edge queued after its claim
+    /// (v5 2.2.2, [`super::derived`]).
+    pub derived: Vec<(String, String)>,
+    /// The clock after the last stamp.
+    pub clock: Stamp,
+}
+
+/// Where captured facts go: the place's replica, its key, the signer, and
+/// the checkout's name in `own_sources` (never shared).
+pub struct Target<'a> {
+    pub replica: &'a Replica,
+    pub place: &'a Place,
+    pub signer: &'a Signer<'a>,
+    pub project_hash: &'a str,
+    /// The Cloud answered C0 2.2: decisions carry their anchors.
+    pub decision_anchors: bool,
+    /// V9: keyed session refs, `None` unless the enrolled Cloud announced
+    /// `session_ref`: no event then carries a session.
+    pub sessions: Option<&'a crate::session_ref::SessionRefs>,
+}
+
+/// Queue a signed `node.add` per captured fact.
+pub fn emit(
+    target: &Target<'_>,
+    checkout: &mut Checkout,
+    facts: &[CapturedFact],
+    clock: Stamp,
+    now_ms: u64,
+) -> Result<Emitted, CloudError> {
+    let Target {
+        replica,
+        place,
+        signer,
+        project_hash,
+        decision_anchors,
+        sessions,
+    } = *target;
+    let mut out = Emitted {
+        clock,
+        ..Emitted::default()
+    };
+    for fact in facts {
+        let c = &fact.candidate;
+        let dk = dedupe::exact_key(&place.pk_id, c.node_type, &c.statement);
+        // A purged statement is never captured again (step 3c).
+        if replica.is_purged(&dk)? {
+            out.purged += 1;
+            continue;
+        }
+        if c.node_type != NodeType::Procedure && replica.dedupe_node(&dk)?.is_some() {
+            out.duplicates += 1;
+            continue;
+        }
+        // A fact names its subject (category, key) by a keyed reference, so
+        // another Instance's value for the same fact is found as a conflict
+        // (#286, [`super::conflicts`]); it takes the last `applies_to` slot.
+        let (applies, anchors) = if c.node_type == NodeType::Fact {
+            let (mut applies, anchors) =
+                build::applies_and_anchors_within(&fact.refs, checkout, build::MAX_APPLIES_TO - 1);
+            applies.push(super::conflicts::subject_ref(
+                &place.pk_id,
+                &fact.category,
+                &fact.key,
+            ));
+            (applies, anchors)
+        } else {
+            build::applies_and_anchors(&fact.refs, checkout)
+        };
+        let body = build::claim_body(c, &applies, anchors, decision_anchors)?;
+        out.clock = hlc::send(out.clock, now_ms);
+        let session = sessions.zip(fact.session.as_deref());
+        let session = session.and_then(|(refs, id)| refs.event_ref(id));
+        let (event, node_id) =
+            build::node_add_in(c, &body, place, out.clock, signer, session.as_deref())?;
+        let event_id = queue(replica, &event, out.clock)?;
+        replica.add_dedupe_key(&dk, &node_id)?;
+        replica.put_signature(&node_id, &dedupe::signature(&place.pk_id, &c.statement))?;
+        replica.put_own_source(
+            &node_id,
+            "fact",
+            &json!({
+                "project_hash": project_hash,
+                "category": fact.category,
+                "key": fact.key,
+                "value_digest": replica.value_digest(&fact.value),
+            }),
+        )?;
+        // Provenance: the edges follow their claim in the same push, only
+        // for nodes the body itself names (`node:<id>`, e.g. in
+        // `applies_to`), the usage reference the server counts (v5 2.6.1).
+        let cited = body.to_string();
+        for to in fact
+            .derived_from
+            .iter()
+            .filter(|to| cited.contains(&format!("node:{to}")))
+        {
+            out.clock = hlc::send(out.clock, now_ms);
+            let edge = build::edge_add_in(
+                "derived_from",
+                &node_id,
+                to,
+                c.evidence.as_str(),
+                place,
+                out.clock,
+                signer,
+                session.as_deref(),
+            )?;
+            out.derived
+                .push((queue(replica, &edge, out.clock)?, to.clone()));
+        }
+        out.queued.push((event_id, node_id));
+    }
+    Ok(out)
+}
+
+/// Queue a built event as pending; its event id.
+fn queue(replica: &Replica, event: &serde_json::Value, clock: Stamp) -> Result<String, CloudError> {
+    let event_id = event["event_id"]
+        .as_str()
+        .ok_or_else(|| CloudError::Local("built event without id".into()))?
+        .to_string();
+    let bytes = serde_json::to_vec(event).map_err(|e| CloudError::Local(e.to_string()))?;
+    replica.add_pending(&event_id, clock.wall_ms, clock.counter, None, &bytes)?;
+    Ok(event_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use ed25519_dalek::SigningKey;
+
+    use super::*;
+    use crate::capture::CaptureCandidate;
+    use lean_ctx::core::knowledge::EvidenceLevel;
+    use lean_ctx::core::sensitivity::SensitivityLevel;
+
+    /// A session id as this engine generates it.
+    const SESSION: &str = "20261116-091500u123456p4242s0";
+
+    #[test]
+    fn captured_facts_queue_once_as_signed_events() {
+        let repo = crate::capture::tests::repo();
+        let data = tempfile::tempdir().unwrap();
+        let (replica, _) = Replica::open(data.path(), "pl_emit", &[3; 32]).unwrap();
+        let key = SigningKey::from_bytes(&[0x49; 32]);
+        let place = Place {
+            kind: "vault".into(),
+            id: "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01".into(),
+            pk_id: [9; 32],
+            causal_base: 0,
+        };
+        let signer = Signer {
+            key: &key,
+            hlc_node: "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b".into(),
+            worker_id: "wkr_vk4oelpv5lzjmev44hun".into(),
+        };
+        let fact = CapturedFact {
+            candidate: CaptureCandidate {
+                node_type: NodeType::Fact,
+                statement: "The relay drops frames when the link is slow.".into(),
+                steps: vec![],
+                commands: vec![],
+                refs: vec![],
+                evidence: EvidenceLevel::Observed,
+                sensitivity: SensitivityLevel::Public,
+            },
+            refs: vec!["file:src/lib.rs".into()],
+            category: "arch".into(),
+            key: "relay".into(),
+            value: "The relay drops frames when the link is slow.".into(),
+            derived_from: vec![],
+            // Learned in a session, but Cloud did not announce `session_ref`.
+            session: Some(SESSION.into()),
+        };
+        let mut checkout = Checkout::new(repo.path());
+        let start = Stamp {
+            wall_ms: 1_792_800_000_000,
+            counter: 0,
+        };
+        let target = Target {
+            replica: &replica,
+            place: &place,
+            signer: &signer,
+            project_hash: "ph",
+            decision_anchors: false,
+            sessions: None,
+        };
+        let first = emit(
+            &target,
+            &mut checkout,
+            std::slice::from_ref(&fact),
+            start,
+            1_792_800_000_000,
+        )
+        .unwrap();
+        assert_eq!(first.queued.len(), 1);
+        assert_eq!(
+            first.clock,
+            Stamp {
+                wall_ms: 1_792_800_000_000,
+                counter: 1
+            }
+        );
+        let pending = replica.pending().unwrap();
+        assert_eq!(pending.len(), 1);
+        let event: serde_json::Value = serde_json::from_slice(&pending[0].1).unwrap();
+        assert!(crate::events::sign::verify(
+            &event,
+            key.verifying_key().as_bytes()
+        ));
+        assert_eq!(event["body"]["anchors"][0]["ref"], "file:src/lib.rs");
+        assert!(
+            event.get("session_ref").is_none(),
+            "a Cloud without the feature hears no session"
+        );
+        // #286: the fact names its subject (category, key), keyed.
+        assert_eq!(
+            event["body"]["applies_to"],
+            serde_json::json!([
+                "file:src/lib.rs",
+                crate::capture::conflicts::subject_ref(&place.pk_id, "arch", "relay")
+            ])
+        );
+        let (kind, source) = replica.own_source(&first.queued[0].1).unwrap().unwrap();
+        assert_eq!(kind, "fact");
+        assert_ne!(
+            source["value_digest"],
+            fact.value.as_str(),
+            "only a keyed digest"
+        );
+
+        // The same claim again: already held, nothing queued.
+        let again = emit(
+            &target,
+            &mut checkout,
+            &[fact],
+            first.clock,
+            1_792_800_000_000,
+        )
+        .unwrap();
+        assert_eq!((again.queued.len(), again.duplicates), (0, 1));
+        assert_eq!(replica.pending().unwrap().len(), 1);
+    }
+
+    /// #286: two values of one fact (two Instances) carry the same subject
+    /// reference, which keeps its slot within the contract's five entries;
+    /// other node types carry none (their bodies have no `applies_to`).
+    #[test]
+    fn every_value_of_a_fact_names_the_same_subject_within_five_references() {
+        let repo = crate::capture::tests::repo();
+        let data = tempfile::tempdir().unwrap();
+        let (replica, _) = Replica::open(data.path(), "pl_subject", &[3; 32]).unwrap();
+        let key = SigningKey::from_bytes(&[0x49; 32]);
+        let place = Place {
+            kind: "vault".into(),
+            id: "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01".into(),
+            pk_id: [9; 32],
+            causal_base: 0,
+        };
+        let signer = Signer {
+            key: &key,
+            hlc_node: "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b".into(),
+            worker_id: "wkr_vk4oelpv5lzjmev44hun".into(),
+        };
+        let urls: Vec<String> = (0..6)
+            .map(|i| format!("https://docs.rs/blake3/{i}"))
+            .collect();
+        let fact = |node_type: NodeType, value: &str| CapturedFact {
+            candidate: CaptureCandidate {
+                node_type,
+                statement: value.into(),
+                steps: vec![],
+                commands: vec![],
+                refs: vec![],
+                evidence: EvidenceLevel::Observed,
+                sensitivity: SensitivityLevel::Public,
+            },
+            refs: urls.clone(),
+            category: "fact".into(),
+            key: "payments-retry".into(),
+            value: value.into(),
+            derived_from: vec![],
+            session: None,
+        };
+        let target = Target {
+            replica: &replica,
+            place: &place,
+            signer: &signer,
+            project_hash: "ph",
+            decision_anchors: false,
+            sessions: None,
+        };
+        let out = emit(
+            &target,
+            &mut Checkout::new(repo.path()),
+            &[
+                fact(NodeType::Fact, "Payments retry three times and then fail."),
+                fact(
+                    NodeType::Fact,
+                    "Payments back off for five minutes before any retry.",
+                ),
+                fact(
+                    NodeType::Gotcha,
+                    "Payments retries are not idempotent today.",
+                ),
+            ],
+            Stamp::default(),
+            1_792_800_000_000,
+        )
+        .unwrap();
+        assert_eq!(out.queued.len(), 3);
+        let bodies: Vec<serde_json::Value> = replica
+            .pending()
+            .unwrap()
+            .iter()
+            .map(|(_, b)| serde_json::from_slice::<serde_json::Value>(b).unwrap()["body"].clone())
+            .collect();
+        let subject = crate::capture::conflicts::subject_ref(&[9; 32], "fact", "payments-retry");
+        for body in &bodies[..2] {
+            let applies = body["applies_to"].as_array().unwrap();
+            assert_eq!(applies.len(), build::MAX_APPLIES_TO, "{body}");
+            assert_eq!(applies.last().unwrap(), subject.as_str());
+        }
+        assert!(bodies[2].get("applies_to").is_none(), "{}", bodies[2]);
+    }
+
+    /// v5 2.2.2, 2.6.1: a claim that names vault nodes is followed by one
+    /// signed `derived_from` edge per node its body cites, in the same push;
+    /// a node the body does not name gets no edge.
+    #[test]
+    fn a_derived_claim_queues_its_provenance_edges_after_the_node() {
+        let repo = crate::capture::tests::repo();
+        let data = tempfile::tempdir().unwrap();
+        let (replica, _) = Replica::open(data.path(), "pl_derive", &[3; 32]).unwrap();
+        let key = SigningKey::from_bytes(&[0x49; 32]);
+        let place = Place {
+            kind: "vault".into(),
+            id: "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01".into(),
+            pk_id: [9; 32],
+            causal_base: 4,
+        };
+        let signer = Signer {
+            key: &key,
+            hlc_node: "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b".into(),
+            worker_id: "wkr_vk4oelpv5lzjmev44hun".into(),
+        };
+        let statement = "The nightly export waits for advisory lock 42 before the ledger close.";
+        let fact = CapturedFact {
+            candidate: CaptureCandidate {
+                node_type: NodeType::Fact,
+                statement: statement.into(),
+                steps: vec![],
+                commands: vec![],
+                refs: vec![],
+                evidence: EvidenceLevel::Stated,
+                sensitivity: SensitivityLevel::Public,
+            },
+            refs: vec![
+                "file:src/lib.rs".into(),
+                "node:n_aaaaaaaaaaaaaaaaaaaaaacaa4".into(),
+            ],
+            category: "arch".into(),
+            key: "export".into(),
+            value: statement.into(),
+            derived_from: vec![
+                "n_aaaaaaaaaaaaaaaaaaaaaacaa4".into(),
+                "n_aaaaaaaaaaaaaaaaaaaaaacab4".into(),
+            ],
+            session: Some(SESSION.into()),
+        };
+        let refs = crate::session_ref::SessionRefs::from_key(
+            crate::receipts::ReceiptKey::from_bytes([5; 32]),
+        );
+        let target = Target {
+            replica: &replica,
+            place: &place,
+            signer: &signer,
+            project_hash: "ph",
+            decision_anchors: false,
+            sessions: Some(&refs),
+        };
+        let out = emit(
+            &target,
+            &mut Checkout::new(repo.path()),
+            &[fact],
+            Stamp::default(),
+            1_792_800_000_000,
+        )
+        .unwrap();
+        assert_eq!(out.queued.len(), 1);
+        let node_id = &out.queued[0].1;
+        assert_eq!(
+            out.derived
+                .iter()
+                .map(|(_, to)| to.as_str())
+                .collect::<Vec<_>>(),
+            ["n_aaaaaaaaaaaaaaaaaaaaaacaa4"],
+            "cab4 is not named in the body"
+        );
+        let pending: Vec<serde_json::Value> = replica
+            .pending()
+            .unwrap()
+            .iter()
+            .map(|(_, b)| serde_json::from_slice(b).unwrap())
+            .collect();
+        let ops: Vec<&str> = pending.iter().map(|e| e["op"].as_str().unwrap()).collect();
+        assert_eq!(ops, ["node.add", "edge.add"]);
+        // V9: the claim and its edges name the session it was learned in,
+        // keyed and inside the signature.
+        let session = refs.event_ref(SESSION).unwrap();
+        for event in &pending {
+            assert_eq!(event["session_ref"], session.as_str(), "{event}");
+            assert!(crate::events::sign::verify(
+                event,
+                key.verifying_key().as_bytes()
+            ));
+            let mut tampered = event.clone();
+            tampered["session_ref"] = "hs_00000000000000000000000000000000".into();
+            assert!(!crate::events::sign::verify(
+                &tampered,
+                key.verifying_key().as_bytes()
+            ));
+            assert!(!event.to_string().contains(SESSION));
+        }
+        // The usage reference the server checks: the claim body names it.
+        assert!(
+            pending[0]["body"]["applies_to"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a == "node:n_aaaaaaaaaaaaaaaaaaaaaacaa4"),
+            "{}",
+            pending[0]["body"]
+        );
+        for (edge, to) in pending[1..].iter().zip(&out.derived) {
+            assert!(crate::events::sign::verify(
+                edge,
+                key.verifying_key().as_bytes()
+            ));
+            assert_eq!(edge["body"]["kind"], "derived_from");
+            assert_eq!(edge["body"]["from"], node_id.as_str());
+            assert_eq!(edge["body"]["to"], to.1.as_str());
+            assert_eq!(edge["provenance_claim"], "own");
+            assert_eq!(edge["capture"]["evidence"], "stated");
+            assert_eq!(edge["causal_base"], 4);
+            assert!(
+                edge["target"]
+                    .as_str()
+                    .is_some_and(|t| t.starts_with("e_") && t.len() == 28),
+                "{edge}"
+            );
+        }
+    }
+}

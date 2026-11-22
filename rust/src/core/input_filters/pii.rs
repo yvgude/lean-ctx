@@ -5,7 +5,7 @@
 //! not flagged. Cards use the Luhn checksum plus layout and issuer checks. The
 //! result is a low false-positive surface suitable for redacting content
 //! before it reaches the model. Country- and industry-specific identifiers
-//! (AHV, IBAN, SSN …) come as Hive filter packs, not from this module.
+//! (AHV, IBAN, SSN …) come as Cloud filter packs, not from this module.
 //!
 //! Privacy: callers receive only `(class, count)` pairs — never the matched
 //! value — so audit logs can record *that* PII was present without leaking it.
@@ -353,7 +353,7 @@ fn luhn_valid(s: &str) -> bool {
 ///
 /// The exclusion is deliberately narrow, because it applies to all content:
 /// exactly 14 contiguous digits that are a REAL calendar date and time
-/// (`chrono` validates days per month and leap years) in the years 1970–2099.
+/// (`jiff` validates days per month and leap years) in the years 1970–2099.
 /// Basis for "no card is lost", as far as the published scheme ranges go
 /// (not machine-checked here): the 14-digit card numbers in use are Diners
 /// Club's (prefixes 300–305, 36, 38–39), i.e. they start with 3; a number
@@ -394,10 +394,8 @@ fn is_compact_timestamp(s: &str) -> bool {
     if s.len() != 14 || !s.bytes().all(|byte| byte.is_ascii_digit()) {
         return false;
     }
-    chrono::NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S").is_ok_and(|stamp| {
-        use chrono::Datelike as _;
-        (1970..=2099).contains(&stamp.year())
-    })
+    lean_ctx_time::parse_civil_datetime(s, "%Y%m%d%H%M%S")
+        .is_ok_and(|stamp| (1970..=2099).contains(&stamp.year()))
 }
 
 #[cfg(test)]

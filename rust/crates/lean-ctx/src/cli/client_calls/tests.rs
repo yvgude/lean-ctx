@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Client Calls v1: what an ACP client (Hive Desktop) builds against, and
+//! Client Calls v1: what an ACP client (Cloud Desktop) builds against, and
 //! the boundaries every call passes.
 
 use serde_json::{Value, json};

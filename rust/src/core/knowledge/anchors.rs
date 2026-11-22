@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Code anchors of knowledge facts (Hive plan v3 J2; C0 1.9 section 3,
+//! Code anchors of knowledge facts (Cloud plan v3 J2; C0 1.9 section 3,
 //! `CodeAnchorV1`).
 //!
 //! An anchor ties a fact to the code it is about: a repo-relative `path`, an
@@ -34,7 +34,7 @@ use unicode_normalization::UnicodeNormalization as _;
 /// The contract's anchor (C0 1.9 `CodeAnchorV1`). The engine's symbol names
 /// are `name`, or `name#n` for the n-th definition of that name in a file,
 /// and slug paths for Markdown sections ([`markdown_sections`]).
-pub use lean_ctx_protocol::hive::anchor::{CodeAnchorV1 as CodeAnchor, MAX_ANCHORS};
+pub use lean_ctx_protocol::cloud::anchor::{CodeAnchorV1 as CodeAnchor, MAX_ANCHORS};
 
 const MAX_LANG_BYTES: usize = 32;
 /// Files above this size are not anchored (or resolved): `missing`.
@@ -65,7 +65,7 @@ impl AnchorState {
 /// [`MAX_ANCHORS`], each valid, sorted by path and symbol with the whole-file
 /// anchor first, no repeats), plus the engine's own: every path in NFC.
 pub fn validate_all(anchors: &[CodeAnchor]) -> Result<(), String> {
-    lean_ctx_protocol::hive::anchor::validate_anchors(anchors).map_err(|e| e.to_string())?;
+    lean_ctx_protocol::cloud::anchor::validate_anchors(anchors).map_err(|e| e.to_string())?;
     anchors
         .iter()
         .try_for_each(|anchor| check_path(&anchor.path))
@@ -95,7 +95,7 @@ fn is_digest(value: &str) -> bool {
 fn check_path(path: &str) -> Result<(), String> {
     let malformed = || Err(format!("anchor path {path:?} is malformed"));
     if path.is_empty()
-        || path.len() > lean_ctx_protocol::hive::anchor::MAX_ANCHOR_PATH_BYTES
+        || path.len() > lean_ctx_protocol::cloud::anchor::MAX_ANCHOR_PATH_BYTES
         || path.starts_with('/')
         || path.starts_with("./")
         || path.ends_with('/')
@@ -138,7 +138,7 @@ pub fn anchor_path(root: &Path, path: &str) -> Option<String> {
 
 /// `sha256:` + hex of the normalised bytes (C0 1.9 section 3: BOM dropped,
 /// CRLF/CR to LF, trailing spaces and tabs removed per line).
-pub use lean_ctx_protocol::hive::anchor::anchor_digest as digest;
+pub use lean_ctx_protocol::cloud::anchor::anchor_digest as digest;
 
 fn extension(path: &str) -> &str {
     Path::new(path)
@@ -369,7 +369,7 @@ fn moved_to(root: &Path, anchor: &CodeAnchor) -> Option<String> {
 /// read and a parse).
 pub const MAX_RESOLVED_PER_PASS: usize = 20_000;
 
-/// Resolves anchors that may come from elsewhere (Hive facts other engines
+/// Resolves anchors that may come from elsewhere (Cloud facts other engines
 /// wrote) without turning the checkout into an oracle: only files the
 /// engine may read for knowledge (source admission), and in a git checkout
 /// only tracked ones, are ever read. Any other path is `Missing` without a
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn file_anchors_reproduce_the_contract_digest_vectors() {
         let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../crates/lean-ctx-protocol/tests/fixtures/hive/anchor_digest.vectors.json"
+            "../../../crates/lean-ctx-protocol/tests/fixtures/cloud/anchor_digest.vectors.json"
         ))
         .unwrap();
         let cases = vectors["cases"].as_array().unwrap();

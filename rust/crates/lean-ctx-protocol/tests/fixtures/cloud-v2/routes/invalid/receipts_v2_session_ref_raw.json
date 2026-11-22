@@ -1,0 +1,15 @@
+{
+  "case": "receipts_v2_session_ref_raw",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/receipts/0/document/invocation/session_ref",
+      "value": "mcp-4242-0001"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a raw local session id instead of its HMAC (V9)"
+}

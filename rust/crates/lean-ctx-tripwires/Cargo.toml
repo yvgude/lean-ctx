@@ -11,7 +11,7 @@ repository = "https://github.com/yvgude/lean-ctx"
 # A pure leaf crate: no I/O, no network, no dependency on the engine. The input
 # is the file pairs of one diff (base..commit) plus the Instance's write counts;
 # the output is a TripwireReportV1 (process-v1 minor 1.1, `p4`). Git reading
-# stays in lean-ctx-hive. `proc-macro2` is syn's own dependency, named here only
+# stays in lean-ctx-cloud. `proc-macro2` is syn's own dependency, named here only
 # to turn on `span-locations` so hits carry line numbers.
 [dependencies]
 proc-macro2 = { version = "1.0", default-features = false, features = ["span-locations"] }

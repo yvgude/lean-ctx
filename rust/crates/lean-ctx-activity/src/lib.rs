@@ -7,10 +7,15 @@
 //! The crate never depends on the engine: the engine's facade
 //! (`core::activity`) supplies the data directory and the secret redaction.
 
+mod client_sessions;
 mod identity;
 mod model;
 mod store;
 
+pub use client_sessions::{
+    CLIENT_SESSIONS_FILE, ClientSession, ClientSessions, EmptyStreak, MIN_SESSION_SECS, Mark,
+    SESSIONS_PER_CLIENT, SetupTarget, Steering, setup_target,
+};
 pub use identity::{
     MAX_SESSION_ID_BYTES, MAX_SESSION_NAME_CHARS, SESSION_ENV, SESSION_HEADER, SESSION_NAME_ENV,
     session_id, session_id_from_env, session_name, session_name_from_env,

@@ -141,7 +141,7 @@ Tageszähler der genutzten LeanCTX-Befehle und Hintergrundfunktionen.
 
 | Feld | Werte | Zweck | Optional |
 |---|---|---|---|
-| `features[].feature` | Code aus der festen Registry in `core/telemetry_features.rs`: `cli.<befehl>` oder `cli.<befehl>.<verb>` (z. B. `cli.pack.export`, `cli.graph.build`), `index.graph`, `index.bm25`, `index.semantic`; je Segment `[a-z][a-z0-9_]{0,23}`, höchstens drei Segmente | welche Funktionen tatsächlich genutzt werden. Befehl und Verb werden nur gezählt, wenn sie wörtlich in der Registry stehen; Argumente, Pfade, Abfragen oder andere Eingaben werden nie Teil eines Codes. Befehle im Hot-Path (Shell-Hooks, `-c`, `read`, `grep`, Statuszeile …) werden nicht gezählt | nein |
+| `features[].feature` | Code aus der festen Registry in `core/telemetry_features.rs`: `cli.<befehl>` oder `cli.<befehl>.<verb>` (z. B. `cli.pack.export`, `cli.graph.build`), `index.graph`, `index.bm25`, `index.semantic`, `app.code.detected`, `app.code_hint.shown`; je Segment `[a-z][a-z0-9_]{0,23}`, höchstens drei Segmente | welche Funktionen tatsächlich genutzt werden. Befehl und Verb werden nur gezählt, wenn sie wörtlich in der Registry stehen; Argumente, Pfade, Abfragen oder andere Eingaben werden nie Teil eines Codes. Befehle im Hot-Path (Shell-Hooks, `-c`, `read`, `grep`, Statuszeile …) werden nicht gezählt | nein |
 | `features[].count` | Nutzungen am Tag (≥ 1) | Nutzung | nein |
 | `features[].failures` | davon fehlgeschlagen (≤ `count`; bei Index-Builds) | Zuverlässigkeit | ja |
 
@@ -158,13 +158,39 @@ dieselben Codes, nur als Tagessummen, ohne Session-Kennung:
 | `mcp.session.recovered` (ab 3.11.5) | Aufrufe schlugen fehl, aber der letzte Aufruf jedes Tools gelang | – |
 | `mcp.session.unresolved` (ab 3.11.5) | der letzte Aufruf mindestens eines Tools schlug fehl | davon mit einem solchen Fehler auf LeanCTX-Seite (`timeout`, `unavailable`, `too_large`, `other`) statt beim Aufrufer |
 | `mcp.session.retry` (ab 3.11.5) | Aufrufe direkt nach einem fehlgeschlagenen Aufruf desselben Tools | davon erneut fehlgeschlagen |
+| `mcp.session.hooked` (ab 3.12.7) | beendet ohne MCP-Tool-Aufruf, aber die Hooks des Hosts (Governor) bearbeiteten in derselben Host-Session Tool-Aufrufe; ersetzt dann `empty` | – |
+| `mcp.session.hook_calls` (ab 3.12.7) | von den Hooks des Hosts in derselben Host-Session bearbeitete Tool-Aufrufe, solange die Session lief; LeanCTX' eigene MCP-Tools (`mcp__lean-ctx__*`) zählen nicht mit | – |
 
-Jede beendete Session erhält genau einen der Ausgänge `empty`, `clean`,
-`recovered`, `unresolved`. Ausgewertet werden nur die prozessinternen Zähler
-aus `core::telemetry`; Argumente, Pfade oder Fehlertexte fliessen nicht ein.
+Jede beendete Session erhält höchstens einen der Ausgänge `empty`, `hooked`,
+`clean`, `recovered`, `unresolved`. Eine Session ohne MCP-Tool-Aufruf, deren
+MCP-Server keine Host-Session-ID kennt (ab 3.12.7), erhält keinen Ausgang:
+ob Hooks die Arbeit taten, ist dann unbekannt, und sie zählt weder als
+`empty` noch als `hooked`. Ausgewertet werden nur die prozessinternen
+Zähler aus `core::telemetry` und ein lokaler Zähler je Host-Session
+(`<data dir>/hook_calls/<Hash der Session-ID>`, nur eine Zahl), den der
+Governor-Hook nur bei eingeschalteter Telemetrie hochzählt (Datei nur für
+den Besitzer lesbar). Das Ende der MCP-Session löscht ihn; bleibt er liegen
+(neue Session-ID nach `/clear` oder `/resume`, Absturz, Hooks ohne
+MCP-Server), entfernt ihn der nächste MCP-Serverstart, sobald er 7 Tage
+unverändert ist. Argumente, Pfade oder Fehlertexte fliessen nicht ein.
+Hosts, die dem MCP-Server keine Session-ID mitgeben (etwa Cursor oder
+VS Code), melden für Sessions ohne MCP-Tool-Aufruf nie `empty` oder
+`hooked`; `mcp.session` ist deshalb grösser als die Summe der Ausgänge.
 Zweck: wie oft Agenten-Sessions mit LeanCTX technisch ohne Fehler durchlaufen
 und ob LeanCTX oder der Aufrufer einen Abbruch verursacht. Ob die
 Programmieraufgabe selbst gelang, lässt sich daraus nicht ableiten.
+
+Der Weg zur Desktop-App LeanCTX Code (ab 3.12.7) zählt ebenfalls über
+Feature-Codes, nur als Tagessummen:
+
+| Code | `count` | `failures` |
+|---|---|---|
+| `app.code.detected` | `lean-ctx doctor`-Läufe, bei denen die Markierungsdatei von LeanCTX Code ([App presence v1](../contracts/app-presence-v1.md)) vorhanden war | – |
+| `app.code_hint.shown` | wie oft der eine Hinweis auf LeanCTX Code nach `lean-ctx doctor` angezeigt wurde (höchstens einmal je Minor-Version, nur im Terminal, abschaltbar mit `LEAN_CTX_NO_APP_HINT`) | – |
+
+Gezählt wird nur, dass die Markierung vorhanden war oder der Hinweis
+erschien; Inhalt der Markierung, Pfade, Links oder Kennungen werden nie
+gesendet. Zweck: wie viele LeanCTX-Installationen den Weg zur App finden.
 
 ### `UsageHistoryMetrics` (Event `usage_history`, ab 3.11.1)
 

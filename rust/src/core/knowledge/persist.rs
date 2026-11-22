@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -225,7 +225,7 @@ impl ProjectKnowledge {
             self.rebuild_index();
         }
 
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
         true
     }
 
@@ -263,7 +263,10 @@ impl ProjectKnowledge {
         let mut scored: Vec<(usize, &KnowledgeFact)> = self
             .facts
             .iter()
-            .filter(|f| f.valid_until.is_none_or(|t| t > chrono::Utc::now()))
+            .filter(|f| {
+                f.valid_until
+                    .is_none_or(|t| t > lean_ctx_time::UtcDateTime::now())
+            })
             .map(|fact| {
                 let haystack = format!(
                     "{} {} {}",
@@ -465,7 +468,7 @@ impl ProjectKnowledge {
         super::journal::append(
             &dir,
             &super::journal::diff(&existing.facts, &self.facts),
-            &Utc::now().to_rfc3339(),
+            &UtcDateTime::now().to_rfc3339(),
         );
         Ok(())
     }
@@ -892,7 +895,7 @@ impl ProjectKnowledge {
                 target.history.truncate(policy.knowledge.max_history);
             }
 
-            target.updated_at = Utc::now();
+            target.updated_at = UtcDateTime::now();
             if super::protection::current(target_root)?.is_some() {
                 return Err("legacy migration withheld by changed project policy".into());
             }
@@ -900,7 +903,7 @@ impl ProjectKnowledge {
 
             let legacy_dir = legacy_path.parent().ok_or("legacy directory unavailable")?;
             if legacy_path.exists() {
-                let ts = Utc::now().format("%Y%m%d-%H%M%S");
+                let ts = UtcDateTime::now().format("%Y%m%d-%H%M%S");
                 let backup = legacy_dir.join(format!("knowledge.legacy-empty-root.{ts}.json"));
                 std::fs::hard_link(&legacy_path, &backup)
                     .map_err(|_| "legacy backup could not be preserved")?;
@@ -922,7 +925,7 @@ mod tests {
     // --- #1802: `auto_capture = false` must hold at the store, not the callers ---
 
     fn machine_fact(category: &str, key: &str) -> KnowledgeFact {
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         KnowledgeFact {
             anchors: Vec::new(),
             review: None,

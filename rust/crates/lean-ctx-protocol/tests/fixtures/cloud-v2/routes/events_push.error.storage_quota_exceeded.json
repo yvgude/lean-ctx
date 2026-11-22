@@ -1,0 +1,13 @@
+{
+  "error": {
+    "code": "storage_quota_exceeded",
+    "limit": 1073741824,
+    "limit_bytes": 1073741824,
+    "message": "This plan's storage quota is used up.",
+    "next_step": "upgrade_team",
+    "plan": "personal",
+    "resource": "storage_bytes",
+    "used": 1073741824,
+    "used_bytes": 1073741824
+  }
+}

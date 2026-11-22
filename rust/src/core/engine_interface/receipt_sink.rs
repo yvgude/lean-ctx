@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Where a persisted Engine receipt is handed on. The Hive connector
+//! Where a persisted Engine receipt is handed on. The Cloud connector
 //! registers a sink that queues the receipt for upload when receipt uploads
 //! are on; without a registration a receipt stays local only.
 
 use std::path::Path;
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Utc};
 use lean_ctx_protocol::{EngineInvocationV1, EngineObservationV1};
+use lean_ctx_time::UtcDateTime;
 
 /// Notes one persisted receipt: `(root, receipt_id, invocation,
 /// observation, now)`. Cheap and silent: it never fails the Engine call.
-pub type ReceiptSink = fn(&Path, &str, &EngineInvocationV1, &EngineObservationV1, DateTime<Utc>);
+pub type ReceiptSink = fn(&Path, &str, &EngineInvocationV1, &EngineObservationV1, UtcDateTime);
 
 static SINK: OnceLock<ReceiptSink> = OnceLock::new();
 
@@ -26,7 +26,7 @@ pub(crate) fn note_receipt(
     receipt_id: &str,
     invocation: &EngineInvocationV1,
     observation: &EngineObservationV1,
-    now: DateTime<Utc>,
+    now: UtcDateTime,
 ) {
     if let Some(sink) = SINK.get() {
         sink(root, receipt_id, invocation, observation, now);

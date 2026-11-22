@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Local project tasks: the Hive task model
-//! ([`TaskV1`](lean_ctx_protocol::hive::tasks::TaskV1), [`TaskState`]) kept
-//! per project on this machine, so tasks work without Hive (owner decision
-//! 2026-11-04: everything a project has works locally in the Instance; Hive
+//! Local project tasks: the Cloud task model
+//! ([`TaskV1`](lean_ctx_protocol::cloud::tasks::TaskV1), [`TaskState`]) kept
+//! per project on this machine, so tasks work without Cloud (owner decision
+//! 2026-11-04: everything a project has works locally in the Instance; Cloud
 //! only adds sharing).
 //!
 //! ```text
@@ -26,12 +26,12 @@
 //! - every transition is recorded with who and when, on the task and in the
 //!   store's journal ([`store`]).
 //!
-//! Text rules (lengths, one-line summaries, evidence kinds) are Hive's: each
-//! write is checked with the matching Hive request type's `validate`.
+//! Text rules (lengths, one-line summaries, evidence kinds) are Cloud's: each
+//! write is checked with the matching Cloud request type's `validate`.
 //!
 //! This crate never posts on the bus or decides whether a project is linked
 //! to a vault: every write returns its [`Change`]s, and the caller announces
-//! them (lean-ctx-hive `tasks::local`).
+//! them (lean-ctx-cloud `tasks::local`).
 
 pub mod board;
 pub mod store;
@@ -42,7 +42,7 @@ mod tests;
 use serde::{Deserialize, Serialize};
 
 use lean_ctx_protocol::UtcTimestamp;
-use lean_ctx_protocol::hive::tasks::{TaskActorKind, TaskActorV1, TaskState};
+use lean_ctx_protocol::cloud::tasks::{TaskActorKind, TaskActorV1, TaskState};
 
 pub use board::{Amendment, Board, LocalTask, Proposal, SharedRef, Submission, Transition};
 pub use store::Store;
@@ -60,7 +60,7 @@ pub const MAX_CLAIM_MINUTES: u32 = 240;
 pub enum Actor {
     /// A bus agent (its id) and how it is shown.
     Agent { id: String, label: Option<String> },
-    /// A person on this machine (Hive Desktop, the CLI).
+    /// A person on this machine (Cloud Desktop, the CLI).
     Person { label: String },
 }
 
@@ -146,7 +146,7 @@ pub enum TaskEvent {
     Stopped,
     /// The submitter amended its result (no state change).
     Amended,
-    /// Brought into a Hive vault (no state change, no bus notice).
+    /// Brought into a Cloud vault (no state change, no bus notice).
     Shared,
     /// Priority and/or labels set (no state change, no bus notice).
     Fields,
@@ -186,7 +186,7 @@ pub struct Change {
     pub worker: Option<String>,
 }
 
-/// Why a write was refused. `reason` codes follow Hive's (`task_claimed`,
+/// Why a write was refused. `reason` codes follow Cloud's (`task_claimed`,
 /// `task_not_open`, `task_closed`, `not_submitted`, `self_verify`, …).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskError {
@@ -220,7 +220,7 @@ impl TaskError {
         }
     }
 
-    /// The Hive-style reason, for state and right refusals.
+    /// The Cloud-style reason, for state and right refusals.
     pub fn reason(&self) -> Option<&'static str> {
         match self {
             Self::InvalidState { reason, .. } | Self::Forbidden { reason, .. } => Some(reason),
@@ -261,10 +261,10 @@ fn describe(reason: &str) -> &'static str {
         "already_shared" => "it was already brought into a vault (already_shared)",
         "too_many_tasks" => "the project holds too many unfinished tasks (too_many_tasks)",
         "not_submitter" => {
-            "only the agent that submitted its result corrects it; a merge record also a person or a Queen session (not_submitter)"
+            "only the agent that submitted its result corrects it; a merge record also a person or a coordinator session (not_submitter)"
         }
         "not_merger" => {
-            "the reviewer never records the merge; the submitter, a person or a Queen session does (not_merger)"
+            "the reviewer never records the merge; the submitter, a person or a coordinator session does (not_merger)"
         }
         "not_amendable" => "it has no submitted or done result to amend (not_amendable)",
         "record_merge_only" => {
@@ -278,8 +278,8 @@ fn describe(reason: &str) -> &'static str {
     }
 }
 
-/// Whole-second UTC, as Hive writes task times.
-pub fn timestamp(at: chrono::DateTime<chrono::Utc>) -> UtcTimestamp {
+/// Whole-second UTC, as Cloud writes task times.
+pub fn timestamp(at: lean_ctx_time::UtcDateTime) -> UtcTimestamp {
     UtcTimestamp::new(at.format("%Y-%m-%dT%H:%M:%SZ").to_string())
         .unwrap_or_else(|_| unreachable_timestamp())
 }

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `ctx_doc`: the project's documentation in its Hive vault (C0 2.2 docs).
+//! `ctx_doc`: the project's documentation in its Cloud vault (C0 2.2 docs).
 //!
 //! Reads come from the local replica, so they work offline and cost no
 //! request. Writes are queued as signed events in the replica and sent in
-//! the background ([`lean_ctx_hive::background`]); a write never waits
-//! for Hive. Links are `/slug#heading` for agents and `hive:<id>` on the
+//! the background ([`lean_ctx_cloud::background`]); a write never waits
+//! for Cloud. Links are `/slug#heading` for agents and `cloud:<id>` on the
 //! wire ([`lean_ctx_doc::links`]).
 
 use lean_ctx_doc::links;
@@ -15,11 +15,11 @@ use lean_ctx_doc::state::DocState;
 use lean_ctx_doc::write;
 use lean_ctx_doc::write::field_set as doc_field_set;
 
+use lean_ctx_cloud::CloudError;
+use lean_ctx_cloud::docs;
+use lean_ctx_cloud::knowledge::screening::Screen;
+use lean_ctx_cloud::local_docs;
 use lean_ctx_doc::local::{self, Author};
-use lean_ctx_hive::HiveError;
-use lean_ctx_hive::docs;
-use lean_ctx_hive::knowledge::screening::Screen;
-use lean_ctx_hive::local_docs;
 
 /// The arguments of one call.
 #[derive(Debug, Default)]
@@ -53,20 +53,20 @@ const LOCAL_ONLY: [&str; 3] = ["history", "move", "delete"];
 
 /// Runs one call for the checkout at `root`.
 pub fn handle(root: &str, args: &Args<'_>) -> String {
-    let earlier = lean_ctx_hive::background::earlier("ctx_doc");
+    let earlier = lean_ctx_cloud::background::earlier("ctx_doc");
     match run(root, args) {
         Ok(out) => earlier.present(out),
         Err(e) => format!("ctx_doc: {e}"),
     }
 }
 
-fn run(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
+fn run(root: &str, args: &Args<'_>) -> Result<String, CloudError> {
     // A link that cannot be read refuses: a linked checkout never writes local.
-    if !local_docs::is_linked(root).map_err(HiveError::Local)? {
+    if !local_docs::is_linked(root).map_err(CloudError::Local)? {
         return run_local(root, args);
     }
     if LOCAL_ONLY.contains(&args.action) || args.rev.is_some() {
-        return Err(HiveError::Config(format!(
+        return Err(CloudError::Config(format!(
             "action={} and rev apply to local docs; this checkout's docs are in its vault",
             args.action
         )));
@@ -76,7 +76,7 @@ fn run(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
             docs::with_vault(root, |v| Ok(read(&docs::space(v.target.replica)?, args)))
         }
         "write" | "edit" | "note" | "confirm" => {
-            docs::require_docs_protocol(&lean_ctx_hive::HiveStore::open()?)?;
+            docs::require_docs_protocol(&lean_ctx_cloud::CloudStore::open()?)?;
             let queued = docs::with_vault(root, |v| {
                 let space = docs::space(v.target.replica)?;
                 let pinned = pins(root, &space, args)?;
@@ -85,7 +85,9 @@ fn run(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
                 if n == 0 {
                     return Ok(format!("{}: nothing changed", v.label));
                 }
-                let now = chrono::Utc::now().timestamp_millis().unsigned_abs();
+                let now = lean_ctx_time::UtcDateTime::now()
+                    .timestamp_millis()
+                    .unsigned_abs();
                 let mut screen = Screen::for_installation();
                 docs::queue_specs(&v.target, specs, &mut screen, now)?;
                 Ok(format!(
@@ -94,24 +96,28 @@ fn run(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
                 ))
             })?;
             let root = root.to_owned();
-            lean_ctx_hive::background::submit_once("ctx_doc", &format!("push:{root}"), move || {
-                Some(match docs::push_queued(&root) {
-                    Ok(line) => line,
-                    Err(e) if e.is_transient() => format!(
-                        "docs: not sent yet ({e}); the next `lean-ctx hive sync` sends them"
-                    ),
-                    Err(e) => format!("docs: push failed ({e})"),
-                })
-            });
+            lean_ctx_cloud::background::submit_once(
+                "ctx_doc",
+                &format!("push:{root}"),
+                move || {
+                    Some(match docs::push_queued(&root) {
+                        Ok(line) => line,
+                        Err(e) if e.is_transient() => format!(
+                            "docs: not sent yet ({e}); the next `lean-ctx cloud sync` sends them"
+                        ),
+                        Err(e) => format!("docs: push failed ({e})"),
+                    })
+                },
+            );
             Ok(queued)
         }
-        _ => Err(HiveError::Config(USAGE.into())),
+        _ => Err(CloudError::Config(USAGE.into())),
     }
 }
 
 /// The docs of a checkout no vault is linked to: the project's local store
 /// on this Instance ([`local_docs`]). A write is one revision, saved at once.
-fn run_local(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
+fn run_local(root: &str, args: &Args<'_>) -> Result<String, CloudError> {
     let store = local_docs::store(root)?;
     match args.action {
         "list" | "show" | "search" | "status" => {
@@ -129,24 +135,24 @@ fn run_local(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
                 ),
             })
         }
-        _ => Err(HiveError::Config(USAGE.into())),
+        _ => Err(CloudError::Config(USAGE.into())),
     }
 }
 
 /// One local write action (`write`, `edit`, `note`, `confirm`, `move`,
 /// `delete`) as one revision of `root`'s local store, planned under its lock.
-pub fn commit_local(root: &str, args: &Args<'_>) -> Result<local::Committed, HiveError> {
+pub fn commit_local(root: &str, args: &Args<'_>) -> Result<local::Committed, CloudError> {
     if !WRITES.contains(&args.action) {
-        return Err(HiveError::Config(USAGE.into()));
+        return Err(CloudError::Config(USAGE.into()));
     }
     if args.rev.is_some() {
-        return Err(HiveError::Config("rev is for reads".into()));
+        return Err(CloudError::Config("rev is for reads".into()));
     }
     let author = args
         .author
         .clone()
         .unwrap_or_else(|| Author::agent("agent"));
-    local_docs::store(root)?.commit::<HiveError>(
+    local_docs::store(root)?.commit::<CloudError>(
         &author,
         &local_docs::now(),
         args.action,
@@ -160,10 +166,10 @@ pub fn commit_local(root: &str, args: &Args<'_>) -> Result<local::Committed, Hiv
 const WRITES: [&str; 6] = ["write", "edit", "note", "confirm", "move", "delete"];
 
 /// The revisions of the local page `slug` (also a moved or deleted one).
-fn history_text(entries: &[local::Entry], slug: Option<&str>) -> Result<String, HiveError> {
-    let slug = slug.ok_or_else(|| HiveError::Config("slug is required".into()))?;
+fn history_text(entries: &[local::Entry], slug: Option<&str>) -> Result<String, CloudError> {
+    let slug = slug.ok_or_else(|| CloudError::Config("slug is required".into()))?;
     let id = local::page_id_of(entries, slug)
-        .ok_or_else(|| HiveError::Config(format!("no page {slug}; try action=list")))?;
+        .ok_or_else(|| CloudError::Config(format!("no page {slug}; try action=list")))?;
     let revs = local::history(entries, &id);
     let mut out = format!("/{slug}: {} revision(s)\n", revs.len());
     for r in revs {
@@ -316,7 +322,7 @@ fn pins(
     root: &str,
     space: &DocSpace,
     args: &Args<'_>,
-) -> Result<Vec<lean_ctx_doc::Anchor>, HiveError> {
+) -> Result<Vec<lean_ctx_doc::Anchor>, CloudError> {
     let wanted: Vec<lean_ctx_doc::Anchor> = match args.action {
         "write" if !args.anchors.is_empty() => Vec::new(),
         "confirm" => match args.slug.and_then(|s| space.page_by_slug(s)) {
@@ -326,7 +332,7 @@ fn pins(
         _ => return Ok(Vec::new()),
     };
     let files = docs::tracked_files(root)
-        .ok_or_else(|| HiveError::Config("anchors need a git checkout".into()))?;
+        .ok_or_else(|| CloudError::Config("anchors need a git checkout".into()))?;
     if args.action == "write" {
         return args
             .anchors
@@ -340,7 +346,7 @@ fn pins(
         .into_iter()
         .map(|mut a| {
             a.digest = docs::digest_now(root, &files, &a).ok_or_else(|| {
-                HiveError::Config(format!(
+                CloudError::Config(format!(
                     "{} is gone: write the page with its new anchors",
                     a.reference()
                 ))
@@ -357,12 +363,14 @@ pub fn plan_write(
     space: &DocSpace,
     args: &Args<'_>,
     pinned: &[lean_ctx_doc::Anchor],
-) -> Result<Vec<write::EventSpec>, HiveError> {
-    let refuse = |m: &str| HiveError::Config(m.to_owned());
+) -> Result<Vec<write::EventSpec>, CloudError> {
+    let refuse = |m: &str| CloudError::Config(m.to_owned());
     let slug = args.slug.ok_or_else(|| refuse("slug is required"))?;
     let id_of = |s: &str| space.by_slug.get(s).cloned();
     let mut new_id = docs::new_id;
-    let verified_at = chrono::Utc::now().timestamp_millis().unsigned_abs();
+    let verified_at = lean_ctx_time::UtcDateTime::now()
+        .timestamp_millis()
+        .unsigned_abs();
     match args.action {
         "move" => {
             let page = space
@@ -496,7 +504,7 @@ fn revise(
     page: &PageView,
     markdown: &str,
     new_id: write::NewId<'_>,
-) -> Result<Vec<write::EventSpec>, HiveError> {
+) -> Result<Vec<write::EventSpec>, CloudError> {
     let (stored, _) = links::to_storage(markdown, |s| space.by_slug.get(s).cloned());
     let now = space.links.get(&page.page.id).cloned().unwrap_or_default();
     Ok(write::revise_page(

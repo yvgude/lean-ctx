@@ -128,12 +128,12 @@ fn run(args: &[String]) -> i32 {
 }
 
 /// A connected machine proposes what the repository import brought to the
-/// project's Hive repo (queued only; `lean-ctx hive sync` or the
+/// project's Cloud repo (queued only; `lean-ctx cloud sync` or the
 /// scheduler sends it). Counts only on stdout.
 fn queue_import_drafts() {
-    use lean_ctx_hive::HiveStore;
-    use lean_ctx_hive::knowledge::{import_draft, screening::Screen};
-    let Ok(store) = HiveStore::open() else {
+    use lean_ctx_cloud::CloudStore;
+    use lean_ctx_cloud::knowledge::{import_draft, screening::Screen};
+    let Ok(store) = CloudStore::open() else {
         return;
     };
     if !matches!(store.instance(), Ok(Some(_))) {
@@ -142,7 +142,7 @@ fn queue_import_drafts() {
     let Ok(project_root) = super::common::require_project_root() else {
         return;
     };
-    let config = lean_ctx::core::config::Config::load().hive.clone();
+    let config = lean_ctx::core::config::Config::load().cloud.clone();
     let mut screen = Screen::for_installation();
     match import_draft::enqueue_import_drafts(
         &store,
@@ -150,14 +150,14 @@ fn queue_import_drafts() {
         Path::new(&project_root),
         "cli-import",
         &mut screen,
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
     ) {
         Ok(ids) if !ids.is_empty() => println!(
-            "Queued {} import draft(s) for Hive review (sent with `lean-ctx hive sync`).",
+            "Queued {} import draft(s) for LeanCTX Cloud review (sent with `lean-ctx cloud sync`).",
             ids.len()
         ),
         Ok(_) => {}
-        Err(error) => eprintln!("Hive: import drafts not queued: {error}"),
+        Err(error) => eprintln!("LeanCTX Cloud: import drafts not queued: {error}"),
     }
 }
 
@@ -204,7 +204,7 @@ fn persist_facts(
     facts: Vec<KnowledgeFact>,
     scope: Option<&import::RepoScope>,
 ) -> Result<usize, String> {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     ProjectKnowledge::mutate_locked(project_root, |knowledge| {
         if let Some(scope) = scope {
             mark_removed_sections(knowledge, &facts, scope, Path::new(project_root), now);
@@ -269,7 +269,7 @@ fn mark_removed_sections(
     found: &[KnowledgeFact],
     scope: &import::RepoScope,
     root: &Path,
-    now: chrono::DateTime<chrono::Utc>,
+    now: lean_ctx_time::UtcDateTime,
 ) {
     use lean_ctx::core::knowledge::{FactReviewReason, FactReviewState};
     let docs = Some(import::ImportSource::Docs.as_str());

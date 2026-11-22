@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::core::a2a::dlq::{DeadLetter, DeadLetterDelivery, DlqScope, MAX_ERROR_BYTES};
@@ -307,7 +307,7 @@ impl RemoteTransport {
                     };
                     return Ok(DeliveryReceipt {
                         envelope_id,
-                        delivered_at: Utc::now(),
+                        delivered_at: UtcDateTime::now(),
                         remote_status,
                         round_trip_ms: elapsed_millis(started_at),
                         unverified_task_response,
@@ -396,7 +396,7 @@ impl RemoteTransport {
                     "relay record is required for peer delivery".into(),
                 )
             })?;
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         record
             .validate_at(
                 now,
@@ -471,7 +471,7 @@ impl RemoteTransport {
                     };
                     return Ok(DeliveryReceipt {
                         envelope_id: delivery_id,
-                        delivered_at: Utc::now(),
+                        delivered_at: UtcDateTime::now(),
                         remote_status,
                         round_trip_ms: elapsed_millis(started_at),
                         unverified_task_response,
@@ -679,7 +679,7 @@ impl RemoteTransport {
                 ));
             }
             let mut envelope = envelope;
-            envelope.sent_at = Utc::now();
+            envelope.sent_at = UtcDateTime::now();
             envelope.signature = None;
             return self.deliver_to(&letter.peer_id, &envelope).await;
         }
@@ -723,7 +723,7 @@ impl RemoteTransport {
                 envelope.sent_at.to_rfc3339(),
             );
         }
-        envelope.sent_at = Utc::now();
+        envelope.sent_at = UtcDateTime::now();
         envelope.signature = None;
         self.deliver(&envelope).await
     }
@@ -732,7 +732,7 @@ impl RemoteTransport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeliveryReceipt {
     pub envelope_id: String,
-    pub delivered_at: DateTime<Utc>,
+    pub delivered_at: UtcDateTime,
     pub remote_status: u16,
     pub round_trip_ms: u64,
     /// Bounded, complete UTF-8 task response. HTTP success is NOT evidence of
@@ -750,7 +750,7 @@ impl DeliveryReceipt {
         &self,
         request: &super::task::TaskControlDescriptorV1,
         policy: &super::task::TaskAuthorityConfigV1,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<super::task::TaskStatusV1, super::task_response::InvalidTaskResponse> {
         use super::task_response::{InvalidTaskResponse, SignedTaskStatusV1};
 
@@ -887,7 +887,7 @@ fn enqueue_permanent_failure_for_peer(
     peer_id: &str,
     endpoint_url: &str,
 ) -> crate::core::ocla::types::OclaResult<()> {
-    let failed_at = Utc::now().to_rfc3339();
+    let failed_at = UtcDateTime::now().to_rfc3339();
     let target_agent = envelope.recipient.as_deref().unwrap_or(endpoint_url);
     let mut error = failure.to_string();
     if error.len() > MAX_ERROR_BYTES {
@@ -1092,7 +1092,7 @@ mod tests {
     fn envelope(payload: &str) -> TransportEnvelopeV1 {
         TransportEnvelopeV1 {
             format_version: 1,
-            sent_at: Utc::now(),
+            sent_at: UtcDateTime::now(),
             sender: AgentIdentityV1 {
                 agent_id: "sender".to_string(),
                 agent_type: "test".to_string(),
@@ -1287,9 +1287,9 @@ mod tests {
                 let Ok(envelope) = serde_json::from_slice::<TransportEnvelopeV1>(&body) else {
                     return StatusCode::BAD_REQUEST;
                 };
-                let age = Utc::now().signed_duration_since(envelope.sent_at);
-                if age > chrono::Duration::seconds(300)
-                    || age < chrono::Duration::seconds(-30)
+                let age = UtcDateTime::now().signed_duration_since(envelope.sent_at);
+                if age > lean_ctx_time::Duration::seconds(300)
+                    || age < lean_ctx_time::Duration::seconds(-30)
                     || !envelope.verify_signature(signing_key.as_bytes())
                 {
                     StatusCode::UNAUTHORIZED
@@ -1311,7 +1311,7 @@ mod tests {
         })
         .unwrap();
         let mut stale = envelope("payload");
-        stale.sent_at = Utc::now() - chrono::Duration::minutes(10);
+        stale.sent_at = UtcDateTime::now() - lean_ctx_time::Duration::minutes(10);
         stale.sign(signing_key.as_bytes()).unwrap();
         let letter = DeadLetter {
             id: "stale-letter".into(),
@@ -1326,8 +1326,8 @@ mod tests {
             target_agent: "recipient".into(),
             error: "previous failure".into(),
             attempts: 1,
-            first_failed_at: Utc::now().to_rfc3339(),
-            last_failed_at: Utc::now().to_rfc3339(),
+            first_failed_at: UtcDateTime::now().to_rfc3339(),
+            last_failed_at: UtcDateTime::now().to_rfc3339(),
         };
 
         assert_eq!(
@@ -1415,7 +1415,7 @@ mod tests {
     fn receipt_round_trips_without_losing_delivery_fields() {
         let receipt = DeliveryReceipt {
             envelope_id: "envelope:abc".to_string(),
-            delivered_at: Utc::now(),
+            delivered_at: UtcDateTime::now(),
             remote_status: 202,
             round_trip_ms: 17,
             unverified_task_response: None,

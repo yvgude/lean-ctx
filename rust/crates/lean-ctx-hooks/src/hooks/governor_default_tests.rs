@@ -116,7 +116,7 @@ fn hosts_with_tool_hooks_have_a_governor() {
     }
 }
 
-/// Owner 2026-11-04: a new Claude Code install gets governor-mcp, so Hive,
+/// Owner 2026-11-04: a new Claude Code install gets governor-mcp, so Cloud,
 /// the agent bus and knowledge work from the first session.
 #[test]
 fn a_new_claude_install_gets_governor_mcp() {

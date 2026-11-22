@@ -4,7 +4,7 @@
 //! stores, and the consolidation reports (#995). Moved down from
 //! `tools::ctx_knowledge`, which re-exports it.
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 
 use crate::core::consolidation_engine::{ConsolidateOptions, ImportCounts, import_session_into};
 use crate::core::context_admission::stores::StoreAdmission;
@@ -163,7 +163,7 @@ fn consolidate_project_knowledge_with_view(
     if opts.incremental
         && let Some(mut s) = session
     {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         // The caller's live session carries its own watermark; a copy saved
         // here would be overwritten by the next save of the live instance.
         // Saved now: shutdown consolidates after the final session save.
@@ -218,7 +218,7 @@ fn run_consolidation_locked(
     opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
     knowledge_admission: &crate::core::knowledge::protection::KnowledgeAdmission,
-    watermark: Option<DateTime<Utc>>,
+    watermark: Option<UtcDateTime>,
 ) -> Result<KnowledgeConsolidationReport, String> {
     knowledge_admission.authorize_gateway()?;
     let mut imported = ImportCounts::default();
@@ -372,8 +372,8 @@ fn dry_run_report(
     })
 }
 
-fn has_new_session_items(session: &SessionState, watermark: Option<DateTime<Utc>>) -> bool {
-    let is_new = |ts: DateTime<Utc>| watermark.is_none_or(|w| ts > w);
+fn has_new_session_items(session: &SessionState, watermark: Option<UtcDateTime>) -> bool {
+    let is_new = |ts: UtcDateTime| watermark.is_none_or(|w| ts > w);
     session.findings.iter().any(|f| is_new(f.timestamp))
         || session.decisions.iter().any(|d| is_new(d.timestamp))
 }

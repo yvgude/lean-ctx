@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integrity and signature messages of a `.ctxpkg` document. Every reader
-//! — this engine, the hosted registry (`ee/services/cloud/src/ctxpkg_integrity.rs`
-//! and the standalone ctxpkg-registry keep byte-identical copies of this file)
+//! — this engine, the standalone ctxpkg-registry (which keeps a byte-identical
+//! copy of this file)
 //! and conformance tools — recomputes the same values from the writer's bytes
 //! instead of trusting what a manifest declares. The conformance vectors under
 //! `rust/tests/fixtures/ctxpkg-conformance/` hold every copy to the same bytes.

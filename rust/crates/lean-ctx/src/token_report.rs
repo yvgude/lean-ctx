@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use lean_ctx::core::knowledge::ProjectKnowledge;
@@ -10,7 +10,7 @@ use lean_ctx::core::session::SessionState;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenReport {
     pub schema_version: u32,
-    pub generated_at: DateTime<Utc>,
+    pub generated_at: UtcDateTime,
     pub version: String,
     pub project_root: String,
     pub data_dir: String,
@@ -28,14 +28,14 @@ pub struct ProjectKnowledgeSummary {
     pub archived_facts: usize,
     pub patterns: usize,
     pub history: usize,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {
     pub id: String,
-    pub started_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub updated_at: UtcDateTime,
     pub tool_calls: u32,
     pub tokens_saved: u64,
     pub tokens_input: u64,
@@ -103,7 +103,7 @@ pub fn run_cli(args: &[String]) -> i32 {
 }
 
 fn build_report(project_root_override: Option<&str>) -> Result<(TokenReport, PathBuf), String> {
-    let generated_at = Utc::now();
+    let generated_at = UtcDateTime::now();
     let version = env!("CARGO_PKG_VERSION").to_string();
 
     let data_dir = lean_ctx::core::data_dir::lean_ctx_data_dir()?;

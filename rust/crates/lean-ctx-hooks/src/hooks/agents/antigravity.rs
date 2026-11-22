@@ -345,7 +345,9 @@ fn register_antigravity_plugin(config_dir: &std::path::Path) {
     if already {
         return;
     }
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let now = lean_ctx_time::UtcDateTime::now()
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
     arr.push(serde_json::json!({
         "name": "lean-ctx",
         "source": "local-install",

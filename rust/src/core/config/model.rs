@@ -46,12 +46,10 @@ pub struct Config {
     /// Privacy-safe default-on telemetry with explicit and environment opt-outs.
     #[serde(default)]
     pub telemetry: TelemetryConfig,
-    /// Legacy `[cloud]` opt-in, migrated on load; never written back.
-    #[serde(default, skip_serializing)]
-    pub cloud: LegacyCloudConfig,
-    /// LeanCTX | Hive connector (`[hive]`).
+    /// LeanCTX | Cloud connector (`[cloud]`; the 3.12 table `[cloud]` is read
+    /// as an alias, `core::config::renamed`).
     #[serde(default)]
-    pub hive: crate::core::config::hive::HiveConfig,
+    pub cloud: crate::core::config::cloud::CloudConfig,
     /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
     #[serde(default)]
     pub cost: CostConfig,

@@ -1,0 +1,1 @@
+Look at this repository. Find the Rust function that decides which blockers make Claude Code refuse Code Mode in plain sessions when Code Mode is switched on for every session (the claude-mod code). Name the file and list the blockers it can report, in short. The last line of your answer must be exactly ANSWER= followed by the file path relative to the repository root.

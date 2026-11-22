@@ -506,8 +506,9 @@ pub(crate) fn write<T>(
     }
 }
 
-/// The store's ceiling in bytes; `None`: no ceiling.
-pub(crate) fn ceiling_bytes() -> Option<u64> {
+/// The store's ceiling in bytes; `None`: no ceiling. The one source the
+/// write path, the maintenance pass and `lean-ctx doctor` judge by.
+pub fn ceiling_bytes() -> Option<u64> {
     limit_bytes()
 }
 

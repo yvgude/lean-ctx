@@ -4,7 +4,6 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use chrono::Utc;
 
 use lean_ctx::core::knowledge::{AdmissionResult, sort_fact_for_output};
 
@@ -426,7 +425,7 @@ pub(crate) fn anchor_remembered(
     }
 }
 
-/// Record the capture fields (Hive capture gate: `type`, `steps`,
+/// Record the capture fields (Cloud capture gate: `type`, `steps`,
 /// `commands`, `refs`, `evidence`) a `remember` named on the fact it stored.
 /// Shapes are checked here; whether the fact may leave is the gate's
 /// decision at capture time.
@@ -443,7 +442,7 @@ pub fn capture_remembered(
     // Stored in the C0 2.0 form (`sym:<path>::<symbol>`).
     let mut refs = Vec::with_capacity(fields.refs.len());
     for raw in &fields.refs {
-        let Some(parsed) = lean_ctx_hive::capture::refs::parse(raw) else {
+        let Some(parsed) = lean_ctx_cloud::capture::refs::parse(raw) else {
             return Err(format!(
                 "{raw}: not a reference (file:<path>[#L<a>-<b>], sym:<path>::<symbol>, test:<path>::<name>, commit:<sha>, node:n_<id>, https://…)"
             ));
@@ -472,7 +471,7 @@ pub fn capture_remembered(
         fields.changed_at = if stored == fields {
             fact.capture.changed_at
         } else {
-            Some(chrono::Utc::now())
+            Some(lean_ctx_time::UtcDateTime::now())
         };
         fact.capture = fields;
         true
@@ -623,19 +622,19 @@ pub(crate) fn handle_recall(
     if as_of.is_some() {
         return Ok(local);
     }
-    // X4 (M1, M5): facts of the project's Hive repo (category
-    // `hive/<ns>/<name>`) the agent asked for and got.
-    let hive_facts = local
+    // X4 (M1, M5): facts of the project's Cloud repo (category
+    // `cloud/<ns>/<name>`) the agent asked for and got.
+    let cloud_facts = local
         .lines()
-        .filter(|line| line.starts_with("  [hive/"))
+        .filter(|line| line.starts_with("  [cloud/"))
         .count();
-    if hive_facts > 0 {
+    if cloud_facts > 0 {
         let started =
             lean_ctx::core::session::caller::with_for_project(project_root, |s| s.started_at);
-        lean_ctx_hive::metrics::hive_use::record_delivery(
+        lean_ctx_cloud::metrics::cloud_use::record_delivery(
             project_root,
             started.map(|at| (session_id, at)),
-            hive_facts,
+            cloud_facts,
             true,
         );
     }
@@ -644,11 +643,11 @@ pub(crate) fn handle_recall(
         Some(section) => format!("{local}\n{section}"),
         None => local,
     };
-    // Hive v4 (§3.5.1): the bound vault's replica, when there is one.
+    // Cloud v4 (§3.5.1): the bound vault's replica, when there is one.
     Ok(
         match category
             .is_none()
-            .then(|| lean_ctx_hive::delivery::for_project(project_root, query.unwrap_or("")))
+            .then(|| lean_ctx_cloud::delivery::for_project(project_root, query.unwrap_or("")))
             .flatten()
         {
             Some(vault) => format!("{local}\n{vault}"),
@@ -855,14 +854,16 @@ fn recall_local(
 /// Parse an `as_of` timestamp: RFC 3339 (`2026-06-01T12:00:00Z`) or a bare
 /// date (`2026-06-01`, interpreted as end-of-day UTC so "as of June 1st"
 /// includes everything recorded during that day).
-pub(crate) fn parse_as_of(raw: &str) -> Result<chrono::DateTime<Utc>, String> {
+pub(crate) fn parse_as_of(raw: &str) -> Result<lean_ctx_time::UtcDateTime, String> {
     let raw = raw.trim();
-    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(raw) {
-        return Ok(t.with_timezone(&Utc));
+    if let Ok(t) = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(raw) {
+        return Ok(t.to_utc());
     }
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
-        let eod = d.and_hms_opt(23, 59, 59).expect("valid time");
-        return Ok(chrono::DateTime::from_naive_utc_and_offset(eod, Utc));
+    if let Some(eod) = lean_ctx_time::parse_date(raw, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| lean_ctx_time::utc_from_civil(d.at(23, 59, 59, 0)))
+    {
+        return Ok(eod);
     }
     Err(format!(
         "Error: invalid as_of '{raw}'. Use RFC 3339 (2026-06-01T12:00:00Z) or YYYY-MM-DD."
@@ -876,7 +877,7 @@ fn recall_as_of(
     knowledge: &ProjectKnowledge,
     category: Option<&str>,
     query: Option<&str>,
-    at: chrono::DateTime<Utc>,
+    at: lean_ctx_time::UtcDateTime,
     policy: &MemoryPolicy,
 ) -> Result<String, String> {
     let limit = policy.knowledge.recall_facts_limit;
@@ -1171,7 +1172,7 @@ mod tests {
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.facts[0].confirmation_count = 3;
 
-        let before_change = Utc::now();
+        let before_change = UtcDateTime::now();
         // Past Windows' ~15.6 ms clock tick, so the change gets a later stamp.
         std::thread::sleep(std::time::Duration::from_millis(50));
         k.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
@@ -1181,7 +1182,7 @@ mod tests {
         assert!(!past.contains("MySQL"), "past view must hide newer: {past}");
         assert!(past.contains("[superseded]"), "marks history: {past}");
 
-        let now = recall_as_of(&k, None, Some("db"), Utc::now(), &policy).unwrap();
+        let now = recall_as_of(&k, None, Some("db"), UtcDateTime::now(), &policy).unwrap();
         assert!(now.contains("MySQL"), "present view: {now}");
         assert!(!now.contains("PostgreSQL"), "present hides old: {now}");
     }
@@ -1195,7 +1196,7 @@ mod tests {
         k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
         k.remember("deploy", "host", "AWS", "s1", 0.8, &policy);
 
-        let out = recall_as_of(&k, Some("deploy"), None, Utc::now(), &policy).unwrap();
+        let out = recall_as_of(&k, Some("deploy"), None, UtcDateTime::now(), &policy).unwrap();
         assert!(out.contains("AWS"));
         assert!(!out.contains("PostgreSQL"));
     }
@@ -1440,8 +1441,8 @@ mod tests {
     }
 
     /// J2: a judged contradiction marks both facts, keeps both current, and
-    /// is lifted from the survivor once one supersedes the other. Hive
-    /// categories (`hive/<ns>/<name>`) contain `/` and are judged too.
+    /// is lifted from the survivor once one supersedes the other. Cloud
+    /// categories (`cloud/<ns>/<name>`) contain `/` and are judged too.
     #[test]
     fn a_judged_contradiction_marks_both_facts_until_one_supersedes() {
         use lean_ctx::core::context_admission::stored::lineage_support::{
@@ -1451,7 +1452,7 @@ mod tests {
         let _data = governed();
         let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let (_directory, root) = project();
-        let category = "hive/acme/billing";
+        let category = "cloud/acme/billing";
         for (key, value) in [
             ("f.retries", "Webhooks retry three times"),
             ("f.no-retry", "Webhooks are never retried by the gateway"),
@@ -1467,7 +1468,7 @@ mod tests {
                     &root,
                     Some(category),
                     Some("f.retries"),
-                    Some("hive/acme/billing/f.no-retry"),
+                    Some("cloud/acme/billing/f.no-retry"),
                     Some(verdict),
                 )
             })

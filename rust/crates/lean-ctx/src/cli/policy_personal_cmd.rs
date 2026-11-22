@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Personal LeanCTX | Hive rule preparation; published safety rules remain ordinary policy data.
+//! Personal rule preparation. Rules compile locally in the engine, free and without an
+//! account or licence; published safety rules remain ordinary policy data.
+use lean_ctx::core::policy::{self, personal_rules};
 #[cfg(windows)]
 use lean_ctx::core::windows_private::{Directory, Privacy};
-use lean_ctx::core::{intelligence_runtime::personal_protection, policy};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 #[cfg(not(windows))]
@@ -13,7 +14,10 @@ const PREFIX: &str = "personal_";
 const ERROR: &str = "personal policy operation refused";
 
 pub(super) fn run(args: &[String]) {
-    match execute(args) {
+    let result = std::env::current_dir()
+        .map_err(|_| ERROR)
+        .and_then(|root| execute(&root, args));
+    match result {
         Ok(value) => println!("{value}"),
         Err(message) => {
             eprintln!("policy personal: {message}");
@@ -22,18 +26,17 @@ pub(super) fn run(args: &[String]) {
     }
 }
 
-fn execute(args: &[String]) -> Result<serde_json::Value, &'static str> {
+fn execute(root: &Path, args: &[String]) -> Result<serde_json::Value, &'static str> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(HELP);
     };
     if matches!(command, "-h" | "--help") {
         return Ok(json!({"usage":HELP}));
     }
-    let root = std::env::current_dir().map_err(|_| ERROR)?;
     #[cfg(windows)]
-    let _root_guard = Directory::open(&root, Privacy::Writable).map_err(|_| ERROR)?;
+    let _root_guard = Directory::open(root, Privacy::Writable).map_err(|_| ERROR)?;
     #[cfg(not(windows))]
-    verify_directory(&root, false)?;
+    verify_directory(root, false)?;
     let directory = root.join(".lean-ctx");
     #[cfg(windows)]
     let _existing_guard = windows_directory(&directory, false)?;
@@ -44,7 +47,7 @@ fn execute(args: &[String]) -> Result<serde_json::Value, &'static str> {
         let current = read_current(&path)?;
         return Ok(
             json!({"schema_version":1,"policy_sha256":current.as_deref().map(digest),
-            "pro_required_for_changes":true,"published_protection_requires_license":false}),
+            "published_protection_requires_license":false}),
         );
     }
     if !matches!(command, "preview" | "apply") || args.len() < 2 {
@@ -68,9 +71,8 @@ fn execute(args: &[String]) -> Result<serde_json::Value, &'static str> {
     let raw = policy::files::read_protected(Path::new(&args[1]), true)
         .map_err(|_| ERROR)?
         .ok_or(ERROR)?;
-    let compiled = personal_protection::compile(&raw).map_err(
-        |_| "LeanCTX | Hive rule preparation unavailable; existing protection is unchanged",
-    )?;
+    let compiled = personal_rules::compile(&raw)
+        .map_err(|_| "invalid personal protection rules; existing protection is unchanged")?;
     if command == "preview" {
         return policy::runtime::with_project_source_view(root.to_str().ok_or(ERROR)?, || {
             let current = read_current(&path)?;
@@ -154,7 +156,7 @@ fn digest(text: &str) -> String {
 
 fn merged(
     current: Option<&str>,
-    compiled: &personal_protection::Compiled,
+    compiled: &personal_rules::Compiled,
 ) -> Result<policy::PolicyPack, &'static str> {
     let mut pack = match current {
         Some(text) => policy::parse(text).map_err(|_| ERROR)?,
@@ -352,4 +354,58 @@ fn publish(path: &Path, bytes: &[u8], new: bool) -> Result<(), &'static str> {
         .and_then(|f| f.sync_all())
         .map_err(|_| ERROR)?;
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    type Outcome = Result<(), Box<dyn std::error::Error>>;
+
+    fn args(items: &[&str]) -> Vec<String> {
+        items.iter().map(|item| (*item).to_string()).collect()
+    }
+
+    /// Personal rules are free: preview, apply and status work locally with no
+    /// licence, account or installed runtime, and nothing reports a paid gate.
+    #[test]
+    fn personal_rules_preview_apply_and_status_work_without_licence() -> Outcome {
+        // The organisation floor is read from the process-wide data directory,
+        // which other tests repoint: read it under the lock its writers take.
+        let _env = lean_ctx::core::data_dir::test_env_lock();
+        let project = tempfile::tempdir()?;
+        let root = project.path();
+        let rules = root.join("rules.json");
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&rules)?;
+        file.write_all(
+            br#"{"schema_version":1,"rules":[
+            {"id":"customer","action":"mask","matcher":{"kind":"field","names":["customer_number"]}},
+            {"id":"restricted","action":"block","matcher":{"kind":"pattern","pattern":"RESTRICTED-[0-9]{6}"}}]}"#,
+        )?;
+        drop(file);
+        let rules = rules.to_str().ok_or("utf-8 path")?;
+
+        let preview = execute(root, &args(&["preview", rules]))?;
+        assert_eq!(preview["rule_count"], 2);
+        assert_eq!(preview["mask_rules"], 1);
+        assert_eq!(preview["block_rules"], 1);
+        assert_eq!(preview["published"], false);
+
+        let applied = execute(root, &args(&["apply", rules]))?;
+        assert_eq!(applied["published"], true);
+        assert_eq!(applied["rule_count"], 2);
+        let policy = fs::read_to_string(root.join(".lean-ctx/policy.toml"))?;
+        assert!(policy.contains("personal_customer"), "{policy}");
+        assert!(policy.contains("personal_restricted"), "{policy}");
+
+        let status = execute(root, &args(&["status"]))?;
+        assert_eq!(status["policy_sha256"], applied["policy_sha256"]);
+        assert!(status.get("pro_required_for_changes").is_none(), "{status}");
+        Ok(())
+    }
 }

@@ -29,6 +29,9 @@ pub struct GovernorConfig {
     /// R4: template collapse of large Bash output (full output archived).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r4: Option<String>,
+    /// R5: a first whole-file Read of a large code file comes as its outline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r5: Option<String>,
     /// Setup mode the user chose per host (`claude = "hybrid"`), written by
     /// `lean-ctx init --agent <host> --mode <mode>`. A pinned host is never
     /// switched to the governor by setup or an update.
@@ -38,16 +41,18 @@ pub struct GovernorConfig {
 
 impl GovernorConfig {
     /// The measured configuration a governor install persists (owner decision
-    /// 2026-11-01): R1.read, R1.bash, R2 and R4 live, R3 in shadow.
-    pub const INSTALL_DEFAULTS: [(&'static str, &'static str); 5] = [
+    /// 2026-11-01): R1.read, R1.bash, R2 and R4 live, R3 in shadow; R5 live
+    /// since the 2026-11-18 owner decision.
+    pub const INSTALL_DEFAULTS: [(&'static str, &'static str); 6] = [
         ("r1_read", "on"),
         ("r1_bash", "on"),
         ("r2", "on"),
         ("r3", "shadow"),
         ("r4", "on"),
+        ("r5", "on"),
     ];
 
-    /// The configured value of `rule` (`r1_read`, `r1_bash`, `r2`, `r3`, `r4`).
+    /// The configured value of `rule` (`r1_read`, `r1_bash`, `r2`, `r3`, `r4`, `r5`).
     #[must_use]
     pub fn get(&self, rule: &str) -> Option<&str> {
         match rule {
@@ -56,6 +61,7 @@ impl GovernorConfig {
             "r2" => self.r2.as_deref(),
             "r3" => self.r3.as_deref(),
             "r4" => self.r4.as_deref(),
+            "r5" => self.r5.as_deref(),
             _ => None,
         }
     }
@@ -67,6 +73,7 @@ impl GovernorConfig {
             "r2" => Some(&mut self.r2),
             "r3" => Some(&mut self.r3),
             "r4" => Some(&mut self.r4),
+            "r5" => Some(&mut self.r5),
             _ => None,
         }
     }
@@ -103,6 +110,7 @@ mod tests {
         assert_eq!(cfg.get("r2"), Some("off"), "user choice kept");
         assert_eq!(cfg.get("r3"), Some("shadow"));
         assert_eq!(cfg.get("r4"), Some("on"));
+        assert_eq!(cfg.get("r5"), Some("on"));
         assert!(!cfg.fill_install_defaults(), "idempotent");
     }
 }

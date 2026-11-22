@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::content::{AddonContent, DocumentBlob, PackageContent};
 use super::manifest::{
@@ -56,7 +56,7 @@ pub fn write_addon_package(
         scope: name
             .starts_with('@')
             .then(|| name.split('/').next().unwrap_or_default().to_string()),
-        created_at: Utc::now(),
+        created_at: UtcDateTime::now(),
         updated_at: None,
         layers: Vec::new(),
         dependencies: Vec::new(),

@@ -61,14 +61,25 @@ fn adaptive_timeout_never_zero_or_sub_second() {
 // 2. bounded_lock: timeout returns None, no panic
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// A short base for the contended tests: `read`/`write` take the same path
+/// with a 10 s base (pinned below), which made each test wait 10–20 s.
+const SHORT_BASE: Duration = Duration::from_millis(300);
+
 #[tokio::test]
 async fn bounded_write_under_contention_returns_none_not_panic() {
+    use lean_ctx_server::server::bounded_lock;
+    // `write` waits the 10 s base, stretched by the I/O health.
+    assert_eq!(
+        bounded_lock::write_timeout(),
+        lean_ctx::core::io_health::adaptive_timeout(Duration::from_secs(10))
+    );
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
     let _hold = lock.write().await;
 
+    let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx_server::server::bounded_lock::write(&lock, "contention_test")
+        move || bounded_lock::write_adaptive(&lock, "contention_test", SHORT_BASE)
     })
     .await
     .unwrap();
@@ -77,24 +88,40 @@ async fn bounded_write_under_contention_returns_none_not_panic() {
         result.is_none(),
         "should return None under contention, not panic"
     );
+    assert!(
+        start.elapsed() >= SHORT_BASE,
+        "gave up before its budget: {:?}",
+        start.elapsed()
+    );
 }
 
 #[tokio::test]
 async fn bounded_read_under_write_contention_returns_none() {
+    use lean_ctx_server::server::bounded_lock;
+    // `read` waits the 10 s base, stretched by the I/O health.
+    assert_eq!(
+        bounded_lock::read_timeout(),
+        lean_ctx::core::io_health::adaptive_timeout(Duration::from_secs(10))
+    );
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
     let _hold = lock.write().await;
 
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx_server::server::bounded_lock::read(&lock, "read_contention_test")
+        move || bounded_lock::read_adaptive(&lock, "read_contention_test", SHORT_BASE)
     })
     .await
     .unwrap();
 
     assert!(result.is_none());
+    let elapsed = start.elapsed();
     assert!(
-        start.elapsed() < Duration::from_secs(25),
+        elapsed >= SHORT_BASE,
+        "gave up before its budget: {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(25),
         "should not hang indefinitely"
     );
 }
@@ -470,13 +497,23 @@ async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
         io_health::record_freeze();
     }
 
+    // `write` waits base 10 s * 2.0 = 20 s here.
+    let budget = lean_ctx_server::server::bounded_lock::write_timeout();
+    assert_eq!(budget, Duration::from_secs(20), "degraded write budget");
+
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
     let _hold = lock.write().await;
 
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx_server::server::bounded_lock::write(&lock, "degraded_test")
+        move || {
+            lean_ctx_server::server::bounded_lock::write_adaptive(
+                &lock,
+                "degraded_test",
+                SHORT_BASE,
+            )
+        }
     })
     .await
     .unwrap();
@@ -484,10 +521,10 @@ async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
     let elapsed = start.elapsed();
 
     assert!(result.is_none(), "should return None under contention");
-    // In degraded mode, base 10s * 2.0 = 20s timeout
+    // In degraded mode the wait is twice the base, as for the 10 s default.
     assert!(
-        elapsed >= Duration::from_secs(10),
-        "degraded timeout should be >= 10s (2x base), got {elapsed:?}"
+        elapsed >= SHORT_BASE * 2,
+        "degraded timeout should be >= 2x base, got {elapsed:?}"
     );
     assert!(
         elapsed < Duration::from_secs(25),

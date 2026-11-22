@@ -27,7 +27,10 @@ thread_local! {
 /// `isolated_data_dir`) can both take it; only the outermost acquisition holds
 /// the underlying mutex, nested ones just bump a per-thread depth. Other
 /// threads still block, so cross-test serialization is unchanged.
+#[track_caller]
 pub fn test_env_lock() -> TestEnvGuard {
+    #[cfg(any(test, feature = "test-support"))]
+    refuse_in_batch();
     let mutex = TEST_ENV_MUTEX.get_or_init(|| std::sync::Mutex::new(()));
     TEST_ENV_DEPTH.with(|depth| {
         if depth.get() == 0 {
@@ -41,6 +44,49 @@ pub fn test_env_lock() -> TestEnvGuard {
     TestEnvGuard {
         _not_send_sync: std::marker::PhantomData,
     }
+}
+
+/// Set by batched test runs (scripts/ci/test_batch.py, P5_TEST_BATCH) to a
+/// file path. A batch runs many tests in one process, so a test that changes
+/// the process environment would change it under every other test running
+/// there. With this variable set, [`test_env_lock`] appends one line
+/// `<thread name>\t<caller file:line>` to that file and panics before anything
+/// is changed; the batch runner then re-runs the test in a process of its own.
+/// libtest names each test's thread after the test, so on a test's own thread
+/// the first field is the test name. On a thread the test spawned it is that
+/// thread's name (or `<unnamed thread>`): no test name is available there, and
+/// the runner re-runs every test of that process instead. The runner re-runs a
+/// recorded test even when it passed, so a caught panic cannot hide a hit.
+#[cfg(any(test, feature = "test-support"))]
+pub const TEST_BATCH_ENV: &str = "LEAN_CTX_TEST_BATCH";
+
+#[cfg(any(test, feature = "test-support"))]
+#[track_caller]
+fn refuse_in_batch() {
+    let Some(log) = std::env::var_os(TEST_BATCH_ENV) else {
+        return;
+    };
+    let test = std::thread::current()
+        .name()
+        .unwrap_or("<unnamed thread>")
+        .to_owned();
+    let caller = std::panic::Location::caller();
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log)
+    {
+        use std::io::Write as _;
+        // One write per line: `writeln!` on a File issues a write per
+        // formatted piece, and tests of the same batch interleave them into
+        // torn lines that name no test (shadow !534, job 60311).
+        let line = format!("{test}\t{}:{}\n", caller.file(), caller.line());
+        let _ = file.write_all(line.as_bytes());
+    }
+    panic!(
+        "{test}: takes test_env_lock, so it needs a process of its own; \
+         the batched run ({TEST_BATCH_ENV}) re-runs it alone"
+    );
 }
 
 /// Whether the current thread holds [`test_env_lock`]. The lock belongs to
@@ -100,4 +146,43 @@ fn assert_lock_held() {
         holds_test_env_lock(),
         "test environment mutation requires the current thread to hold test_env_lock()"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TEST_BATCH_ENV, test_env_lock};
+
+    const NAME: &str = "env_lock::tests::batch_tripwire_records_and_refuses";
+
+    /// Under a batched run the lock records the test and refuses before any
+    /// change. The test runs itself in a child process with the variable set
+    /// (the child takes the lock and must fail), so the parent never mutates
+    /// its own environment.
+    #[test]
+    fn batch_tripwire_records_and_refuses() {
+        if std::env::var_os(TEST_BATCH_ENV).is_some() {
+            let _guard = test_env_lock();
+            unreachable!("test_env_lock returned inside a batched run");
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log = dir.path().join("env-lock.log");
+        let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([NAME, "--exact", "--test-threads=1"])
+            .env(TEST_BATCH_ENV, &log)
+            .output()
+            .expect("run the child test");
+        assert!(!output.status.success(), "the child must fail");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("needs a process of its own"), "{stdout}");
+        let recorded = std::fs::read_to_string(&log).expect("tripwire log");
+        let (thread, caller) = recorded
+            .trim_end()
+            .split_once('\t')
+            .expect("a `<thread>\\t<caller>` line");
+        assert!(
+            thread.ends_with("batch_tripwire_records_and_refuses"),
+            "libtest names the thread after the test: {recorded}"
+        );
+        assert!(caller.contains("env_lock.rs:"), "{recorded}");
+    }
 }

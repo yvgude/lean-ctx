@@ -1,0 +1,5 @@
+{
+  "can_create": true,
+  "match": "none",
+  "schema": "leanctx.cloud.vault-match/v1"
+}

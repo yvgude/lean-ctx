@@ -132,10 +132,10 @@ fn text(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-pub fn instant(timestamp: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(timestamp)
+pub fn instant(timestamp: &str) -> lean_ctx_time::UtcDateTime {
+    lean_ctx_time::OffsetDateTime::parse_from_rfc3339(timestamp)
         .unwrap()
-        .with_timezone(&chrono::Utc)
+        .to_utc()
 }
 
 /// The seven members of a package, around the bundle's real executable and

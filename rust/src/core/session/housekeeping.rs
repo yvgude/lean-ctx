@@ -31,7 +31,9 @@ pub struct HousekeepingReport {
 /// Run the pass at most once per UTC day. `None` when it already ran today or
 /// there is no session store.
 pub fn run_daily() -> Option<HousekeepingReport> {
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let today = lean_ctx_time::UtcDateTime::now()
+        .format("%Y-%m-%d")
+        .to_string();
     let marker = crate::core::paths::state_dir().ok()?.join(DAY_MARKER);
     if std::fs::read_to_string(&marker).is_ok_and(|day| day.trim() == today) {
         return None;

@@ -19,9 +19,35 @@ pub fn apply_utf8_locale(cmd: &mut std::process::Command) {
 /// pointing at e.g. an `exec nu` snippet would otherwise silently replace the
 /// shell. Cleared to empty so the expansion names no file. No-op in effect for
 /// PowerShell/cmd, which ignore both variables.
+///
+/// Variables through which a tool reads options the command line does not
+/// show, some of which run a command (`TAR_OPTIONS`, a ripgrep config file,
+/// vim's `VIMINIT` and startup-file locations),
+/// are removed as well: the shell gate refuses a command that sets them and
+/// judges the options it sees, so an inherited value must not add others.
 pub fn apply_profile_free_env(cmd: &mut std::process::Command) {
     cmd.env("BASH_ENV", "").env("ENV", "");
+    for name in HIDDEN_OPTION_ENV {
+        cmd.env_remove(name);
+    }
 }
+
+/// Environment variables a tool reads options from; see
+/// [`apply_profile_free_env`].
+pub const HIDDEN_OPTION_ENV: &[&str] = &[
+    "TAR_OPTIONS",
+    "RIPGREP_CONFIG_PATH",
+    "VIMINIT",
+    "EXINIT",
+    "GVIMINIT",
+    "VIMRUNTIME",
+    "MYVIMRC",
+    "MYGVIMRC",
+    "NVIM_APPNAME",
+    "VIM",
+    "EMACSLOADPATH",
+    "EMACSDIR",
+];
 
 pub fn decode_output(bytes: &[u8]) -> String {
     match String::from_utf8(bytes.to_vec()) {
@@ -850,6 +876,25 @@ mod platform_tests {
         assert!(
             !stdout.contains("CONTAMINATED"),
             "apply_profile_free_env must neutralize BASH_ENV, got: {stdout}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_free_env_removes_hidden_option_variables() {
+        let mut cmd = std::process::Command::new("/bin/sh");
+        cmd.arg("-c")
+            .arg(
+                "echo \"[${TAR_OPTIONS-unset}] [${RIPGREP_CONFIG_PATH-unset}] [${VIMINIT-unset}]\"",
+            )
+            .env("TAR_OPTIONS", "-v")
+            .env("RIPGREP_CONFIG_PATH", "/tmp/rc")
+            .env("VIMINIT", "set nocp");
+        super::apply_profile_free_env(&mut cmd);
+        let out = cmd.output().expect("run sh");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "[unset] [unset] [unset]"
         );
     }
 }

@@ -10,7 +10,7 @@
 //! role switch, same warn/enforce mode, same policy event — to the native call
 //! before it runs, on the path as written and on its symlink target.
 //!
-//! The same funnel applies the Hive organisation policy (ent2-3):
+//! The same funnel applies the Cloud organisation policy (ent2-3):
 //! `security.readable_roots` and `security.never_send` refuse a target
 //! outside the roots or matching a never-send pattern, and a damaged or
 //! missing-but-required policy refuses every read (fail closed). Neither the
@@ -98,7 +98,7 @@ pub(super) fn refusal(tool_name: &str, tool_args: Option<&Value>) -> Option<Stri
 /// Fields that name a native search's root directory.
 const SCOPE_FIELDS: &[&str] = &["path", "dir_path", "paths"];
 
-/// The Hive I/O rules for a native search over a directory (ent2-3): the
+/// The Cloud I/O rules for a native search over a directory (ent2-3): the
 /// root (the working directory when the call names none) must be readable,
 /// and while the policy sets `never_send` a directory-wide native search is
 /// refused — the host would return matches from those files, which this gate
@@ -120,14 +120,14 @@ fn search_scope_refusal(args: &Value) -> Option<String> {
     if !roots.iter().any(|root| absolute(root).is_dir()) {
         return None;
     }
-    let reason = match lean_ctx::core::io_boundary::hive_io_rules(None) {
+    let reason = match lean_ctx::core::io_boundary::cloud_io_rules(None) {
         Ok(Some(rules)) if rules.has_never_send() => {
-            "the Hive policy sets never_send, and a native search over a directory can return \
+            "the LeanCTX Cloud policy sets never_send, and a native search over a directory can return \
              those files; use ctx_search, which leaves them out"
                 .to_string()
         }
         Ok(_) => return None,
-        Err(e) => format!("{e}; reads stay refused until a valid Hive policy is installed"),
+        Err(e) => format!("{e}; reads stay refused until a valid LeanCTX Cloud policy is installed"),
     };
     Some(format!("lean-ctx refused the native Grep: {reason}."))
 }
@@ -289,28 +289,28 @@ mod tests {
         });
     }
 
-    /// Install a Hive policy floor with these `security` members in the
+    /// Install a Cloud policy floor with these `security` members in the
     /// isolated data directory.
     fn install_floor(security: &Value) {
-        use lean_ctx::core::policy::hive_floor;
-        let dir = hive_floor::floor_dir().expect("data dir");
+        use lean_ctx::core::policy::cloud_floor;
+        let dir = cloud_floor::floor_dir().expect("data dir");
         std::fs::create_dir_all(&dir).expect("floor dir");
         let floor = json!({
-            "schema": hive_floor::FLOOR_SCHEMA, "version": 2,
+            "schema": cloud_floor::FLOOR_SCHEMA, "version": 2,
             "digest": format!("sha256:{}", "a".repeat(64)),
             "not_after": "2099-01-01T00:00:00Z",
             "policy": {"effective": {
-                "schema": "leanctx.hive.policy/v1",
+                "schema": "leanctx.cloud.policy/v1",
                 "security": security, "context": {}, "sharing": {}
             }, "vaults": []}
         });
-        std::fs::write(dir.join(hive_floor::FLOOR_FILE), floor.to_string()).expect("floor");
-        std::fs::write(dir.join(hive_floor::REQUIRED_FILE), r#"{"version":2}"#).expect("required");
+        std::fs::write(dir.join(cloud_floor::FLOOR_FILE), floor.to_string()).expect("floor");
+        std::fs::write(dir.join(cloud_floor::REQUIRED_FILE), r#"{"version":2}"#).expect("required");
     }
 
     #[cfg(unix)]
     #[test]
-    fn hive_readable_roots_and_never_send_refuse_native_reads() {
+    fn cloud_readable_roots_and_never_send_refuse_native_reads() {
         as_coder(|| {
             install_floor(&json!({
                 "readable_roots": ["{project}"],
@@ -336,18 +336,18 @@ mod tests {
     }
 
     #[test]
-    fn a_damaged_hive_policy_refuses_native_reads() {
+    fn a_damaged_cloud_policy_refuses_native_reads() {
         as_coder(|| {
             install_floor(&json!({}));
-            let dir = lean_ctx::core::policy::hive_floor::floor_dir().expect("data dir");
+            let dir = lean_ctx::core::policy::cloud_floor::floor_dir().expect("data dir");
             std::fs::write(
-                dir.join(lean_ctx::core::policy::hive_floor::FLOOR_FILE),
+                dir.join(lean_ctx::core::policy::cloud_floor::FLOOR_FILE),
                 "{",
             )
             .expect("damage");
             let args = json!({ "file_path": "/p/src/main.rs" });
             let msg = refusal("Read", Some(&args)).expect("fail closed");
-            assert!(msg.contains("Hive policy"), "{msg}");
+            assert!(msg.contains("LeanCTX Cloud policy"), "{msg}");
         });
     }
 }

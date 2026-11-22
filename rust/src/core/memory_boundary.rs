@@ -214,7 +214,7 @@ mod tests {
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
 
         let event = CrossProjectAuditEvent {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             event_type: CrossProjectEventType::Search,
             source_project_hash: "src_hash".into(),
             target_project_hash: "tgt_hash".into(),

@@ -82,7 +82,7 @@ lean-ctx onboard
 `~/.lean-ctx/` created. Rules/skills are **not** injected unless you previously
 opted in (see §2, step 4).
 
-**Why it exists:** the full `setup` wizard is 12 steps; most users want "just
+**Why it exists:** the full `setup` wizard is 14 steps; most users want "just
 connect it." `onboard` is that path — time-to-value in seconds.
 
 ---
@@ -114,7 +114,7 @@ The choice is persisted to `config.toml` (`[setup] auto_inject_rules`,
 `auto_inject_skills`) so it's never asked again. This is the "non-invasive by
 default" behavior: lean-ctx will not touch your rules files unless you say so.
 
-### The 12 steps (`run_setup`)
+### The 14 steps (`run_setup`)
 
 | Step | Name | What it does | Files touched |
 |------|------|--------------|---------------|
@@ -123,13 +123,15 @@ default" behavior: lean-ctx will not touch your rules files unless you say so.
 | 3 | AI Tool Detection | Detects installed editors, writes each one's MCP config | per-editor MCP JSON/TOML/YAML |
 | 4 | Agent Rules | Injects `lean-ctx` rules **only if opted in** (preserves your content) | `*/rules/lean-ctx.*`, `AGENTS.md` blocks |
 | 5 | API Proxy (optional) | Asks y/N; if yes, installs proxy autostart + env vars | LaunchAgent/systemd, RC env exports |
-| 6 | Skill Files | Installs `SKILL.md` **only if opted in** | `*/skills/lean-ctx/` |
-| 7 | Environment Check | Ensures data dir, migrates split dirs, runs compact doctor | `~/.lean-ctx/` |
-| 8 | Help Improve | Asks y/N for anonymous stats sharing | `config.toml [cloud]` |
-| 9 | Auto-Updates | Asks y/N; installs the 6-hourly update scheduler | LaunchAgent/systemd |
-| 10 | Tool Profile | Choose minimal/standard/power MCP tool set | `config.toml [tools]` |
-| 11 | Advanced Tuning (optional) | Compression level + tool-result archive | `config.toml` |
-| 12 | Code Intelligence | Builds the property graph in the background (if in a project) | `~/.lean-ctx/` graph caches |
+| 6 | IDE Config Access (optional) | Asks y/N whether tools may read the supported editors' config dirs outside the project jail | `config.toml` `allow_ide_config_dirs` |
+| 7 | Skill Files | Installs `SKILL.md` **only if opted in** | `*/skills/lean-ctx/` |
+| 8 | Environment Check | Ensures data dir, migrates split dirs, runs compact doctor | `~/.lean-ctx/` |
+| 9 | Help Improve | No question: pseudonymous telemetry stays on by default; prints how to turn it off | `config.toml [telemetry]` |
+| 10 | Auto-Updates | Asks y/N; installs the 6-hourly update scheduler | LaunchAgent/systemd |
+| 11 | Tool Profile | Choose minimal/standard/power MCP tool set | `config.toml [tools]` |
+| 12 | Advanced Tuning (optional) | Compression level + tool-result archive | `config.toml` |
+| 13 | Code Intelligence | Builds the property graph in the background (if in a project) | `~/.lean-ctx/` graph caches |
+| 14 | Intelligence Runtime (optional) | Asks whether to configure the optional local intelligence runtime; skipped without an interactive terminal | `config.toml` |
 
 It ends with an auto-approve transparency banner, a `✓ Setup complete!` summary,
 and **Next steps** (reload shell, restart IDE, verify with `lean-ctx gain`).
@@ -291,13 +293,13 @@ because MCP-only agents receive guidance via MCP instructions — see the
 
 | Artifact | Path (example) | Written by |
 |----------|----------------|------------|
-| Data dir | `~/.lean-ctx/` | setup step 7 |
+| Data dir | `~/.lean-ctx/` | setup step 8 |
 | Shell hook | `~/.zshenv` / `~/.bashenv` + RC files | setup step 1 |
 | MCP config | `~/.cursor/mcp.json`, `~/.claude.json`, … | setup step 3 |
 | Agent rules (opt-in) | `~/.cursor/rules/lean-ctx.mdc`, `AGENTS.md` blocks | setup step 4 |
-| Skill files (opt-in) | `~/.claude/skills/lean-ctx/`, … | setup step 6 |
+| Skill files (opt-in) | `~/.claude/skills/lean-ctx/`, … | setup step 7 |
 | Proxy env (opt-in) | RC exports + LaunchAgent/systemd | setup step 5 |
-| Update scheduler (opt-in) | LaunchAgent/systemd | setup step 9 |
+| Update scheduler (opt-in) | LaunchAgent/systemd | setup step 10 |
 
 Every modification of an existing file goes through `config_io::write_atomic`,
 which writes a `.lean-ctx.bak` backup first. Rules injection only ever rewrites
@@ -367,6 +369,6 @@ shipped are marked ✓.
   `~/.local/share/lean-ctx`).
 - ✓ "Premium Features" step renamed to "Advanced Tuning (optional)".
 - ✓ Skill-skip message no longer points to the wrong flag.
-- ◯ Open: the interactive wizard is still 12 steps — consider collapsing
+- ◯ Open: the interactive wizard is still 14 steps — consider collapsing
   optional opt-ins (proxy, telemetry, auto-update) behind a single
   "Configure advanced options? [y/N]" gate so the common path is ~4 prompts.

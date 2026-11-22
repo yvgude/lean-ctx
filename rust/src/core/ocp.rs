@@ -110,7 +110,7 @@ mod tests {
     fn governance_events_export_with_snake_case_tags() {
         let event = LeanCtxEvent {
             id: 1,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             kind: EventKind::PolicyViolation {
                 role: "reviewer".into(),
                 tool: "ctx_shell".into(),
@@ -125,7 +125,7 @@ mod tests {
     fn non_governance_events_are_not_exported() {
         let event = LeanCtxEvent {
             id: 2,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             kind: EventKind::CacheHit {
                 path: "src/lib.rs".into(),
                 saved_tokens: 10,

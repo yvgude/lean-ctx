@@ -3,7 +3,7 @@
 //! concern. Submodules are re-exported flat; `run_integrations` stays the
 //! only entry point.
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde::Serialize;
 
 use super::{
@@ -69,7 +69,7 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
 
     let report = IntegrationCheckReport {
         schema_version: 1,
-        created_at: Utc::now().to_rfc3339(),
+        created_at: UtcDateTime::now().to_rfc3339(),
         binary: binary.clone(),
         integrations,
         ok,

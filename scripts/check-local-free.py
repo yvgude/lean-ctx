@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Local-free invariant v2: plan, licence and entitlement checks live only in core/hive.
+"""Local-free invariant v2: plan, licence and entitlement checks live only in core/cloud.
 
     python3 scripts/check-local-free.py            # check, exit 1 on a violation
     python3 scripts/check-local-free.py --json     # machine-readable report
@@ -10,7 +10,7 @@ Every tracked ``*.rs`` file of the Engine (``rust/src``) and of the crates split
 out of it (``SCAN_ROOTS``) is scanned for gating symbols
 (entitlements, plan or licence checks, the billing capability CLI) in its code;
 comments and doc comments are not code and are skipped. A hit is allowed only
-under ``rust/crates/lean-ctx-hive/src/`` or in a file listed in
+under ``rust/crates/lean-ctx-cloud/src/`` or in a file listed in
 ``product/local-free-allowlist.toml`` with an owner (strand B or C) and a reason.
 A listed file that no longer has a hit, or is no longer tracked, is a stale entry
 and fails too, so the allowlist only shrinks. Contract:
@@ -36,9 +36,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SCAN_ROOTS = (
     "rust/src",
     "rust/crates/lean-ctx",
+    "rust/crates/lean-ctx-apps",
     "rust/crates/lean-ctx-compress",
     "rust/crates/lean-ctx-fs",
-    "rust/crates/lean-ctx-hive",
+    "rust/crates/lean-ctx-time",
+    "rust/crates/lean-ctx-cloud",
     "rust/crates/lean-ctx-patterns",
     "rust/crates/lean-ctx-hooks",
     "rust/crates/lean-ctx-proxy",
@@ -47,7 +49,7 @@ SCAN_ROOTS = (
     "rust/crates/lean-ctx-syntax",
     "rust/crates/lean-ctx-workgraph",
 )
-HIVE_ROOT = "rust/crates/lean-ctx-hive/src/"
+CLOUD_ROOT = "rust/crates/lean-ctx-cloud/src/"
 ALLOWLIST = "product/local-free-allowlist.toml"
 OWNERS = ("B", "C")
 # Test-only files carry fixtures of the gate, not the gate itself.
@@ -155,8 +157,8 @@ def load_allowlist(root: Path, errors: list) -> dict:
             errors.append(f"{ALLOWLIST}: {name} needs owner {' or '.join(OWNERS)}")
         if not str(entry.get("reason", "")).strip():
             errors.append(f"{ALLOWLIST}: {name} needs a reason")
-        if name.startswith(HIVE_ROOT):
-            errors.append(f"{ALLOWLIST}: {name} is under {HIVE_ROOT}, which needs no entry")
+        if name.startswith(CLOUD_ROOT):
+            errors.append(f"{ALLOWLIST}: {name} is under {CLOUD_ROOT}, which needs no entry")
         entries[name] = entry
     return entries
 
@@ -166,13 +168,13 @@ def verify(root: Path) -> dict:
     found = hits(root)
     allowed = load_allowlist(root, errors)
     for name, symbols in found.items():
-        if not name.startswith(HIVE_ROOT) and name not in allowed:
-            errors.append(f"{name}: gating symbol(s) {', '.join(symbols)} outside {HIVE_ROOT} "
-                          f"(move the check into core/hive or list the file in {ALLOWLIST})")
+        if not name.startswith(CLOUD_ROOT) and name not in allowed:
+            errors.append(f"{name}: gating symbol(s) {', '.join(symbols)} outside {CLOUD_ROOT} "
+                          f"(move the check into core/cloud or list the file in {ALLOWLIST})")
     for name in sorted(set(allowed) - set(found)):
         errors.append(f"{ALLOWLIST}: {name} has no gating symbol any more (or is gone); remove the entry")
     return {"schema": "leanctx.local-free-check/v1", "passed": not errors, "errors": errors,
-            "hits": found, "allowlisted": len(allowed), "hive_root": HIVE_ROOT}
+            "hits": found, "allowlisted": len(allowed), "cloud_root": CLOUD_ROOT}
 
 
 def main() -> int:
@@ -191,7 +193,7 @@ def main() -> int:
         print(f"local-free: {error}", file=sys.stderr)
     if result["passed"] and not (args.json or args.list):
         print(f"local-free: PASS ({len(result['hits'])} files with gating symbols; "
-              f"{result['allowlisted']} allowlisted, rest under {HIVE_ROOT})")
+              f"{result['allowlisted']} allowlisted, rest under {CLOUD_ROOT})")
     return 0 if result["passed"] else 1
 
 

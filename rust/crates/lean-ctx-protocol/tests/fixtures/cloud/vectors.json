@@ -1,0 +1,39 @@
+{
+  "canonical_json": {
+    "input": {
+      "a": null,
+      "b": [
+        1,
+        {
+          "c": true,
+          "d": "ü\n"
+        }
+      ]
+    },
+    "output": "{\"a\":null,\"b\":[1,{\"c\":true,\"d\":\"ü\\n\"}]}"
+  },
+  "keys": {
+    "instance_ed25519_pub": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+    "instance_seed_hex": "4949494949494949494949494949494949494949494949494949494949494949",
+    "org_salt_hex": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "policy_signer_seed_hex": "4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f",
+    "root_ed25519_pub": "IBLLkMpg6OXY2vZuInLSIz4EhtVX6MZhQe2JIBd9frc=",
+    "root_seed_hex": "5252525252525252525252525252525252525252525252525252525252525252",
+    "signing_ed25519_pub": "+AzM3OSuHAeuIIoq35mjEK5CB+Awb6AjYRCwaCe7uNA=",
+    "signing_kid": "cloud-2026-10",
+    "signing_seed_hex": "5353535353535353535353535353535353535353535353535353535353535353"
+  },
+  "note": "Test-only keys; never valid outside fixtures and the fake Cloud service.",
+  "receipt_digest": "sha256:89462ab11ab3c497313280a8e3a2f9e9b798611b4eb402bdf845caf251e52cbd",
+  "repo_identity": {
+    "identity_digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+    "repo_identity": "git:github.com/acme/payments",
+    "stable_identity": "ff1d854832776e57e94d62775690bb7c657da75d6f90b11ac91e69fa5ae24240"
+  },
+  "token_assertion": {
+    "iat": 1792497600,
+    "input": "leanctx.cloud.token.v1\ninst_01jb8z3k4m5n6p7q8r9s0t1v2w\n1792497600\nn-3q9X2kLp7Vb0ZsW1",
+    "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "nonce": "n-3q9X2kLp7Vb0ZsW1"
+  }
+}

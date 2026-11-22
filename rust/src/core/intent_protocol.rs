@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
@@ -84,7 +84,7 @@ pub struct IntentRecord {
     pub evidence_keys: Vec<String>,
     #[serde(default)]
     pub occurrences: u32,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 impl IntentRecord {
@@ -124,7 +124,7 @@ pub fn infer_from_tool_call(
                 confidence: 0.9,
                 evidence_keys: evidence_keys_for(tool, action),
                 occurrences: 1,
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
             })
         }
         "ctx_knowledge" => {
@@ -149,7 +149,7 @@ pub fn infer_from_tool_call(
                         confidence: 0.9,
                         evidence_keys: evidence_keys_for(tool, Some(a)),
                         occurrences: 1,
-                        timestamp: Utc::now(),
+                        timestamp: UtcDateTime::now(),
                     })
                 }
                 "recall" => Some(IntentRecord {
@@ -164,7 +164,7 @@ pub fn infer_from_tool_call(
                     confidence: 0.7,
                     evidence_keys: evidence_keys_for(tool, Some(a)),
                     occurrences: 1,
-                    timestamp: Utc::now(),
+                    timestamp: UtcDateTime::now(),
                 }),
                 _ => None,
             }
@@ -191,7 +191,7 @@ pub fn infer_from_tool_call(
                 confidence: 0.8,
                 evidence_keys: evidence_keys_for(tool, Some(a)),
                 occurrences: 1,
-                timestamp: Utc::now(),
+                timestamp: UtcDateTime::now(),
             })
         }
         "setup" | "doctor" | "bootstrap" => Some(IntentRecord {
@@ -205,7 +205,7 @@ pub fn infer_from_tool_call(
             confidence: 0.8,
             evidence_keys: evidence_keys_for(tool, action),
             occurrences: 1,
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         }),
         _ => None,
     }

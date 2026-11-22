@@ -255,7 +255,7 @@ The following historical meanings are retired:
 | Historical VIA meaning | Canonical replacement |
 | --- | --- |
 | generic local agent network | Local Agent Bus (LeanCTX OSS) |
-| shared multi-user agent network | Workspace Agent Bus (LeanCTX Hive Team) |
+| shared multi-user agent network | Workspace Agent Bus (LeanCTX Cloud Team) |
 | agent task graph or scheduler | Bounded Work Graph under Decision Spine |
 | generic remote agent transport | A2A |
 | capability/plugin network | OCLA capability fabric |

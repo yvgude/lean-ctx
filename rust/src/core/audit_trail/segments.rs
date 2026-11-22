@@ -83,15 +83,15 @@ pub(super) fn sealed_seq(action: Option<&str>) -> Option<u64> {
 
 /// Whether an active trail of `len` bytes whose last entry was written at
 /// `last` (RFC 3339) is due to be sealed at `now`.
-pub(super) fn due(len: u64, last: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> bool {
+pub(super) fn due(len: u64, last: Option<&str>, now: lean_ctx_time::UtcDateTime) -> bool {
     if len == 0 {
         return false;
     }
     if len >= SEGMENT_MAX_BYTES {
         return true;
     }
-    last.and_then(|stamp| chrono::DateTime::parse_from_rfc3339(stamp).ok())
-        .is_some_and(|last| last.with_timezone(&chrono::Utc).date_naive() < now.date_naive())
+    last.and_then(|stamp| lean_ctx_time::OffsetDateTime::parse_from_rfc3339(stamp).ok())
+        .is_some_and(|last| last.to_utc().date_naive() < now.date_naive())
 }
 
 /// How long a process waits before sealing again after a failed rename, so
@@ -101,13 +101,14 @@ static BACK_OFF_UNTIL: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI
 
 pub(super) fn back_off() {
     BACK_OFF_UNTIL.store(
-        chrono::Utc::now().timestamp() + BACK_OFF_SECS,
+        lean_ctx_time::UtcDateTime::now().timestamp() + BACK_OFF_SECS,
         std::sync::atomic::Ordering::Relaxed,
     );
 }
 
 pub(super) fn backing_off() -> bool {
-    chrono::Utc::now().timestamp() < BACK_OFF_UNTIL.load(std::sync::atomic::Ordering::Relaxed)
+    lean_ctx_time::UtcDateTime::now().timestamp()
+        < BACK_OFF_UNTIL.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Move the sealed active trail to segment `seq`. Rename only: a reader

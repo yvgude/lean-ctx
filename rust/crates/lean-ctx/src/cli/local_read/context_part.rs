@@ -294,7 +294,7 @@ pub(crate) fn overlays_doc(root: &Path, store: &OverlayStore) -> OverlaysDoc {
         row.set_at = Some(
             overlay
                 .created_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
         );
     }
     rows.sort_by(|a, b| a.path.cmp(&b.path));

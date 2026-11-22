@@ -130,6 +130,9 @@ fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_spills_oversized_output_to_a_retrieval_handle() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping spill E2E: `node` unavailable");
         return;
@@ -170,6 +173,9 @@ async fn proxy_spills_oversized_output_to_a_retrieval_handle() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_compressed_output_is_deterministic() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping determinism E2E: `node` unavailable");
         return;
@@ -206,6 +212,9 @@ async fn proxy_compressed_output_is_deterministic() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_redacts_secrets_before_postprocessing() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping redaction E2E: `node` unavailable");
         return;
@@ -283,6 +292,9 @@ async fn proxy_redacts_secrets_before_postprocessing() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_indexes_untyped_output_for_search() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping L3 index E2E: `node` unavailable");
         return;
@@ -328,6 +340,9 @@ async fn proxy_indexes_untyped_output_for_search() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_codebase_pack_returns_a_handle_with_outputid() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping codebase-pack E2E: `node` unavailable");
         return;
@@ -361,6 +376,9 @@ async fn proxy_codebase_pack_returns_a_handle_with_outputid() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_code_graph_ingests_cross_source_edges() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping code-graph E2E: `node` unavailable");
         return;
@@ -399,6 +417,9 @@ async fn proxy_code_graph_ingests_cross_source_edges() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_memory_ingests_knowledge_facts() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping memory E2E: `node` unavailable");
         return;
@@ -436,6 +457,9 @@ async fn proxy_memory_ingests_knowledge_facts() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn gateway_compressor_roundtrips_through_a_downstream_addon() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping compression E2E: `node` unavailable");
         return;

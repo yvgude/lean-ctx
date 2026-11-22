@@ -1,0 +1,55 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "hops is 1..3 and max 1..300"
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/payments/graph?focus=n_tyvnza7clspg4cpmb7ew7fvl7b&hops=1",
+  "request": null,
+  "response": {
+    "body": {
+      "nodes": [
+        {
+          "id": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+          "type": "fact",
+          "label": "Payment retries back off exponentially with full jitter, capped at 64 seconds.",
+          "trust_bucket": "high",
+          "knowledge_state": "verified"
+        },
+        {
+          "id": "n_aaaaaaaaaaaaaaaaaaaaaacaa4",
+          "type": "reference",
+          "label": "services/payments/retry.rs",
+          "trust_bucket": "normal",
+          "knowledge_state": "outdated"
+        }
+      ],
+      "edges": [
+        {
+          "from": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaacaa4",
+          "kind": "references"
+        }
+      ],
+      "clusters": [
+        {
+          "type": "fact",
+          "count": 12
+        },
+        {
+          "type": "procedure",
+          "count": 3
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W13"
+}

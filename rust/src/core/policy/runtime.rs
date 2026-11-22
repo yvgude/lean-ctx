@@ -116,7 +116,7 @@ pub struct StoredPublicationAuthority {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StoredLifetime {
-    horizon: Option<chrono::DateTime<chrono::Utc>>,
+    horizon: Option<lean_ctx_time::UtcDateTime>,
 }
 
 /// Revalidate buffered CLI data at its output and persistence boundaries.
@@ -573,9 +573,9 @@ pub struct ActivePolicy {
     /// Invalid/over-budget compilation makes the whole policy fail closed.
     pub redaction: Vec<(String, Regex)>,
     pub(crate) blocked_patterns: Vec<(String, Regex)>,
-    /// How many of `redaction` + `blocked_patterns` a Hive filter pack
+    /// How many of `redaction` + `blocked_patterns` a Cloud filter pack
     /// added; they have their own budget next to the pack's.
-    pub(crate) hive_rules: usize,
+    pub(crate) cloud_rules: usize,
     pub content_valid: bool,
     /// Compiled inbound content filters (GL #675), built once from the pack's
     /// `[filters]` section.
@@ -588,7 +588,7 @@ pub struct ActivePolicy {
     /// that rests on no verifier decision: local, version one, or a lifted
     /// requirement. The fields above describe the policy; they authorize
     /// nothing once this instant has passed — see [`Self::within_horizon`].
-    horizon: Option<chrono::DateTime<chrono::Utc>>,
+    horizon: Option<lean_ctx_time::UtcDateTime>,
     /// Set the first time the horizon is observed to have passed, and never
     /// cleared. It lives in the policy itself, so every holder of the same
     /// shared policy sees it: once expired, a clock set back revives nothing.
@@ -608,7 +608,7 @@ impl ActivePolicy {
         }
         let holds = self
             .horizon
-            .is_none_or(|horizon| chrono::Utc::now() < horizon);
+            .is_none_or(|horizon| lean_ctx_time::UtcDateTime::now() < horizon);
         if !holds {
             self.expired.store(true, Ordering::Release);
         }
@@ -616,40 +616,40 @@ impl ActivePolicy {
     }
 
     /// This policy, ending at `horizon`. Only for a policy not yet shared.
-    fn until(mut self, horizon: Option<chrono::DateTime<chrono::Utc>>) -> Self {
+    fn until(mut self, horizon: Option<lean_ctx_time::UtcDateTime>) -> Self {
         self.horizon = horizon;
         self
     }
 
     pub fn from_resolved(resolved: ResolvedPolicy) -> Self {
-        Self::from_resolved_with_hive(
+        Self::from_resolved_with_cloud(
             resolved,
-            &crate::core::policy::hive_filters::FilterRules::default(),
+            &crate::core::policy::cloud_filters::FilterRules::default(),
         )
     }
 
-    /// As [`Self::from_resolved`], with the rules of the installed Hive
-    /// filter packs added under their own budget. A Hive rule over its
+    /// As [`Self::from_resolved`], with the rules of the installed Cloud
+    /// filter packs added under their own budget. A Cloud rule over its
     /// bounds fails the policy closed like a pack rule; installation
     /// refuses such sets, so this is defensive.
-    pub(crate) fn from_resolved_with_hive(
+    pub(crate) fn from_resolved_with_cloud(
         mut resolved: ResolvedPolicy,
-        hive: &crate::core::policy::hive_filters::FilterRules,
+        cloud: &crate::core::policy::cloud_filters::FilterRules,
     ) -> Self {
         use super::content::{MAX_REDACTION_RULES, MAX_RULE_LABEL_BYTES, MAX_RULE_PATTERN_BYTES};
-        let hive_rules = hive.redaction.len() + hive.blocked.len();
-        let hive_bounded = hive_rules <= crate::core::policy::hive_filters::HIVE_MAX_RULES
-            && hive
+        let cloud_rules = cloud.redaction.len() + cloud.blocked.len();
+        let cloud_bounded = cloud_rules <= crate::core::policy::cloud_filters::CLOUD_MAX_RULES
+            && cloud
                 .redaction
                 .iter()
-                .chain(&hive.blocked)
+                .chain(&cloud.blocked)
                 .all(|(label, pattern)| {
-                    label.starts_with(super::HIVE_LABEL_PREFIX)
+                    super::is_cloud_label(label)
                         && label.len() <= MAX_RULE_LABEL_BYTES
                         && !label.chars().any(char::is_control)
                         && pattern.len() <= MAX_RULE_PATTERN_BYTES
                 });
-        let bounded = hive_bounded
+        let bounded = cloud_bounded
             && resolved.redaction.len() + resolved.filters.blocked_patterns.len()
                 <= MAX_REDACTION_RULES
             && resolved.egress.forbidden_patterns.len() <= MAX_REDACTION_RULES
@@ -668,13 +668,13 @@ impl ActivePolicy {
                         && !label.chars().any(char::is_control)
                         && pattern.len() <= MAX_RULE_PATTERN_BYTES
                 });
-        // Pack labels never start with the Hive prefix (pack validation), so
-        // a Hive rule neither replaces nor is replaced by a pack rule.
-        resolved.redaction.extend(hive.redaction.iter().cloned());
+        // Pack labels never start with the Cloud prefix (pack validation), so
+        // a Cloud rule neither replaces nor is replaced by a pack rule.
+        resolved.redaction.extend(cloud.redaction.iter().cloned());
         resolved
             .filters
             .blocked_patterns
-            .extend(hive.blocked.iter().cloned());
+            .extend(cloud.blocked.iter().cloned());
         let compiled = bounded.then(|| {
             resolved
                 .redaction
@@ -721,7 +721,7 @@ impl ActivePolicy {
             resolved,
             redaction,
             blocked_patterns,
-            hive_rules,
+            cloud_rules,
             content_valid,
             filters,
             egress,
@@ -793,21 +793,21 @@ fn load_from_disk() -> Option<Arc<ActivePolicy>> {
         local,
         crate::core::policy::org::active_resolved_checked(),
         None,
-        &crate::core::policy::hive_filters::FilterRules::default(),
+        &crate::core::policy::cloud_filters::FilterRules::default(),
         None,
     )
 }
 
 /// `horizon` is the signed end of the organization floor, when a verifier
 /// decided it; it is attached here, before the policy is shared.
-/// `hive_floor` is the Hive effective policy (Release B): folded under
+/// `cloud_floor` is the Cloud effective policy (Release B): folded under
 /// everything else, so nothing local can loosen it.
 fn apply_org_floor(
     local: Option<ResolvedPolicy>,
     org: Result<Option<ResolvedPolicy>, String>,
-    horizon: Option<chrono::DateTime<chrono::Utc>>,
-    hive: &crate::core::policy::hive_filters::FilterRules,
-    hive_floor: Option<&ResolvedPolicy>,
+    horizon: Option<lean_ctx_time::UtcDateTime>,
+    cloud: &crate::core::policy::cloud_filters::FilterRules,
+    cloud_floor: Option<&ResolvedPolicy>,
 ) -> Option<Arc<ActivePolicy>> {
     // Invalid configured org policy must not silently remove the org floor.
     let effective = match org {
@@ -821,8 +821,8 @@ fn apply_org_floor(
             return Some(Arc::new(ActivePolicy::deny_all()));
         }
     };
-    let effective = match hive_floor {
-        Some(floor) => Some(crate::core::policy::hive_floor::apply(
+    let effective = match cloud_floor {
+        Some(floor) => Some(crate::core::policy::cloud_floor::apply(
             floor,
             effective.as_ref(),
         )),
@@ -830,21 +830,21 @@ fn apply_org_floor(
     };
     let effective = match effective {
         Some(effective) => effective,
-        None if hive.redaction.is_empty() && hive.blocked.is_empty() => return None,
-        // Hive filter packs alone: content rules only, no tool or path rule.
-        None => hive_filters_only(),
+        None if cloud.redaction.is_empty() && cloud.blocked.is_empty() => return None,
+        // Cloud filter packs alone: content rules only, no tool or path rule.
+        None => cloud_filters_only(),
     };
     Some(Arc::new(
-        ActivePolicy::from_resolved_with_hive(effective, hive).until(horizon),
+        ActivePolicy::from_resolved_with_cloud(effective, cloud).until(horizon),
     ))
 }
 
-/// The policy that carries nothing but the rules of Hive filter packs.
-fn hive_filters_only() -> ResolvedPolicy {
+/// The policy that carries nothing but the rules of Cloud filter packs.
+fn cloud_filters_only() -> ResolvedPolicy {
     ResolvedPolicy {
-        name: "hive-filters".into(),
+        name: "cloud-filters".into(),
         version: "1.0.0".into(),
-        description: "content rules of the installed Hive filter packs".into(),
+        description: "content rules of the installed LeanCTX Cloud filter packs".into(),
         chain: Vec::new(),
         default_read_mode: None,
         allow_tools: None,

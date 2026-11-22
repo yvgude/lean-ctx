@@ -10,8 +10,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use chrono::{DateTime, FixedOffset};
 use lean_ctx_protocol::{TaskEnvelopeV1, TaskId};
+use lean_ctx_time::OffsetDateTime;
 
 use super::{KernelEnrichment, enrichment_from_decision, reference_input};
 use crate::core::context_kernel::{
@@ -63,7 +63,7 @@ impl PreparedKernelContext {
         task_class: TaskClass,
         explicit_mode: Option<String>,
     ) -> anyhow::Result<Self> {
-        let evaluation_time = DateTime::parse_from_rfc3339(&envelope.created_at)
+        let evaluation_time = OffsetDateTime::parse_from_rfc3339(&envelope.created_at)
             .map_err(|_| anyhow::anyhow!("invalid task evaluation timestamp"))?;
         Self::plan_with_evaluation_time(
             envelope.task_id,
@@ -83,7 +83,7 @@ impl PreparedKernelContext {
         budget: usize,
         task_class: TaskClass,
         explicit_mode: Option<String>,
-        evaluation_time: Option<DateTime<FixedOffset>>,
+        evaluation_time: Option<OffsetDateTime>,
     ) -> anyhow::Result<Self> {
         let budget = budget.min(150);
         anyhow::ensure!(budget > 0, "kernel context budget is disabled");

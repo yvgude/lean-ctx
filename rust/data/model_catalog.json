@@ -67,5 +67,5 @@
     }
   ],
   "price_version": "unpriced",
-  "schema": "leanctx.hive.model-catalog/v1"
+  "schema": "leanctx.cloud.model-catalog/v1"
 }

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bundled mz6/mz14 subscription model catalog (`data/model_catalog.json`,
-//! generated from the Hive catalog by `scripts/sync-model-catalog.py`; CI
-//! checks it equals the pinned Hive source).
+//! generated from the Cloud catalog by `scripts/sync-model-catalog.py`; CI
+//! checks it equals the pinned Cloud source).
 //!
 //! Monolith: `include_str!` cannot reach the engine's `data/` from another
-//! package; the types and parsing live in `lean_ctx_protocol::hive::model_catalog`.
+//! package; the types and parsing live in `lean_ctx_protocol::cloud::model_catalog`.
 
 use std::sync::OnceLock;
 
-pub use lean_ctx_protocol::hive::model_catalog::{
+pub use lean_ctx_protocol::cloud::model_catalog::{
     CatalogHost, CatalogModel, DirectVendor, MODEL_ID_PREFIX, ModelCatalog,
 };
 

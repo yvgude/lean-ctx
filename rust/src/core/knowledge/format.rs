@@ -54,9 +54,9 @@ impl KnowledgeFact {
         (identifier(name) && identifier(version)).then_some(origin)
     }
 
-    /// The import tag of a fact pulled from a Hive repo (other members'
+    /// The import tag of a fact pulled from a Cloud repo (other members'
     /// knowledge), `None` for every other fact.
-    pub fn hive_origin(&self) -> Option<&str> {
+    pub fn cloud_origin(&self) -> Option<&str> {
         self.imported_from
             .as_deref()
             .filter(|origin| super::import_tag::import_tag_source(origin).is_some())
@@ -69,8 +69,8 @@ impl KnowledgeFact {
     /// content (K06). It grants nothing: every later check — the egress
     /// admission above all — judges it like any other text.
     ///
-    /// A fact pulled from a Hive repo was written by other members: it is
-    /// foreign content (X5). Its value is stored in the Hive wrapper
+    /// A fact pulled from a Cloud repo was written by other members: it is
+    /// foreign content (X5). Its value is stored in the Cloud wrapper
     /// (`sync_into_knowledge`), so every renderer delivers it fenced; a
     /// value stored before that is wrapped here.
     pub fn as_delivered(&self, value: String) -> String {
@@ -78,7 +78,7 @@ impl KnowledgeFact {
         if is_wrapped(&value) {
             return value;
         }
-        if let Some(origin) = self.hive_origin() {
+        if let Some(origin) = self.cloud_origin() {
             return wrap(UntrustedKind::Knowledge, origin, &value);
         }
         match self.package_origin() {
@@ -104,7 +104,7 @@ impl ProjectKnowledge {
         self.history.push(ConsolidatedInsight {
             summary: summary.to_string(),
             from_sessions: session_ids,
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
 
         let archived = crate::core::memory_capacity::reclaim_store(
@@ -120,7 +120,7 @@ impl ProjectKnowledge {
                     .then_with(|| b.summary.cmp(&a.summary))
             },
         )?;
-        self.updated_at = chrono::Utc::now();
+        self.updated_at = lean_ctx_time::UtcDateTime::now();
         Ok(archived.len())
     }
 
@@ -486,19 +486,19 @@ impl ProjectKnowledge {
         let mut top_facts: Vec<&KnowledgeFact> = current_facts;
         top_facts.sort_by(|a, b| sort_fact_for_output(a, b));
         top_facts.truncate(max_facts);
-        // X4 (M5): the session's first Hive context may be this briefing.
-        let hive_facts = top_facts
+        // X4 (M5): the session's first Cloud context may be this briefing.
+        let cloud_facts = top_facts
             .iter()
-            .filter(|f| super::import_tag::is_hive_fact(f))
+            .filter(|f| super::import_tag::is_cloud_fact(f))
             .count();
-        if hive_facts > 0 {
+        if cloud_facts > 0 {
             let session = crate::core::session::caller::with_for_project(&self.project_root, |s| {
                 (s.id.clone(), s.started_at)
             });
             super::hooks::record_delivery(
                 &self.project_root,
                 session.as_ref().map(|(id, at)| (id.as_str(), *at)),
-                hive_facts,
+                cloud_facts,
                 false,
             );
         }

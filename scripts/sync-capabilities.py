@@ -10,14 +10,15 @@ The registry is the source; nothing here edits it. The chain, in order:
 
 1. the byte mirrors named in ``product/tier-map.json`` ``registry_mirrors`` get
    the registry's bytes (or its public projection);
-2. the legacy hosted services stay on their frozen schema-2 registry
-   (``legacy_hosted.registry`` in the tier map; Hive replaces them in strands
-   F2/F3): its ``mirrors`` get its bytes, the tree's own generator
-   ``ee/services/cloud/scripts/gen_product_capabilities.py`` (run as a
+2. the legacy hosted catalog stays on its frozen schema-2 registry
+   (``legacy_hosted.registry`` in the tier map; the services that served it
+   were removed, LeanCTX Cloud replaces them): its ``mirrors`` (none since the
+   removal) get its bytes, and the tree's own generator
+   ``scripts/gen_product_capabilities.py`` (run as a
    subprocess, bound to that registry's digest) writes or checks the catalog
-   draft ``ee/services/cloud/contracts/product-capabilities-v1.json``;
-3. the digest constants in the billing service and the Edge are set to the
-   digests of those frozen bytes. No digest is typed by hand.
+   draft ``ee/services/cloud/contracts/product-capabilities-v1.json``.
+   No digest is typed by hand; ``PINS`` lists the source constants that pin
+   these bytes (none since the legacy service source was removed).
 
 Exit 0: in step. Exit 1: drift (``--check``) or a step that could not be done.
 A missing file, a pin whose pattern no longer matches and a failing generator
@@ -26,7 +27,7 @@ pin is touched.
 
 Not done here: the generated matrix ``docs/reference/generated/product-capabilities.md``
 (``cargo run --example gen_product_capability_matrix``, needs a build); the
-Engine and Edge tests that pin hosted lists (they change only when
+Engine tests that pin hosted lists (they change only when
 ``catalog_lists_changed`` is true). Nothing live: no catalog is signed or
 published and no deployed service is contacted. Needs the complete checkout;
 ``scripts/check-capabilities.py`` is the read-only gate for both profiles.
@@ -45,19 +46,13 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = "product/capabilities.toml"
 MAP_PATH = "product/tier-map.json"
 CATALOG = "ee/services/cloud/contracts/product-capabilities-v1.json"
-GENERATOR = "ee/services/cloud/scripts/gen_product_capabilities.py"
-# (file, constant, pattern with the digest as group 2, which bytes it pins)
-PINS = (
-    ("ee/services/cloud/src/entitlement_issuer.rs", "CANONICAL_REGISTRY_DIGEST",
-     r'(const CANONICAL_REGISTRY_DIGEST: &str =\s*"sha256:)([0-9a-f]{64})(";)', "registry"),
-    ("ee/services/cloud/src/entitlement_issuer.rs", "CATALOG_SHA256",
-     r'(const CATALOG_SHA256: &str = ")([0-9a-f]{64})(";)', "catalog"),
-    ("ee/services/edge/src/cloud_server/capability_entitlement.rs", "PRODUCT_CAPABILITIES_SHA256",
-     r'(const PRODUCT_CAPABILITIES_SHA256: &str =\s*")([0-9a-f]{64})(";)', "registry"),
-)
+GENERATOR = "scripts/gen_product_capabilities.py"
+# (file, constant, pattern with the digest as group 2, which bytes it pins).
+# Empty: the billing and Edge constants left with ee/services (owner decision 4).
+PINS: tuple[tuple[str, str, str, str], ...] = ()
 NOT_DONE_HERE = [
     "docs/reference/generated/product-capabilities.md (cargo example gen_product_capability_matrix)",
-    "Engine/Edge tests that pin hosted lists (only if catalog_lists_changed)",
+    "Engine tests that pin hosted lists (only if catalog_lists_changed)",
     "anything live: no publication, no signing, no deployed service",
 ]
 

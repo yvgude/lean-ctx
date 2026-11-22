@@ -7,15 +7,42 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 # Catches files corrupted by lean-ctx shadow-mode compression markers.
 # These appear when an edit tool reads through ctx_read and writes the
 # compressed output back as file content. See: #1301, #1302
+# Rust sources are scanned too (light mode runs no clippy that would catch a
+# marker in a comment or string). For them only the lines the commit adds
+# count, so marker literals that already exist in detector code never block,
+# and these detector/fixture files are exempt by name because their job is to
+# contain such literals. Add a file here only when it must spell a marker.
+MARKER_DETECTOR_FILES=(
+    rust/build.rs
+    rust/crates/lean-ctx-compress/src/markdown_compact.rs
+    rust/crates/lean-ctx-hooks/src/hook_handlers/deny.rs
+    rust/crates/lean-ctx-hooks/src/hook_handlers/edit_health.rs
+    rust/crates/lean-ctx-server/src/tools/ctx_read/tests_compression.rs
+    rust/src/core/bypass_hint.rs
+    rust/src/core/entropy.rs
+    rust/src/core/entropy_omission.rs
+)
+# Prints the staged text the marker checks judge: the whole staged file, or
+# for Rust sources only the added lines. Returns 1 for exempt files.
+marker_scan_text() {
+    local file="$1" exempt
+    case "$file" in
+        *.githooks/*|*tests/*) return 1 ;;
+        *.rs)
+            for exempt in "${MARKER_DETECTOR_FILES[@]}"; do
+                [ "$file" = "$exempt" ] && return 1
+            done
+            git diff --cached --no-color --no-ext-diff --no-textconv -U0 -- "$file" 2>/dev/null \
+                | sed -n -e '/^+++ /d' -e 's/^+//p'
+            ;;
+        *) git show ":$file" 2>/dev/null ;;
+    esac
+}
+
 marker_hits=""
 while IFS= read -r file; do
-    # Skip Rust source, test files, and hook infrastructure — they contain
-    # marker literals in assertions/detection logic, and Rust corruption is
-    # caught by the cargo clippy check later in this hook.
-    case "$file" in
-        *.rs|*.githooks/*|*tests/*) continue ;;
-    esac
-    if git show ":$file" 2>/dev/null | grep -qF -- '[lean-ctx: omitted'; then
+    scan=$(marker_scan_text "$file") || continue
+    if grep -qF -- '[lean-ctx: omitted' <<<"$scan"; then
         marker_hits="$marker_hits  - $file"$'\n'
     fi
 done < <(git diff --cached --name-only --diff-filter=d)
@@ -41,39 +68,30 @@ fi
 
 # Also catch the ctx_compose footer marker and build_header corruption (#1323)
 while IFS= read -r file; do
-    case "$file" in
-        *.rs|*.githooks/*|*tests/*) continue ;;
-    esac
-    staged=$(git show ":$file" 2>/dev/null) || continue
-    if echo "$staged" | grep -qF -- '--- lean-ctx:'; then
+    staged=$(marker_scan_text "$file") || continue
+    if grep -qF -- '--- lean-ctx:' <<<"$staged"; then
         echo "pre-commit: BLOCKED — '$file' contains lean-ctx footer marker."
         echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
         exit 1
     fi
     # Detect ctx_read build_header corruption: "filename.ext NNL" on first line
-    if echo "$staged" | head -2 | grep -qE '^[^ ]+\.[a-z]+ [0-9]+L$'; then
-        if echo "$staged" | sed -n '2p' | grep -qE '^ (deps|exports) '; then
+    # (always judged on the whole staged file: the header sits at its top).
+    head_lines=$(git show ":$file" 2>/dev/null | head -2) || true
+    if printf '%s\n' "$head_lines" | head -1 | grep -qE '^[^ ]+\.[a-z]+ [0-9]+L$'; then
+        if printf '%s\n' "$head_lines" | sed -n '2p' | grep -qE '^ (deps|exports) '; then
             echo "pre-commit: BLOCKED — '$file' contains ctx_read header corruption."
             echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
             exit 1
         fi
     fi
     # Detect cognitive/signatures mode section markers (#1444)
-    if echo "$staged" | grep -qF '§ function'; then
-        echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
-        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
-        exit 1
-    fi
-    if echo "$staged" | grep -qF '§ block'; then
-        echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
-        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
-        exit 1
-    fi
-    if echo "$staged" | grep -qF '§ impl'; then
-        echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
-        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
-        exit 1
-    fi
+    for section in '§ function' '§ block' '§ impl'; do
+        if grep -qF -- "$section" <<<"$staged"; then
+            echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
+            echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
+            exit 1
+        fi
+    done
 done < <(git diff --cached --name-only --diff-filter=d)
 
 # ── Rust quality checks ──────────────────────────────────────────
@@ -129,6 +147,18 @@ run_step() {
 
 run_step "cargo fmt --check" "Run 'cargo fmt' first." \
     cargo fmt --check
+
+# Light mode (owner decision 2026-11-19): on agent/feature branches the heavy
+# cargo gates (clippy, gen_docs, testbench) run once on pounce, in the MR CI or
+# the Weave check service, not on every local commit. A shared Mac target lock
+# made each commit wait 1-3 h. MRs are undrafted and landed only on a green check.
+# Full local gates: LEANCTX_HOOKS=full git commit ...  Always full on main and
+# on a detached HEAD (release checkouts, commits on a tag or a main tip).
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [[ "${LEANCTX_HOOKS:-light}" != "full" && -n "$branch" && "$branch" != "main" ]]; then
+    echo "pre-commit: light mode (fmt + marker checks); clippy/docs run in pounce CI. LEANCTX_HOOKS=full for local gates."
+    exit 0
+fi
 
 # Production code: strict — unwrap_used is DENIED. --all-features matches the
 # CI Clippy job and preflight.sh, so the pre-push clippy step reuses these

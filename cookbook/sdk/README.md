@@ -1,6 +1,6 @@
 # lean-ctx-client — research implementation
 
-> **Status: Research — not a supported public LeanCTX SDK.** This TypeScript
+> **Status: Research — not a supported public LeanCTX | SDK.** This TypeScript
 > client is local HTTP-contract test scaffolding. The only declared public SDK
 > path is the **Preview** Python v1/OpenAI Agents reference wrapper. Current
 > product scope and status are governed by

@@ -6,9 +6,9 @@
   "contract": "team-seat-value-v1",
   "registry_fragment_sha256": {
     "docs/contracts/README.md": "1d9591c1613be27c43524f7a805a91b69c19cd578b4f18c60578a88c22309977",
-    "rust/crates/lean-ctx-protocol/src/lib.rs": "f5f6f2c547cbe8eaad3ed30a0eb5fe4b0b75f10c4b1066821c341e1541632c87",
-    "rust/src/core/contracts.rs": "b81422f1bdd3ddc825385af4ae064d576f2eeee630e7230e5a8b8459000f34ba",
-    "rust/src/core/server_capabilities.rs": "e0207bd6548dfd78852ed9addcafeee8fe387b40185ebba70aeb9f139a43c650"
+    "rust/crates/lean-ctx-protocol/src/lib.rs": "b09dda22bb39ac69098cee902a24c5b58919db7e933cf2be69236cd72ddff93a",
+    "rust/src/core/contracts.rs": "7a6eda6e7a578eb5be5526ef055243d59229f642049f22980f30deb5a53477f1",
+    "rust/src/core/server_capabilities.rs": "1471d6c4f193086a00a2eadea7df6124ad186f3eba10b9d2df263c439fd87c98"
   },
   "sha256": {
     "docs/contracts/team-seat-value-v1/README.md": "caecd3e67f1e9c0adacc272a9dae892ac0cddef42c5e17066c069d17a83505d6",
@@ -33,7 +33,7 @@
     "rust/crates/lean-ctx-protocol/src/team_seat_value_capability.rs": "3c470bcc74989a6c89968a2fca544ea8077eca193f9c74e1db4a70e81c1a6124",
     "scripts/verify-team-context-v1.py": "5df932374f44c32bdbf6598825498f54e30a2dee42eecc9bfbe79015525f74ee",
     "scripts/verify-team-seat-value-rust-parity.py": "ee8fa529b46407015be5561ef1a72e155e7ac40d5aebb36f0f66dac0481b6a5a",
-    "scripts/verify-team-seat-value-v1.py": "85a4a6e4ad5d1fd2a6f226e8b187406052ca198a4a5299678cc970f9361a1c05"
+    "scripts/verify-team-seat-value-v1.py": "0e8542a45c96ca86dd287cb2c0703ab0ebe0e2dc03f827ad44f752b64072d169"
   },
   "v": 1
 }

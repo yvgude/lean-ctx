@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -30,7 +30,7 @@ impl BundlePrivacyV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CcpSessionBundleV1 {
     pub schema_version: u32,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: UtcDateTime,
     pub project: ProjectIdentityV1,
     pub role: PolicyIdentityV1,
     pub profile: PolicyIdentityV1,
@@ -55,8 +55,8 @@ pub struct PolicyIdentityV1 {
 pub struct SessionExcerptV1 {
     pub id: String,
     pub version: u32,
-    pub started_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub started_at: UtcDateTime,
+    pub updated_at: UtcDateTime,
     pub project_root: Option<String>,
     pub shell_cwd: Option<String>,
     pub task: Option<TaskInfo>,
@@ -163,7 +163,7 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
 
     CcpSessionBundleV1 {
         schema_version: crate::core::contracts::CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION,
-        exported_at: Utc::now(),
+        exported_at: UtcDateTime::now(),
         project: ProjectIdentityV1 {
             project_root_hash,
             project_identity_hash,
@@ -348,7 +348,7 @@ pub fn import_bundle_v1_into_session(
         agent_id: None,
         client_name: None,
         task_id: None,
-        timestamp: Utc::now(),
+        timestamp: UtcDateTime::now(),
     });
     ImportReportV1 {
         session_id: session.id.clone(),

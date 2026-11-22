@@ -75,7 +75,8 @@ finish() {
       shell_name="$(basename "${SHELL:-bash}" 2>/dev/null || echo bash)"
       rc="$HOME/.bashrc"
       case "$shell_name" in
-        zsh)  rc="$HOME/.zshrc" ;;
+        # zsh reads its start files from ZDOTDIR when that is set.
+        zsh)  rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
         fish) rc="$HOME/.config/fish/config.fish" ;;
       esac
 
@@ -84,11 +85,21 @@ finish() {
         echo "  Add it manually, then run: lean-ctx onboard"
       else
         echo "Adding $INSTALL_DIR to PATH..."
+        mkdir -p "$(dirname "$rc")" 2>/dev/null || true
         if [ "$shell_name" = "fish" ]; then
-          printf '\nfish_add_path %s\n' "$INSTALL_DIR" >> "$rc" 2>/dev/null || true
+          # Quoted for fish, so a home with spaces stays one path ('\'' and '\\' escaped).
+          fish_dir="$(printf '%s' "$INSTALL_DIR" | sed "s/[\\\\']/\\\\&/g")"
+          printf "\nfish_add_path '%s'\n" "$fish_dir" >> "$rc" 2>/dev/null || true
         else
-          printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$rc" 2>/dev/null || true
+          # Inside the double quotes \ " $ ` keep their meaning, so a home holding them is escaped.
+          sh_dir="$(printf '%s' "$INSTALL_DIR" | sed 's/[\\"$`]/\\&/g')"
+          printf '\nexport PATH="%s:$PATH"\n' "$sh_dir" >> "$rc" 2>/dev/null || true
           if [ "$shell_name" = "bash" ] && [ "$(uname -s)" = "Darwin" ]; then
+            # A login bash reads only the first of .bash_profile, .bash_login and
+            # .profile: a new .bash_profile keeps reading an existing .profile.
+            if [ ! -e "$HOME/.bash_profile" ] && [ -f "$HOME/.profile" ]; then
+              printf '[ -f ~/.profile ] && . ~/.profile\n' >> "$HOME/.bash_profile" 2>/dev/null || true
+            fi
             grep -qs '.bashrc' "$HOME/.bash_profile" 2>/dev/null || \
               printf '\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile" 2>/dev/null || true
           fi
@@ -231,11 +242,34 @@ stop_installed_daemon() {
 
 # After the swap: start the daemon again on the new binary, through its
 # autostart unit when one is installed (`daemon restart`), only if it ran before.
+# A zero exit only means the start was requested (an autostart unit starts the
+# daemon asynchronously), so the new binary's `daemon status` must report it
+# running within LEAN_CTX_DAEMON_WAIT_SECS (default 10) seconds; otherwise the
+# install says so on stderr. The engine install itself stays successful.
 restore_installed_daemon() {
   [ "${restore_daemon:-0}" = "1" ] || return 0
   echo "Restarting the lean-ctx daemon..."
-  "$INSTALL_DIR/lean-ctx" daemon restart >/dev/null 2>&1 \
-    || echo "  Could not restart the daemon; start it with: lean-ctx daemon start"
+  if ! "$INSTALL_DIR/lean-ctx" daemon restart >/dev/null 2>&1; then
+    echo "  Could not restart the daemon; start it with: lean-ctx daemon start" >&2
+    return 0
+  fi
+  daemon_wait="${LEAN_CTX_DAEMON_WAIT_SECS:-10}"
+  case "$daemon_wait" in ''|*[!0-9]*) daemon_wait=10 ;; esac
+  # Count up and compare with `[`, which reads 08 as eight: shell arithmetic
+  # on the value itself would take a leading zero as octal and abort on 08.
+  # A value too large for `[` ends the wait after the first check.
+  daemon_waited=0
+  while :; do
+    if "$INSTALL_DIR/lean-ctx" daemon status 2>/dev/null | grep -Eq 'running \(PID'; then
+      echo "  Daemon running on the new binary."
+      return 0
+    fi
+    [ "$daemon_waited" -lt "$daemon_wait" ] 2>/dev/null || break
+    daemon_waited=$((daemon_waited + 1))
+    sleep 1
+  done
+  echo "Warning: the lean-ctx daemon did not come back after the restart." >&2
+  echo "  Check it with: lean-ctx daemon status; start it with: lean-ctx daemon start" >&2
 }
 
 sha256_of() {

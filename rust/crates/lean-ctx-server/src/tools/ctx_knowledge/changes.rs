@@ -362,7 +362,7 @@ mod tests {
         fact.mark_review(
             lean_ctx::core::knowledge::FactReviewState::ToVerify,
             FactReviewReason::AnchorChanged,
-            chrono::Utc::now(),
+            lean_ctx_time::UtcDateTime::now(),
         );
         std::fs::write(root.path().join("a.md"), "# A\n\nfirst, reworded\n").unwrap();
         let summary = repin_fact(root.path(), &mut fact).unwrap();

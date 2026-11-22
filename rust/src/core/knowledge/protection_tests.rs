@@ -284,7 +284,7 @@ fn tightened_global_gateway_hides_whole_identity_bound_knowledge_records() {
         0.9,
         &MemoryPolicy::default(),
     );
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     k.patterns.push(crate::core::knowledge::ProjectPattern {
         pattern_type: "example".into(),
         description: format!("pattern {AWS_KEY}"),
@@ -427,7 +427,7 @@ fn engine_ids_round_trip_in_typed_knowledge_metadata_and_other_positions_stay_ge
         0.9,
         &MemoryPolicy::default(),
     );
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     knowledge.patterns.push(ProjectPattern {
         pattern_type: "runtime".into(),
         description: "ordinary pattern".into(),

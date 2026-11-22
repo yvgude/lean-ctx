@@ -1,0 +1,22 @@
+{
+  "card": {
+    "availability": "online",
+    "budget": {
+      "tasks_per_day": 20
+    },
+    "host_app": "claude-code",
+    "model": "claude-opus-5-5",
+    "model_source": "self_reported",
+    "tools": [
+      "ctx_read",
+      "ctx_search",
+      "ctx_shell"
+    ]
+  },
+  "host_app": "claude-code",
+  "key_id": "47983724220c8521",
+  "name": "yves-mac · Claude Code · backend",
+  "role": "backend",
+  "signature": "50f2a5b2b23063bdaf63db0059d4d21b0e0efd908cf1836209a70b10e9278bcfb40f3131a91776a58843d27c8f9b160bf4d584281dac7b320ac6953830a3110e",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

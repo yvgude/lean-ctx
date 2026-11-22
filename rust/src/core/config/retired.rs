@@ -17,6 +17,9 @@ const fn retired(path: &'static str, note: &'static str) -> RetiredKey {
     RetiredKey { path, note }
 }
 
+const LEGACY_CLOUD_NOTE: &str =
+    "the hosted account and its sync left the engine; accounts live in LeanCTX Cloud";
+
 /// Removed configuration keys. A path names a key or a whole table.
 pub const RETIRED_KEYS: &[RetiredKey] = &[
     retired(
@@ -48,10 +51,27 @@ pub const RETIRED_KEYS: &[RetiredKey] = &[
     retired("context.diet_relevance_threshold", "never read"),
     retired("context.diet_rebalance_on_change", "never read"),
     retired("context.diet_staleness_enabled", "never read"),
-    retired(
-        "cloud",
-        "the hosted account and its sync left the engine; accounts live in LeanCTX | Hive",
-    ),
+    // The pre-3.12 `[cloud]` table (hosted account sync). `[cloud]` now holds
+    // the LeanCTX Cloud connector (renamed from `[cloud]`), so only the old
+    // table's own keys are retired, never the table.
+    retired("cloud.contribute_enabled", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_contribute", LEGACY_CLOUD_NOTE),
+    retired("cloud.sync_stats_enabled", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_sync", LEGACY_CLOUD_NOTE),
+    retired("cloud.sync_gain_enabled", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_gain_sync", LEGACY_CLOUD_NOTE),
+    retired("cloud.sync_models_enabled", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_model_pull", LEGACY_CLOUD_NOTE),
+    retired("cloud.auto_sync", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_auto_sync", LEGACY_CLOUD_NOTE),
+    retired("cloud.auto_index", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_index_push", LEGACY_CLOUD_NOTE),
+    retired("cloud.metrics_project_labels", LEGACY_CLOUD_NOTE),
+    retired("cloud.auto_publish", LEGACY_CLOUD_NOTE),
+    retired("cloud.auto_publish_interval_hours", LEGACY_CLOUD_NOTE),
+    retired("cloud.last_auto_publish", LEGACY_CLOUD_NOTE),
+    retired("cloud.leaderboard", LEGACY_CLOUD_NOTE),
+    retired("cloud.display_name", LEGACY_CLOUD_NOTE),
     retired(
         "cognitive_mode",
         "the science features had no measured retrieval gain at +74 % read output",

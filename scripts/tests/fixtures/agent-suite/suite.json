@@ -1,0 +1,21 @@
+{
+ "agents": [
+  {"class": "claude", "id": "claude"},
+  {"class": "acp", "id": "codex"}
+ ],
+ "id": "fixture-suite",
+ "regression_limit_pp": 5.0,
+ "schema": "leanctx.agent-suite/v1",
+ "targets": {
+  "compose_first": 70.0,
+  "step_share.acp": 60.0,
+  "step_share.claude": 80.0,
+  "tokens_saved_median": 40.0
+ },
+ "targets_block": false,
+ "tasks": [
+  {"done_when": "fixture", "id": "t1", "kind": "explain", "prompt": "fixture task one", "repo": "lean-ctx"},
+  {"done_when": "fixture", "id": "t2", "kind": "locate", "prompt": "fixture task two", "repo": "lean-ctx"},
+  {"done_when": "fixture", "id": "t3", "kind": "change", "prompt": "fixture task three", "repo": "leanctl"}
+ ]
+}

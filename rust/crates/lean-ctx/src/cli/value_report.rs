@@ -94,7 +94,7 @@ fn usage() {
     );
 }
 fn valid_date(date: &str) -> bool {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
+    lean_ctx_time::parse_date(date, "%Y-%m-%d").is_ok()
 }
 
 #[cfg(test)]

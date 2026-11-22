@@ -1,0 +1,15 @@
+{
+  "cases": [
+    {
+      "fixture": "routes/purge_ack.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "b588169975b6b578e485d2ff2019c075d73091c181d1c16faf3dee9a090a6a25f55150e94c4e09b3ef9498a5ec597d38cd797d62f2e19a7423a65a9fd104f803",
+      "signing_input": "leanctx.cloud.purge_ack.v1\n{\"applied_at\":1792800013900,\"key_id\":\"47983724220c8521\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"purge_id\":\"prg_aaaaaaaaaaaaaaaaaaaaaaezcm\",\"seq\":13}"
+    }
+  ],
+  "rules": {
+    "domain": "leanctx.cloud.purge_ack.v1\n",
+    "identity": "one ack per (purge_id, seq, instance_id); the first applied_at is kept",
+    "signer": "instance key"
+  }
+}

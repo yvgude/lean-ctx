@@ -4,7 +4,7 @@ Status: V4 target architecture. The contract is not evidence that Team is shippe
 
 ## Boundary
 
-LeanCTX Hive Team adds a durable multi-user control plane above the personal engine and its Local Agent Bus (LeanCTX OSS). Local agent identities, local SQLite coordination and caller-supplied workspace strings are never Team authorization sources. The Team service authenticates the human/service principal, resolves membership server-side and applies tenant-scoped policy before accessing encrypted or metadata state.
+LeanCTX Cloud Team adds a durable multi-user control plane above the personal engine and its Local Agent Bus (LeanCTX OSS). Local agent identities, local SQLite coordination and caller-supplied workspace strings are never Team authorization sources. The Team service authenticates the human/service principal, resolves membership server-side and applies tenant-scoped policy before accessing encrypted or metadata state.
 
 ## State model
 

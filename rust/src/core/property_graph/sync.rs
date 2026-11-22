@@ -153,7 +153,7 @@ pub fn mirror_index(project_root: &str, index: &ProjectIndex) -> anyhow::Result<
             engine_version: GRAPH_ENGINE_VERSION,
             built_with: env!("CARGO_PKG_VERSION").to_string(),
             project_root: crate::core::graph_index::normalize_project_root(project_root),
-            built_at: chrono::Utc::now().to_rfc3339(),
+            built_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             git_head: git_short_head(root_path),
             git_dirty: Some(git_is_dirty(root_path)),
             nodes: graph.node_count().ok(),

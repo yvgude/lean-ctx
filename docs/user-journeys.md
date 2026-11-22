@@ -481,20 +481,26 @@ a procurement-grade ROI number — **without** taking away anything his develope
 get for free locally.
 
 **The wall:** most tools monetize by gating features. Marco needs the opposite:
-local stays best-in-class and ungated; only **team coordination** is paid.
+local stays best-in-class and ungated; only **LeanCTX Cloud** is paid.
 
 **The journey:**
 
-1. **Local stays free.** Billing is informational only — it *describes* plans and
-   *meters* local savings; it never gates a local capability:
+1. **Local stays free.** The engine and the LeanCTX Code app are free and need
+   no account. The paid plans are LeanCTX Cloud plans, hosted in Switzerland:
+   **Personal** (USD 20/month), **Team** (USD 50 per seat/month, includes SSO,
+   SCIM and audit retention) and **Enterprise** (contract: company
+   administration and governance). Prices are tax-exclusive. Billing is
+   informational only — it *describes* plans and *meters* local savings; it
+   never gates a local capability:
 
 ```bash
-lean-ctx billing plans               # free · supporter · pro · team · business · enterprise
+lean-ctx billing plans               # the free engine and app, and the Cloud plans Personal · Team · Enterprise
 lean-ctx billing usage --json        # metered from the signed ledger, read-only
 ```
 
-2. **Team coordination, with real RBAC.** The owner provisions the team of a Team
-   plan and invites members with a role; a member joins with the invite code:
+2. **Team coordination, with real RBAC.** The owner provisions the team of a
+   Cloud Team plan and invites members with a role; a member joins with the
+   invite code:
 
 ```bash
 lean-ctx team create                              # owner: the team this plan includes

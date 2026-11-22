@@ -1,10 +1,10 @@
 # Local-free invariant v2 (docs/contracts/local-free-invariant-v2.md):
-# files outside rust/crates/lean-ctx-hive/src/ that still contain a gating symbol
+# files outside rust/crates/lean-ctx-cloud/src/ that still contain a gating symbol
 # (entitlement, plan, licence or billing-capability checks) in their code.
 # scripts/check-local-free.py fails on any other file with a hit and on an entry
-# whose file no longer has one, so this list only shrinks. Owner: the Hive
-# strand that removes the check or moves it into core/hive (B engine cleanup,
-# C Hive connector). Exit at G1: empty, except core/billing/plans.rs if the
+# whose file no longer has one, so this list only shrinks. Owner: the Cloud
+# strand that removes the check or moves it into core/cloud (B engine cleanup,
+# C Cloud connector). Exit at G1: empty, except core/billing/plans.rs if the
 # plan catalog is kept as data.
 schema = "leanctx.local-free-allowlist/v1"
 
@@ -51,12 +51,12 @@ reason = "Runtime manifest validates `entitlement_required` (B4)"
 [[file]]
 path = "rust/src/core/intelligence_runtime/semantic_detectors.rs"
 owner = "C"
-reason = "semantic detector entitlement refusal; detectors are delivered by Hive"
+reason = "semantic detector entitlement refusal; detectors are delivered by Cloud"
 
 [[file]]
 path = "rust/src/core/intelligence_runtime/semantic_worker.rs"
 owner = "C"
-reason = "semantic worker entitlement gate; detectors are delivered by Hive"
+reason = "semantic worker entitlement gate; detectors are delivered by Cloud"
 
 [[file]]
 path = "rust/src/core/intelligence_runtime/session.rs"
@@ -71,7 +71,7 @@ reason = "`entitlements` in a chunking vocabulary list, not a gate; rename or dr
 [[file]]
 path = "rust/src/core/product_capabilities.rs"
 owner = "C"
-reason = "registry plan projection (minimum_plan, allows); plan decisions move behind core/hive"
+reason = "registry plan projection (minimum_plan, allows); plan decisions move behind core/cloud"
 
 [[file]]
 path = "rust/src/core/server_capabilities.rs"

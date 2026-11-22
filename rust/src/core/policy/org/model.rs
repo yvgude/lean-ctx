@@ -80,7 +80,7 @@ impl OrgPolicyV1 {
             kind: KIND.to_string(),
             org: org.to_string(),
             policy_version: policy_version.to_string(),
-            issued_at: chrono::Utc::now().to_rfc3339(),
+            issued_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
             enforced,
             pack_toml: pack_toml.to_string(),
             signer_public_key: None,

@@ -7,13 +7,12 @@
 
 pub use lean_ctx_patterns::*;
 
-pub mod tool_output;
-
 /// The class the output of `command` is admitted with (pz21 §1.8): an
 /// outside origin for a command whose content comes from outside the
-/// repository ([`tool_output::classify`]), else the project's own output.
+/// repository ([`crate::core::context_admission::tool_output::classify`]),
+/// else the project's own output.
 pub fn output_class(command: &str) -> crate::core::context_admission::origin::SourceClass {
-    tool_output::classify(command).map_or(
+    crate::core::context_admission::tool_output::classify(command).map_or(
         crate::core::context_admission::origin::SourceClass::Project,
         |found| found.class(),
     )

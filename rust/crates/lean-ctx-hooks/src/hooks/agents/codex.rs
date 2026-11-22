@@ -27,7 +27,7 @@ pub fn install_codex_hook() {
     }
 
     let hook_config_changed = install_codex_hook_config(&codex_dir);
-    let solution_rules_changed = install_codex_solution_rules(&codex_dir);
+    let legacy_rules_removed = remove_legacy_codex_instructions(&codex_dir);
     let installed_docs = install_codex_instruction_docs(&codex_dir);
 
     if !mcp_server_quiet_mode() {
@@ -37,81 +37,43 @@ pub fn install_codex_hook() {
                 codex_dir.display()
             );
         }
-        if installed_docs || solution_rules_changed {
+        if legacy_rules_removed {
+            eprintln!("Removed the old Codex instructions.md block");
+        }
+        if installed_docs {
             eprintln!("Installed Codex instructions at {}", codex_dir.display());
-        } else {
+        } else if !legacy_rules_removed {
             eprintln!("Codex AGENTS.md already configured.");
         }
     }
 }
 
-fn install_codex_solution_rules(codex_dir: &std::path::Path) -> bool {
+/// Codex never reads `$CODEX_HOME/instructions.md`; it loads `AGENTS.md`,
+/// which carries the lean-ctx pointer block. Older installs wrote the
+/// canonical rules block into `instructions.md`, so every mode strips that
+/// stale block (deleting the file when nothing else is left) and never
+/// writes it again. Returns whether a block was removed.
+fn remove_legacy_codex_instructions(codex_dir: &std::path::Path) -> bool {
     let rules_path = codex_dir.join("instructions.md");
-    // GH #1526: `rules_injection = off` must not write the instructions.md
-    // rules block — and it strips the block a prior install left behind.
-    if lean_ctx::core::config::Config::load().rules_injection_effective()
-        == lean_ctx::core::config::RulesInjection::Off
-    {
-        if rules_path.exists()
-            && std::fs::read_to_string(&rules_path).is_ok_and(|c| {
-                lean_ctx::marked_block::contains_marker_line(
-                    &c,
-                    lean_ctx::core::rules_canonical::START_MARK,
-                )
-            })
-        {
-            lean_ctx::marked_block::remove_from_file(
-                &rules_path,
-                lean_ctx::core::rules_canonical::START_MARK,
-                lean_ctx::core::rules_canonical::END_MARK,
-                true,
-                "Codex rules",
-            );
-            return true;
+    let has_block = std::fs::read_to_string(&rules_path).is_ok_and(|c| {
+        lean_ctx::marked_block::contains_marker_line(
+            &c,
+            lean_ctx::core::rules_canonical::START_MARK,
+        )
+    });
+    if has_block {
+        lean_ctx::marked_block::remove_from_file(
+            &rules_path,
+            lean_ctx::core::rules_canonical::START_MARK,
+            lean_ctx::core::rules_canonical::END_MARK,
+            true,
+            "Codex legacy instructions.md rules",
+        );
+        if std::fs::read_to_string(&rules_path).is_ok_and(|c| c.trim().is_empty()) {
+            let _ = std::fs::remove_file(&rules_path);
         }
-        return false;
     }
-    let block = solution_aware_rules_block(lean_ctx::rules_inject::canonical_rules_block());
-    upsert_solution_rules(&rules_path, &block)
-}
-
-#[allow(clippy::needless_pass_by_value)]
-fn solution_aware_rules_block(base_block: String) -> String {
-    let solution_block = lean_ctx::core::rules_canonical::enabled_solution_rules_block();
-    let base_block = lean_ctx::marked_block::remove_content(
-        &base_block,
-        lean_ctx::core::rules_canonical::SOLUTION_BLOCK_START,
-        lean_ctx::core::rules_canonical::SOLUTION_BLOCK_END,
-    );
-    if solution_block.is_empty() {
-        return base_block;
-    }
-
-    base_block.replacen(
-        lean_ctx::core::rules_canonical::END_MARK,
-        &format!(
-            "{solution_block}\n{}",
-            lean_ctx::core::rules_canonical::END_MARK
-        ),
-        1,
-    )
-}
-
-fn upsert_solution_rules(path: &std::path::Path, block: &str) -> bool {
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
-    if existing.trim_end() == block.trim_end() {
-        return false;
-    }
-
-    lean_ctx::marked_block::upsert(
-        path,
-        lean_ctx::core::rules_canonical::START_MARK,
-        lean_ctx::core::rules_canonical::END_MARK,
-        block,
-        true,
-        "Codex rules",
-    );
-    true
+    has_block
 }
 
 fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
@@ -507,7 +469,7 @@ mod tests {
 
         lean_ctx::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
         let docs_changed = crate::hooks::install_codex_instruction_docs(codex_dir);
-        let rules_changed = super::install_codex_solution_rules(codex_dir);
+        let rules_changed = super::remove_legacy_codex_instructions(codex_dir);
         lean_ctx::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         assert!(docs_changed, "stale steering artifacts must be removed");
@@ -531,9 +493,50 @@ mod tests {
         // Idempotent: a second run on the cleaned directory writes nothing.
         lean_ctx::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
         let docs_again = crate::hooks::install_codex_instruction_docs(codex_dir);
-        let rules_again = super::install_codex_solution_rules(codex_dir);
+        let rules_again = super::remove_legacy_codex_instructions(codex_dir);
         lean_ctx::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
         assert!(!docs_again && !rules_again, "off must be idempotent");
+    }
+
+    /// Codex never reads `instructions.md`: a shared install keeps its guidance
+    /// in AGENTS.md, strips the block older installs left in instructions.md
+    /// (user text survives, a lean-ctx-only file goes) and is idempotent.
+    #[test]
+    fn shared_install_drops_legacy_instructions_and_keeps_agents_block() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("temp codex dir");
+        let codex_dir = tmp.path();
+        let legacy = format!(
+            "{}\nold rules\n{}\n",
+            lean_ctx::core::rules_canonical::START_MARK,
+            lean_ctx::core::rules_canonical::END_MARK
+        );
+
+        lean_ctx::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        std::fs::write(
+            codex_dir.join("instructions.md"),
+            format!("my own notes\n\n{legacy}"),
+        )
+        .expect("seed instructions.md");
+        crate::hooks::install_codex_instruction_docs(codex_dir);
+        assert!(super::remove_legacy_codex_instructions(codex_dir));
+        let kept = std::fs::read_to_string(codex_dir.join("instructions.md")).unwrap();
+        assert_eq!(kept.trim(), "my own notes", "user text must survive");
+
+        std::fs::write(codex_dir.join("instructions.md"), &legacy).expect("seed");
+        assert!(super::remove_legacy_codex_instructions(codex_dir));
+        assert!(
+            !codex_dir.join("instructions.md").exists(),
+            "a lean-ctx-only legacy file is removed"
+        );
+        assert!(!super::remove_legacy_codex_instructions(codex_dir));
+        lean_ctx::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let agents = std::fs::read_to_string(codex_dir.join("AGENTS.md")).unwrap();
+        assert!(
+            agents.contains(lean_ctx::core::rules_canonical::AGENTS_BLOCK_START),
+            "AGENTS.md keeps the lean-ctx block: {agents}"
+        );
     }
 
     /// Minimal env block (data dir only) for the config-rewrite tests that do

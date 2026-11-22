@@ -6,11 +6,11 @@
 //!
 //! These tests simulate real multi-session scenarios to verify the fixes.
 
-use chrono::{Duration, Utc};
 use lean_ctx::core::protocol::CrpMode;
 use lean_ctx::core::workflow::types::{StateSpec, TransitionSpec, WorkflowRun, WorkflowSpec};
 use lean_ctx::core::workflow::{load_active, save_active};
 use lean_ctx_server::server::{WORKFLOW_PASSTHROUGH_TOOLS, is_workflow_stale};
+use lean_ctx_time::{Duration, UtcDateTime};
 use serial_test::serial;
 use std::io::Write;
 
@@ -123,7 +123,7 @@ fn scenario_crash_mid_workflow_stale_after_30min() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(45);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(45);
     save_active(&run).unwrap();
 
     // Next session: load_active should return None (auto-cleared)
@@ -145,7 +145,7 @@ fn scenario_crash_mid_workflow_still_valid_within_30min() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(10);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(10);
     save_active(&run).unwrap();
 
     // Within 30min window: workflow should still be active
@@ -167,7 +167,7 @@ fn scenario_crash_at_boundary_29min_still_active() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "planning".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(29);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(29);
     save_active(&run).unwrap();
 
     let loaded = load_active().unwrap();
@@ -184,7 +184,7 @@ fn scenario_crash_at_boundary_31min_expired() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "planning".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(31);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(31);
     save_active(&run).unwrap();
 
     let loaded = load_active().unwrap();
@@ -263,7 +263,7 @@ fn scenario_is_workflow_stale_fresh() {
 fn scenario_is_workflow_stale_25min() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
-    run.updated_at = Utc::now() - Duration::minutes(25);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(25);
     assert!(!is_workflow_stale(&run), "25min should not be stale");
 }
 
@@ -271,7 +271,7 @@ fn scenario_is_workflow_stale_25min() {
 fn scenario_is_workflow_stale_35min() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
-    run.updated_at = Utc::now() - Duration::minutes(35);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(35);
     assert!(is_workflow_stale(&run), "35min should be stale");
 }
 
@@ -279,7 +279,7 @@ fn scenario_is_workflow_stale_35min() {
 fn scenario_is_workflow_stale_hours() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
-    run.updated_at = Utc::now() - Duration::hours(3);
+    run.updated_at = UtcDateTime::now() - Duration::hours(3);
     assert!(
         is_workflow_stale(&run),
         "3 hours should definitely be stale"
@@ -403,7 +403,7 @@ fn scenario_stale_workflow_file_removed_from_disk() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(40);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(40);
     save_active(&run).unwrap();
 
     let wf_path = dir.join("workflows").join("active.json");
@@ -428,7 +428,7 @@ fn scenario_done_workflow_file_removed_from_disk() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "done".to_string();
-    run.updated_at = Utc::now(); // even if just updated
+    run.updated_at = UtcDateTime::now(); // even if just updated
     save_active(&run).unwrap();
 
     let wf_path = dir.join("workflows").join("active.json");
@@ -458,7 +458,7 @@ fn scenario_agent_b_not_blocked_after_agent_a_crash() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(45); // crashed 45min ago
+    run.updated_at = UtcDateTime::now() - Duration::minutes(45); // crashed 45min ago
     save_active(&run).unwrap();
 
     // Agent B: starts new session, tries to read files
@@ -485,7 +485,7 @@ fn scenario_agent_b_sees_active_workflow_if_recent() {
     let spec = bazsi_workflow_spec();
     let mut run = WorkflowRun::new(spec);
     run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(5);
+    run.updated_at = UtcDateTime::now() - Duration::minutes(5);
     save_active(&run).unwrap();
 
     // Agent B: picks up the workflow (it's still fresh)

@@ -1,6 +1,6 @@
 use std::thread;
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use tempfile::tempdir;
 
 use super::{
@@ -46,7 +46,7 @@ fn record(path: &str, session_id: &str, operation_id: &str) -> ProvenanceRecord 
         operation_id: operation_id.to_owned(),
         path: path.to_owned(),
         tool: "ctx_patch".to_owned(),
-        observed_at: Utc::now(),
+        observed_at: UtcDateTime::now(),
         before_sha256: Some("before".to_owned()),
         after_sha256: Some("after".to_owned()),
         lines_added: 3,
@@ -77,7 +77,7 @@ fn test_record_checkpoint() {
             session_id: "session-1".to_owned(),
             commit_sha: "abc123".to_owned(),
             link_state: CheckpointLinkState::Orphaned,
-            observed_at: Utc::now(),
+            observed_at: UtcDateTime::now(),
             files_touched: 2,
             insertions: 4,
             deletions: 1,

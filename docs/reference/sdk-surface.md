@@ -1,9 +1,9 @@
-# LeanCTX SDK surface
+# LeanCTX | SDK surface
 
 **Embed LeanCTX context control into your application.**
 
-LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can see.**
-The **LeanCTX SDK** connects your application to a compatible **LeanCTX | OSS**;
+LeanCTX is the **Context Gateway for AI Systems**. **Less context. More intelligence.**
+The **LeanCTX | SDK** connects your application to a compatible **LeanCTX | OSS**;
 you keep your model, workflow and UI.
 
 In this consolidated checkout the SDK has one source tree, `sdk/`, with Python,
@@ -52,9 +52,9 @@ publish updated packages to every registry.
 | Artifact | Role |
 |---|---|
 | `lean-ctx` | Apache-2.0 Engine, CLI, MCP server, dashboard and supported proxy |
-| `thinkery-leanctx-sdk` | Python package in the standalone, separately licensed LeanCTX SDK |
+| `thinkery-leanctx-sdk` | Python package in the standalone, separately licensed LeanCTX \| SDK |
 | `thinkery-leanctx-engine*` | Platform-specific Engine companion wheels |
-| Standalone LeanCTX SDK packages | Separately licensed application integration |
+| Standalone LeanCTX \| SDK packages | Separately licensed application integration |
 | `lean-ctx-embed` | Unpublished in-process Rust facade; not the standalone SDK contract |
 | `lean-ctx-client` | Internal Rust protocol/verification client |
 

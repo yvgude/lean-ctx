@@ -90,7 +90,9 @@ fn build_agents_json() -> String {
     let transports: Vec<serde_json::Value> = live_agents
         .iter()
         .map(|a| {
-            let age_min = (chrono::Utc::now() - a.last_active).num_minutes().max(0);
+            let age_min = (lean_ctx_time::UtcDateTime::now() - a.last_active)
+                .num_minutes()
+                .max(0);
             let is_transport = a.transport.is_some() || a.agent_type == "mcp";
             serde_json::json!({
                 "id": a.agent_id,
@@ -118,7 +120,8 @@ fn build_agents_json() -> String {
         .logical_sessions
         .iter()
         .map(|session| {
-            let heartbeat_age_seconds = (chrono::Utc::now() - session.last_heartbeat)
+            let heartbeat_age_seconds = (lean_ctx_time::UtcDateTime::now()
+                - session.last_heartbeat)
                 .num_seconds()
                 .max(0);
             serde_json::json!({
@@ -137,7 +140,7 @@ fn build_agents_json() -> String {
 
     // Retained history is not an inbox backlog. A pending delivery must have
     // a live, project-scoped recipient that has not read the message.
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let pending_msgs = registry
         .scratchpad
         .iter()
@@ -263,33 +266,28 @@ fn valid_presence_field(value: &str, max_len: usize) -> bool {
     !value.is_empty() && value.len() <= max_len && !value.chars().any(char::is_control)
 }
 
-/// Event timestamps are written by `events.rs` with `chrono::Local::now()` and
+/// Event timestamps are written by `events.rs` with `lean_ctx_time::LocalDateTime::now()` and
 /// carry no offset, so they MUST be interpreted as *local* time. Reading them
 /// as UTC made agents appear "active 2h in the future" on UTC+2 machines
 /// (`last_active_minutes_ago = -119`, GL #479 D3).
-fn local_event_ts_to_utc(ts: chrono::NaiveDateTime) -> chrono::DateTime<chrono::Utc> {
-    use chrono::TimeZone as _;
-    match chrono::Local.from_local_datetime(&ts) {
-        chrono::LocalResult::Single(t) | chrono::LocalResult::Ambiguous(t, _) => {
-            t.with_timezone(&chrono::Utc)
-        }
-        // A nonexistent local time (DST spring-forward gap): fall back to UTC,
-        // which is at most one DST shift off — never negative by hours.
-        chrono::LocalResult::None => ts.and_utc(),
-    }
+/// A repeated local hour takes the earlier instant; a nonexistent one (DST
+/// spring-forward gap) falls back to UTC, at most one DST shift off — never
+/// negative by hours.
+fn local_event_ts_to_utc(ts: lean_ctx_time::CivilDateTime) -> lean_ctx_time::UtcDateTime {
+    lean_ctx_time::utc_from_local_civil(ts).unwrap_or_default()
 }
 
 fn infer_agents_from_events() -> Vec<serde_json::Value> {
     let evts = lean_ctx::core::events::load_events_from_file(200);
-    let now = chrono::Utc::now();
-    let cutoff = now - chrono::Duration::minutes(30);
+    let now = lean_ctx_time::UtcDateTime::now();
+    let cutoff = now - lean_ctx_time::Duration::minutes(30);
 
     let mut recent_tool_count: u64 = 0;
-    let mut latest_ts: Option<chrono::NaiveDateTime> = None;
+    let mut latest_ts: Option<lean_ctx_time::CivilDateTime> = None;
 
     for ev in &evts {
         let ts_str = &ev.timestamp;
-        if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H:%M:%S%.f") {
+        if let Ok(ts) = lean_ctx_time::parse_civil_datetime(ts_str, "%Y-%m-%dT%H:%M:%S%.f") {
             let aware = local_event_ts_to_utc(ts);
             if aware >= cutoff {
                 if matches!(&ev.kind, lean_ctx::core::events::EventKind::ToolCall { .. }) {
@@ -357,8 +355,8 @@ fn active_model() -> Option<serde_json::Value> {
         serde_json::json!({
             "model": model,
             "source": source,
-            "at": chrono::DateTime::<chrono::Utc>::from_timestamp(i64::try_from(at).unwrap_or(0), 0)
-                .map(|at| at.to_rfc3339()),
+            "at": lean_ctx_time::UtcDateTime::from_timestamp(i64::try_from(at).unwrap_or(0), 0)
+                .map(lean_ctx_time::UtcDateTime::to_rfc3339),
             "age_seconds": now.saturating_sub(at),
             "scope": "device"
         })
@@ -481,9 +479,9 @@ mod tests {
     /// "now" as local must yield an age of ~0 — not a negative UTC-offset age.
     #[test]
     fn local_event_ts_age_is_never_hours_in_the_future() {
-        let now_local = chrono::Local::now().naive_local();
+        let now_local = lean_ctx_time::LocalDateTime::now().naive_local();
         let aware = local_event_ts_to_utc(now_local);
-        let age_min = (chrono::Utc::now() - aware).num_minutes();
+        let age_min = (lean_ctx_time::UtcDateTime::now() - aware).num_minutes();
         assert!(
             (-1..=1).contains(&age_min),
             "a just-written event must be ~0 minutes old, got {age_min}"
@@ -491,9 +489,10 @@ mod tests {
     }
 
     /// A writer holds the registry lock for the whole call. A route that took
-    /// the lock would wait the full `ACQUIRE_TIMEOUT`, so the bound is half
-    /// of it: relative to the blocker, not an absolute latency budget a
-    /// loaded CI runner can miss.
+    /// the lock would wait the full `ACQUIRE_TIMEOUT` before it could answer,
+    /// so returning in less than that proves it did not wait. The bound is
+    /// the blocker itself, not a latency budget: half of it (2.5 s) was
+    /// missed at 2.7 s on a loaded queue host without any lock wait.
     #[test]
     fn agents_route_does_not_wait_for_registry_writer() {
         use lean_ctx::core::agents::{ACQUIRE_TIMEOUT, FileLock};
@@ -509,7 +508,7 @@ mod tests {
 
         assert_eq!(status, "200 OK");
         assert!(
-            elapsed < ACQUIRE_TIMEOUT / 2,
+            elapsed < ACQUIRE_TIMEOUT,
             "read-only agents route must not wait for a registry writer: {elapsed:?}"
         );
     }
@@ -537,7 +536,8 @@ mod tests {
                 .expect("current process has an identity");
             // Quiet for longer than any worker lease.
             for agent in &mut registry.agents {
-                agent.last_active = chrono::Utc::now() - chrono::Duration::hours(1);
+                agent.last_active =
+                    lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::hours(1);
             }
             id
         })

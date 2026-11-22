@@ -4,11 +4,11 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Duration, Utc};
+use lean_ctx_time::{Duration, UtcDateTime};
 use serde::{Deserialize, Serialize};
 
 use lean_ctx_protocol::UtcTimestamp;
-use lean_ctx_protocol::hive::tasks::{
+use lean_ctx_protocol::cloud::tasks::{
     AmendCaller, ClaimRefV1, EvidenceV1, EvidenceViewV1, MAX_VIEW_UPDATES, TASK_AMEND_SCHEMA,
     TASK_PROPOSE_SCHEMA, TASK_RELEASE_SCHEMA, TASK_RESULT_SCHEMA, TASK_SCHEMA, TASK_UPDATE_SCHEMA,
     TASK_VERIFY_SCHEMA, TaskAmendRequestV1, TaskClaimV1, TaskLifecycle, TaskMergeV1,
@@ -37,7 +37,7 @@ pub struct Transition {
     pub event: TaskEvent,
     pub from: TaskState,
     pub to: TaskState,
-    pub by: lean_ctx_protocol::hive::tasks::TaskActorV1,
+    pub by: lean_ctx_protocol::cloud::tasks::TaskActorV1,
     pub at: UtcTimestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -59,7 +59,7 @@ impl From<&Transition> for Change {
     }
 }
 
-/// Where a local task was brought into a Hive vault.
+/// Where a local task was brought into a Cloud vault.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SharedRef {
     /// The vault address `ws/vault`.
@@ -69,7 +69,7 @@ pub struct SharedRef {
     pub at: UtcTimestamp,
 }
 
-/// A local task: Hive's task view plus its transitions.
+/// A local task: Cloud's task view plus its transitions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalTask {
     pub task: TaskV1,
@@ -142,7 +142,7 @@ pub struct Amendment {
     pub merge_commit: Option<String>,
     pub reason: Option<String>,
     /// The caller checked that this process runs for a registered Queen
-    /// session (`lean_ctx_hive::queens::this_session_is_queen`): it may
+    /// session (`lean_ctx_cloud::queens::this_session_is_queen`): it may
     /// record a merge like a person.
     pub queen: bool,
 }
@@ -158,7 +158,7 @@ fn closed(state: TaskState) -> bool {
     )
 }
 
-/// The claim reference the Hive request checks need (local claims have no
+/// The claim reference the Cloud request checks need (local claims have no
 /// lease; the holder is the claim).
 fn local_claim() -> ClaimRefV1 {
     ClaimRefV1 {
@@ -225,7 +225,7 @@ impl Board {
         event: TaskEvent,
         from: TaskState,
         by: &Actor,
-        at: DateTime<Utc>,
+        at: UtcDateTime,
         reason: Option<String>,
     ) -> Change {
         self.seq += 1;
@@ -267,7 +267,7 @@ impl Board {
     }
 
     /// Open claims whose time ran out open their task again.
-    pub fn expire(&mut self, now: DateTime<Utc>) -> Vec<Change> {
+    pub fn expire(&mut self, now: UtcDateTime) -> Vec<Change> {
         let now_text = timestamp(now);
         let due: Vec<(u64, String)> = self
             .tasks
@@ -298,7 +298,7 @@ impl Board {
     }
 
     /// Whether a claim ran out by `now` (a read shows it open).
-    pub fn has_expired(&self, now: DateTime<Utc>) -> bool {
+    pub fn has_expired(&self, now: UtcDateTime) -> bool {
         let now = timestamp(now);
         self.tasks.values().any(|local| {
             local.task.state == TaskState::Claimed
@@ -315,7 +315,7 @@ impl Board {
         &mut self,
         by: &Actor,
         proposal: Proposal,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let clean = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
         let request = TaskProposeRequestV1 {
@@ -368,6 +368,7 @@ impl Board {
             labels: Vec::new(),
             fields_version: None,
             process: None,
+            process_gate: None,
         };
         self.tasks.insert(
             number,
@@ -419,7 +420,7 @@ impl Board {
         by: &Actor,
         accept: bool,
         reason: Option<&str>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let reason = check_reason(reason)?;
         let local = self.task_mut(number)?;
@@ -451,7 +452,7 @@ impl Board {
         number: u64,
         by: &Actor,
         minutes: Option<u32>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Option<Change>, TaskError> {
         if by.agent_id().is_none() {
             return Err(TaskError::Forbidden {
@@ -549,7 +550,7 @@ impl Board {
         by: &Actor,
         summary: &str,
         usage: Option<UsageV1>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         TaskUpdateRequestV1 {
             schema: TASK_UPDATE_SCHEMA.to_owned(),
@@ -593,7 +594,7 @@ impl Board {
         number: u64,
         by: &Actor,
         submission: Submission,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let summary = submission.summary.trim().to_owned();
         TaskResultRequestV1 {
@@ -654,7 +655,7 @@ impl Board {
         number: u64,
         by: &Actor,
         amendment: Amendment,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let reason = check_reason(amendment.reason.as_deref())?;
         let summary = amendment
@@ -757,7 +758,7 @@ impl Board {
         number: u64,
         by: &Actor,
         reason: Option<&str>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let reason = check_reason(reason)?;
         let local = if by.agent_id().is_none() {
@@ -797,7 +798,7 @@ impl Board {
         by: &Actor,
         verdict: TaskVerdict,
         reason: Option<&str>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let reason = reason.map(str::trim).filter(|r| !r.is_empty());
         TaskVerifyRequestV1 {
@@ -869,13 +870,13 @@ impl Board {
 
     /// Stop a proposed, open or claimed task, with a reason: a person only
     /// (an agent is refused `agents_stop`). The task ends in the
-    /// `cancelled` state (Hive's state name).
+    /// `cancelled` state (Cloud's state name).
     pub fn stop(
         &mut self,
         number: u64,
         by: &Actor,
         reason: Option<&str>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         let reason = check_reason(reason)?;
         if reason.is_none() {
@@ -910,14 +911,14 @@ impl Board {
         Ok(self.record(number, TaskEvent::Stopped, from, by, now, reason))
     }
 
-    /// Mark a task as brought into a Hive vault (journaled; no notice).
+    /// Mark a task as brought into a Cloud vault (journaled; no notice).
     pub fn mark_shared(
         &mut self,
         number: u64,
         by: &Actor,
         vault: &str,
         vault_number: u64,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         if vault.trim().is_empty() || vault_number == 0 {
             return Err(TaskError::Invalid(
@@ -957,7 +958,7 @@ impl Board {
         by: &Actor,
         priority: Option<TaskPriority>,
         labels: Option<Vec<String>>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<Change, TaskError> {
         if priority.is_none() && labels.is_none() {
             return Err(TaskError::Invalid(

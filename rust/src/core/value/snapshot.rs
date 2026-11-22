@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -28,8 +28,8 @@ pub struct ValueSnapshot {
     pub schema: u32,
     pub session_id: String,
     pub project_root: Option<String>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub started_at: Option<UtcDateTime>,
+    pub updated_at: Option<UtcDateTime>,
     pub tool_calls: u64,
     /// Tokens lean-ctx's tools would have sent without compression.
     pub tokens_input: u64,
@@ -51,7 +51,7 @@ impl ValueSnapshot {
             session_id: session.id.clone(),
             project_root: session.project_root.clone(),
             started_at: Some(session.started_at),
-            updated_at: Some(Utc::now()),
+            updated_at: Some(UtcDateTime::now()),
             tool_calls: u64::from(s.total_tool_calls),
             tokens_input: s.total_tokens_input,
             tokens_saved: s.total_tokens_saved,
@@ -74,7 +74,7 @@ impl ValueSnapshot {
         let Some(updated) = self.updated_at else {
             return false;
         };
-        let age = Utc::now().signed_duration_since(updated);
+        let age = UtcDateTime::now().signed_duration_since(updated);
         age.to_std().map_or(true, |age| age <= max_age)
     }
 
@@ -275,7 +275,7 @@ mod tests {
         ValueSnapshot {
             schema: SCHEMA,
             session_id: id.into(),
-            updated_at: Some(Utc::now()),
+            updated_at: Some(UtcDateTime::now()),
             tokens_input: 1_000,
             tokens_saved: 400,
             ..ValueSnapshot::default()
@@ -379,7 +379,7 @@ mod tests {
     fn staleness_is_detected() {
         let mut s = snap("s");
         assert!(s.is_fresh(Duration::from_mins(1)));
-        s.updated_at = Some(Utc::now() - chrono::Duration::hours(2));
+        s.updated_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::hours(2));
         assert!(!s.is_fresh(Duration::from_mins(1)));
         s.updated_at = None;
         assert!(!s.is_fresh(Duration::from_mins(1)));

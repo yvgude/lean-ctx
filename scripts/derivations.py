@@ -347,17 +347,6 @@ def cmd_merge(strategy: str, base_path: str, ours_path: str, theirs_path: str, n
 # entry may read an earlier one (SBOM and notices read rust/Cargo.lock).
 
 
-def _scope_register_command(root: Path) -> list[str] | None:
-    ci = root / "ee/ci/scope-register.yml"
-    if not ci.is_file():
-        return None
-    found = re.search(r"scope_register\.py --repo \. --baseline ([0-9a-f]{40})", ci.read_text(encoding="utf-8"))
-    if not found:
-        raise SystemExit("derivations: no --baseline in ee/ci/scope-register.yml")
-    return [sys.executable, "ee/delivery/tools/scope_register.py", "--repo", ".", "--baseline", found.group(1),
-            "--out", "ee/delivery/FEATURE_SCOPE_REGISTER.csv"]
-
-
 def _cargo_lock_command(lock: str, offline: bool = True) -> list[str]:
     # Resolving (no --locked) completes and normalises the lock against the merged manifests;
     # a lock that is already current stays byte for byte.
@@ -370,8 +359,8 @@ REGISTRY: list[tuple[str, tuple[str, ...]]] = [
     ("SBOM.cdx.json", ("rust/Cargo.lock", "rust/*Cargo.toml", "rust/deny.toml", "scripts/generate-sbom.sh")),
     ("THIRD_PARTY_NOTICES", ("rust/Cargo.lock", "SBOM.cdx.json", "legal/third-party-assets.toml",
                              "packages/pi-lean-ctx/package-lock.json", "scripts/generate-third-party-notices.py")),
-    ("ee/delivery/FEATURE_SCOPE_REGISTER.csv", ("rust/src/*", "rust/crates/*", "packages/*", "sdk/*", "ee/*",
-                                                "ee/ci/scope-register.yml")),
+    # ee/delivery/FEATURE_SCOPE_REGISTER.csv is not here: CI generates it and it is never
+    # committed (ee/ci/scope-register.yml).
     # Any added or removed file can need a `new_paths` change.
     ("PUBLISH_MANIFEST.toml", ("*",)),
 ]
@@ -397,9 +386,6 @@ def _commands(path: str, root: Path) -> tuple[list[str] | None, list[list[str]]]
     if path == "THIRD_PARTY_NOTICES":
         script = [sys.executable, "scripts/generate-third-party-notices.py", "--root", "."]
         return [*script, "--check"], [[sys.executable, "scripts/derivations.py", "write-notices"]]
-    if path == "ee/delivery/FEATURE_SCOPE_REGISTER.csv":
-        command = _scope_register_command(root)
-        return None if command is None else (None, [command])
     return None
 
 
@@ -639,7 +625,10 @@ def cmd_repin_frozen(root: Path, manifest_rel: str, paths: list[str]) -> int:
                 failed += 1
                 continue
             module = _load_script(root, verifier, "frozen_verifier")
-            lines = getattr(module, _FRAGMENT_KEYS[table])(source.read_text(encoding="utf-8"))
+            fragment = getattr(module, _FRAGMENT_KEYS[table])
+            text = source.read_text(encoding="utf-8")
+            # A registry fragment depends on the file kind (Rust items keep their attributes).
+            lines = fragment(text, rel) if table == "registry_fragment_sha256" else fragment(text)
             digest = module.ci_fragment_digest(lines)
         if manifest[table][rel] != digest:
             manifest[table][rel] = digest
@@ -731,11 +720,6 @@ def _verdict(path: str, root: Path) -> tuple[str, str]:
         command = [sys.executable, "scripts/generate-third-party-notices.py", "--root", ".", "--check"]
     elif path == PUBLISH_MANIFEST:
         command = [sys.executable, "scripts/derivations.py", "write-publish-manifest", "--check"]
-    elif path == "ee/delivery/FEATURE_SCOPE_REGISTER.csv":
-        writer = _scope_register_command(root)
-        if writer is None:
-            return UNAVAILABLE, "ee/ci/scope-register.yml not found"
-        command = [*writer, "--check"]
     else:
         return UNAVAILABLE, "no check registered"
     if not (root / command[1]).is_file():

@@ -1,0 +1,16 @@
+{
+  "count": 0,
+  "key_id": "5d2abe57a3a2c50f",
+  "keys": [],
+  "place_id": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+  "place_key_versions": [
+    1,
+    2
+  ],
+  "purge_id": "vdel_ddddddddddddddddddddddddda",
+  "reason": "vault_deleted",
+  "scope": "place",
+  "shredded_at": 1792890000000,
+  "signature": "096053737aa8ca63f814fa2616a038eefaa7d2913ec26257dfc19690e50047d0ca4597886bfc7ee3ecb05d0548826638c817e874a6d24be69fb53a6509328b05",
+  "v": 1
+}

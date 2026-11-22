@@ -281,7 +281,7 @@ fn write_record(tool: Option<&str>, record: &Value, render: impl FnOnce(&Value) 
             return;
         };
         rotate_if_large(&target.path);
-        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let ts = lean_ctx_time::LocalDateTime::now().format("%Y-%m-%d %H:%M:%S%.3f");
         let line = format!("{ts} {message}\n");
         let _ =
             diagnostics::open_append(&target.path).and_then(|mut f| f.write_all(line.as_bytes()));

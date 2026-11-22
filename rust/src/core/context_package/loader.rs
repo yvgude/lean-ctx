@@ -558,7 +558,7 @@ mod tests {
     use super::*;
     use crate::core::context_package::content::*;
     use crate::core::context_package::manifest::*;
-    use chrono::Utc;
+    use lean_ctx_time::UtcDateTime;
 
     fn test_manifest(layers: Vec<PackageLayer>) -> PackageManifest {
         PackageManifest {
@@ -570,7 +570,7 @@ mod tests {
             description: "test".into(),
             author: None,
             scope: None,
-            created_at: Utc::now(),
+            created_at: UtcDateTime::now(),
             updated_at: None,
             layers,
             dependencies: vec![],
@@ -616,7 +616,7 @@ mod tests {
                 facts: vec![],
                 patterns: vec![],
                 insights: vec![],
-                exported_at: Utc::now(),
+                exported_at: UtcDateTime::now(),
             }),
             ..Default::default()
         };
@@ -646,7 +646,7 @@ mod tests {
                 facts: vec![],
                 patterns: vec![],
                 insights: vec![],
-                exported_at: Utc::now(),
+                exported_at: UtcDateTime::now(),
             }),
             ..Default::default()
         };
@@ -676,7 +676,7 @@ mod tests {
                 facts: vec![],
                 patterns: vec![],
                 insights: vec![],
-                exported_at: Utc::now(),
+                exported_at: UtcDateTime::now(),
             }),
             ..Default::default()
         };

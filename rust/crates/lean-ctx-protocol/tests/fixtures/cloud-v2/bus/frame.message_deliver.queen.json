@@ -1,0 +1,27 @@
+{
+  "body": {
+    "percentage": 10,
+    "step": "Build stage for the ledger export: the developer takes the lock rework."
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000007",
+  "id": "msg_00000000000000a7",
+  "kind": "coordinate",
+  "provenance": "workspace",
+  "received_at": 1792800007000,
+  "schema": "leanctx.cloud.bus/v2",
+  "sender": {
+    "host_app": "claude-code",
+    "kind": "worker",
+    "name": "ada-mac · Claude Code · queen",
+    "owner_handle": "ada",
+    "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+  },
+  "seq": 7,
+  "t": "message.deliver",
+  "task_id": "task-app-3",
+  "thread": "ledger-export",
+  "thread_id": "msg_00000000000000a7",
+  "to": "#acme/payments",
+  "type": "progress",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

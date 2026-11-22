@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use chrono::Utc;
 use ed25519_dalek::SigningKey;
 use lean_ctx::core::a2a::dlq::{DeadLetter, DeadLetterDelivery, DeadLetterQueue, DlqScope};
 use lean_ctx::core::capsule_transport::LocalSignedCapsuleTransport;
@@ -20,6 +19,7 @@ use lean_ctx::core::ocla::health::{HealthStatus, check_system_health, seed_agent
 use lean_ctx::core::ocla::response_cache::{CachedResponse, ResponseCache, ResponseCacheKey};
 use lean_ctx::core::ocla::wire_api::ocla_router;
 use lean_ctx::core::savings_ledger;
+use lean_ctx_time::UtcDateTime;
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -330,8 +330,8 @@ fn test_dlq_lifecycle() {
             target_agent: "integration-child".into(),
             error: "delivery failed".into(),
             attempts: 1,
-            first_failed_at: Utc::now().to_rfc3339(),
-            last_failed_at: Utc::now().to_rfc3339(),
+            first_failed_at: UtcDateTime::now().to_rfc3339(),
+            last_failed_at: UtcDateTime::now().to_rfc3339(),
         })
         .expect("enqueue integration dead letter");
     assert_eq!(queue.peek(&scope).expect("peek integration scope").len(), 1);

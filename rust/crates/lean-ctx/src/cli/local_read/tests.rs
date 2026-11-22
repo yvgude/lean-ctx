@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Local Read v1 shapes: what a local reader (Hive Desktop) builds against.
+//! Local Read v1 shapes: what a local reader (Cloud Desktop) builds against.
 
 use serde_json::{Value, json};
 
@@ -23,14 +23,14 @@ fn every_document_and_error_names_the_contract_and_kind() {
 }
 
 #[test]
-fn hive_status_adds_the_local_read_keys_only_on_opt_in() {
-    use lean_ctx_protocol::hive::status::HiveCliStatusV1;
+fn cloud_status_adds_the_local_read_keys_only_on_opt_in() {
+    use lean_ctx_protocol::cloud::status::CloudCliStatusV1;
     let dir = tempfile::tempdir().unwrap();
-    let store = lean_ctx_hive::HiveStore::at(dir.path().join("c"), dir.path().join("d"));
-    let report = lean_ctx_hive::status::report(
+    let store = lean_ctx_cloud::CloudStore::at(dir.path().join("c"), dir.path().join("d"));
+    let report = lean_ctx_cloud::status::report(
         &store,
-        &lean_ctx_hive::HiveConfig::default(),
-        chrono::Utc::now(),
+        &lean_ctx_cloud::CloudConfig::default(),
+        lean_ctx_time::UtcDateTime::now(),
     );
     let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
     assert!(status::opted_in(&args(&[
@@ -47,7 +47,7 @@ fn hive_status_adds_the_local_read_keys_only_on_opt_in() {
     // Plain --json stays the strict cockpit shape (0.5.0 readers).
     let plain = serde_json::to_value(report.cli_status()).unwrap();
     assert!(plain.get("contract").is_none());
-    serde_json::from_value::<HiveCliStatusV1>(plain).expect("strict readers decode it");
+    serde_json::from_value::<CloudCliStatusV1>(plain).expect("strict readers decode it");
 
     let facts = status::LocalFacts {
         capture: None,
@@ -73,7 +73,7 @@ fn hive_status_adds_the_local_read_keys_only_on_opt_in() {
     }
     assert_eq!(shown["rights"], json!([]));
     assert_eq!(shown["contract"], "local-read/1");
-    assert_eq!(shown["kind"], "hive.status");
+    assert_eq!(shown["kind"], "cloud.status");
     assert_eq!(shown["connected"], false, "the cockpit fields stay");
     assert_eq!(
         shown["project"],
@@ -103,6 +103,43 @@ fn hive_status_adds_the_local_read_keys_only_on_opt_in() {
     assert_eq!(shown["workers"], json!({"active": 0, "retiring": 0}));
 }
 
+/// The lease's trial end fills `trial_ends_at` and `trial`; a lease
+/// without one leaves both `null`.
+#[test]
+fn trial_status_comes_from_the_lease() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = lean_ctx_cloud::CloudStore::at(dir.path().join("c"), dir.path().join("d"));
+    let mut report = lean_ctx_cloud::status::report(
+        &store,
+        &lean_ctx_cloud::CloudConfig::default(),
+        lean_ctx_time::UtcDateTime::now(),
+    );
+    let envelope: Value = serde_json::from_str(
+        &std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../lean-ctx-protocol/tests/fixtures/cloud/lease_envelope.response.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let shown = |report: &lean_ctx_cloud::status::CloudStatusReport| {
+        serde_json::to_value(status::of_report(report, status::LocalFacts::default())).unwrap()
+    };
+    report.lease = Some(serde_json::from_value(envelope["lease"].clone()).unwrap());
+    let plain = shown(&report);
+    assert_eq!(plain["trial_ends_at"], Value::Null);
+    assert_eq!(plain["trial"], json!({"active": null, "ends_at": null}));
+    let mut lease = envelope["lease"].clone();
+    lease["trial_ends_at"] = "2026-12-02T10:00:00Z".into();
+    report.lease = Some(serde_json::from_value(lease).unwrap());
+    let trial = shown(&report);
+    assert_eq!(trial["trial_ends_at"], "2026-12-02T10:00:00Z");
+    assert_eq!(
+        trial["trial"],
+        json!({"active": true, "ends_at": "2026-12-02T10:00:00Z"})
+    );
+}
+
 #[test]
 fn knowledge_rows_type_facts_leave_read_noise_out_and_mark_vault_copies() {
     use lean_ctx::core::knowledge::ProjectKnowledge;
@@ -129,7 +166,7 @@ fn knowledge_rows_type_facts_leave_read_noise_out_and_mark_vault_copies() {
         &policy,
     );
     k.remember(
-        "hive/acme/app",
+        "cloud/acme/app",
         "lc-1",
         "Retries are capped at 3",
         "s2",
@@ -140,7 +177,7 @@ fn knowledge_rows_type_facts_leave_read_noise_out_and_mark_vault_copies() {
         .iter_mut()
         .find(|f| f.key == "lc-1")
         .unwrap()
-        .imported_from = Some("hive-repo:@acme/app@r4".into());
+        .imported_from = Some("cloud-repo:@acme/app@r4".into());
 
     // A second current fact on the same key from another origin.
     let mut twin = k.facts.iter().find(|f| f.key == "db").unwrap().clone();
@@ -199,8 +236,8 @@ fn knowledge_rows_type_facts_leave_read_noise_out_and_mark_vault_copies() {
 }
 
 #[test]
-fn vault_nodes_carry_the_state_hive_derives_and_rejected_ones_are_left_out() {
-    use lean_ctx_hive::replica::fold::{FoldEvent, Graph};
+fn vault_nodes_carry_the_state_cloud_derives_and_rejected_ones_are_left_out() {
+    use lean_ctx_cloud::replica::fold::{FoldEvent, Graph};
     let add = |seq: u64, id: &str, node_type: &str, body: Value| FoldEvent {
         seq,
         event_id: format!("ev{seq}"),
@@ -237,7 +274,7 @@ fn vault_nodes_carry_the_state_hive_derives_and_rejected_ones_are_left_out() {
             add(4, "n_ep", "episode", json!({"summary": "not knowledge"})),
         ])
         .unwrap();
-    let states = lean_ctx_hive::delivery::knowledge_state::Index::new(&graph);
+    let states = lean_ctx_cloud::delivery::knowledge_state::Index::new(&graph);
     let rows = knowledge::vault_rows(&graph, &states, "acme/app");
     let by = |id: &str| rows.iter().find(|r| r.key == id).unwrap();
     assert_eq!(rows.len(), 3, "episodes are not listed");
@@ -247,7 +284,7 @@ fn vault_nodes_carry_the_state_hive_derives_and_rejected_ones_are_left_out() {
     assert_eq!(by("n_old").status, "outdated");
     assert_eq!(by("n_old").review, Some("gone"));
     assert_eq!(by("n_old").anchors[0].symbol.as_deref(), Some("f"));
-    assert_eq!(by("n_obs").id, "hive/acme/app/n_obs");
+    assert_eq!(by("n_obs").id, "cloud/acme/app/n_obs");
 }
 
 #[test]
@@ -360,7 +397,7 @@ fn a_doc_page_shows_sections_anchor_states_and_the_section_of_a_note() {
 
 #[test]
 fn task_rows_fill_what_the_listing_and_the_view_carry() {
-    use lean_ctx_protocol::hive::tasks::{TaskSummaryV1, TaskV1};
+    use lean_ctx_protocol::cloud::tasks::{TaskSummaryV1, TaskV1};
     let summary: TaskSummaryV1 = serde_json::from_value(json!({"number": 12, "state": "claimed",
         "lifecycle": "running", "title": "Fix flaky login test", "origin": "person",
         "updated_at": "2026-11-04T07:10:00Z", "mine": true, "priority": "high"}))
@@ -372,7 +409,7 @@ fn task_rows_fill_what_the_listing_and_the_view_carry() {
     assert_eq!(row.claimed_by.as_ref().map(|c| c.mine), Some(true));
     assert_eq!(row.origin.kind, "person");
 
-    let task: TaskV1 = serde_json::from_value(json!({"schema": "leanctx.hive.task.v1",
+    let task: TaskV1 = serde_json::from_value(json!({"schema": "leanctx.cloud.task.v1",
         "vault_id": "vlt_1", "number": 12, "state": "claimed", "title": "Fix", "goal": "Green CI",
         "acceptance": "10 runs pass", "origin": {"kind": "agent"},
         "created_by": {"kind": "person", "label": "Yves", "mine": false},
@@ -382,7 +419,7 @@ fn task_rows_fill_what_the_listing_and_the_view_carry() {
         "updates": [{"by": {"kind": "instance", "label": "Studio · tester", "mine": true},
             "at": "2026-11-04T07:10:00Z", "summary": "Reproduced."}]}))
     .unwrap();
-    let detail = tasks::detail(&lean_ctx_hive::tasks::TaskView {
+    let detail = tasks::detail(&lean_ctx_cloud::tasks::TaskView {
         task,
         held_until: None,
     });
@@ -418,7 +455,7 @@ fn a_person_posts_unread_messages_on_a_thread_and_reads_them_back() {
             limit: 10,
             ..Default::default()
         },
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
     );
     assert_eq!(all.len(), 3);
     assert!(all.iter().all(|m| m.from == bus::PERSON));
@@ -433,7 +470,7 @@ fn a_person_posts_unread_messages_on_a_thread_and_reads_them_back() {
             limit: 10,
             ..Default::default()
         },
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
     );
     assert_eq!(to_b.len(), 1);
     assert_eq!(to_b[0].thread.as_deref(), Some("t_1"));
@@ -456,7 +493,7 @@ fn a_reader_sees_its_own_project_and_project_free_messages_only() {
             limit: 10,
             ..Default::default()
         },
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
     );
     let texts: Vec<&str> = seen.iter().map(|m| m.message.as_str()).collect();
     assert_eq!(texts, ["for app", "for everyone"]);
@@ -469,7 +506,7 @@ fn a_reader_sees_its_own_project_and_project_free_messages_only() {
             limit: 10,
             ..Default::default()
         },
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
     );
     let rows: Vec<(&str, Option<&str>)> = console
         .iter()
@@ -497,7 +534,7 @@ fn a_reader_sees_its_own_project_and_project_free_messages_only() {
             limit: 10,
             ..Default::default()
         },
-        chrono::Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
     );
     let texts: Vec<&str> = seen.iter().map(|m| m.message.as_str()).collect();
     assert_eq!(texts, ["for everyone", "for app, spelled"]);
@@ -605,7 +642,11 @@ fn a_reader_gets_its_unread_messages_once_marked_and_list_filters_by_thread_and_
     );
 
     let listed = |selection: bus::Selection| {
-        bus::select(&registry.scratchpad, &selection, chrono::Utc::now())
+        bus::select(
+            &registry.scratchpad,
+            &selection,
+            lean_ctx_time::UtcDateTime::now(),
+        )
     };
     let threaded = listed(bus::Selection {
         project_root: Some(root.into()),
@@ -742,8 +783,8 @@ fn a_person_post_says_whether_it_leaves_the_machine() {
     );
     assert_eq!(
         cloud(&["#acme/app"], "progress", true, false, false),
-        ("queued", Some("awaiting_hive")),
-        "waits until the Hive accepts a person's publish"
+        ("queued", Some("awaiting_cloud")),
+        "waits until the LeanCTX Cloud server accepts a person's publish"
     );
     for local in [&[][..], &["mcp-1-a"][..]] {
         assert_eq!(
@@ -806,14 +847,14 @@ fn presence_rows_keep_the_project_and_live_agents_newest_first() {
         let mut e = template.clone();
         e.agent_id = id.into();
         e.project_root = root.into();
-        e.last_active = chrono::Utc::now();
+        e.last_active = lean_ctx_time::UtcDateTime::now();
         e
     };
     let b = "codex-2-b".to_owned();
     let other = "claude-3-other".to_owned();
     registry.agents.push(entry(&b, "/work/app"));
     registry.agents.push(entry(&other, "/work/other"));
-    let old = chrono::Utc::now() - chrono::Duration::minutes(5);
+    let old = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(5);
     for agent in &mut registry.agents {
         if agent.agent_id == a {
             agent.last_active = old;
@@ -859,8 +900,8 @@ fn presence_rows_keep_the_project_and_live_agents_newest_first() {
         source: "claude".into(),
         workspace: workspace.into(),
         session_id: id.into(),
-        opened_at: chrono::Utc::now(),
-        last_heartbeat: chrono::Utc::now(),
+        opened_at: lean_ctx_time::UtcDateTime::now(),
+        last_heartbeat: lean_ctx_time::UtcDateTime::now(),
     };
     registry
         .logical_sessions
@@ -881,10 +922,10 @@ fn presence_rows_keep_the_project_and_live_agents_newest_first() {
 
 #[test]
 fn presence_rows_come_newest_first_with_known_names() {
-    use lean_ctx_hive::bus::presence::PresenceMap;
-    let now = chrono::Utc::now();
+    use lean_ctx_cloud::bus::presence::PresenceMap;
+    let now = lean_ctx_time::UtcDateTime::now();
     let ms = |minutes: i64| {
-        u64::try_from((now - chrono::Duration::minutes(minutes)).timestamp_millis()).unwrap()
+        u64::try_from((now - lean_ctx_time::Duration::minutes(minutes)).timestamp_millis()).unwrap()
     };
     let mut map = PresenceMap::default();
     let active = serde_json::from_value(json!("active")).unwrap();
@@ -898,6 +939,45 @@ fn presence_rows_come_newest_first_with_known_names() {
     assert_eq!(rows[0].state, "active");
     assert_eq!(rows[1].state, "idle");
     assert_eq!(rows[1].address, "#acme/app");
+}
+
+/// h7b team presence: `cloud.presence` says whose worker it is, on which
+/// machine and what it is working on; an older Cloud leaves them `null`,
+/// with the machine falling back to the Instance name.
+#[test]
+fn presence_rows_carry_the_person_machine_and_task() {
+    use lean_ctx_cloud::bus::presence::PresenceMap;
+    use lean_ctx_cloud::bus::v2::presence_names;
+    let now = lean_ctx_time::UtcDateTime::now();
+    let at = u64::try_from(now.timestamp_millis()).unwrap();
+    let mut map = PresenceMap::default();
+    let active = serde_json::from_value(json!("active")).unwrap();
+    let names = presence_names(&json!({"person_name": "Ada Lovelace",
+        "machine_name": "ada-mac", "working_on": "Fix the login page",
+        "instance_name": "ada-mac.local"}));
+    assert!(map.apply_named("#acme/app", "wkr_ada", "coder", active, at, names));
+    let older = presence_names(&json!({"instance_name": "Build box"}));
+    assert!(map.apply_named("#acme/app", "wkr_old", "tester", active, at - 1, older));
+    // h7b blocking 3: an older LeanCTX relays its full host name as the
+    // Instance name; the machine name never shows the domain.
+    let fqdn = presence_names(&json!({"instance_name": "build-01.corp.example.com"}));
+    assert!(map.apply_named("#acme/app", "wkr_fqdn", "ops", active, at - 2, fqdn));
+    let rows = presence::rows(&map, now, &|_| None);
+    let fqdn = rows.iter().find(|r| r.worker_id == "wkr_fqdn").unwrap();
+    assert_eq!(fqdn.machine_name.as_deref(), Some("build-01"));
+    let ada = rows.iter().find(|r| r.worker_id == "wkr_ada").unwrap();
+    assert_eq!(ada.person_name.as_deref(), Some("Ada Lovelace"));
+    assert_eq!(ada.machine_name.as_deref(), Some("ada-mac"));
+    assert_eq!(ada.working_on.as_deref(), Some("Fix the login page"));
+    let old = rows.iter().find(|r| r.worker_id == "wkr_old").unwrap();
+    assert_eq!(old.person_name, None);
+    assert_eq!(old.machine_name.as_deref(), Some("Build box"));
+    assert_eq!(old.working_on, None);
+    // Nullable members are always printed.
+    let shown = serde_json::to_value(old).unwrap();
+    for key in ["person_name", "machine_name", "working_on"] {
+        assert!(shown.get(key).is_some(), "{key} is always printed");
+    }
 }
 
 #[test]
@@ -926,7 +1006,7 @@ fn activity_list_prints_bounded_redacted_events_with_every_field() {
     ));
 
     let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-    let listed = activity::build(&args(&["--session", "sess-1"]), &root).unwrap();
+    let listed = activity::build(&args(&["--session", "sess-1"]), None).unwrap();
     let shown = parse(&document("activity.list", &listed));
     assert_eq!(shown["kind"], "activity.list");
     assert_eq!(shown["session_id"], "sess-1");
@@ -972,22 +1052,358 @@ fn activity_list_prints_bounded_redacted_events_with_every_field() {
     assert_eq!(reply["truncated"], true);
     assert!(reply["text"].as_str().unwrap().len() <= MAX_TEXT_BYTES + 3);
 
-    let project = activity::build(
-        &args(&[
-            "--project-root",
-            &root,
-            "--kind",
-            "turn_end",
-            "--limit",
-            "5",
-        ]),
+    let narrowed = args(&[
+        "--project-root",
         &root,
-    )
-    .unwrap();
+        "--kind",
+        "turn_end",
+        "--limit",
+        "5",
+    ]);
+    let scope = activity::scope(&narrowed, Via::Cli).unwrap();
+    let project = activity::build(&narrowed, scope).unwrap();
     assert_eq!(project.events.len(), 1);
     assert_eq!(project.events[0].session_id, "other");
-    assert!(activity::build(&args(&["--kind", "nope"]), &root).is_err());
-    assert!(activity::build(&args(&["--since", "yesterday"]), &root).is_err());
+    let some_root = Some(root.clone());
+    assert!(activity::build(&args(&["--kind", "nope"]), some_root.clone()).is_err());
+    assert!(activity::build(&args(&["--since", "yesterday"]), some_root).is_err());
+}
+
+/// The release of `activity list` checked the policy of the folder named
+/// (or, for `--project P`, of the working directory) while the stream read
+/// was another one's: the named folder's git root, or `P`. The scope is now
+/// resolved once, and the release root is the stream read.
+#[test]
+fn activity_is_released_under_the_project_whose_stream_is_read() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir(repo.path().join(".git")).unwrap();
+    std::fs::create_dir(repo.path().join("sub")).unwrap();
+    let repo_root = lean_ctx::core::activity::project_root(repo.path().to_str().unwrap());
+    let sub = format!("{repo_root}/sub");
+    let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+
+    // A subfolder names its repository's stream, and that is the root the
+    // release checks (it was the subfolder's policy).
+    for via in [Via::Cli, Via::Socket] {
+        assert_eq!(
+            activity::scope(&args(&["--project-root", &sub]), via).unwrap(),
+            Some(repo_root.clone())
+        );
+        assert_eq!(
+            activity::scope(&args(&["--root", &sub, "--session", "s"]), via).unwrap(),
+            Some(repo_root.clone()),
+            "--root narrows a session like --project-root (it spanned every project)"
+        );
+    }
+    // `--project` is the stream read, so it is the release root too.
+    assert_eq!(
+        activity::scope(&args(&["--project", &sub]), Via::Cli).unwrap(),
+        Some(repo_root.clone())
+    );
+    // Names of two projects are refused instead of one being read under
+    // the other's policy.
+    let other = tempfile::tempdir().unwrap();
+    let other = other.path().to_str().unwrap().to_owned();
+    for argv in [
+        args(&["--project", &other, "--project-root", &repo_root]),
+        args(&["--root", &other, "--project-root", &repo_root]),
+    ] {
+        let failure = activity::scope(&argv, Via::Cli).expect_err("two projects");
+        assert_eq!(failure.code, Code::InvalidArgument, "{argv:?}");
+    }
+    assert_eq!(
+        activity::scope(
+            &args(&["--project", &repo_root, "--project-root", &sub]),
+            Via::Cli
+        )
+        .unwrap(),
+        Some(repo_root.clone()),
+        "one repository named twice is one stream"
+    );
+    // The socket never falls back to the daemon's working directory.
+    assert_eq!(
+        activity::scope(&args(&["--json"]), Via::Socket)
+            .expect_err("no project")
+            .code,
+        Code::NoProject
+    );
+    assert_eq!(
+        activity::scope(&args(&["--session", "s"]), Via::Socket).unwrap(),
+        None
+    );
+}
+
+/// A project whose own policy pack denies `tool` and blocks every text
+/// carrying `marker`. Scoped to this project, so no parallel test sees it.
+fn deny_project(root: &str, tool: &str, marker: &str) {
+    let policy_dir = std::path::Path::new(root).join(".lean-ctx");
+    std::fs::create_dir_all(&policy_dir).expect("policy dir");
+    std::fs::write(
+        policy_dir.join("policy.toml"),
+        format!(
+            "name = \"deny-listing\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [context]\ndeny_tools = ['{tool}']\n\
+             [filters.blocked_patterns]\nmarker = '{marker}'\n"
+        ),
+    )
+    .expect("project policy");
+}
+
+/// `activity list --session S` without a named project spans every
+/// project, but was released under the reader's project alone (the CLI's
+/// working directory; none on the socket): a project whose policy denies
+/// the read had its events released all the same. Each event is now
+/// released under its own project's policy, as `bus list --all` and
+/// `agent diaries --all` release theirs.
+#[test]
+fn activity_session_across_projects_withholds_a_denying_projects_events() {
+    use crate::cli::common::carrier_tests_support::project;
+    use lean_ctx::core::activity::{Draft, Kind, Source, record};
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _live = lean_ctx::core::policy::runtime::lock_test_override();
+    let (_open, open_root) = project();
+    let (_closed, closed_root) = project();
+    deny_project(&closed_root, "ctx_session", "closed-project-note");
+    record(
+        Draft::new(
+            "sess-across",
+            "claude",
+            &open_root,
+            Kind::AgentMessage,
+            Source::Hook,
+        )
+        .text("open-project-note"),
+    );
+    record(
+        Draft::new(
+            "sess-across",
+            "claude",
+            &closed_root,
+            Kind::AgentMessage,
+            Source::Hook,
+        )
+        .text("closed-project-note"),
+    );
+    let args: Vec<String> = ["--session", "sess-across", "--json"]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    // Both events are in the stream the session reads.
+    assert_eq!(activity::build(&args, None).unwrap().events.len(), 2);
+    for via in [Via::Cli, Via::Socket] {
+        let answer = activity::answer(&args, via);
+        assert_eq!(answer.failed, None, "{via:?}: {}", answer.text);
+        assert!(
+            !answer.text.contains("closed-project-note"),
+            "{via:?}: {}",
+            answer.text
+        );
+        assert!(!answer.text.contains(&closed_root), "{via:?}");
+        let doc = parse(&answer.text);
+        let texts: Vec<&str> = doc["events"]
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter_map(|e| e["text"].as_str())
+            .collect();
+        assert_eq!(texts, ["open-project-note"], "{via:?}");
+        assert_eq!(doc["returned"], 1, "{via:?}");
+        assert_eq!(doc["withheld"], 1, "{via:?}");
+    }
+}
+
+/// `bus revision` authorized each of its roots but released them all under
+/// the first root's policy: a later root whose policy denies the read had
+/// its row released. Each row is now released under its own root's
+/// policy, and `--project-root=P` names a root like `--project-root P`.
+#[test]
+fn bus_revision_withholds_the_row_of_a_root_whose_policy_denies() {
+    use crate::cli::common::carrier_tests_support::project;
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _live = lean_ctx::core::policy::runtime::lock_test_override();
+    let (_open, open_root) = project();
+    let (_closed, closed_root) = project();
+    // The row carries only the root's path, so the backup pattern is its name.
+    let closed_name = std::path::Path::new(&closed_root)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .expect("name")
+        .trim_start_matches('.')
+        .to_owned();
+    deny_project(&closed_root, "ctx_agent", &closed_name);
+    let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    for argv in [
+        args(&[
+            "revision",
+            "--json",
+            "--project-root",
+            &open_root,
+            "--project-root",
+            &closed_root,
+        ]),
+        args(&[
+            "revision",
+            "--json",
+            &format!("--project-root={open_root}"),
+            &format!("--project-root={closed_root}"),
+        ]),
+    ] {
+        for via in [Via::Cli, Via::Socket] {
+            let answer = engine_files::answer("bus.revision", &argv, via);
+            assert_eq!(answer.failed, None, "{via:?} {argv:?}: {}", answer.text);
+            assert!(
+                !answer.text.contains(&closed_name),
+                "{via:?}: {}",
+                answer.text
+            );
+            let doc = parse(&answer.text);
+            let roots: Vec<&str> = doc["roots"]
+                .as_array()
+                .expect("roots")
+                .iter()
+                .filter_map(|r| r["project_root"].as_str())
+                .collect();
+            assert_eq!(roots, [open_root.as_str()], "{via:?} {argv:?}");
+            assert_eq!(doc["withheld"], 1, "{via:?} {argv:?}");
+        }
+    }
+}
+
+/// A row of a cross-project listing, for the shared release helper.
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+struct ListingRow {
+    project_root: String,
+    key: String,
+    text: String,
+}
+
+const LISTING_ROWS: crate::cli::common::Records = crate::cli::common::Records {
+    path: &["rows"],
+    report: None,
+};
+
+fn listing_row(project_root: &str, key: &str, text: &str) -> ListingRow {
+    ListingRow {
+        project_root: project_root.to_owned(),
+        key: key.to_owned(),
+        text: text.to_owned(),
+    }
+}
+
+/// An event of a project whose folder is gone (deleted or moved) was
+/// released under the reader's root: on the CLI the working directory's
+/// project, whose policy is not the gone project's. It is now withheld on
+/// every path and counted; the other project's event is kept.
+#[test]
+fn a_gone_projects_event_is_not_released_under_another_projects_policy() {
+    use crate::cli::common::carrier_tests_support::project;
+    use lean_ctx::core::activity::{Draft, Kind, Source, record};
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _live = lean_ctx::core::policy::runtime::lock_test_override();
+    let (_open, open_root) = project();
+    let (gone, gone_root) = project();
+    for (root, text) in [
+        (&open_root, "open-project-note"),
+        (&gone_root, "gone-project-note"),
+    ] {
+        record(
+            Draft::new(
+                "sess-gone",
+                "claude",
+                root,
+                Kind::AgentMessage,
+                Source::Hook,
+            )
+            .text(text),
+        );
+    }
+    drop(gone);
+    assert!(!std::path::Path::new(&gone_root).exists());
+    let args: Vec<String> = ["--session", "sess-gone", "--json"]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let events = activity::build(&args, None).unwrap().events;
+    assert_eq!(events.len(), 2);
+    // The CLI from the open project's folder: the reader root is a project
+    // whose policy allows the read, so the gone project's event was released.
+    let (kept, withheld) = super::released_per_project(
+        "ctx_session",
+        &open_root,
+        LISTING_ROWS,
+        events,
+        |event| event.project_root.as_str(),
+        |event| (event.project_root.clone(), event.seq),
+    );
+    let texts: Vec<_> = kept.iter().filter_map(|e| e.text.as_deref()).collect();
+    assert_eq!(texts, ["open-project-note"]);
+    assert_eq!(withheld, 1);
+    // The answers, CLI (the test's working directory) and socket alike.
+    for via in [Via::Cli, Via::Socket] {
+        let answer = activity::answer(&args, via);
+        assert_eq!(answer.failed, None, "{via:?}: {}", answer.text);
+        assert!(
+            !answer.text.contains("gone-project-note"),
+            "{via:?}: {}",
+            answer.text
+        );
+        let doc = parse(&answer.text);
+        let texts: Vec<&str> = doc["events"]
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter_map(|e| e["text"].as_str())
+            .collect();
+        assert_eq!(texts, ["open-project-note"], "{via:?}");
+        assert_eq!(doc["withheld"], 1, "{via:?}");
+    }
+    // A row of no project stays the reader's.
+    assert_eq!(
+        super::row_release_root("", &open_root).as_deref(),
+        Some(open_root.as_str())
+    );
+    assert_eq!(super::row_release_root(&gone_root, &open_root), None);
+}
+
+/// Two rows with the same key in two projects, one of which denies the
+/// read: the denied row is withheld and the allowed one kept, whichever
+/// comes first. Rows were matched back by key alone, so a row of one project
+/// could take the place of another project's row; two allowed rows with
+/// one key now keep their order too.
+#[test]
+fn same_key_rows_of_two_projects_are_released_each_under_its_own_policy() {
+    use crate::cli::common::carrier_tests_support::project;
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _live = lean_ctx::core::policy::runtime::lock_test_override();
+    let (_open, open_root) = project();
+    let (_other, other_root) = project();
+    let (_closed, closed_root) = project();
+    deny_project(&closed_root, "ctx_session", "closed-row-text");
+    let release = |rows: Vec<ListingRow>| {
+        super::released_per_project(
+            "ctx_session",
+            "",
+            LISTING_ROWS,
+            rows,
+            |row| row.project_root.as_str(),
+            |row| row.key.clone(),
+        )
+    };
+    let open = || listing_row(&open_root, "same", "open-row-text");
+    let closed = || listing_row(&closed_root, "same", "closed-row-text");
+    for rows in [vec![closed(), open()], vec![open(), closed()]] {
+        let (kept, withheld) = release(rows);
+        assert_eq!(kept, [open()]);
+        assert_eq!(withheld, 1);
+    }
+    let other = || listing_row(&other_root, "same", "other-row-text");
+    for rows in [vec![other(), open()], vec![open(), other()]] {
+        let expected: Vec<String> = rows.iter().map(|r| r.text.clone()).collect();
+        let (kept, withheld) = release(rows);
+        let texts: Vec<String> = kept.into_iter().map(|r| r.text).collect();
+        assert_eq!(texts, expected);
+        assert_eq!(withheld, 0);
+    }
 }
 
 #[test]
@@ -1252,7 +1668,7 @@ fn a_write_the_release_would_withhold_writes_nothing() {
 }
 
 /// G08 for the task and doc writes (CLI and socket alike): a request the
-/// release would withhold reaches no store, local or Hive.
+/// release would withhold reaches no store, local or Cloud.
 #[test]
 fn a_withheld_task_or_doc_write_writes_nothing() {
     use crate::cli::common::carrier_tests_support::project;
@@ -1287,7 +1703,7 @@ fn a_withheld_task_or_doc_write_writes_nothing() {
     );
     assert_eq!(task.failed, Some(Code::Withheld), "{}", task.text);
     assert!(!task.text.contains("roadmap-marker"), "{}", task.text);
-    let board = lean_ctx_hive::tasks::local::board(std::path::Path::new(&root)).expect("board");
+    let board = lean_ctx_cloud::tasks::local::board(std::path::Path::new(&root)).expect("board");
     assert!(board.tasks.is_empty(), "no task was written");
     for via in [Via::Cli, Via::Socket] {
         let doc = crate::cli::docs_cmd::json_answer(
@@ -1301,13 +1717,13 @@ fn a_withheld_task_or_doc_write_writes_nothing() {
         assert_eq!(doc.failed, Some(Code::Withheld), "{}", doc.text);
         assert!(!doc.text.contains("roadmap-marker"), "{}", doc.text);
     }
-    let docs = lean_ctx_hive::local_docs::store(&root).expect("doc store");
+    let docs = lean_ctx_cloud::local_docs::store(&root).expect("doc store");
     assert!(!docs.dir().exists(), "no page was written");
 }
 
 /// G08 for the plain-text task and doc writes (no `--json`): the same
 /// release check as [`a_withheld_task_or_doc_write_writes_nothing`] runs
-/// first; a withheld write reaches no store, local or Hive, and says why. A
+/// first; a withheld write reaches no store, local or Cloud, and says why. A
 /// request the release admits is written as before.
 #[test]
 fn a_withheld_plain_text_task_or_doc_write_writes_nothing() {
@@ -1352,13 +1768,13 @@ fn a_withheld_plain_text_task_or_doc_write_writes_nothing() {
             failure.message
         );
     }
-    let board = lean_ctx_hive::tasks::local::board(path).expect("board");
+    let board = lean_ctx_cloud::tasks::local::board(path).expect("board");
     assert!(board.tasks.is_empty(), "no task was written");
 
-    // The linked path (`hive tasks`) runs the same check before it sends.
+    // The linked path (`cloud tasks`) runs the same check before it sends.
     let update = args(&["update", "1", blocked, "--agent", "w1"]);
     let failure = crate::cli::tasks_cmd::release_text_write("update", &update, &root)
-        .expect_err("withheld before Hive");
+        .expect_err("withheld before LeanCTX Cloud");
     assert_eq!(failure.code, Code::Withheld);
 
     // Doc writes: every action ctx_doc writes.
@@ -1370,7 +1786,7 @@ fn a_withheld_plain_text_task_or_doc_write_writes_nothing() {
     }
     let call = crate::cli::docs_cmd::text_call("move", Some("guide"), Some(blocked), None);
     assert!(crate::cli::docs_cmd::text_answer(&root, &call, &[]).is_err());
-    let docs = lean_ctx_hive::local_docs::store(&root).expect("doc store");
+    let docs = lean_ctx_cloud::local_docs::store(&root).expect("doc store");
     assert!(!docs.dir().exists(), "no page was written");
 
     // Admitted requests are written as before.
@@ -1382,7 +1798,7 @@ fn a_withheld_plain_text_task_or_doc_write_writes_nothing() {
         "50 green runs",
     ]);
     crate::cli::tasks_cmd::local_text_answer("propose", &ok, &root, &person).expect("written");
-    let board = lean_ctx_hive::tasks::local::board(path).expect("board");
+    let board = lean_ctx_cloud::tasks::local::board(path).expect("board");
     assert_eq!(board.tasks.len(), 1, "the admitted task was written");
     let call = crate::cli::docs_cmd::text_call("write", Some("guide"), None, Some("# Guide"));
     crate::cli::docs_cmd::text_answer(&root, &call, &[]).expect("page written");
@@ -1396,7 +1812,7 @@ fn a_withheld_plain_text_task_or_doc_write_writes_nothing() {
 fn an_amend_goes_through_the_release_and_lands_in_the_history() {
     use crate::cli::common::carrier_tests_support::project;
     use crate::cli::tasks_cmd::{Caller, json_answer};
-    use lean_ctx_protocol::hive::tasks::{
+    use lean_ctx_protocol::cloud::tasks::{
         EvidenceKind, EvidenceV1, TaskOutcome, TaskState, TaskVerdict,
     };
     use lean_ctx_tasks::{Actor, Proposal, Submission};
@@ -1412,7 +1828,7 @@ fn an_amend_goes_through_the_release_and_lands_in_the_history() {
     .expect("project policy");
     let path = std::path::Path::new(&root);
     let (worker, reviewer) = (Actor::agent("w1"), Actor::agent("rev"));
-    let n = lean_ctx_hive::tasks::local::write(path, |board, now| {
+    let n = lean_ctx_cloud::tasks::local::write(path, |board, now| {
         let n = board
             .propose(
                 &worker,
@@ -1453,7 +1869,7 @@ fn an_amend_goes_through_the_release_and_lands_in_the_history() {
         json_answer(&args, caller, Via::Socket)
     };
     let history = || {
-        let board = lean_ctx_hive::tasks::local::board(path).expect("board");
+        let board = lean_ctx_cloud::tasks::local::board(path).expect("board");
         board.tasks[&n].task.clone()
     };
     let w1 = Caller::Agent("w1".into());
@@ -1500,7 +1916,7 @@ fn an_amend_goes_through_the_release_and_lands_in_the_history() {
         (Some("7be16a9596"), Some("409c9eec05"))
     );
     // Done: one merge record, never by the reviewer; a person records it.
-    lean_ctx_hive::tasks::local::write(path, |board, now| {
+    lean_ctx_cloud::tasks::local::write(path, |board, now| {
         board.verify(n, &reviewer, TaskVerdict::Accept, None, now)
     })
     .expect("done");
@@ -1566,7 +1982,7 @@ fn a_post_with_a_request_id_is_written_once() {
 #[test]
 fn a_queen_kind_comes_only_from_the_registered_queen_and_its_row_names_it() {
     use lean_ctx::core::agents::AgentRegistry;
-    use lean_ctx_hive::bus::queen_kinds::{KIND_KEY, QueenKind};
+    use lean_ctx_cloud::bus::queen_kinds::{KIND_KEY, QueenKind};
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     let mut registry = AgentRegistry::default();
     let root = "/work/app";
@@ -1586,8 +2002,8 @@ fn a_queen_kind_comes_only_from_the_registered_queen_and_its_row_names_it() {
     entry.app_session_id = Some("app-session-pretender-3".into());
     registry.agents.push(entry);
     let worker = "mcp-2-developer".to_string();
-    lean_ctx_hive::queens::register_in(
-        &lean_ctx_hive::queens::data_dir().unwrap(),
+    lean_ctx_cloud::queens::register_in(
+        &lean_ctx_cloud::queens::data_dir().unwrap(),
         "app-session-queen-1",
         Some("Queen"),
         "2026-11-09T10:00:00Z",
@@ -1711,7 +2127,7 @@ fn a_queen_kind_comes_only_from_the_registered_queen_and_its_row_names_it() {
 #[test]
 fn a_sender_over_its_minute_budget_is_refused_with_rate_limited() {
     use lean_ctx::core::agents::AgentRegistry;
-    use lean_ctx_hive::bus::queen_kinds::RATE_PER_MINUTE;
+    use lean_ctx_cloud::bus::queen_kinds::RATE_PER_MINUTE;
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     let mut registry = AgentRegistry::default();
     let root = "/work/app";
@@ -1734,6 +2150,59 @@ fn a_sender_over_its_minute_budget_is_refused_with_rate_limited() {
         "{refused:?}"
     );
     bus::post_with(&mut registry, &[], "the person", &options(bus::PERSON)).unwrap();
+}
+
+/// `bus post|claim|release|leases` and `agent diaries` released under the
+/// `--project-root` folder but wrote (or read) under the first of `--root`
+/// / `--project-root`: naming two folders is refused before the release
+/// and nothing is posted.
+#[test]
+fn bus_writes_naming_two_folders_are_refused_and_write_nothing() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let (a, b) = (
+        a.path().to_string_lossy().into_owned(),
+        b.path().to_string_lossy().into_owned(),
+    );
+    let two = |extra: &[&str]| {
+        let mut argv: Vec<String> = ["--json", "--root", &a, "--project-root", &b]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        argv.extend(extra.iter().map(|s| (*s).to_owned()));
+        argv
+    };
+    let post = two(&["--broadcast", "--message", "hi"]);
+    let claim = two(&[
+        "--agent",
+        "w1",
+        "--resource-kind",
+        "path",
+        "--resource",
+        "src",
+    ]);
+    let release = two(&["--agent", "w1", "--lease", "l1"]);
+    for via in [Via::Cli, Via::Socket] {
+        for (action, argv) in [
+            ("post", &post),
+            ("claim", &claim),
+            ("release", &release),
+            ("leases", &two(&[])),
+        ] {
+            let answer = bus::bus_answer(action, argv, via);
+            assert_eq!(answer.failed, Some(Code::InvalidArgument), "bus {action}");
+            assert!(
+                answer.text.contains("different folders"),
+                "bus {action}: {}",
+                answer.text
+            );
+        }
+        let diaries = engine_files::answer("agent.diaries", &two(&[]), via);
+        assert_eq!(diaries.failed, Some(Code::InvalidArgument), "agent diaries");
+    }
+    let registry = lean_ctx::core::agents::AgentRegistry::load().unwrap_or_default();
+    assert!(registry.scratchpad.is_empty(), "nothing was posted");
 }
 
 /// QN0 flags on `agent post` / `bus post`: an unknown kind is refused with
@@ -2018,7 +2487,7 @@ fn socket_posts_take_neither_a_kind_nor_another_sender() {
     }
 }
 
-/// `bus list --all` / `agent messages --all` (the person's console, Hive
+/// `bus list --all` / `agent messages --all` (the person's console, Cloud
 /// Desktop's read of every project) used to run under no project (`""`),
 /// whose policy resolves to deny-all: the whole feed came back
 /// `withheld` (`release.unadmitted_content`). Each project's messages are
@@ -2056,7 +2525,7 @@ fn bus_list_all_releases_every_project_and_withholds_only_the_tripping_message()
         .cloned()
         .expect("b entry");
     tripping.id = "tripping-message".into();
-    tripping.timestamp -= chrono::Duration::seconds(60);
+    tripping.timestamp -= lean_ctx_time::Duration::seconds(60);
     tripping
         .metadata
         .insert(bus::THREAD_KEY.into(), AWS_KEY.into());

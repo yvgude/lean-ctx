@@ -324,7 +324,8 @@ pub(crate) fn verify_v2(
         }
     };
     let recorded_at = lean_ctx_protocol::TeamTimestampV1::new(
-        chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
+        lean_ctx_time::UtcDateTime::now()
+            .to_rfc3339_opts(lean_ctx_time::SecondsFormat::Nanos, true),
     )
     .map_err(|_| "organization policy decision could not be dated")?;
     let (_, marker) = marker::advance_within(
@@ -344,9 +345,9 @@ pub(crate) fn verify_v2(
                 .and_then(|pack| crate::core::policy::resolve(&pack))
                 .map_err(|_| "verified organization policy is invalid")?;
             // An unreadable horizon is an expired one.
-            let horizon = chrono::DateTime::parse_from_rfc3339(valid_until.as_str())
+            let horizon = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(valid_until.as_str())
                 .map_err(|_| "verified organization policy has expired")?
-                .with_timezone(&chrono::Utc);
+                .to_utc();
             (Some(floor), Some(horizon))
         }
         None => (None, None),
@@ -409,7 +410,7 @@ pub struct Observation {
     policy_version: u64,
     /// The signed horizon of an enforced policy as this Engine parsed and
     /// checked it; `None` for an unpin, which has none.
-    valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    valid_until: Option<lean_ctx_time::UtcDateTime>,
 }
 
 impl Observation {
@@ -437,7 +438,7 @@ impl Observation {
         self.policy_version
     }
 
-    pub(crate) fn valid_until(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+    pub(crate) fn valid_until(&self) -> Option<lean_ctx_time::UtcDateTime> {
         self.valid_until
     }
 }
@@ -449,7 +450,7 @@ impl Observation {
 /// not only when the answer arrived.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Lifetime {
-    horizon: Option<chrono::DateTime<chrono::Utc>>,
+    horizon: Option<lean_ctx_time::UtcDateTime>,
     deadline: std::time::Instant,
 }
 
@@ -458,7 +459,7 @@ impl Lifetime {
     /// only: outside of them a lifetime comes from `verify_v2` and nowhere else.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn for_test(
-        horizon: Option<chrono::DateTime<chrono::Utc>>,
+        horizon: Option<lean_ctx_time::UtcDateTime>,
         deadline: std::time::Instant,
     ) -> Self {
         Self { horizon, deadline }
@@ -468,7 +469,7 @@ impl Lifetime {
     /// outlives the request which obtained the decision and so only ever
     /// checks [`Self::check_horizon`]. Its request deadline has passed by
     /// construction: [`Self::check`] refuses it.
-    pub(crate) fn restored(horizon: Option<chrono::DateTime<chrono::Utc>>) -> Self {
+    pub(crate) fn restored(horizon: Option<lean_ctx_time::UtcDateTime>) -> Self {
         Self {
             horizon,
             deadline: std::time::Instant::now(),
@@ -477,7 +478,7 @@ impl Lifetime {
 
     /// The signed instant an enforced policy runs out at, for the compiled
     /// policy to carry: whoever keeps that policy keeps its end with it.
-    pub(crate) fn horizon(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+    pub(crate) fn horizon(&self) -> Option<lean_ctx_time::UtcDateTime> {
         self.horizon
     }
 
@@ -495,7 +496,7 @@ impl Lifetime {
     pub(crate) fn check_horizon(&self) -> Result<(), String> {
         if self
             .horizon
-            .is_some_and(|horizon| chrono::Utc::now() >= horizon)
+            .is_some_and(|horizon| lean_ctx_time::UtcDateTime::now() >= horizon)
         {
             return Err("verified organization policy has expired".into());
         }
@@ -549,7 +550,7 @@ pub struct Uninstalled {
 /// `policy org install --trust`. Removing the artifact alone would leave a
 /// pinned organization without a policy, which enforcement reads as tampering
 /// and answers with deny-all. Pins for other organizations and a recorded
-/// requirement (Hive) are left alone; they are not this artifact's to lift.
+/// requirement (Cloud) are left alone; they are not this artifact's to lift.
 pub fn uninstall() -> Result<Uninstalled, String> {
     let path = store::installed_path()?;
     let mut outcome = Uninstalled::default();

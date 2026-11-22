@@ -184,7 +184,7 @@ mod tests {
         let collision = "mcp-123-collision";
         crate::core::agent_registry::register(collision, "coder", "owner")
             .expect("durable identity");
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let pid = std::process::id();
         let mut registry = AgentRegistry::new();
         registry.agents.push(AgentEntry {
@@ -199,6 +199,7 @@ mod tests {
             durable_identity_id: None,
             status: AgentStatus::Active,
             status_message: None,
+            agent_status_message: None,
             transport: None,
             role_source: None,
             parent: None,
@@ -223,7 +224,7 @@ mod tests {
     #[test]
     fn bridge_marks_missing_and_revoked_bindings_non_routable() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let pid = std::process::id();
         let mut registry = AgentRegistry::new();
         registry.agents.push(AgentEntry {
@@ -238,6 +239,7 @@ mod tests {
             durable_identity_id: Some("missing-durable".to_string()),
             status: AgentStatus::Active,
             status_message: None,
+            agent_status_message: None,
             transport: None,
             role_source: None,
             parent: None,

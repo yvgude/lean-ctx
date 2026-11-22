@@ -106,7 +106,7 @@ fn hidden_counter_updates_survive_a_stale_view_save() {
     let mut latest =
         ProjectKnowledge::load_for_checked_capture(root.path().to_str().unwrap()).unwrap();
     latest.facts[0].confirmation_count += 1;
-    latest.facts[0].valid_until = Some(chrono::Utc::now());
+    latest.facts[0].valid_until = Some(lean_ctx_time::UtcDateTime::now());
     latest.save().unwrap();
     view.save().unwrap();
     let saved = ProjectKnowledge::load_for_checked_capture(root.path().to_str().unwrap()).unwrap();
@@ -170,14 +170,14 @@ fn source_view_cannot_admit_foreign_local_notes_in_a_bound_protected_request() {
             description: "private foreign pattern".into(),
             examples: vec!["example".into()],
             source_session: "local".into(),
-            created_at: chrono::Utc::now(),
+            created_at: lean_ctx_time::UtcDateTime::now(),
         });
     knowledge
         .history
         .push(crate::core::knowledge::ConsolidatedInsight {
             summary: "private foreign history".into(),
             from_sessions: vec!["session".into()],
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
     knowledge
         .judged_pairs
@@ -185,7 +185,7 @@ fn source_view_cannot_admit_foreign_local_notes_in_a_bound_protected_request() {
             key_a: "private-a".into(),
             key_b: "private-b".into(),
             verdict: "private verdict".into(),
-            judged_at: chrono::Utc::now(),
+            judged_at: lean_ctx_time::UtcDateTime::now(),
         });
     crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
         std::cell::RefCell::new(Some(root.path().to_owned())),

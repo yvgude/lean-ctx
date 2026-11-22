@@ -165,6 +165,103 @@ pub fn egress_routed_hosts(home: &Path) -> Vec<&'static str> {
     routed
 }
 
+/// The [`egress_routed_hosts`] entry and the base-URL variable of an agent
+/// (by its policy agent id) whose routing can be confirmed.
+fn routable_agent(agent: &str) -> Option<(&'static str, Option<&'static str>)> {
+    match agent {
+        "claude-code" => Some(("claude", Some("ANTHROPIC_BASE_URL"))),
+        "codex" => Some(("codex", Some("OPENAI_BASE_URL"))),
+        "grok" => Some(("grok", None)),
+        _ => None,
+    }
+}
+
+/// Whether `agent` (an id from `cloud_agents::agent_id`) sends its model
+/// traffic through the LeanCTX proxy: the proxy is enabled, the agent's own
+/// config points at it ([`egress_routed_hosts`]), and `base_url_env` (the
+/// value of its base-URL variable the agent passed to this process, if any)
+/// does not point elsewhere. An agent whose routing cannot be confirmed is
+/// not routed.
+fn agent_routed(home: &Path, agent: &str, base_url_env: impl Fn(&str) -> Option<String>) -> bool {
+    let Some((host, env)) = routable_agent(agent) else {
+        return false;
+    };
+    let overridden = env
+        .and_then(base_url_env)
+        .is_some_and(|url| !url.trim().is_empty() && !is_local_lean_ctx_url(&url));
+    !overridden && cached_routed_hosts(home).contains(&host)
+}
+
+/// The files [`egress_routed_hosts`] reads for `home`: the LeanCTX config
+/// (proxy enabled) and the Claude Code, Codex and Grok configs.
+fn routing_files(home: &Path) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<_> = lean_ctx::core::config::Config::path().into_iter().collect();
+    files.push(lean_ctx::core::editor_registry::claude_state_dir(home).join("settings.json"));
+    files.push(
+        lean_ctx::core::home::resolve_codex_config_path()
+            .unwrap_or_else(|| home.join(".codex/config.toml")),
+    );
+    files.push(home.join(".grok/config.toml"));
+    files
+}
+
+/// Modification time and length of each file (`None` when absent).
+type FileStamps = Vec<Option<(std::time::SystemTime, u64)>>;
+
+fn stamps(files: &[std::path::PathBuf]) -> FileStamps {
+    files
+        .iter()
+        .map(|file| {
+            let meta = std::fs::metadata(file).ok()?;
+            Some((meta.modified().ok()?, meta.len()))
+        })
+        .collect()
+}
+
+/// The last [`egress_routed_hosts`] answer, by home, files and their stamps.
+type RoutedCache = (
+    std::path::PathBuf,
+    Vec<std::path::PathBuf>,
+    FileStamps,
+    Vec<&'static str>,
+);
+static ROUTED_CACHE: std::sync::Mutex<Option<RoutedCache>> = std::sync::Mutex::new(None);
+
+/// [`egress_routed_hosts`] cached like the Cloud floor: the guarded call path
+/// asks it on every tool call under `security.require_proxy`, so the configs
+/// are read again only when one of [`routing_files`] changes (stamp: mtime
+/// and length) or the home differs.
+fn cached_routed_hosts(home: &Path) -> Vec<&'static str> {
+    let files = routing_files(home);
+    let now = stamps(&files);
+    {
+        let cache = ROUTED_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((h, f, s, hosts)) = cache.as_ref()
+            && h == home
+            && *f == files
+            && *s == now
+        {
+            return hosts.clone();
+        }
+    }
+    // Read outside the lock: `egress_routed_hosts` loads the config (L4), so
+    // ROUTED_CACHE stays a leaf lock (LOCK_ORDERING.md L152).
+    let hosts = egress_routed_hosts(home);
+    *ROUTED_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+        Some((home.to_path_buf(), files, now, hosts.clone()));
+    hosts
+}
+
+/// The `security.require_proxy` probe the binary registers with the Engine
+/// (`cloud_agents::set_proxy_routing_probe`).
+pub fn agent_routed_through_proxy(agent: &str) -> bool {
+    dirs::home_dir().is_some_and(|home| agent_routed(&home, agent, |name| std::env::var(name).ok()))
+}
+
 /// Removes stale proxy URLs from Claude Code / Codex settings when the proxy is not enabled.
 /// Returns the number of stale URLs cleaned up.
 pub fn cleanup_stale_proxy_env(home: &Path) -> usize {

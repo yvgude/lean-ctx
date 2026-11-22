@@ -21,11 +21,6 @@ pub(super) fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> 
             crate::core::editor_registry::codebuddy_mcp_json_path(home).exists()
                 || state_dir.exists()
         }
-        "Codex CLI" => {
-            let codex_dir =
-                crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
-            codex_dir.exists() || command_exists("codex")
-        }
         "Grok" => home.join(".grok").exists() || command_exists("grok"),
         // #1402: CodeWhale has no rules target (see `targets.rs`) — detection
         // is kept here so `doctor` and the setup summary can report it.
@@ -50,7 +45,11 @@ pub(super) fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> 
         "Amazon Q Developer" => home.join(".aws/amazonq").exists(),
         "JetBrains IDEs" => detect_jetbrains_installed(home),
         "Antigravity" => home.join(".gemini/antigravity").exists(),
-        "Pi Coding Agent" => home.join(".pi").exists() || command_exists("pi"),
+        "Pi Coding Agent" => {
+            home.join(".pi").exists()
+                || crate::core::editor_registry::pi_agent_dir(home).exists()
+                || command_exists("pi")
+        }
         "Oh My Pi" => {
             crate::core::editor_registry::omp_agent_dir(home).exists() || command_exists("omp")
         }

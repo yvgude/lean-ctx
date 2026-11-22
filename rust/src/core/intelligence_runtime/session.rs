@@ -29,24 +29,24 @@ struct Bootstrap<'a> {
     session_id: &'a str,
     deadline_unix_ms: u64,
     invocation: &'a EngineInvocationV1,
-    /// The Hive runtime lease, the same value as in the request; only for a
+    /// The Cloud runtime lease, the same value as in the request; only for a
     /// package that declares `runtime_lease` `v1` or `v2` (older ones refuse
     /// the field).
     #[serde(skip_serializing_if = "Option::is_none")]
     lease_b64: Option<&'a str>,
 }
 
-/// The Hive runtime lease for `package`, base64: only for a package that
-/// declares `"runtime_lease"` `"v1"` or `"v2"`, and only while Hive offers a
+/// The Cloud runtime lease for `package`, base64: only for a package that
+/// declares `"runtime_lease"` `"v1"` or `"v2"`, and only while Cloud offers a
 /// lease. The bytes — a v1 document, or a v2 one carrying a self-hosted
-/// Hive's root certificate — are opaque here; the runtime verifies them.
+/// Cloud's root certificate — are opaque here; the runtime verifies them.
 pub(super) fn runtime_lease_b64(package: &VerifiedPackage) -> Option<String> {
     takes_lease(package)
         .then(super::lease::current_lease_b64)
         .flatten()
 }
 
-/// Whether `package` declares that it takes the Hive runtime lease.
+/// Whether `package` declares that it takes the Cloud runtime lease.
 pub(super) fn takes_lease(package: &VerifiedPackage) -> bool {
     matches!(
         package.description["runtime_lease"].as_str(),
@@ -132,10 +132,10 @@ pub(super) fn admit_invocation(
     // that declares it inside a complete admitted set; no other operation
     // stands in for it and it stands in for none.
     let verifier = operation.capability_id.as_str() == "enterprise.runtime.org_policy_verifier";
-    let supported = (matches!(
-        operation.capability_id.as_str(),
-        "pro.runtime.personal_protection" | "pro.runtime.code_security"
-    ) || (verifier && health::supports_org_policy_verifier(package))
+    // Personal rule compilation is free and local (`core::policy::personal_rules`):
+    // `pro.runtime.personal_protection` stays declarable for installation, never invoked.
+    let supported = (operation.capability_id.as_str() == "pro.runtime.code_security"
+        || (verifier && health::supports_org_policy_verifier(package))
         || (operation.capability_id.as_str() == super::compliance_frameworks::CAPABILITY_ID
             && health::supports_compliance_frameworks(package)))
         && package.description["capabilities"]
@@ -194,7 +194,7 @@ fn invoke_verified(
             Ok(configuration) => {
                 command.env("LEANCTX_INTELLIGENCE_LICENSE_CONFIG", configuration);
             }
-            // No commercial licence: the Hive lease is the claim instead,
+            // No commercial licence: the Cloud lease is the claim instead,
             // and the runtime decides what it admits.
             Err(_) if lease_b64.is_some() => {}
             Err(error) => return Err(error),

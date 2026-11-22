@@ -135,3 +135,23 @@ fn worker_threads_env_invalid_falls_back() {
     assert_eq!(resolve_worker_threads(3), 3);
     lean_ctx::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
 }
+
+#[test]
+fn passthrough_child_drops_startup_and_option_variables() {
+    let cmd = super::passthrough_command("true");
+    let envs: Vec<_> = cmd.get_envs().collect();
+    for name in lean_ctx::shell::platform::HIDDEN_OPTION_ENV {
+        assert!(
+            envs.iter()
+                .any(|(k, v)| *k == std::ffi::OsStr::new(name) && v.is_none()),
+            "passthrough must remove {name} from the child"
+        );
+    }
+    for name in ["BASH_ENV", "ENV"] {
+        assert!(
+            envs.iter().any(|(k, v)| *k == std::ffi::OsStr::new(name)
+                && v.is_some_and(std::ffi::OsStr::is_empty)),
+            "passthrough must clear {name}"
+        );
+    }
+}

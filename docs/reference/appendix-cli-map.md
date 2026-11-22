@@ -47,7 +47,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `discover` | Find uncompressed commands in shell history; `--card` (shareable "before" SVG) |
 | `ghost` | Ghost-token report (hidden waste); `--json` |
 | `cheatsheet` (`cheat`) | Workflow cheat sheet |
-| `dashboard` | Web dashboard (localhost:3333); `--port`, `--host` |
+| `cockpit` (`dashboard`) | Local Cockpit at http://localhost:3333; binds 127.0.0.1 by default, `--host` opts into remote access; `--port`, `--foreground`, `--no-open`, `--export [--output=FILE] [--open]` (writes the offline HTML report, `lean-ctx-report.html`), `stop`, `install` |
 
 ## Memory & sessions
 

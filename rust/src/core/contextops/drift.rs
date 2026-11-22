@@ -82,7 +82,7 @@ pub(crate) fn detect_drift(home: &Path) -> Vec<DriftReport> {
                 };
             };
 
-            if !content.contains(marker) {
+            if !crate::marked_block::contains_marker_line(&content, marker) {
                 return DriftReport {
                     target: status.name,
                     path: status.path,
@@ -139,15 +139,19 @@ pub(crate) fn detect_drift(home: &Path) -> Vec<DriftReport> {
         .collect()
 }
 
+/// The block from the `marker` line to the first `end_marker` line after it
+/// (to the end of the file when there is none), with LF line endings. Only
+/// whole marker lines count, as for the writers: a marker quoted in prose is
+/// user text (GL #1158).
 fn extract_section(content: &str, marker: &str, end_marker: &str) -> String {
-    let Some(start) = content.find(marker) else {
+    use crate::marked_block::marker_line_span;
+    let Some((start, after)) = marker_line_span(content, marker) else {
         return String::new();
     };
-    let end = content[start..]
-        .find(end_marker)
-        .map_or(content.len(), |e| start + e + end_marker.len());
+    let end = marker_line_span(&content[after..], end_marker)
+        .map_or(content.len(), |(_, end)| after + end);
 
-    content[start..end].to_string()
+    content[start..end].replace("\r\n", "\n")
 }
 
 fn compute_diff(expected: &str, actual: &str) -> String {
@@ -193,12 +197,15 @@ mod tests {
 
     #[test]
     fn extract_section_with_markers() {
-        let content =
-            format!("before\n{START_MARK}\n<!-- version: 1 -->\n\nrules\n{END_MARK}\nafter");
+        // A marker quoted in prose is not the block.
+        let content = format!(
+            "before `{START_MARK}` and `{END_MARK}`\n{START_MARK}\n<!-- version: 1 -->\n\nrules\n{END_MARK}\nafter"
+        );
         let section = extract_section(&content, START_MARK, END_MARK);
         assert!(section.contains("rules"));
         assert!(section.contains(START_MARK));
         assert!(section.contains(END_MARK));
+        assert!(section.starts_with(START_MARK), "{section:?}");
         assert!(!section.contains("before"));
         assert!(!section.contains("after"));
     }

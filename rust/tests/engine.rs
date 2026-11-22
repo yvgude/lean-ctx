@@ -6,8 +6,8 @@
 //! now, so a test is `<old file stem>::<test>`. Add new Engine integration
 //! tests as modules here, not as new tests/*.rs files (`autotests = false`).
 //!
-//! Kept as their own binaries (see `[[test]]` in Cargo.toml) because they need
-//! a process nobody else touched: graph_provider_cold_open and
+//! These need a process nobody else touched, so each of their tests runs in a
+//! process of its own (see fresh_process.rs): graph_provider_cold_open and
 //! lazy_graph_build_latch_tests (the process-wide background-build latch),
 //! outcome_pricing_e2e (env set before any cached resolver runs),
 //! ocp_self_validation (data dir and audit-chain tail of the process) and
@@ -49,9 +49,16 @@ mod closure_tests;
 mod config_adopt_override;
 mod dropin_install_tests;
 mod evidence_bundle_e2e;
+#[path = "../crates/lean-ctx-shell-policy/tests/fresh_process.rs"]
+mod fresh_process;
+mod gateway_postprocess_e2e;
+mod graph_provider_cold_open;
 mod issue_249_index_observability;
+mod lazy_graph_build_latch_tests;
 mod neuro_physics_scenarios;
 mod ocla_integration_suite;
+mod ocp_self_validation;
+mod outcome_pricing_e2e;
 mod p17_task_control_bounds;
 mod p17_task_control_status;
 mod p2_graph_embeddings_eval;

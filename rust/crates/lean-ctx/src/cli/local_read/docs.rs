@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx hive docs list|show --json`: the doc pages of the vault linked
+//! `lean-ctx cloud docs list|show --json`: the doc pages of the vault linked
 //! to this checkout, from the local replica (as `ctx_doc` reads them). No
 //! request leaves the machine; only a vault linked here is read.
 
@@ -8,11 +8,11 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::Value;
 
+use lean_ctx_cloud::CloudStore;
+use lean_ctx_cloud::replica::Replica;
 use lean_ctx_doc::model::Section;
 use lean_ctx_doc::replica::{DocSpace, PageView};
 use lean_ctx_doc::state::{DocState, StateReason};
-use lean_ctx_hive::HiveStore;
-use lean_ctx_hive::replica::Replica;
 
 use super::{Code, Failure};
 
@@ -27,27 +27,30 @@ pub(crate) struct LinkedVault {
 /// an enrollment, `no_vault` when nothing is linked here or no replica was
 /// synced yet. Creates nothing.
 pub(crate) fn open_linked(root: &str) -> Result<LinkedVault, Failure> {
-    let store = HiveStore::open()?;
+    let store = CloudStore::open()?;
     if store.instance()?.is_none() {
         return Err(Failure::new(
             Code::NotConnected,
-            "this machine is not connected to Hive",
+            "this machine is not connected to LeanCTX Cloud",
         ));
     }
-    let record = lean_ctx_hive::vault::VaultMap::load(store.data_dir())
+    let record = lean_ctx_cloud::vault::VaultMap::load(store.data_dir())
         .for_root(root)
         .cloned()
         .ok_or_else(|| {
-            Failure::new(Code::NoVault, "this checkout is not linked to a Hive vault")
+            Failure::new(
+                Code::NoVault,
+                "this checkout is not linked to a Cloud vault",
+            )
         })?;
-    let dir = lean_ctx_hive::replica::store::place_dir(store.data_dir(), &record.vault_id);
+    let dir = lean_ctx_cloud::replica::store::place_dir(store.data_dir(), &record.vault_id);
     if !dir.join("replica.db").exists() {
         return Err(Failure::new(
             Code::NoVault,
             format!("{}/{} has no replica here yet", record.ns, record.name),
         ));
     }
-    let (mk, _) = lean_ctx_hive::replica::crypt::master_key(store.config_dir(), false)?;
+    let (mk, _) = lean_ctx_cloud::replica::crypt::master_key(store.config_dir(), false)?;
     let (replica, _) = Replica::open(store.data_dir(), &record.vault_id, &mk)?;
     Ok(LinkedVault {
         address: format!("{}/{}", record.ns, record.name),
@@ -278,12 +281,12 @@ pub(crate) fn list_rows(space: &DocSpace) -> Vec<PageRow> {
     pages.into_iter().map(page_row).collect()
 }
 
-/// `hive docs list|show <id> --json [--project-root P]`.
+/// `cloud docs list|show <id> --json [--project-root P]`.
 pub(crate) fn run(args: &[String]) {
     super::print(&answer(args, super::Via::Cli));
 }
 
-/// The document of `hive docs list|show <id> --json`, for `via`.
+/// The document of `cloud docs list|show <id> --json`, for `via`.
 pub(crate) fn answer(args: &[String], via: super::Via) -> super::Answer {
     let positional = super::positionals(args);
     let action = positional.first().copied().unwrap_or("list");
@@ -293,7 +296,7 @@ pub(crate) fn answer(args: &[String], via: super::Via) -> super::Answer {
     };
     // No vault linked here: the project's local pages (`"source": "local"`).
     // A link that cannot be read is `unavailable` inside docs_cmd::json_answer.
-    let linked = lean_ctx_hive::local_docs::is_linked(&root);
+    let linked = lean_ctx_cloud::local_docs::is_linked(&root);
     if matches!(action, "list" | "show") && !matches!(linked, Ok(true)) {
         let slug = positional.get(1).copied();
         return crate::cli::docs_cmd::json_answer(&root, action, slug, None, args, via);
@@ -301,7 +304,7 @@ pub(crate) fn answer(args: &[String], via: super::Via) -> super::Answer {
     match action {
         "list" => super::answer_released("ctx_doc", &root, "docs.list", via, || {
             let vault = open_linked(&root)?;
-            let space = lean_ctx_hive::docs::space(&vault.replica)?;
+            let space = lean_ctx_cloud::docs::space(&vault.replica)?;
             Ok(DocsList {
                 project_root: root.clone(),
                 source: "vault",
@@ -314,11 +317,11 @@ pub(crate) fn answer(args: &[String], via: super::Via) -> super::Answer {
         }),
         "show" => {
             let Some(id) = positional.get(1).copied() else {
-                return super::Answer::failure(&Failure::invalid("hive docs show <id> --json"));
+                return super::Answer::failure(&Failure::invalid("cloud docs show <id> --json"));
             };
             super::answer_released("ctx_doc", &root, "docs.page", via, || {
                 let vault = open_linked(&root)?;
-                let space = lean_ctx_hive::docs::space(&vault.replica)?;
+                let space = lean_ctx_cloud::docs::space(&vault.replica)?;
                 let page = space
                     .page_by_slug(id)
                     .ok_or_else(|| Failure::new(Code::NotFound, format!("no page {id}")))?;
@@ -334,7 +337,7 @@ pub(crate) fn answer(args: &[String], via: super::Via) -> super::Answer {
             })
         }
         other => super::Answer::failure(&Failure::invalid(format!(
-            "hive docs {other}: --json supports list and show"
+            "cloud docs {other}: --json supports list and show"
         ))),
     }
 }

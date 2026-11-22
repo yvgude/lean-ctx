@@ -649,12 +649,9 @@ impl GraphProvider {
         // materialization moment (#696 C4). Content-based staleness still keys
         // off the meta file's mtime independently.
         if let Some(meta) = super::property_graph::load_meta(project_root)
-            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&meta.built_at)
+            && let Ok(dt) = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&meta.built_at)
         {
-            idx.last_scan = dt
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string();
+            idx.last_scan = dt.to_local().format("%Y-%m-%d %H:%M:%S").to_string();
         }
         for f in self.file_entries() {
             idx.files.insert(

@@ -481,16 +481,16 @@ fn parse_time(time: &Tlv<'_>) -> Result<i64, String> {
     } else {
         (num(0..4) as i32, 4)
     };
-    chrono::NaiveDate::from_ymd_opt(year, num(rest..rest + 2), num(rest + 2..rest + 4))
-        .and_then(|date| {
-            date.and_hms_opt(
-                num(rest + 4..rest + 6),
-                num(rest + 6..rest + 8),
-                num(rest + 8..rest + 10),
-            )
-        })
-        .map(|t| t.and_utc().timestamp())
-        .ok_or_else(invalid)
+    lean_ctx_time::UtcDateTime::with_ymd_and_hms(
+        year,
+        num(rest..rest + 2),
+        num(rest + 2..rest + 4),
+        num(rest + 4..rest + 6),
+        num(rest + 6..rest + 8),
+        num(rest + 8..rest + 10),
+    )
+    .map(lean_ctx_time::UtcDateTime::timestamp)
+    .ok_or_else(invalid)
 }
 
 fn bit_string_bytes<'a>(bits: &Tlv<'a>) -> Result<&'a [u8], String> {

@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "action": {
+        "href": "/o/acme/v/kb/"
+      },
+      "created_at": "2026-11-06T08:00:00Z",
+      "due_at": null,
+      "id": "wt_cccccccccccccccccccccccccc",
+      "kind": "contradiction_open",
+      "place": {
+        "id": "kb",
+        "kind": "vault",
+        "name": "Knowledge",
+        "ws": "acme"
+      },
+      "severity": "info",
+      "title_vars": {
+        "place": "Knowledge",
+        "workspace": "Acme"
+      }
+    }
+  ],
+  "total": 1
+}

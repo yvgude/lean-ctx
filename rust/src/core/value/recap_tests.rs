@@ -16,8 +16,8 @@ fn snap(session: &str, saved: u64) -> ValueSnapshot {
     ValueSnapshot {
         schema: SCHEMA,
         session_id: session.into(),
-        started_at: Some(Utc::now() - chrono::Duration::hours(1)),
-        updated_at: Some(Utc::now()),
+        started_at: Some(lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::hours(1)),
+        updated_at: Some(lean_ctx_time::UtcDateTime::now()),
         tokens_input: saved * 2,
         tokens_saved: saved,
         ..ValueSnapshot::default()
@@ -34,7 +34,10 @@ fn secrets(n: u64) -> SecurityCounts {
 #[test]
 fn recap_fires_every_n_turns_and_only_describes_its_window() {
     let cfg = cfg();
-    let mut state = TurnState::start(Utc::now(), Some(&snap("s", 1_000_000)));
+    let mut state = TurnState::start(
+        lean_ctx_time::UtcDateTime::now(),
+        Some(&snap("s", 1_000_000)),
+    );
     for turn in 1..10 {
         let s = snap("s", 1_000_000 + turn * 40_000);
         assert_eq!(advance(&mut state, Some(&s), &cfg, false), None);
@@ -57,7 +60,7 @@ fn recap_fires_every_n_turns_and_only_describes_its_window() {
 #[test]
 fn a_quiet_window_keeps_growing_until_it_is_worth_mentioning() {
     let cfg = cfg();
-    let mut state = TurnState::start(Utc::now(), Some(&snap("s", 0)));
+    let mut state = TurnState::start(lean_ctx_time::UtcDateTime::now(), Some(&snap("s", 0)));
     for _ in 0..12 {
         assert_eq!(
             advance(&mut state, Some(&snap("s", 10_000)), &cfg, false),
@@ -72,7 +75,7 @@ fn a_quiet_window_keeps_growing_until_it_is_worth_mentioning() {
 #[test]
 fn a_security_event_is_always_worth_a_recap() {
     let cfg = cfg();
-    let mut state = TurnState::start(Utc::now(), Some(&snap("s", 0)));
+    let mut state = TurnState::start(lean_ctx_time::UtcDateTime::now(), Some(&snap("s", 0)));
     for _ in 0..9 {
         advance(&mut state, Some(&snap("s", 0)), &cfg, false);
     }
@@ -90,7 +93,7 @@ fn a_security_event_is_always_worth_a_recap() {
 #[test]
 fn verbose_mentions_any_saving() {
     let cfg = cfg();
-    let mut state = TurnState::start(Utc::now(), Some(&snap("s", 0)));
+    let mut state = TurnState::start(lean_ctx_time::UtcDateTime::now(), Some(&snap("s", 0)));
     for _ in 0..9 {
         advance(&mut state, Some(&snap("s", 1)), &cfg, true);
     }
@@ -100,12 +103,12 @@ fn verbose_mentions_any_saving() {
 #[test]
 fn a_new_lean_session_is_rebased_by_when_it_began() {
     let cfg = cfg();
-    let created = Utc::now() - chrono::Duration::minutes(30);
+    let created = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(30);
     let mut state = TurnState::start(created, None);
 
     // Began inside this host session: everything it saved belongs to it.
     let mut fresh = snap("new", 80_000);
-    fresh.started_at = Some(created + chrono::Duration::minutes(1));
+    fresh.started_at = Some(created + lean_ctx_time::Duration::minutes(1));
     for _ in 0..9 {
         advance(&mut state, Some(&fresh), &cfg, false);
     }
@@ -144,7 +147,7 @@ fn turn_state_ids_are_sanitized() {
 fn turn_end_persists_the_count_between_hook_processes() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = cfg();
-    let now = Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let base = snap("s", 0);
     on_session_start(
         dir.path(),
@@ -187,13 +190,13 @@ fn turn_end_persists_the_count_between_hook_processes() {
 fn session_start_shows_the_weekly_digest_once() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = cfg();
-    let now = Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let mut a = snap("a", 1_000_000);
     a.security = secrets(1);
     write_to(dir.path(), &a).unwrap();
     write_to(dir.path(), &snap("b", 400_000)).unwrap();
     let mut old = snap("old", 9_000_000);
-    old.updated_at = Some(now - chrono::Duration::days(9));
+    old.updated_at = Some(now - lean_ctx_time::Duration::days(9));
     write_to(dir.path(), &old).unwrap();
 
     let line = on_session_start(
@@ -228,7 +231,7 @@ fn session_start_shows_the_weekly_digest_once() {
 fn session_start_recaps_a_new_last_session_once() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = cfg();
-    let now = Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let state = RecapState {
         last_session_recapped: String::new(),
         last_digest_at: Some(now),
@@ -271,7 +274,7 @@ fn session_start_recaps_a_new_last_session_once() {
 fn session_start_is_silent_on_resume_small_sessions_and_stale_ones() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = cfg();
-    let now = Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     write_json(
         &recap_state_path(dir.path()),
         &RecapState {
@@ -300,7 +303,7 @@ fn session_start_is_silent_on_resume_small_sessions_and_stale_ones() {
         None
     );
     let mut stale = snap("stale", 1_000_000);
-    stale.updated_at = Some(now - chrono::Duration::days(8));
+    stale.updated_at = Some(now - lean_ctx_time::Duration::days(8));
     assert_eq!(
         on_session_start(
             dir.path(),
@@ -325,7 +328,7 @@ fn session_start_baselines_the_host_session() {
         "startup",
         Some(&s),
         &cfg(),
-        Utc::now(),
+        lean_ctx_time::UtcDateTime::now(),
         Style::PLAIN,
     );
     let state = load_turn_state(dir.path(), "host").unwrap();

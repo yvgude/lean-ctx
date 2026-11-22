@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::{
     DIM, RST, compact_score, display_user_path, print_compact_status, shell_aliases_outcome,
@@ -39,7 +39,7 @@ fn build_and_persist_fix_report(
     };
 
     let _quiet_guard = quiet.then(lean_ctx::core::runtime_flags::scoped_quiet);
-    let started_at = Utc::now();
+    let started_at = UtcDateTime::now();
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
@@ -684,7 +684,7 @@ fn build_and_persist_fix_report(
     }
     steps.push(verify_step);
 
-    let finished_at = Utc::now();
+    let finished_at = UtcDateTime::now();
     let success = steps.iter().all(|s| s.ok);
 
     let report = SetupReport {

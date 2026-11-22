@@ -4,11 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
-use lean_ctx_protocol::hive::receipts_v2::{ReceiptsAckV2, ReceiptsRequestV2};
+use lean_ctx_protocol::cloud::receipts_v2::{ReceiptsAckV2, ReceiptsRequestV2};
 use serde_json::Value;
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hive-v2")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cloud-v2")
 }
 
 fn load(rel: &str) -> Value {
@@ -41,6 +41,23 @@ fn the_request_fixture_round_trips_and_its_digest_binds_the_document() {
     assert_eq!(serde_json::to_value(&request).unwrap(), raw);
     let item = &request.receipts[0];
     assert_eq!(item.document.digest().unwrap(), item.digest);
+}
+
+/// V9: a receipt that names its session (HMAC only) round-trips; the
+/// plain request above stays the example without one.
+#[test]
+fn the_session_request_fixture_carries_an_hmac_session_ref() {
+    let raw = load("routes/receipts_v2.request.session.json");
+    let request: ReceiptsRequestV2 = serde_json::from_value(raw.clone()).unwrap();
+    request.validate().unwrap();
+    assert_eq!(serde_json::to_value(&request).unwrap(), raw);
+    let item = &request.receipts[0];
+    assert_eq!(item.document.digest().unwrap(), item.digest);
+    let session = item.document.invocation.session_ref.as_ref().unwrap();
+    assert!(session.as_str().starts_with("hmac-sha256:"));
+    let plain: ReceiptsRequestV2 =
+        serde_json::from_value(load("routes/receipts_v2.request.json")).unwrap();
+    assert!(plain.receipts[0].document.invocation.session_ref.is_none());
 }
 
 #[test]

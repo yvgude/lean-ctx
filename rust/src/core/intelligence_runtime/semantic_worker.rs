@@ -80,7 +80,7 @@ pub(super) struct Started {
     pub(super) events: Receiver<Event>,
     /// The contract version negotiated from the authenticated package.
     pub(super) version: &'static str,
-    /// The package takes the Hive runtime lease (`runtime_lease` v1 or v2).
+    /// The package takes the Cloud runtime lease (`runtime_lease` v1 or v2).
     pub(super) takes_lease: bool,
     /// The lease last handed to the worker.
     pub(super) lease: Option<String>,
@@ -496,7 +496,7 @@ fn exchange(
     }
 }
 
-/// The admission line that hands the worker the Hive runtime lease.
+/// The admission line that hands the worker the Cloud runtime lease.
 fn lease_line(lease: &str) -> Vec<u8> {
     let mut line = serde_json::json!({ "lease_b64": lease })
         .to_string()
@@ -650,7 +650,7 @@ impl ProcessLauncher {
             .stderr(Stdio::piped());
         // The lease configuration is named exactly as for a one-shot start;
         // only the private peer interprets it.
-        // Without a commercial licence the Hive lease is the claim: it is
+        // Without a commercial licence the Cloud lease is the claim: it is
         // the worker's first input line, before it loads anything.
         let takes_lease = super::session::takes_lease(&package);
         let lease = takes_lease.then(super::lease::current_lease_b64).flatten();

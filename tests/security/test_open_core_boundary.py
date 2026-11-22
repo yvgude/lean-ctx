@@ -29,9 +29,13 @@ class OpenCoreBoundaryTests(unittest.TestCase):
             "rust/crates/lean-ctx-protocol/src/outcome_engine.rs",
             "rust/crates/lean-ctx-protocol/src/rollout.rs",
             "rust/crates/lean-ctx-protocol/src/value_share.rs",
+            # lib.rs files include test modules with #[path]; their targets
+            # must exist for the source-injection check.
+            "rust/crates/lean-ctx-protocol/tests/main.rs",
             "rust/crates/lean-ctx-proxy/src/lib.rs",
             "rust/crates/lean-ctx-proxy/src/auto_routing.rs",
             "rust/crates/lean-ctx-proxy/src/rollout.rs",
+            "rust/crates/lean-ctx-proxy/tests/trace_correlation.rs",
         ):
             destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -474,6 +478,22 @@ class OpenCoreBoundaryTests(unittest.TestCase):
         for surface in GATE.FROZEN_SURFACES:
             self.assertTrue(any("[new-consumer] %s" % surface in finding for finding in findings), findings)
 
+    def test_extern_self_under_own_name_is_checked_through_that_name(self):
+        consumer = self.repo / "rust/crates/lean-ctx-protocol/src/extern_self_own_name.rs"
+        consumer.write_text(
+            "extern crate self as lean_ctx_protocol;\n"
+            "fn consume(_: lean_ctx_protocol::control_plane::ControlPlaneRequest) {}\n",
+            encoding="utf-8",
+        )
+        relative = "rust/crates/lean-ctx-protocol/src/extern_self_own_name.rs"
+        self.assertEqual(
+            GATE.check_repo(self.repo),
+            [
+                "[new-consumer] control_plane %s:2 references frozen surface: "
+                "lean_ctx_protocol::control_plane::ControlPlaneRequest" % relative
+            ],
+        )
+
     def test_self_and_super_root_symbol_references_are_rejected(self):
         self.assert_new_consumer(
             "relative_root_consumer.rs",
@@ -575,6 +595,48 @@ class OpenCoreBoundaryTests(unittest.TestCase):
         self.assertFalse(any("[new-consumer] control_plane" in finding for finding in findings))
         self.assertTrue(any("control_plane module digest drift" in finding for finding in findings))
 
+    def test_oss_cloud_connector_crate_is_public(self):
+        # lean-ctx-cloud is the OSS Cloud connector (renamed from lean-ctx-cloud,
+        # owner 18.11.); the private Cloud stays `leanctx_cloud`.
+        consumer = self.repo / "rust/src/connector_consumer.rs"
+        consumer.write_text("use lean_ctx_cloud::CloudStore;\n", encoding="utf-8")
+        findings = GATE.check_repo(self.repo)
+        self.assertFalse(any("[private-import]" in finding for finding in findings), findings)
+        self.assertFalse(any("[private-path]" in finding for finding in findings), findings)
+
+    def test_private_cloud_service_is_private_by_path(self):
+        # ee/services/cloud shares the package name lean-ctx-cloud with the
+        # public connector; the ee/ path rule keeps it private.
+        crate = self.repo / "rust/crates/lean-ctx-cloud"
+        (crate / "src").mkdir(parents=True)
+        (crate / "src/lib.rs").write_text(
+            'include!("../../../../ee/services/cloud/src/billing.rs");\n'
+            'pub const SCHEMA: &str = include_str!("../../../../ee/services/cloud/src/db/schema.sql");\n',
+            encoding="utf-8",
+        )
+        (crate / "Cargo.toml").write_text(
+            '[package]\nname = "lean-ctx-cloud"\n\n[dependencies]\n'
+            'cloud-service = { package = "lean-ctx-cloud", path = "../../../ee/services/cloud" }\n',
+            encoding="utf-8",
+        )
+        findings = GATE.check_repo(self.repo)
+        private = [finding for finding in findings if "[private-path]" in finding]
+        self.assertEqual(len(private), 3, findings)
+        self.assertTrue(all("ee/services/cloud" in finding for finding in private), private)
+
+    def test_public_connector_paths_are_not_private(self):
+        crate = self.repo / "rust/crates/lean-ctx-cloud"
+        (crate / "src").mkdir(parents=True)
+        (crate / "src/lib.rs").write_text("pub mod store;\n", encoding="utf-8")
+        (crate / "Cargo.toml").write_text(
+            '[package]\nname = "lean-ctx-cloud"\n\n[dependencies]\n'
+            'lean-ctx-protocol = { path = "../lean-ctx-protocol" }\n'
+            'eel = { path = "../eel" }\n',
+            encoding="utf-8",
+        )
+        findings = GATE.check_repo(self.repo)
+        self.assertFalse(any("[private-path]" in finding for finding in findings), findings)
+
     def test_private_cloud_import_remains_distinct(self):
         consumer = self.repo / "rust/src/private_consumer.rs"
         consumer.write_text(
@@ -587,7 +649,7 @@ class OpenCoreBoundaryTests(unittest.TestCase):
     def test_cloud_import_and_enterprise_extern_are_private(self):
         consumer = self.repo / "rust/src/private_qualified_consumer.rs"
         consumer.write_text(
-            "use lean_ctx_cloud::secret::Thing;\n"
+            "use leanctx_cloud::secret::Thing;\n"
             "extern crate lean_ctx_enterprise;\n",
             encoding="utf-8",
         )
@@ -598,7 +660,7 @@ class OpenCoreBoundaryTests(unittest.TestCase):
     def test_raw_identifier_private_paths_are_rejected(self):
         consumer = self.repo / "rust/src/raw_private_consumer.rs"
         consumer.write_text(
-            "use r#lean_ctx_cloud::restricted_api::Thing;\n"
+            "use r#leanctx_cloud::restricted_api::Thing;\n"
             "extern crate r#lean_ctx_enterprise;\n",
             encoding="utf-8",
         )
@@ -609,7 +671,7 @@ class OpenCoreBoundaryTests(unittest.TestCase):
     def test_private_namespace_aliases_are_rejected(self):
         consumer = self.repo / "rust/src/private_alias_consumer.rs"
         consumer.write_text(
-            "use lean_ctx_cloud as cloud;\n"
+            "use leanctx_cloud as cloud;\n"
             "use lean_ctx_enterprise as enterprise;\n"
             "use private as restricted;\n",
             encoding="utf-8",

@@ -148,7 +148,57 @@ fn protected_evidence_is_never_removed_for_room() {
     let done = maintain_in(dir, SystemTime::now(), full).unwrap();
     assert_eq!(done.removed, 0);
     assert!((0..4).all(|n| exists(dir, n)));
-    assert!(done.full && proven_full(dir), "{done:?}");
+    assert!(
+        done.full && proven_full_under(dir, full.ceiling_bytes),
+        "{done:?}"
+    );
+}
+
+/// A pass under a smaller ceiling (another configuration or override)
+/// stamped the store full. Under the ceiling that applies here the same
+/// evidence fits: the stamp proves nothing, a write is admitted, and the
+/// operator's view (`doctor`) does not report the store full — at 27 % of
+/// its ceiling it once said CRIT.
+#[test]
+fn stale_full_stamp_from_a_smaller_ceiling_proves_nothing_under_the_effective_one() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let store = tempfile::tempdir().unwrap();
+    let dir = store.path();
+    for n in 0..4 {
+        receipt(dir, n, "json.zst", 32 * 1024, 0);
+    }
+    let small = Policy {
+        ceiling_bytes: Some(64 * 1024),
+        ..policy(Some(1))
+    };
+    let done = maintain_in(dir, SystemTime::now(), small).unwrap();
+    assert!(done.full, "{done:?}");
+    assert!(proven_full_under(dir, small.ceiling_bytes));
+
+    // The ceiling of this process: 1 MB, far above the 128 KiB stored.
+    let _ceiling = crate::test_env::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1");
+    assert!(
+        !proven_full(dir),
+        "a full stamp of a smaller ceiling is stale"
+    );
+    write_entry(dir, 900).expect("admitted under the ceiling that applies");
+
+    let usage = super::super::capacity::usage_in(dir, 1).unwrap();
+    assert!(!refuses_entries(dir, &usage), "{usage:?}");
+    // Against the ceiling the pass judged by, it is (still) full.
+    let tight = super::super::capacity::Usage {
+        limit_bytes: small.ceiling_bytes,
+        ..usage
+    };
+    assert!(refuses_entries(dir, &tight), "{tight:?}");
+
+    // A stamp of an older version carries no bytes: it proves nothing.
+    std::fs::write(
+        dir.join(".maintenance"),
+        serde_json::to_vec(&serde_json::json!({"store": identity(dir), "full": true})).unwrap(),
+    )
+    .unwrap();
+    assert!(!proven_full_under(dir, small.ceiling_bytes));
 }
 
 fn write_entry(dir: &Path, n: u32) -> Result<(), String> {

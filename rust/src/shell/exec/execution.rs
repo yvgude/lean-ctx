@@ -468,7 +468,7 @@ fn execute_shell_post_gate(command: &str, collapsed_nested: bool) -> i32 {
     // capture) and TTYs keep compressing. This is the single choke point, so it
     // holds for every caller (hook, direct CLI, Pi/MCP bridges).
     if stdout_is_regular_file() {
-        return exec_inherit_tracked(command, &shell, &shell_flag);
+        return exec_inherit_limited(command, &shell, &shell_flag, Stdio::inherit());
     }
 
     // Also bypass compression when the redirect is INSIDE the command string
@@ -478,7 +478,7 @@ fn execute_shell_post_gate(command: &str, collapsed_nested: bool) -> i32 {
     // the file gets correct data — but the overhead is wasted and the compressed
     // empty output confuses agents. Let sh handle it natively. (#1303)
     if command_has_file_redirect(command) {
-        return exec_inherit_tracked(command, &shell, &shell_flag);
+        return exec_inherit_limited(command, &shell, &shell_flag, Stdio::inherit());
     }
 
     super::super::pipeline::exec_buffered(command, &shell, &shell_flag, &cfg)
@@ -630,6 +630,18 @@ fn sandbox_launcher_command(argv: &[String]) -> Command {
 }
 
 fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
+    let status = inherit_command(command, shell, shell_flag).status();
+
+    match status {
+        Ok(s) => crate::shell::exit_status::exit_code(s),
+        Err(e) => {
+            tracing::error!("lean-ctx: failed to execute: {e}");
+            127
+        }
+    }
+}
+
+fn inherit_command(command: &str, shell: &str, shell_flag: &str) -> Command {
     // #1286: the zsh preamble is applied at spawn time only, so `command`
     // stays clean for classification/compression upstream.
     let spawn_command = super::super::platform::zsh_safe_command(command, shell);
@@ -642,15 +654,38 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
     super::super::reentry::mark_child(&mut cmd);
     super::super::platform::apply_utf8_locale(&mut cmd);
     super::super::platform::apply_profile_free_env(&mut cmd);
-    let status = cmd.status();
+    cmd
+}
 
-    match status {
-        Ok(s) => crate::shell::exit_status::exit_code(s),
+/// The verbatim path of forced compression (`-c` writing to a file): output
+/// bytes pass through untouched, but the command keeps the deadline and the
+/// child cleanup of the buffered runner (#2268). As there, the child gets its
+/// own process group only when stdin is not a terminal, so an interactive
+/// session keeps job control. The limit notice goes to stderr; stdout stays
+/// exactly what the command wrote.
+fn exec_inherit_limited(command: &str, shell: &str, shell_flag: &str, stdout: Stdio) -> i32 {
+    let mut cmd = inherit_command(command, shell, shell_flag);
+    cmd.stdout(stdout);
+    let isolate = !crate::core::host_env::stdin_is_terminal();
+    #[cfg(unix)]
+    if isolate {
+        use std::os::unix::process::CommandExt as _;
+        cmd.process_group(0);
+    }
+    let child = match cmd.spawn() {
+        Ok(child) => child,
         Err(e) => {
             tracing::error!("lean-ctx: failed to execute: {e}");
-            127
+            return 127;
         }
+    };
+    let (max_bytes, timeout) = super::exec_limits(command);
+    let (status, timed_out) = super::wait_inherited_with_timeout(child, timeout, isolate);
+    if timed_out {
+        eprint!("{}", super::output_limit_notice(max_bytes, timeout));
     }
+    crate::core::tool_lifecycle::record_shell_command(0, 0);
+    crate::shell::exit_status::exit_code(status)
 }
 
 fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
@@ -1119,5 +1154,57 @@ mod exec_tests {
                 .is_some_and(|d| d.parse::<u32>().is_ok_and(|d| d >= 1)),
             "{envs:?}"
         );
+    }
+
+    /// Runs `command` through the verbatim `-c` path with stdout bound to
+    /// `stdout` under a 250 ms `LEAN_CTX_SHELL_TIMEOUT_MS`, returning the
+    /// exit code and the elapsed time.
+    #[cfg(unix)]
+    fn run_limited(command: &str, stdout: std::process::Stdio) -> (i32, std::time::Duration) {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let saved = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "250");
+        let start = std::time::Instant::now();
+        let code = super::exec_inherit_limited(command, "sh", "-c", stdout);
+        let elapsed = start.elapsed();
+        match saved {
+            Some(v) => crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v),
+            None => crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS"),
+        }
+        (code, elapsed)
+    }
+
+    /// #2268: the verbatim path times out like the buffered runner, with
+    /// stdout on a pipe.
+    #[cfg(unix)]
+    #[test]
+    fn inherit_limited_times_out_with_stdout_on_a_pipe() {
+        let (reader, writer) = std::io::pipe().expect("pipe");
+        let (code, elapsed) = run_limited("sleep 3", writer.into());
+        drop(reader);
+        assert_eq!(code, 137);
+        assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+    }
+
+    /// #2268: `lean-ctx -c 'sleep 3' > file` used to run the full 3 s and
+    /// exit 0; it now ends at the shell timeout.
+    #[cfg(unix)]
+    #[test]
+    fn inherit_limited_times_out_with_stdout_on_a_regular_file() {
+        let file = tempfile::NamedTempFile::new().expect("temp file");
+        let (code, elapsed) = run_limited("sleep 3", file.reopen().expect("reopen").into());
+        assert_eq!(code, 137);
+        assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+        assert!(std::fs::read(file.path()).expect("read").is_empty());
+    }
+
+    /// A quick command still writes its exact bytes to the file and exits 0.
+    #[cfg(unix)]
+    #[test]
+    fn inherit_limited_keeps_file_bytes_verbatim() {
+        let file = tempfile::NamedTempFile::new().expect("temp file");
+        let (code, _) = run_limited("printf 'a\\nb'", file.reopen().expect("reopen").into());
+        assert_eq!(code, 0);
+        assert_eq!(std::fs::read(file.path()).expect("read"), b"a\nb");
     }
 }

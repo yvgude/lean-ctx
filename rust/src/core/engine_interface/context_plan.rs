@@ -13,7 +13,7 @@ mod source_handoff_tests;
 
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset};
+use lean_ctx_time::OffsetDateTime;
 
 use lean_ctx_protocol::{
     EngineContextPlanRequestV1, EngineContextPlanResponseV1,
@@ -76,7 +76,7 @@ fn plan_with_controller(
         root,
         request,
         controller,
-        Some(chrono::Utc::now().fixed_offset()),
+        Some(lean_ctx_time::UtcDateTime::now().fixed_offset()),
     )
 }
 
@@ -89,7 +89,7 @@ pub(crate) fn plan_with_controller_at(
     root: &Path,
     request: EngineContextPlanRequestV1,
     controller: Option<AutopilotController>,
-    evaluation_time: Option<DateTime<FixedOffset>>,
+    evaluation_time: Option<OffsetDateTime>,
 ) -> Result<TaskAutopilotDecision, &'static str> {
     request.validate_payload().map_err(|_| "invalid_request")?;
     let root = bind_transport_root(root).map_err(EngineTransportError::code)?;

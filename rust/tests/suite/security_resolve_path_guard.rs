@@ -2,7 +2,7 @@
 fn dispatch_inner_pre_resolves_paths() {
     let dispatch_mod = include_str!("../../crates/lean-ctx-server/src/server/dispatch/mod.rs");
     assert!(
-        dispatch_mod.contains("self.resolve_path_refusing(raw)"),
+        dispatch_mod.contains("self.resolve_path_for_tool(raw, name)"),
         "dispatch_inner must resolve paths for registry-dispatched tools"
     );
 

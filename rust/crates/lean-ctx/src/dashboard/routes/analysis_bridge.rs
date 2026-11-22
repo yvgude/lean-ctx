@@ -2,12 +2,12 @@
 //! `POST /api/dashboard-analysis/inputs` and `/apply`: the cockpit's analysis
 //! routes. The engine checks the request and collects the bound project's
 //! inputs; the cockpit computes the answer; the engine then checks it and
-//! executes the planned writes ([`lean_ctx::core::dashboard_pro`]).
+//! executes the planned writes ([`lean_ctx_apps::core::dashboard_pro`]).
 
-use lean_ctx::core::dashboard_pro::ProjectScope;
-use lean_ctx::core::dashboard_pro::bridge::{self, Env};
-use lean_ctx::core::dashboard_pro::collect::RouteSource;
-use lean_ctx::core::dashboard_pro::effects::SystemNotifier;
+use lean_ctx_apps::core::dashboard_pro::ProjectScope;
+use lean_ctx_apps::core::dashboard_pro::bridge::{self, Env};
+use lean_ctx_apps::core::dashboard_pro::collect::RouteSource;
+use lean_ctx_apps::core::dashboard_pro::effects::SystemNotifier;
 
 pub(super) const INPUTS: &str = "/api/dashboard-analysis/inputs";
 pub(super) const APPLY: &str = "/api/dashboard-analysis/apply";
@@ -40,9 +40,9 @@ fn device_wide(body: &str) -> bool {
             request
                 .get("op")
                 .and_then(serde_json::Value::as_str)
-                .and_then(lean_ctx::core::dashboard_pro::request::Op::parse)
+                .and_then(lean_ctx_apps::core::dashboard_pro::request::Op::parse)
         })
-        .is_some_and(lean_ctx::core::dashboard_pro::request::Op::device_wide)
+        .is_some_and(lean_ctx_apps::core::dashboard_pro::request::Op::device_wide)
 }
 
 /// `authenticated`: the dashboard runs with a bearer token (project data and
@@ -81,7 +81,7 @@ pub(super) fn handle(
             return (
                 bridge::status_line(error.status),
                 "application/json",
-                lean_ctx::core::dashboard_pro::error_body(&error).to_string(),
+                lean_ctx_apps::core::dashboard_pro::error_body(&error).to_string(),
             );
         }
     };
@@ -89,7 +89,7 @@ pub(super) fn handle(
         scope: &scope,
         routes: &EngineRoutes,
         notifier: &SystemNotifier,
-        now: chrono::Utc::now(),
+        now: lean_ctx_time::UtcDateTime::now(),
     };
     if path == INPUTS {
         reply(&bridge::handle_inputs(&env, body))

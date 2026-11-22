@@ -38,10 +38,10 @@ Policy packs: named TOML patterns, versioned in-repo, built-ins
 `lean-ctx policy show strict-redaction --toml`.
 
 **CGB-1.3 (Hardened) Classification beyond secrets — Met.**
-Sensitivity classes in the Community PII filter (IBAN, payment cards,
-e-mail, phone, US SSN, Swiss AHV; checksummed where the format allows) plus
+Sensitivity classes in the Community PII filter (payment cards with Luhn,
+e-mail, phone; IBAN, US SSN and Swiss AHV are Cloud filter packs) plus
 user-defined pack patterns. Evidence: `rust/src/core/input_filters/pii.rs`
-and its tests. Curated domain packs are LeanCTX Hive.
+and its tests. Curated domain packs are LeanCTX Cloud.
 
 **CGB-1.4 (Hardened) Fail-closed coverage of content paths — Partial.**
 Read/shell/search share the redaction pipeline, but there is no structural

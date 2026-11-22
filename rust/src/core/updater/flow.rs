@@ -444,10 +444,23 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode, setup: &dyn super
         }
     };
 
+    // Whether this instance's daemon runs before the swap (the swap may stop or
+    // rename it): only such a daemon is restarted on the new binary afterwards.
+    // A daemon autostarted between this check and the swap (by the proxy, say)
+    // counts as not running and stays on the old binary until its next restart.
+    let daemon_pid = crate::daemon::verified_daemon().map(|daemon| daemon.pid);
+    // The PID launchd/systemd runs for the autostart unit, to tell a supervised
+    // daemon from one started by hand next to an installed unit.
+    let supervised_pid = daemon_pid.and_then(|_| crate::daemon_autostart::supervised_pid());
+
     if let Err(e) = execute_prepared_transaction(&transaction, &current_exe) {
         tracing::error!("Failed to complete durable update transaction: {e}");
         std::process::exit(1);
     }
+    // The new binary is in place now, unless Windows deferred the swap to a
+    // helper that runs after this process exits (binary locked).
+    let swap_landed = std::fs::read(&current_exe)
+        .is_ok_and(|bytes| super::transaction::binary_matches(&bytes, &transaction.target_active));
 
     if quiet {
         println!("  lean-ctx v{CURRENT_VERSION} → v{target_tag}");
@@ -479,6 +492,26 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode, setup: &dyn super
         }
     }
     post_update_rewire(skip_rules, quiet, setup);
+
+    // After the setup refresh, so the daemon starts with the migrated config.
+    let os = std::env::consts::OS;
+    let daemon_context = super::rewire::RestartContext {
+        was_running: daemon_pid.is_some(),
+        swap_landed,
+        unattended: super::rewire::unattended_run(
+            os,
+            scheduled,
+            quiet,
+            crate::core::pathutil::process_is_tcc_standalone(),
+        ),
+        already_restarted: super::rewire::restarted_by_rewrap(
+            os,
+            crate::daemon_autostart::is_installed(),
+            daemon_pid,
+            supervised_pid,
+        ),
+    };
+    super::rewire::restart_daemon_after_update(daemon_context, &target_tag, &current_exe, quiet);
 
     if !quiet {
         println!();

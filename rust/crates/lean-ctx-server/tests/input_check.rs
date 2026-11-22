@@ -2053,8 +2053,22 @@ async fn ac25_taint_overflow_is_sticky_and_survives_a_reload() {
             })
             .collect();
         env.seed("github", "issues", &items, false);
-        for i in 0..256 {
-            let _ = env.search_workspace(&format!("taintrow{i}"), 1).await;
+        // The taint counts distinct delivered origins, not calls: deliver the
+        // first 256 refs in batches of 64 per search. One call per ref cost
+        // ~1 s each on a loaded queue host (per-call gateway, receipt and
+        // stats writes) and pushed the test over the 300 s test limit.
+        const BATCH: usize = 64;
+        for batch in 0..256 / BATCH {
+            let query = (batch * BATCH..(batch + 1) * BATCH)
+                .map(|i| format!("taintrow{i}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let _ = env.search_workspace(&query, BATCH).await;
+            assert_eq!(
+                taint().refs().len(),
+                (batch + 1) * BATCH,
+                "search {batch} did not record its {BATCH} refs"
+            );
         }
         assert!(!taint().overflow(), "overflow before the 257th ref");
         assert_eq!(

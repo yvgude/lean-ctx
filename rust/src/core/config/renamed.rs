@@ -17,18 +17,18 @@ pub struct RenamedKey {
 /// Keys whose name changed; their values apply unchanged.
 pub const RENAMED_KEYS: &[RenamedKey] = &[
     RenamedKey {
-        // Hive projects and repos became vaults (3.12).
-        from: "hive.project_labels",
-        to: "hive.vault_labels",
+        // Cloud projects and repos became vaults (3.12).
+        from: "cloud.project_labels",
+        to: "cloud.vault_labels",
     },
     RenamedKey {
         // Session drafts became the capture gate (3.12, SPEC-ENGINE §3.16).
-        from: "hive.auto_draft",
-        to: "hive.auto_capture",
+        from: "cloud.auto_draft",
+        to: "cloud.auto_capture",
     },
 ];
 
-/// The renamed key `path` (dotted) is, if any.
+/// The renamed key `path` (dotted) is, or lies under, if any.
 #[must_use]
 pub fn renamed_key(path: &str) -> Option<&'static RenamedKey> {
     RENAMED_KEYS.iter().find(|key| key.from == path)
@@ -54,14 +54,21 @@ pub fn hint(key: &RenamedKey, both: bool) -> String {
 /// The hints for the renamed keys among `used` (dotted paths a config sets).
 #[must_use]
 pub fn hints(used: &[String]) -> Vec<String> {
-    used.iter()
+    let mut hints: Vec<String> = Vec::new();
+    for hint in used
+        .iter()
         .filter_map(|path| renamed_key(path))
         .map(|key| hint(key, used.iter().any(|path| path == key.to)))
-        .collect()
+    {
+        if !hints.contains(&hint) {
+            hints.push(hint);
+        }
+    }
+    hints
 }
 
-/// Reads every renamed key of a parsed config (root or profile overlay) as
-/// its new name. A value under the new name wins.
+/// Reads every renamed table and key of a parsed config (root or profile
+/// overlay) under its new name. A value under the new name wins.
 pub(super) fn apply(table: &mut toml::Table) {
     for key in RENAMED_KEYS {
         let from: Vec<&str> = key.from.split('.').collect();
@@ -166,37 +173,41 @@ mod tests {
 
     #[test]
     fn an_old_name_applies_as_the_new_one_on_load() {
-        assert!(!loaded("[hive]\nproject_labels = false\n").hive.vault_labels);
-        assert!(loaded("[hive]\nauto_draft = true\n").hive.vault_labels);
-        let both = loaded("[hive]\nproject_labels = true\nvault_labels = false\n");
-        assert!(!both.hive.vault_labels, "the new name wins");
-        let profile = "config_profile = \"ci\"\n[profiles.ci.hive]\nproject_labels = false\n";
-        assert!(!loaded(profile).hive.vault_labels);
-        // 3.11.5 `auto_draft` is read as `auto_capture` (SPEC-ENGINE §3.16).
-        assert!(!loaded("[hive]\nauto_draft = false\n").hive.auto_capture);
         assert!(
-            loaded("[hive]\nauto_draft = false\nauto_capture = true\n")
-                .hive
+            !loaded("[cloud]\nproject_labels = false\n")
+                .cloud
+                .vault_labels
+        );
+        assert!(loaded("[cloud]\nauto_draft = true\n").cloud.vault_labels);
+        let both = loaded("[cloud]\nproject_labels = true\nvault_labels = false\n");
+        assert!(!both.cloud.vault_labels, "the new name wins");
+        let profile = "config_profile = \"ci\"\n[profiles.ci.cloud]\nproject_labels = false\n";
+        assert!(!loaded(profile).cloud.vault_labels);
+        // 3.11.5 `auto_draft` is read as `auto_capture` (SPEC-ENGINE §3.16).
+        assert!(!loaded("[cloud]\nauto_draft = false\n").cloud.auto_capture);
+        assert!(
+            loaded("[cloud]\nauto_draft = false\nauto_capture = true\n")
+                .cloud
                 .auto_capture,
             "the new name wins"
         );
     }
 
     #[test]
-    fn hive_is_the_only_section_name() {
+    fn cloud_is_the_only_section_name() {
         assert_eq!(
-            loaded("[hive]\nenabled = false\n").hive.enabled,
+            loaded("[cloud]\nenabled = false\n").cloud.enabled,
             Some(false)
         );
         // The pre-release name is not read any more.
-        assert_eq!(loaded("[atlas]\nenabled = false\n").hive.enabled, None);
-        let profile = "config_profile = \"ci\"\n[profiles.ci.hive]\nenabled = false\n";
-        assert_eq!(loaded(profile).hive.enabled, Some(false));
+        assert_eq!(loaded("[atlas]\nenabled = false\n").cloud.enabled, None);
+        let profile = "config_profile = \"ci\"\n[profiles.ci.cloud]\nenabled = false\n";
+        assert_eq!(loaded(profile).cloud.enabled, Some(false));
     }
 
     #[test]
     fn migration_moves_the_value_and_keeps_the_comment() {
-        let raw = "# mine\n[hive]\nauto_draft = false\n# no folder names\nproject_labels = false\n\n[profiles.ci.hive]\nproject_labels = true\n";
+        let raw = "# mine\n[cloud]\nauto_draft = false\n# no folder names\nproject_labels = false\n\n[profiles.ci.cloud]\nproject_labels = true\n";
         let migrated = super::super::retired::migrate_retired_document(raw)
             .expect("parses")
             .expect("changes");
@@ -205,12 +216,12 @@ mod tests {
             migrated.contains("# no folder names\nvault_labels = false"),
             "{migrated}"
         );
-        assert!(migrated.contains("[profiles.ci.hive]\nvault_labels = true"));
+        assert!(migrated.contains("[profiles.ci.cloud]\nvault_labels = true"));
         assert!(migrated.starts_with("# mine"));
         assert!(!migrated.contains("auto_draft"), "{migrated}");
         assert!(migrated.contains("auto_capture = false"), "{migrated}");
-        assert!(!loaded(&migrated).hive.vault_labels);
-        assert!(!loaded(&migrated).hive.auto_capture);
+        assert!(!loaded(&migrated).cloud.vault_labels);
+        assert!(!loaded(&migrated).cloud.auto_capture);
         assert_eq!(
             super::super::retired::migrate_retired_document(&migrated).expect("parses"),
             None
@@ -219,24 +230,24 @@ mod tests {
 
     #[test]
     fn migration_leaves_both_names_for_the_user() {
-        let raw = "[hive]\nproject_labels = true\nvault_labels = false\n";
+        let raw = "[cloud]\nproject_labels = true\nvault_labels = false\n";
         assert_eq!(
             super::super::retired::migrate_retired_document(raw).expect("parses"),
             None
         );
     }
 
-    /// The `[hive]` section of an engine before the VA rename: like the
-    /// current `HiveConfig` it has `#[serde(default)]` and no
+    /// The `[cloud]` section of an engine before the VA rename: like the
+    /// current `CloudConfig` it has `#[serde(default)]` and no
     /// `deny_unknown_fields`, so a key it does not know is skipped.
     #[derive(serde::Deserialize)]
     #[serde(default)]
-    struct PreVaHiveConfig {
+    struct PreVaCloudConfig {
         project_labels: bool,
         auto_draft: bool,
     }
 
-    impl Default for PreVaHiveConfig {
+    impl Default for PreVaCloudConfig {
         fn default() -> Self {
             Self {
                 project_labels: true,
@@ -247,7 +258,7 @@ mod tests {
 
     #[test]
     fn an_engine_before_the_rename_ignores_vault_labels() {
-        let older: PreVaHiveConfig =
+        let older: PreVaCloudConfig =
             toml::from_str("vault_labels = false\nauto_draft = false\n").expect("still loads");
         assert!(older.project_labels, "the older engine keeps its default");
         assert!(!older.auto_draft, "and every key it knows");
@@ -255,29 +266,29 @@ mod tests {
 
     #[test]
     fn hints_name_the_new_key() {
-        let key = renamed_key("hive.project_labels").expect("renamed");
+        let key = renamed_key("cloud.project_labels").expect("renamed");
         assert_eq!(
             hint(key, false),
-            "`hive.project_labels` was renamed to `hive.vault_labels`; the value still applies"
+            "`cloud.project_labels` was renamed to `cloud.vault_labels`; the value still applies"
         );
-        assert!(hint(key, true).contains("wins; remove `hive.project_labels`"));
-        assert!(renamed_key("hive.vault_labels").is_none());
+        assert!(hint(key, true).contains("wins; remove `cloud.project_labels`"));
+        assert!(renamed_key("cloud.vault_labels").is_none());
     }
 
     #[test]
     fn an_old_config_gets_exactly_the_rename_hint() {
         let used = |paths: &[&str]| paths.iter().map(|p| (*p).to_string()).collect::<Vec<_>>();
         assert_eq!(
-            hints(&used(&["hive.auto_draft", "hive.project_labels"])),
+            hints(&used(&["cloud.auto_draft", "cloud.project_labels"])),
             [
-                "`hive.auto_draft` was renamed to `hive.auto_capture`; the value still applies",
-                "`hive.project_labels` was renamed to `hive.vault_labels`; the value still applies"
+                "`cloud.auto_draft` was renamed to `cloud.auto_capture`; the value still applies",
+                "`cloud.project_labels` was renamed to `cloud.vault_labels`; the value still applies"
             ]
         );
         assert_eq!(
-            hints(&used(&["hive.vault_labels", "hive.project_labels"])),
+            hints(&used(&["cloud.vault_labels", "cloud.project_labels"])),
             [hint(&RENAMED_KEYS[0], true)]
         );
-        assert!(hints(&used(&["hive.vault_labels"])).is_empty());
+        assert!(hints(&used(&["cloud.vault_labels"])).is_empty());
     }
 }

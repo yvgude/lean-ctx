@@ -40,7 +40,7 @@ fn fixture(
     local: &str,
     payload: &str,
 ) -> (HttpServerConfig, RelayRecordV1, TransportEnvelopeV1) {
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let mut record = RelayRecordV1::new_signed(
         "response-replay",
         "origin",
@@ -49,7 +49,7 @@ fn fixture(
         "project",
         TransportContentType::A2ATask,
         DataClassification::Internal,
-        now + chrono::Duration::minutes(5),
+        now + lean_ctx_time::Duration::minutes(5),
         4,
         now,
         &test_origin_key("origin"),
@@ -122,7 +122,7 @@ async fn cached_task_bytes_require_authentication_and_survive_router_restart() {
         TaskScopeV1, TaskState, TaskStatusV1,
     };
     use lean_ctx::core::a2a::task_response::SignedTaskStatusV1;
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let server_key = SigningKey::from_bytes(&[9; 32]);
     let mut request = TaskControlDescriptorV1::new(
         "origin",
@@ -133,7 +133,7 @@ async fn cached_task_bytes_require_authentication_and_survive_router_restart() {
         "task-1",
         &format!("sha256:{}", "a".repeat(64)),
         now,
-        now + chrono::Duration::minutes(5),
+        now + lean_ctx_time::Duration::minutes(5),
         "nonce-1",
         None,
         "grant",
@@ -165,8 +165,8 @@ async fn cached_task_bytes_require_authentication_and_survive_router_restart() {
                 tenant_id: "tenant".into(),
                 project_id: "project".into(),
             }],
-            not_before: now - chrono::Duration::minutes(1),
-            expires_at: now + chrono::Duration::hours(1),
+            not_before: now - lean_ctx_time::Duration::minutes(1),
+            expires_at: now + lean_ctx_time::Duration::hours(1),
             revoked: false,
         }],
         grants: vec![],
@@ -181,7 +181,12 @@ async fn cached_task_bytes_require_authentication_and_survive_router_restart() {
     );
     let fingerprint = record.origin_fingerprint().expect("fingerprint");
     let crate::http_server::relay_replay::Reservation::Reserved(lease) = guard
-        .reserve_relay(&id, &record, &fingerprint, chrono::Utc::now())
+        .reserve_relay(
+            &id,
+            &record,
+            &fingerprint,
+            lean_ctx_time::UtcDateTime::now(),
+        )
         .await
         .expect("reserve")
     else {
@@ -238,7 +243,12 @@ async fn old_completed_task_without_response_is_not_reexecuted() {
     );
     let fingerprint = record.origin_fingerprint().expect("fingerprint");
     let crate::http_server::relay_replay::Reservation::Reserved(lease) = guard
-        .reserve_relay(&id, &record, &fingerprint, chrono::Utc::now())
+        .reserve_relay(
+            &id,
+            &record,
+            &fingerprint,
+            lean_ctx_time::UtcDateTime::now(),
+        )
         .await
         .expect("reserve")
     else {
@@ -278,7 +288,7 @@ async fn forwarded_task_response_is_cached_byte_exactly_across_router_restart() 
         atomic::{AtomicUsize, Ordering},
     };
 
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let mut request = TaskControlDescriptorV1::new(
         "origin",
         "recipient",
@@ -288,7 +298,7 @@ async fn forwarded_task_response_is_cached_byte_exactly_across_router_restart() 
         "task-forwarded",
         &format!("sha256:{}", "b".repeat(64)),
         now,
-        now + chrono::Duration::minutes(5),
+        now + lean_ctx_time::Duration::minutes(5),
         "nonce-forwarded",
         None,
         "grant",

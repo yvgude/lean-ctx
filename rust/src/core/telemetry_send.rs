@@ -63,7 +63,7 @@ pub fn send_telemetry(trigger: crate::core::telemetry_aggregate::SendTrigger) ->
     let payload = serde_json::to_vec(&batch).ok()?;
     use sha2::Digest;
     let record = crate::core::telemetry_ledger::HeartbeatRecord {
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         installation_id,
         version: env!("CARGO_PKG_VERSION").to_string(),
         os: std::env::consts::OS.to_string(),

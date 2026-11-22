@@ -87,8 +87,16 @@ fn slack_token_re() -> &'static Regex {
     static_regex!(r"xox[bpas]-[0-9a-zA-Z\-]{10,}")
 }
 
-fn stripe_key_re() -> &'static Regex {
-    static_regex!(r"[sr]k_live_[0-9a-zA-Z]{10,}")
+/// Stripe secret (`sk_`) and restricted (`rk_`) keys in live and test mode.
+/// Group 1 is the key-class prefix the redactor keeps.
+pub(crate) fn stripe_key_re() -> &'static Regex {
+    static_regex!(r"([sr]k_(?:live|test)_)[0-9a-zA-Z]{10,}")
+}
+
+/// Stripe webhook signing secret (`whsec_` plus a base64 value). Group 1 is
+/// the prefix the redactor keeps; 16 value characters keep prose clean.
+pub(crate) fn stripe_webhook_secret_re() -> &'static Regex {
+    static_regex!(r"(whsec_)[A-Za-z0-9+/]{16,}={0,2}")
 }
 
 fn npm_token_re() -> &'static Regex {
@@ -111,6 +119,7 @@ const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("jwt", jwt_re),
     ("slack_token", slack_token_re),
     ("stripe_key", stripe_key_re),
+    ("stripe_webhook_secret", stripe_webhook_secret_re),
     ("npm_token", npm_token_re),
 ];
 
@@ -454,6 +463,23 @@ pub mod tests {
         let input = concat!("stripe_key = sk_", "live_abcdefghij1234567890");
         let matches = detect_secrets(input);
         assert!(matches.iter().any(|m| m.pattern_name == "stripe_key"));
+    }
+
+    #[test]
+    fn detects_stripe_test_and_webhook_secrets() {
+        let test_key = concat!("sk_", "test_abcdefghij1234567890");
+        assert!(
+            detect_secrets(test_key)
+                .iter()
+                .any(|m| m.pattern_name == "stripe_key")
+        );
+        let webhook = concat!("whsec_", "abcdefghij1234567890");
+        assert!(
+            detect_secrets(webhook)
+                .iter()
+                .any(|m| m.pattern_name == "stripe_webhook_secret")
+        );
+        assert!(detect_secrets("whsec_ prefix").is_empty());
     }
 
     #[test]

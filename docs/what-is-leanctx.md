@@ -2,7 +2,7 @@
 
 **Context Gateway for AI Systems**
 
-**Control what your AI can see.**
+**Less context. More intelligence.**
 
 LeanCTX sits between AI and the systems it reads. It selects task-relevant
 context, applies supported access and content controls before delivery, and
@@ -48,13 +48,13 @@ an application that reads or sends data through another path.
 |---|---|
 | **Developers** improving existing AI tools | LeanCTX \| OSS: Apache-2.0, local CLI/MCP, supported hooks and proxy paths. Start with [Codex, Claude Code or Cursor](guides/README.md). |
 | **Organizations** applying shared controls | Enterprise: licensed identity, organization policy, evidence and deployment capabilities within the supported release and agreement. [Enterprise overview](https://leanctx.com/enterprise/). |
-| **Product builders** embedding context infrastructure | LeanCTX SDK: supported language-native interfaces to the Engine; stable lifecycle and Agent Tools plus separate Python `leanctx_sdk.preview` operations. [SDK contract](https://github.com/Thinkery-AG/leanctx-sdk). Production/OEM use requires a signed written commercial agreement under the SDK license. |
+| **Product builders** embedding context infrastructure | LeanCTX \| SDK: supported language-native interfaces to LeanCTX \| OSS; stable lifecycle and Agent Tools plus separate Python `leanctx_sdk.preview` operations. [SDK contract](https://github.com/Thinkery-AG/leanctx-sdk). Production/OEM use requires a signed written commercial agreement under the SDK license. |
 
-**Build your product. Do not rebuild your context infrastructure.** The SDK gives
+**Build your product. Do not rebuild your context infrastructure.** LeanCTX | SDK gives
 you a documented integration boundary for supported selection, structural tools,
 recovery, permissions and evidence. Your product still owns its workflow, model,
 UI and operating responsibilities. Compatibility and packaging are tied to the
-specific SDK and Engine release.
+specific LeanCTX | SDK and LeanCTX | OSS release.
 
 ## What it replaces—and what it does not
 

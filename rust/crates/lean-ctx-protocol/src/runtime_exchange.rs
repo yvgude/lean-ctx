@@ -193,7 +193,7 @@ pub struct RuntimeRequestV1 {
     pub deadline_unix_ms: u64,
     pub invocation: EngineInvocationV1,
     pub input: String,
-    /// The Hive runtime lease (`leanctx.hive.runtime-lease/v1`, standard
+    /// The Cloud runtime lease (`leanctx.cloud.runtime-lease/v1`, standard
     /// base64), sent only to a package that declares lease support. Absent,
     /// the request is byte-identical to one without leases.
     #[serde(default, skip_serializing_if = "Option::is_none")]

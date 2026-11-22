@@ -1,0 +1,2059 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/cloud-v2/schemas/event.schema.json",
+  "title": "leanctx.cloud.event/v2 envelope with server fields (SPEC-CONTRACT-SERVER §3.5–§3.8)",
+  "description": "Signed fields: every member except body, signature and the server fields (seq, received_at, provenance, batch_id, purged, revoked_signer, legacy). Shape refusals map to `invalid_event` `reason: shape`.",
+  "type": "object",
+  "required": [
+    "schema",
+    "event_id",
+    "place",
+    "op",
+    "body_commit",
+    "hlc",
+    "causal_base",
+    "actor",
+    "key_id",
+    "signature"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "leanctx.cloud.event/v2"
+    },
+    "event_id": {
+      "$ref": "common.schema.json#/$defs/event_id"
+    },
+    "place": {
+      "$ref": "common.schema.json#/$defs/place"
+    },
+    "op": {
+      "enum": [
+        "node.add",
+        "field.set",
+        "edge.add",
+        "retract",
+        "restore",
+        "purge"
+      ]
+    },
+    "target": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/edge_id"
+        }
+      ]
+    },
+    "node_type": {
+      "enum": [
+        "fact",
+        "decision",
+        "gotcha",
+        "procedure",
+        "finding",
+        "episode",
+        "reference",
+        "page",
+        "section",
+        "note"
+      ]
+    },
+    "body_commit": {
+      "$ref": "common.schema.json#/$defs/hex64"
+    },
+    "hlc": {
+      "$ref": "#/$defs/hlc"
+    },
+    "causal_base": {
+      "$ref": "common.schema.json#/$defs/u64"
+    },
+    "base_event": {
+      "$ref": "common.schema.json#/$defs/event_id",
+      "description": "C0 2.2 CAS: the head of the target the edit started from (field.set, retract, restore only); signed like every envelope member"
+    },
+    "session_ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+      "description": "V9: opaque id of the agent session the event was written in (never a transcript, a path or a name); optional on every op, absent outside a session; signed like every envelope member"
+    },
+    "actor": {
+      "$ref": "#/$defs/actor"
+    },
+    "worker_id": {
+      "$ref": "common.schema.json#/$defs/worker_id"
+    },
+    "provenance_claim": {
+      "enum": [
+        "own",
+        "workspace"
+      ]
+    },
+    "flags": {
+      "type": "object",
+      "required": [
+        "commands"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": [
+        "gate_version",
+        "evidence",
+        "reasons_passed_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "gate_version": {
+          "$ref": "common.schema.json#/$defs/u16"
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "reasons_passed_hash": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        }
+      }
+    },
+    "screening": {
+      "type": "object",
+      "required": [
+        "scanner_version",
+        "counts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scanner_version": {
+          "$ref": "common.schema.json#/$defs/u32"
+        },
+        "counts": {
+          "type": "object",
+          "required": [
+            "secret",
+            "pii",
+            "redaction",
+            "forbidden",
+            "local_path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "secret": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "pii": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "redaction": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "forbidden": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "local_path": {
+              "$ref": "common.schema.json#/$defs/u32"
+            }
+          }
+        }
+      }
+    },
+    "cause": {
+      "$ref": "#/$defs/cause"
+    },
+    "origin": {
+      "type": "object",
+      "required": [
+        "event_digest",
+        "signature",
+        "key_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        }
+      }
+    },
+    "key_id": {
+      "$ref": "common.schema.json#/$defs/key_id"
+    },
+    "signature": {
+      "$ref": "common.schema.json#/$defs/signature"
+    },
+    "body": {
+      "type": "object"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 18446744073709551615
+    },
+    "received_at": {
+      "$ref": "common.schema.json#/$defs/ms"
+    },
+    "provenance": {
+      "$ref": "common.schema.json#/$defs/provenance"
+    },
+    "batch_id": {
+      "$ref": "common.schema.json#/$defs/batch_id"
+    },
+    "purged": {
+      "type": "boolean"
+    },
+    "revoked_signer": {
+      "type": "boolean"
+    },
+    "legacy": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "Signer class W (actor.kind = worker): worker_id, capture and screening required; cause and origin forbidden (R5, §3.11 step 2).",
+      "if": {
+        "properties": {
+          "actor": {
+            "properties": {
+              "kind": {
+                "const": "worker"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "worker_id",
+          "capture",
+          "screening"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "cause"
+              ]
+            },
+            {
+              "required": [
+                "origin"
+              ]
+            }
+          ]
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "worker_id"
+          ]
+        }
+      }
+    },
+    {
+      "$comment": "node_type exactly on node.add; target on every op except purge.",
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "target",
+          "node_type"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "common.schema.json#/$defs/node_id"
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "node_type"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "purge"
+          }
+        }
+      },
+      "then": {
+        "$comment": "Purge tombstones: server only, Cloud-signed, no target, no cause (§3.5, §3.6).",
+        "properties": {
+          "actor": {
+            "properties": {
+              "kind": {
+                "const": "server"
+              }
+            }
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "target"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "edge.add"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "$ref": "common.schema.json#/$defs/edge_id"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "field.set"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "$ref": "common.schema.json#/$defs/node_id"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Body present unless purged (purged: true → body absent).",
+      "if": {
+        "properties": {
+          "purged": {
+            "const": true
+          }
+        },
+        "required": [
+          "purged"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "body"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "body"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "fact"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/fact_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "decision"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/decision_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "gotcha"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/gotcha_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "procedure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/procedure_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "finding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/finding_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "episode"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/episode_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "reference"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/reference_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "field.set"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/field_set_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "edge.add"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/edge_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "retract",
+              "restore"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/reason_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "purge"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/purge_body"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "A plaintext body with a `legacy` member only from actor.kind = legacy_import (§3.7 R70: native `legacy` refused `shape`).",
+      "if": {
+        "properties": {
+          "body": {
+            "required": [
+              "legacy"
+            ]
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "then": {
+        "properties": {
+          "actor": {
+            "properties": {
+              "kind": {
+                "const": "legacy_import"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "field.set of legacy.doc_index only by legacy_import.",
+      "if": {
+        "properties": {
+          "body": {
+            "properties": {
+              "field": {
+                "const": "legacy.doc_index"
+              }
+            },
+            "required": [
+              "field"
+            ]
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "then": {
+        "properties": {
+          "actor": {
+            "properties": {
+              "kind": {
+                "const": "legacy_import"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C0 2.2: base_event only on field.set, retract and restore",
+      "if": {
+        "required": [
+          "base_event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "op": {
+            "enum": [
+              "field.set",
+              "retract",
+              "restore"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C0 2.2: doc node types are vault-only",
+      "if": {
+        "properties": {
+          "node_type": {
+            "enum": [
+              "page",
+              "section",
+              "note"
+            ]
+          }
+        },
+        "required": [
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "place": {
+            "properties": {
+              "kind": {
+                "const": "vault"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C0 2.2: plain bodies per doc node type",
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "page"
+          }
+        },
+        "required": [
+          "op",
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "docs.draft.schema.json#/$defs/page_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "section"
+          }
+        },
+        "required": [
+          "op",
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "docs.draft.schema.json#/$defs/section_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "note"
+          }
+        },
+        "required": [
+          "op",
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "docs.draft.schema.json#/$defs/note_body"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "event_list": {
+      "type": "object",
+      "required": [
+        "events"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "$ref": "#"
+          }
+        }
+      }
+    },
+    "hlc": {
+      "type": "object",
+      "required": [
+        "wall_ms",
+        "counter",
+        "node"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "wall_ms": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "counter": {
+          "$ref": "common.schema.json#/$defs/u16"
+        },
+        "node": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/hex16"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            }
+          ]
+        }
+      }
+    },
+    "actor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "worker"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "user_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "person"
+            },
+            "user_id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "server"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "import_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "legacy_import"
+            },
+            "import_ref": {
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^(rev:[0-9a-f-]{36}:[0-9]{1,10}#[0-9]{1,6}|draft:[0-9a-f-]{36}#[0-9]{1,6}|put:[0-9a-f-]{36}:[0-9A-Za-z_-]{1,64}#[0-9]{1,6}|task:[0-9a-f-]{36}#[0-9]{1,6})$"
+            },
+            "instance_id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "user_id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            }
+          }
+        }
+      ]
+    },
+    "cause": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "person_action",
+            "revert",
+            "export",
+            "retention",
+            "moderation",
+            "legacy_import"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_:.-]{1,128}$"
+        }
+      }
+    },
+    "nonce": {
+      "$ref": "common.schema.json#/$defs/hex32"
+    },
+    "text120": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "anchor": {
+      "type": "object",
+      "required": [
+        "path",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "lang": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "legacy_node": {
+      "$comment": "1.x values verbatim (R70); doc_index only from legacy_import (enforced at envelope level).",
+      "type": "object",
+      "required": [
+        "kind",
+        "statement"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "claim",
+            "definition",
+            "decision",
+            "observation",
+            "procedure",
+            "gotcha",
+            "dead_end",
+            "experience",
+            "convention"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "applies_to": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "anchors": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/anchor"
+          }
+        },
+        "from_contributions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "doc_index": {
+          "$ref": "common.schema.json#/$defs/u32"
+        }
+      }
+    },
+    "claim_limits": {
+      "$comment": "v4 limits; a body with evidence = imported and a `legacy` member gets the 1.x limits instead (§3.7 R70).",
+      "if": {
+        "required": [
+          "legacy"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence": {
+            "const": "imported"
+          },
+          "statement": {
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "applies_to": {
+            "maxItems": 16,
+            "items": {
+              "maxLength": 500
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "statement": {
+            "minLength": 24,
+            "maxLength": 300
+          },
+          "applies_to": {
+            "maxItems": 5,
+            "items": {
+              "maxLength": 120
+            }
+          }
+        }
+      }
+    },
+    "fact_body": {
+      "type": "object",
+      "required": [
+        "statement",
+        "evidence",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "applies_to": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal"
+          ]
+        },
+        "legacy": {
+          "$ref": "#/$defs/legacy_node"
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchors"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/claim_limits"
+        },
+        {
+          "$comment": "anchors required when applies_to names code (file:/sym:)",
+          "if": {
+            "properties": {
+              "applies_to": {
+                "contains": {
+                  "type": "string",
+                  "pattern": "^(file|sym):"
+                }
+              }
+            },
+            "required": [
+              "applies_to"
+            ]
+          },
+          "then": {
+            "required": [
+              "anchors"
+            ]
+          }
+        }
+      ]
+    },
+    "decision_body": {
+      "type": "object",
+      "required": [
+        "statement",
+        "status",
+        "evidence",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {
+          "type": "string"
+        },
+        "chosen": {
+          "$ref": "#/$defs/text120"
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/text120"
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "status": {
+          "enum": [
+            "active",
+            "superseded",
+            "reverted"
+          ]
+        },
+        "deferred": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "legacy": {
+          "$ref": "#/$defs/legacy_node"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchors",
+          "$comment": "C0 2.2: decisions get anchors (re-checked like claims, knowledge state outdated)"
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/claim_limits"
+        }
+      ]
+    },
+    "gotcha_body": {
+      "type": "object",
+      "required": [
+        "statement",
+        "evidence",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "avoid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "legacy": {
+          "$ref": "#/$defs/legacy_node"
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchors"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/claim_limits"
+        }
+      ]
+    },
+    "finding_body": {
+      "type": "object",
+      "required": [
+        "statement",
+        "evidence",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "thread_ref": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "legacy": {
+          "$ref": "#/$defs/legacy_node"
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/claim_limits"
+        }
+      ]
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "shell",
+        "cmd"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "shell": {
+          "enum": [
+            "sh",
+            "pwsh",
+            "cmd"
+          ]
+        },
+        "cmd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "cwd_hint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "procedure_body": {
+      "type": "object",
+      "required": [
+        "title",
+        "steps",
+        "evidence",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "string"
+          }
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/command"
+          }
+        },
+        "preconditions": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "legacy": {
+          "$ref": "#/$defs/legacy_node"
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchors"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        }
+      },
+      "if": {
+        "required": [
+          "legacy"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence": {
+            "const": "imported"
+          },
+          "title": {
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "steps": {
+            "items": {
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "title": {
+            "minLength": 8,
+            "maxLength": 120
+          },
+          "steps": {
+            "items": {
+              "minLength": 8,
+              "maxLength": 300
+            }
+          }
+        }
+      }
+    },
+    "episode_body": {
+      "type": "object",
+      "required": [
+        "goal",
+        "outcome",
+        "summary",
+        "started_at",
+        "ended_at",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 300
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "abandoned",
+            "partial"
+          ]
+        },
+        "outcome_note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "dead_ends": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "touched": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/anchor"
+          }
+        },
+        "commits": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{7,64}$"
+          }
+        },
+        "session_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "started_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "ended_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        }
+      }
+    },
+    "reference_body": {
+      "type": "object",
+      "required": [
+        "kind",
+        "target",
+        "anchor_state",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "file",
+            "symbol",
+            "commit",
+            "url",
+            "test"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "anchor_state": {
+          "enum": [
+            "fresh",
+            "to_verify",
+            "gone"
+          ]
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        }
+      }
+    },
+    "field_set_body": {
+      "type": "object",
+      "required": [
+        "field",
+        "value",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "$comment": "Union of the mutable fields of §3.7 and C0 2.2 (page, section, note); the per-type check needs the folded node (server/instance).",
+          "enum": [
+            "evidence",
+            "applies_to",
+            "sensitivity",
+            "status",
+            "deferred",
+            "rationale",
+            "trigger",
+            "avoid",
+            "steps",
+            "commands",
+            "preconditions",
+            "summary",
+            "outcome",
+            "outcome_note",
+            "anchor_state",
+            "title",
+            "text",
+            "acceptance",
+            "legacy.doc_index",
+            "anchors",
+            "tags",
+            "slug",
+            "type",
+            "description",
+            "drift",
+            "body",
+            "order",
+            "covers",
+            "resolved_by"
+          ]
+        },
+        "value": true,
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        },
+        "verified_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      },
+      "if": {
+        "properties": {
+          "field": {
+            "const": "anchors"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "verified_at"
+        ],
+        "properties": {
+          "value": {
+            "$comment": "code anchors on claims and decisions, doc anchors (file:, dir:, glob:, sym:) on pages; the per-type check needs the folded node",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/anchors"
+              },
+              {
+                "$ref": "docs.draft.schema.json#/$defs/doc_anchors"
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "verified_at"
+          ]
+        }
+      }
+    },
+    "edge_body": {
+      "type": "object",
+      "required": [
+        "kind",
+        "from",
+        "to",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "references",
+            "depends_on",
+            "supersedes",
+            "contradicts",
+            "derived_from",
+            "part_of",
+            "answers",
+            "links_to",
+            "about"
+          ]
+        },
+        "from": {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/node_id"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/msg_id"
+            }
+          ]
+        },
+        "legacy": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "doc_index"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "pattern": "^[a-z_]{1,32}$"
+                },
+                "doc_index": {
+                  "$ref": "common.schema.json#/$defs/u32"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "types",
+                "doc_indexes"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "types": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 16,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z_]{1,32}$"
+                  }
+                },
+                "doc_indexes": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 16,
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/u32"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "answers"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "to": {
+            "$ref": "common.schema.json#/$defs/msg_id"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "to": {
+            "$ref": "common.schema.json#/$defs/node_id"
+          }
+        }
+      }
+    },
+    "reason_body": {
+      "type": "object",
+      "required": [
+        "reason",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 500
+        },
+        "body_nonce": {
+          "$ref": "#/$defs/nonce"
+        }
+      }
+    },
+    "purge_body": {
+      "type": "object",
+      "required": [
+        "purge_id",
+        "reason",
+        "targets",
+        "cascade",
+        "bus_cascade"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "purge_id": {
+          "$ref": "common.schema.json#/$defs/purge_id"
+        },
+        "reason": {
+          "enum": [
+            "leaked_secret",
+            "gdpr_erasure",
+            "retention_schedule",
+            "illegal_content"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "common.schema.json#/$defs/event_id"
+          }
+        },
+        "cascade": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "$ref": "common.schema.json#/$defs/event_id"
+          }
+        },
+        "bus_cascade": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "required": [
+              "bus",
+              "seq"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "bus": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "ws",
+                  "id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "v",
+                      "s",
+                      "dm"
+                    ]
+                  },
+                  "ws": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,64}$"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,64}$"
+                  }
+                }
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "code_anchor": {
+      "description": "CodeAnchorV1 (lead addition 24.10.): ref file:<path> or sym:<path>::<symbol>; digest = sha256 hex of the anchored content (file bytes, or the symbol's source span); commit = the git commit the digest was taken at; verified_at = when an instance last re-anchored it",
+      "type": "object",
+      "required": [
+        "ref",
+        "digest",
+        "commit"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "maxLength": 704,
+          "pattern": "^(file:(?!/)(?!(.*/)?\\.\\.(/|:|$))[^\\s\\\\:]{1,500}|sym:(?!/)(?!(.*/)?\\.\\.(/|:|$))[^\\s\\\\:]{1,500}::[^\\s]{1,200})$"
+        },
+        "digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "verified_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "anchors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/code_anchor"
+      }
+    },
+    "push_request": {
+      "description": "E5 POST /v1/places/{p}/events; a batch is not atomic: every event is decided on its own, in batch order (§3.11)",
+      "type": "object",
+      "required": [
+        "events"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#"
+          }
+        },
+        "capture_counts": {
+          "type": "object",
+          "required": [
+            "gate_version",
+            "window_from",
+            "window_to",
+            "considered",
+            "captured",
+            "rejected"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "gate_version": {
+              "$ref": "common.schema.json#/$defs/u16"
+            },
+            "window_from": {
+              "$ref": "common.schema.json#/$defs/ms"
+            },
+            "window_to": {
+              "$ref": "common.schema.json#/$defs/ms"
+            },
+            "considered": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "captured": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "rejected": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "additionalProperties": {
+                "$ref": "common.schema.json#/$defs/u32"
+              }
+            }
+          }
+        },
+        "purge_acks": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "push_response": {
+      "type": "object",
+      "required": [
+        "results",
+        "epoch",
+        "server_time"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event_status"
+          }
+        },
+        "epoch": {
+          "$ref": "common.schema.json#/$defs/u64"
+        },
+        "server_time": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "event_status": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "held",
+            "duplicate",
+            "refused"
+          ]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "retry_after_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "field": {
+          "type": "string",
+          "pattern": "^(/[^/]+)+$",
+          "description": "invalid_event reason shape: JSON Pointer (RFC 6901) of the first failing member, e.g. /body/statement; a missing required member is named by its own pointer"
+        },
+        "head": {
+          "$ref": "common.schema.json#/$defs/event_id",
+          "description": "C0 2.2 stale_base: the target's head event"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "accepted"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "seq"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "duplicate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "seq"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "refused"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "code"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "retract_rate_limited",
+                  "rate_limited"
+                ]
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "retry_after_s"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_event"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        {
+          "$comment": "shape refusals name the failing member",
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_event"
+              },
+              "reason": {
+                "const": "shape"
+              }
+            },
+            "required": [
+              "code",
+              "reason"
+            ]
+          },
+          "then": {
+            "required": [
+              "field"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "stale_base"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "head"
+            ]
+          }
+        }
+      ],
+      "description": "per-event push result (E5): refusals carry code (and reason for invalid_event: shape, use_restore, target_state, ...); a rate-limited event (retract_rate_limited, rate_limited) carries retry_after_s and the batch continues with the next event"
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,32}$"
+      }
+    }
+  }
+}

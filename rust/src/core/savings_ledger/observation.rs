@@ -42,7 +42,7 @@ pub fn build_observation(
             scale: 6,
         },
         evidence_refs: Vec::new(),
-        observed_at: chrono::Utc::now().to_rfc3339(),
+        observed_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         runtime_version: env!("CARGO_PKG_VERSION").to_owned(),
         sequence_number,
     }
@@ -97,7 +97,9 @@ mod tests {
         );
         assert_eq!(observation.runtime_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(observation.sequence_number, 7);
-        assert!(chrono::DateTime::parse_from_rfc3339(&observation.observed_at).is_ok());
+        assert!(
+            lean_ctx_time::OffsetDateTime::parse_from_rfc3339(&observation.observed_at).is_ok()
+        );
     }
 
     #[test]

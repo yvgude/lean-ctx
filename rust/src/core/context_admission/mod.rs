@@ -31,6 +31,7 @@ pub(crate) mod semantic;
 pub mod semantic_deferred;
 pub mod stored;
 pub mod stores;
+pub mod tool_output;
 pub mod withheld;
 
 use std::path::Path;
@@ -775,7 +776,7 @@ impl ToolOutputAdmission {
 /// class of every command it runs, pz21 §1.8). Without a classified call the
 /// origin is unknown, never assumed to be the project's: a caller that knows
 /// its command or source passes the class to [`admit_tool_output_as`]
-/// (`patterns::tool_output::output_class`).
+/// (`patterns::output_class`).
 pub fn admit_tool_output(text: &str, completeness: OutputCompleteness) -> ToolOutputAdmission {
     let class = capture::current()
         .and_then(|capture| capture.output_class())

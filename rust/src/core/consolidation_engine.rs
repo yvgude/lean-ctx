@@ -12,7 +12,7 @@
 //! shared import primitive plus the thin `scheduled` wrapper the background
 //! drivers call.
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 
 use crate::core::archive::bindings::{self, Item};
 use crate::core::knowledge::{KnowledgeFact, ProjectKnowledge};
@@ -161,9 +161,9 @@ pub fn import_session_into(
     session: &SessionState,
     opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
-    watermark: Option<DateTime<Utc>>,
+    watermark: Option<UtcDateTime>,
 ) -> ImportCounts {
-    let is_new = |ts: DateTime<Utc>| watermark.is_none_or(|w| ts > w);
+    let is_new = |ts: UtcDateTime| watermark.is_none_or(|w| ts > w);
 
     let mut decisions: Vec<&crate::core::session::Decision> = session
         .decisions
@@ -490,7 +490,7 @@ pub mod tests {
             file: Some("src/main.rs".into()),
             line: Some(42),
             summary: "boom".into(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         };
         assert_eq!(finding_key(&f1), "src/main.rs:42");
 
@@ -498,7 +498,7 @@ pub mod tests {
             file: None,
             line: None,
             summary: "Race condition in cache".into(),
-            timestamp: Utc::now(),
+            timestamp: UtcDateTime::now(),
         };
         // Same content → same key (idempotent re-import, no index drift).
         assert_eq!(finding_key(&f2), finding_key(&f2));

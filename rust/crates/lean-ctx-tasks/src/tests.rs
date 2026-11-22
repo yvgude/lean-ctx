@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::{DateTime, Duration, TimeZone as _, Utc};
+use lean_ctx_time::{Duration, UtcDateTime};
 
-use lean_ctx_protocol::hive::tasks::{
+use lean_ctx_protocol::cloud::tasks::{
     EvidenceKind, EvidenceV1, TaskOutcome, TaskState, TaskVerdict,
 };
 
 use crate::board::{Proposal, Submission};
 use crate::{Actor, Board, Store, TaskError, TaskEvent};
 
-fn t0() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 11, 4, 9, 0, 0)
-        .single()
-        .expect("fixed time")
+fn t0() -> UtcDateTime {
+    UtcDateTime::with_ymd_and_hms(2026, 11, 4, 9, 0, 0).expect("fixed time")
 }
 
 fn proposal() -> Proposal {
@@ -204,7 +202,7 @@ fn the_rules_refuse_who_may_not_act() {
         (failed.event, failed.state),
         (TaskEvent::Failed, TaskState::Failed)
     );
-    // Hive's text rules hold: a two-line summary is no summary.
+    // Cloud's text rules hold: a two-line summary is no summary.
     let g = board
         .propose(&creator, proposal(), t0())
         .expect("proposed")
@@ -276,7 +274,7 @@ fn concurrent_writers_lose_no_transition() {
     assert_eq!(seqs, (1..=40).collect::<Vec<_>>());
 }
 
-/// Hive task #39: a failed bus post leaves its notices due, the next access
+/// Cloud task #39: a failed bus post leaves its notices due, the next access
 /// posts them, and none is lost or posted twice. Posts run outside the
 /// lock, so two writers' posts can overlap; each order is run here
 /// deterministically by writing the second inside the first one's post.
@@ -419,7 +417,7 @@ fn a_read_gives_back_expired_claims_and_a_task_is_shared_once() {
 
 #[test]
 fn priority_and_labels_count_their_version_and_a_closed_task_keeps_them() {
-    use lean_ctx_protocol::hive::tasks::TaskPriority;
+    use lean_ctx_protocol::cloud::tasks::TaskPriority;
     let (person, worker) = (Actor::person("Yves"), Actor::agent("w1"));
     let mut board = Board::default();
     let n = board
@@ -512,7 +510,7 @@ fn done_board(worker: &Actor, reviewer: &Actor) -> (Board, u64) {
 #[test]
 fn only_the_submitter_amends_a_result_and_the_history_keeps_old_and_new() {
     use crate::board::Amendment;
-    use lean_ctx_protocol::hive::tasks::TaskUpdateKind;
+    use lean_ctx_protocol::cloud::tasks::TaskUpdateKind;
     let amend = |summary: Option<&str>, shas: &[&str]| Amendment {
         summary: summary.map(str::to_owned),
         evidence: shas.iter().map(|sha| commit_of(sha)).collect(),

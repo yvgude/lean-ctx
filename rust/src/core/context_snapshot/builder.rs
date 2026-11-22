@@ -35,7 +35,7 @@ pub struct SnapshotOptions {
 /// (and signing it when `opts.sign`). Does not persist anything.
 pub(crate) fn build(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String> {
     let mut snap = ContextSnapshotV1::new(
-        chrono::Utc::now().to_rfc3339(),
+        lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         env!("CARGO_PKG_VERSION").to_string(),
     );
     snap.git = git_anchor(&opts.project_root);
@@ -307,7 +307,7 @@ mod tests {
         s.decisions.push(Decision {
             summary: "JSONL append-only index".into(),
             rationale: None,
-            timestamp: chrono::Utc::now(),
+            timestamp: lean_ctx_time::UtcDateTime::now(),
         });
         s.files_touched.push(FileTouched {
             path: "rust/src/core/context_snapshot/timeline.rs".into(),

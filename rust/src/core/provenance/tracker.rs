@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use sha2::{Digest, Sha256};
 
 use super::{
@@ -94,7 +94,7 @@ impl ProvenanceTracker {
             operation_id,
             path,
             tool,
-            observed_at: Utc::now(),
+            observed_at: UtcDateTime::now(),
             before_sha256: (!before_sha256.is_empty()).then_some(before_sha256),
             after_sha256: (!after_sha256.is_empty()).then_some(after_sha256),
             lines_added,
@@ -149,7 +149,7 @@ impl ProvenanceTracker {
             patch_id: Some(sha256_hex(&patch)),
             link_state,
             provenance_ids,
-            observed_at: Utc::now(),
+            observed_at: UtcDateTime::now(),
             files_touched: paths.len() as u64,
             insertions,
             deletions,

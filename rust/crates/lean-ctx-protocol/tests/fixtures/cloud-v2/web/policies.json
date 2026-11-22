@@ -1,0 +1,348 @@
+{
+  "route": "W77",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/policies",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "level": "workspace",
+          "scope": "org_7c1b2a3d4e5f60718293a4b5c6d7e8f9",
+          "version": 2,
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "secrets/"
+              ]
+            },
+            "context": {
+              "max_context_tokens": 100000
+            },
+            "sharing": {
+              "allowed_vaults": [
+                "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c"
+              ],
+              "task_claim_min_role": "contributor"
+            }
+          },
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-25T21:10:00Z"
+        },
+        {
+          "level": "vault",
+          "scope": "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c",
+          "version": 1,
+          "document": {
+            "schema": "leanctx.cloud.policy/v1",
+            "security": {},
+            "context": {},
+            "sharing": {
+              "cross_team_sharing": false
+            }
+          },
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-25T21:12:00Z"
+        }
+      ],
+      "fields": [
+        {
+          "path": "security.excluded_paths",
+          "merge": "union",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "a push, task result, draft or code graph with a code anchor path the globs match is refused"
+        },
+        {
+          "path": "security.block_secrets",
+          "merge": "true_wins",
+          "enforcement": "instance",
+          "instance_field": "egress.block_secrets",
+          "server_point": null
+        },
+        {
+          "path": "security.pii",
+          "merge": "rank",
+          "enforcement": "instance",
+          "instance_field": "filters.pii",
+          "server_point": null
+        },
+        {
+          "path": "security.classification",
+          "merge": "rank",
+          "enforcement": "instance",
+          "instance_field": "filters.classification",
+          "server_point": null
+        },
+        {
+          "path": "security.blocked_labels",
+          "merge": "union",
+          "enforcement": "instance",
+          "instance_field": "filters.blocked_labels",
+          "server_point": null
+        },
+        {
+          "path": "security.allowed_models",
+          "merge": "groups",
+          "enforcement": "instance",
+          "instance_field": "routing.model_ceiling_groups",
+          "server_point": null
+        },
+        {
+          "path": "security.external_model_excluded_classes",
+          "merge": "union",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "security.confidential_out_of_sharing",
+          "merge": "true_wins",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "security.blocked_model_origins",
+          "merge": "union",
+          "enforcement": "instance",
+          "instance_field": "routing.blocked_model_origins",
+          "server_point": null
+        },
+        {
+          "path": "security.blocked_host_countries",
+          "merge": "union",
+          "enforcement": "instance",
+          "instance_field": "routing.blocked_host_countries",
+          "server_point": null
+        },
+        {
+          "path": "security.vendor_direct_cn",
+          "merge": "false_wins",
+          "enforcement": "instance",
+          "instance_field": "routing.vendor_direct_cn",
+          "server_point": null
+        },
+        {
+          "path": "security.allowed_providers",
+          "merge": "intersection",
+          "enforcement": "instance",
+          "instance_field": "routing.allowed_providers",
+          "server_point": null
+        },
+        {
+          "path": "security.readable_roots",
+          "merge": "intersection",
+          "enforcement": "instance",
+          "instance_field": "io.readable_roots",
+          "server_point": null
+        },
+        {
+          "path": "security.never_send",
+          "merge": "union",
+          "enforcement": "instance",
+          "instance_field": "io.never_send",
+          "server_point": null
+        },
+        {
+          "path": "security.require_proxy",
+          "merge": "true_wins",
+          "enforcement": "instance",
+          "instance_field": "routing.require_proxy",
+          "server_point": null
+        },
+        {
+          "path": "context.max_context_tokens",
+          "merge": "min",
+          "enforcement": "instance",
+          "instance_field": "context.max_context_tokens",
+          "server_point": null
+        },
+        {
+          "path": "context.injection_filter",
+          "merge": "rank",
+          "enforcement": "instance",
+          "instance_field": "filters.injection",
+          "server_point": null
+        },
+        {
+          "path": "context.read_mode",
+          "merge": "equal",
+          "enforcement": "instance",
+          "instance_field": "context.default_read_mode",
+          "server_point": null
+        },
+        {
+          "path": "context.ranking_profile",
+          "merge": "equal",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.allowed_tools",
+          "merge": "intersection",
+          "enforcement": "instance",
+          "instance_field": "context.allow_tools",
+          "server_point": null
+        },
+        {
+          "path": "context.denied_tools",
+          "merge": "union",
+          "enforcement": "instance",
+          "instance_field": "context.deny_tools",
+          "server_point": null
+        },
+        {
+          "path": "context.allowed_sources",
+          "merge": "intersection",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.max_writes_per_min",
+          "merge": "min",
+          "enforcement": "instance",
+          "instance_field": "egress.max_writes_per_min",
+          "server_point": null
+        },
+        {
+          "path": "context.max_cost_cents_per_person_per_day",
+          "merge": "min",
+          "enforcement": "instance",
+          "instance_field": "budgets.max_cost_usd_per_person_per_day",
+          "server_point": null
+        },
+        {
+          "path": "context.max_cost_cents_per_project_per_month",
+          "merge": "min",
+          "enforcement": "instance",
+          "instance_field": "budgets.max_cost_usd_per_project_per_month",
+          "server_point": null
+        },
+        {
+          "path": "context.max_requests_per_minute_per_person",
+          "merge": "min",
+          "enforcement": "instance",
+          "instance_field": "budgets.max_requests_per_minute_per_person",
+          "server_point": null
+        },
+        {
+          "path": "context.auto_extraction",
+          "merge": "false_wins",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.extraction_requires_source_anchor",
+          "merge": "true_wins",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.max_source_age_days",
+          "merge": "min",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "sharing.allowed_vaults",
+          "merge": "intersection",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "every instance route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
+        },
+        {
+          "path": "sharing.cross_team_sharing",
+          "merge": "false_wins",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "false: moving a vault to another workspace (W11) is refused"
+        },
+        {
+          "path": "sharing.task_claim_min_role",
+          "merge": "rank",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "task claim and claim renew by an instance whose owner's role is lower are refused"
+        },
+        {
+          "path": "sharing.consent_required_for",
+          "merge": "union",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "trust_boundary: an instance linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
+        },
+        {
+          "path": "sharing.personal_workspace",
+          "merge": "rank",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "forbid: a vault of the team is never moved to a personal workspace (W11), and an instance enrolled in a team never reaches a personal vault; instances from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older instances: advisory)"
+        },
+        {
+          "path": "sharing.share_instance_metrics",
+          "merge": "false_wins",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
+        },
+        {
+          "path": "agents.allowed",
+          "merge": "intersection",
+          "enforcement": "instance",
+          "instance_field": "agents.allowed_agents",
+          "server_point": null
+        },
+        {
+          "path": "orchestrator.network",
+          "merge": "false_wins",
+          "enforcement": "instance",
+          "instance_field": "orchestrator.network",
+          "server_point": null
+        },
+        {
+          "path": "orchestrator.cross_team_review",
+          "merge": "false_wins",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "orchestrator.max_sessions_per_vault",
+          "merge": "min",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        }
+      ]
+    }
+  },
+  "errors": []
+}

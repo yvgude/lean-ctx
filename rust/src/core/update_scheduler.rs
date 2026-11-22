@@ -513,7 +513,7 @@ fn read_last_check_time() -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     let ts = v["checked_at"].as_u64()?;
-    let dt = chrono::DateTime::from_timestamp(ts as i64, 0)?;
+    let dt = lean_ctx_time::UtcDateTime::from_timestamp(ts as i64, 0)?;
     Some(dt.format("%Y-%m-%d %H:%M UTC").to_string())
 }
 

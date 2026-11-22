@@ -349,6 +349,37 @@ mod tests {
         }
     }
 
+    /// A native Write, Edit or apply_patch cannot plant an app key or touch
+    /// any other agent record under `<data dir>/agents/`.
+    #[test]
+    fn native_writes_into_the_agent_records_are_denied() {
+        let _env = lean_ctx::core::data_dir::test_env_lock();
+        let agents = lean_ctx::core::paths::data_dir_read_only()
+            .expect("data dir")
+            .join("agents");
+        for name in [
+            lean_ctx::core::io_boundary::APP_KEY_FILE,
+            lean_ctx::core::agents::RELEASE_IDS_FILE,
+            "directives.json",
+        ] {
+            let target = agents.join(name).display().to_string();
+            for tool in ["Write", "Edit", "MultiEdit"] {
+                let payload = serde_json::json!({
+                    "tool_name": tool, "cwd": "/w",
+                    "tool_input": {"file_path": target, "content": "x"}
+                });
+                assert!(guarded_write(&payload).is_some(), "{tool} {target}");
+            }
+            let patch = serde_json::json!({
+                "tool_name": "apply_patch", "cwd": "/w",
+                "tool_input": {"command": ["apply_patch", format!(
+                    "*** Begin Patch\n*** Add File: {target}\n+x\n*** End Patch\n"
+                )]}
+            });
+            assert!(guarded_write(&patch).is_some(), "apply_patch {target}");
+        }
+    }
+
     #[test]
     fn relative_and_parent_paths_resolve_against_the_payload_cwd() {
         let _env = lean_ctx::core::data_dir::test_env_lock();

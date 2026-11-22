@@ -63,9 +63,9 @@ impl LeanCtxServer {
             }
         };
 
-        // Hive tools follow the Hive release switch: off, every path (direct, ctx_call, ctx)
+        // Cloud tools follow the Cloud release switch: off, every path (direct, ctx_call, ctx)
         // answers one line before any rate or capability gate.
-        if let Some(line) = crate::server::dynamic_tools::withheld_hive_tool_refusal(name, args) {
+        if let Some(line) = crate::server::dynamic_tools::withheld_cloud_tool_refusal(name, args) {
             return Ok((line.to_owned(), 0, None, None));
         }
 
@@ -87,9 +87,9 @@ impl LeanCtxServer {
             crate::server::tool_visibility::mark_auto_ctx_tool_used();
         }
         // K13: a tool call of a host family no enforcing hook regulates.
-        if lean_ctx_hive::metrics_v2::signals::recording() {
+        if lean_ctx_cloud::metrics_v2::signals::recording() {
             let client = self.client_name.read().await.clone();
-            lean_ctx_hive::metrics_v2::signals::host_call(&client);
+            lean_ctx_cloud::metrics_v2::signals::host_call(&client);
         }
         // Background semantic passes yield to tool calls in flight.
         let _activity = lean_ctx::core::graph_enricher::ToolActivity::begin();
@@ -183,18 +183,18 @@ impl LeanCtxServer {
             ));
         }
 
-        // Hive tools follow the Hive release switch: off, they never run.
-        if crate::server::dynamic_tools::is_withheld_hive_tool(name) {
-            return Ok((lean_ctx_hive::TOOL_NOT_AVAILABLE.to_owned(), 0, None, None));
+        // Cloud tools follow the Cloud release switch: off, they never run.
+        if crate::server::dynamic_tools::is_withheld_cloud_tool(name) {
+            return Ok((lean_ctx_cloud::TOOL_NOT_AVAILABLE.to_owned(), 0, None, None));
         }
 
-        // Hive claims belong to the calling agent's session (C8): a shared
+        // Cloud claims belong to the calling agent's session (C8): a shared
         // server serves several clients under one process and agent
         // identity, so it cannot bind a claim to its caller.
         if name == "ctx_tasks" && self.session_mode == crate::tools::SessionMode::Shared {
             return Ok((
                 "[unavailable] ctx_tasks works only in a personal MCP session: a shared \
-                 server cannot bind a Hive claim to the client that calls it."
+                 server cannot bind a task claim to the client that calls it."
                     .to_owned(),
                 0,
                 None,
@@ -246,7 +246,7 @@ impl LeanCtxServer {
             for key in PATH_LIKE_KEYS {
                 if let Some(val) = args_map.get(*key) {
                     if let Some(raw) = val.as_str() {
-                        match self.resolve_path_refusing(raw).await {
+                        match self.resolve_path_for_tool(raw, name).await {
                             Ok(resolved) => {
                                 if !["path", "project_root", "root"].contains(key) {
                                     tracing::trace!(
@@ -497,7 +497,7 @@ impl LeanCtxServer {
                         data,
                         audit::SessionFacts {
                             session_id,
-                            // The instance id (Hive) and policy digest (ent2)
+                            // The instance id (Cloud) and policy digest (ent2)
                             // are bound once those land.
                             instance_id: None,
                             policy_digest: None,
@@ -615,7 +615,7 @@ impl LeanCtxServer {
                 let names = r
                     .names()
                     .into_iter()
-                    .filter(|n| !crate::server::dynamic_tools::is_withheld_hive_tool(n));
+                    .filter(|n| !crate::server::dynamic_tools::is_withheld_cloud_tool(n));
                 lean_ctx::core::levenshtein::closest(name, names)
             })
             .map(|s| format!(" — did you mean '{s}'?"))
@@ -920,6 +920,9 @@ pub fn canonicalize_arg_aliases(
 }
 
 #[cfg(test)]
+mod session_stats_tests;
+
+#[cfg(test)]
 mod alias_tests {
     use super::*;
 
@@ -1143,6 +1146,357 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "no-jail"))]
+    /// A server whose session starts in `root` (a GUI host's `~`, an agent
+    /// config directory).
+    async fn server_rooted_in(root: &std::path::Path) -> LeanCtxServer {
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            crate::tools::SessionMode::Personal,
+            "default",
+            "default",
+        );
+        let root = root.to_string_lossy().to_string();
+        let mut session = server.session.write().await;
+        session.project_root = Some(root.clone());
+        session.shell_cwd = Some(root);
+        drop(session);
+        server
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    fn git_project(dir: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join("a.txt"), "before\n").unwrap();
+        dir.canonicalize().unwrap()
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    async fn edit(server: &LeanCtxServer, file: &str) -> String {
+        let edit = serde_json::json!({
+            "path": file, "old_string": "before", "new_string": "after"
+        });
+        server
+            .dispatch_tool("ctx_edit", edit.as_object(), false)
+            .await
+            .map_or_else(|e| e.message.to_string(), |(text, ..)| text)
+    }
+
+    /// Activation #3 (pins #580/#649): a session started in `~` adopts the
+    /// project of its first absolute path as a normal, WRITABLE session
+    /// project — once. A second project never moves the session.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn a_session_in_home_adopts_its_first_project_writable_and_once() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = home.canonicalize().unwrap();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let repo = git_project(&home.join("code/app"));
+        let other = git_project(&home.join("code/other"));
+        let server = server_rooted_in(&home).await;
+
+        let file = repo.join("a.txt").to_string_lossy().to_string();
+        let read = serde_json::json!({ "path": file, "mode": "full" });
+        let (text, ..) = server
+            .dispatch_tool("ctx_read", read.as_object(), false)
+            .await
+            .unwrap();
+        assert!(text.contains("before"), "{text}");
+        let root = repo.to_string_lossy().to_string();
+        assert_eq!(
+            server.session.read().await.project_root.as_deref(),
+            Some(root.as_str())
+        );
+
+        let text = edit(&server, &file).await;
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "after\n", "{text}");
+
+        let other_file = other.join("a.txt").to_string_lossy().to_string();
+        let read = serde_json::json!({ "path": other_file, "mode": "full" });
+        let _ = server
+            .dispatch_tool("ctx_read", read.as_object(), false)
+            .await;
+        assert_eq!(
+            server.session.read().await.project_root.as_deref(),
+            Some(root.as_str()),
+            "only the first adoption binds"
+        );
+    }
+
+    /// A write tool as the very first call of a session started in an agent
+    /// config directory adopts the project and writes in the same call.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn a_first_write_from_an_agent_dir_adopts_the_project_and_writes() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        let agent = home.join(".copilot");
+        std::fs::create_dir_all(&agent).unwrap();
+        let home = home.canonicalize().unwrap();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let repo = git_project(&home.join("code/app"));
+        let server = server_rooted_in(&agent.canonicalize().unwrap()).await;
+
+        let file = repo.join("a.txt").to_string_lossy().to_string();
+        let text = edit(&server, &file).await;
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "after\n", "{text}");
+        assert_eq!(
+            server.session.read().await.project_root.as_deref(),
+            Some(repo.to_string_lossy().as_ref())
+        );
+        // B1: the adoption is audited exactly once, under the dispatching
+        // tool, naming the adopted root.
+        let adoptions: Vec<_> = lean_ctx::core::audit_trail::load_recent(1_000)
+            .into_iter()
+            .filter(|e| {
+                e.action
+                    .as_deref()
+                    .is_some_and(|a| a.starts_with("jail_autobind:adopted"))
+            })
+            .collect();
+        assert_eq!(adoptions.len(), 1, "{adoptions:?}");
+        assert_eq!(adoptions[0].tool, "ctx_edit");
+        let action = adoptions[0].action.as_deref().unwrap();
+        assert!(
+            action.ends_with(&format!("|root={}", repo.to_string_lossy())),
+            "{action}"
+        );
+    }
+
+    /// Review r2 R2-2 (two steps): a read adopts the project, but its VCS
+    /// metadata and execution hooks stay closed to writes until the user
+    /// declares the root; its ordinary files are writable.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn an_adopted_project_keeps_its_hooks_closed_to_writes() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = home.canonicalize().unwrap();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let repo = git_project(&home.join("code/b"));
+        let server = server_rooted_in(&home).await;
+
+        let readme = repo.join("a.txt").to_string_lossy().to_string();
+        let read = serde_json::json!({ "path": readme, "mode": "full" });
+        server
+            .dispatch_tool("ctx_read", read.as_object(), false)
+            .await
+            .unwrap();
+        assert_eq!(
+            server.session.read().await.project_root.as_deref(),
+            Some(repo.to_string_lossy().as_ref())
+        );
+
+        for hook in [".git/hooks/pre-commit", ".husky/pre-commit", ".envrc"] {
+            let file = repo.join(hook);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, "before\n").unwrap();
+            let text = edit(&server, &file.to_string_lossy()).await;
+            assert_eq!(
+                std::fs::read_to_string(&file).unwrap(),
+                "before\n",
+                "{hook}: {text}"
+            );
+            assert!(text.contains("lean-ctx allow-path"), "{hook}: {text}");
+        }
+        let text = edit(&server, &readme).await;
+        assert_eq!(
+            std::fs::read_to_string(&readme).unwrap(),
+            "after\n",
+            "{text}"
+        );
+    }
+
+    /// Review bd (4): a refused first write, into an execution hook or a
+    /// personal container, adopts nothing: the session stays on `~` and a
+    /// later write into a real project still adopts it.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn a_refused_first_write_leaves_the_session_on_home() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = home.canonicalize().unwrap();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let repo = git_project(&home.join("code/b"));
+        let documents = home.join("Documents");
+        std::fs::create_dir_all(&documents).unwrap();
+        std::fs::write(documents.join("package.json"), "{}").unwrap();
+        let server = server_rooted_in(&home).await;
+        let home_root = home.to_string_lossy().to_string();
+
+        let hook = repo.join(".git/hooks/pre-commit");
+        let notes = documents.join("notes.md");
+        for file in [&hook, &notes] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "before\n").unwrap();
+            let text = edit(&server, &file.to_string_lossy()).await;
+            assert_eq!(std::fs::read_to_string(file).unwrap(), "before\n", "{text}");
+            assert_eq!(
+                server.session.read().await.project_root.as_deref(),
+                Some(home_root.as_str()),
+                "{}: {text}",
+                file.display()
+            );
+        }
+
+        let readme = repo.join("a.txt").to_string_lossy().to_string();
+        let text = edit(&server, &readme).await;
+        assert_eq!(
+            std::fs::read_to_string(&readme).unwrap(),
+            "after\n",
+            "{text}"
+        );
+        assert_eq!(
+            server.session.read().await.project_root.as_deref(),
+            Some(repo.to_string_lossy().as_ref())
+        );
+    }
+
+    /// Lead follow-up 7: two first writes racing into different projects
+    /// give one adoption. The loser is judged by the winner's root and
+    /// refused, since its project lies outside, never by the stale `~` it was
+    /// first jailed to. (Reads would pass: `~` projects stay readable.)
+    /// A barrier holds both calls past the unbound check until both arrive,
+    /// so the adoption lock alone decides the race.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[allow(clippy::await_holding_lock)]
+    async fn racing_first_calls_adopt_one_project_and_refuse_the_other() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = home.canonicalize().unwrap();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let projects = ["alpha", "beta"].map(|name| git_project(&home.join("code").join(name)));
+        let server = server_rooted_in(&home).await;
+
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let calls = projects.clone().map(|repo| {
+            let server = server.clone();
+            let barrier = std::cell::RefCell::new(Some(barrier.clone()));
+            tokio::spawn(crate::tools::ADOPTION_BARRIER.scope(barrier, async move {
+                let file = repo.join("a.txt").to_string_lossy().to_string();
+                edit(&server, &file).await
+            }))
+        });
+        let mut outputs = Vec::new();
+        for call in calls {
+            let output = tokio::time::timeout(Duration::from_secs(60), call)
+                .await
+                .expect("both racing calls reach the adoption barrier");
+            outputs.push(output.unwrap());
+        }
+
+        let bound = server.session.read().await.project_root.clone().unwrap();
+        let winner = projects
+            .iter()
+            .position(|repo| repo.to_string_lossy() == bound)
+            .expect("one of the two projects is adopted");
+        for (i, repo) in projects.iter().enumerate() {
+            let written = std::fs::read_to_string(repo.join("a.txt")).unwrap() == "after\n";
+            assert_eq!(written, i == winner, "{}: {}", repo.display(), outputs[i]);
+        }
+    }
+
+    /// Review 33452: once a session adopted a project, a host resetting it
+    /// to `~` never re-opens the adoption; a later path cannot move it.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn a_session_reset_to_home_after_adopting_never_adopts_again() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = home.canonicalize().unwrap();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let first = git_project(&home.join("code/first"));
+        let second = git_project(&home.join("code/second"));
+        let server = server_rooted_in(&home).await;
+
+        let path = |repo: &std::path::Path| repo.join("a.txt").to_string_lossy().to_string();
+        server.resolve_path(&path(&first)).await.unwrap();
+        let bound = server.session.read().await.project_root.clone();
+        assert_eq!(bound.as_deref(), Some(first.to_string_lossy().as_ref()));
+
+        let home_root = home.to_string_lossy().to_string();
+        server.session.write().await.project_root = Some(home_root.clone());
+        let _ = server.resolve_path(&path(&second)).await;
+        let bound = server.session.read().await.project_root.clone();
+        assert_eq!(
+            bound.as_deref(),
+            Some(home_root.as_str()),
+            "a reset session keeps its root; the adoption happened once"
+        );
+    }
+
+    /// Review 33452: shared sessions and a configured Workspace rooted in `~`
+    /// are never adopted away from, and neither is a session jailed to a root
+    /// pinned with `LEAN_CTX_PROJECT_ROOT`. `pinned_root()` ignores broad
+    /// pins (`~`, agent dirs), so the pin reaches the adoption only as the
+    /// `shell_cwd` jail of a session without a project root.
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn shared_workspace_and_pinned_sessions_never_adopt() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = lean_ctx::core::pathjail_autobind::adoption_fixture_tempdir();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = home.canonicalize().unwrap();
+        let home_root = home.to_string_lossy().to_string();
+        let _home = lean_ctx::test_env::VarGuard::set("HOME", &home);
+        let repo = git_project(&home.join("code/app"));
+        let file = repo.join("a.txt").to_string_lossy().to_string();
+
+        // `new_with_startup` falls back to a personal session without a
+        // usable startup root (and `~` is a broad one), so set the mode the
+        // way a shared server carries it.
+        let mut shared = server_rooted_in(&home).await;
+        shared.session_mode = crate::tools::SessionMode::Shared;
+        let mut cases = vec![("shared", shared, Some(home_root.clone()))];
+        {
+            let _workspace = lean_ctx::test_env::VarGuard::set(
+                lean_ctx::core::workspace_authority::ENV_FILE,
+                tmp.path().join("workspace.json"),
+            );
+            let server = server_rooted_in(&home).await;
+            let _ = server.resolve_path(&file).await;
+            cases.push(("workspace", server, Some(home_root.clone())));
+        }
+        {
+            let pinned = home.join("pinned");
+            std::fs::create_dir_all(&pinned).unwrap();
+            let _pinned = lean_ctx::test_env::VarGuard::set("LEAN_CTX_PROJECT_ROOT", &pinned);
+            let server = server_rooted_in(&pinned).await;
+            server.session.write().await.project_root = None;
+            let _ = server.resolve_path(&file).await;
+            cases.push(("pinned", server, None));
+        }
+        let _ = cases[0].1.resolve_path(&file).await;
+        for (mode, server, root) in cases {
+            assert_eq!(
+                server.session.read().await.project_root.as_deref(),
+                root.as_deref(),
+                "{mode}: the session root stays"
+            );
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_passes_through_fast_handler() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
@@ -1173,10 +1527,10 @@ mod tests {
     /// near any registered tool must stay suggestion-free.
     /// C8: a shared server never runs ctx_tasks for its clients.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_shared_server_refuses_hive_tasks() {
+    async fn a_shared_server_refuses_cloud_tasks() {
         if lean_ctx::test_env::run_in_own_process(
-            "server::dispatch::tests::a_shared_server_refuses_hive_tasks",
-            &[(lean_ctx_hive::PREVIEW_ENV, "1")],
+            "server::dispatch::tests::a_shared_server_refuses_cloud_tasks",
+            &[(lean_ctx_cloud::PREVIEW_ENV, "1")],
         ) {
             return;
         }
@@ -1191,11 +1545,11 @@ mod tests {
         assert!(text.contains("only in a personal MCP session"), "{text}");
     }
 
-    /// Owner 28.10.: while the Hive switch is off, ctx_tasks is in no tool
+    /// Owner 28.10.: while the Cloud switch is off, ctx_tasks is in no tool
     /// list and every call path answers one fixed line.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn hive_tools_are_withheld_while_the_switch_is_off() {
-        if lean_ctx_hive::available_locally() {
+    async fn cloud_tools_are_withheld_while_the_switch_is_off() {
+        if lean_ctx_cloud::available_locally() {
             return;
         }
         // The guarded calls persist receipts: alone, in a store of its own, so
@@ -1203,7 +1557,7 @@ mod tests {
         let store = tempfile::tempdir().unwrap();
         let store = store.path().to_str().unwrap();
         if lean_ctx::test_env::run_in_own_process(
-            "server::dispatch::tests::hive_tools_are_withheld_while_the_switch_is_off",
+            "server::dispatch::tests::cloud_tools_are_withheld_while_the_switch_is_off",
             &[
                 ("LEAN_CTX_DATA_DIR", store),
                 ("LEAN_CTX_CONFIG_DIR", store),
@@ -1213,7 +1567,7 @@ mod tests {
         ) {
             return;
         }
-        use crate::server::dynamic_tools::HIVE_TOOLS;
+        use crate::server::dynamic_tools::CLOUD_TOOLS;
         use lean_ctx::core::tool_profiles::ToolProfile;
         let registry = crate::server::registry::build_registry();
         let mut surfaces = vec![registry.tool_defs(), registry.active_tool_defs()];
@@ -1226,10 +1580,10 @@ mod tests {
         }
         for defs in &surfaces {
             for def in defs {
-                assert!(!HIVE_TOOLS.contains(&def.name.as_ref()), "{}", def.name);
+                assert!(!CLOUD_TOOLS.contains(&def.name.as_ref()), "{}", def.name);
             }
         }
-        for name in HIVE_TOOLS {
+        for name in CLOUD_TOOLS {
             assert!(
                 !crate::server::tool_visibility::is_tool_visible(
                     name,
@@ -1252,8 +1606,8 @@ mod tests {
         }
 
         let server = crate::tools::create_server();
-        let line = lean_ctx_hive::TOOL_NOT_AVAILABLE;
-        for name in HIVE_TOOLS {
+        let line = lean_ctx_cloud::TOOL_NOT_AVAILABLE;
+        for name in CLOUD_TOOLS {
             let mut args = serde_json::Map::new();
             args.insert("action".into(), Value::String("list".into()));
             let (direct, ..) = server
@@ -1295,17 +1649,17 @@ mod tests {
         }
     }
 
-    /// With the test preview the Hive tools are advertised as before.
+    /// With the test preview the Cloud tools are advertised as before.
     #[test]
-    fn hive_tools_return_with_the_preview() {
+    fn cloud_tools_return_with_the_preview() {
         if lean_ctx::test_env::run_in_own_process(
-            "server::dispatch::tests::hive_tools_return_with_the_preview",
-            &[(lean_ctx_hive::PREVIEW_ENV, "1")],
+            "server::dispatch::tests::cloud_tools_return_with_the_preview",
+            &[(lean_ctx_cloud::PREVIEW_ENV, "1")],
         ) {
             return;
         }
         let defs = crate::server::registry::build_registry().tool_defs();
-        for name in crate::server::dynamic_tools::HIVE_TOOLS {
+        for name in crate::server::dynamic_tools::CLOUD_TOOLS {
             assert!(defs.iter().any(|def| def.name.as_ref() == *name), "{name}");
         }
     }
@@ -1461,7 +1815,8 @@ mod workflow_gate_tests {
             .expect("load")
             .expect("a withheld workflow is still a workflow");
         assert!(is_withheld_sentinel(&closed));
-        closed.updated_at = chrono::Utc::now() - chrono::Duration::minutes(45);
+        closed.updated_at =
+            lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::minutes(45);
         *server.workflow.write().await = Some(closed);
 
         for (inner, arguments) in [

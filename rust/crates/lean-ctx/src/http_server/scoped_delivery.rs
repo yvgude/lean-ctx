@@ -46,7 +46,7 @@ pub(super) async fn execute(
         );
     };
     let action = request.request.action();
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let body_digest = request.bound_request_digest();
     let delegated_policy = if let Some(certificate) = &request.delegation {
         let certificate = certificate.clone();
@@ -86,7 +86,7 @@ pub(super) async fn execute(
                     recipient: &recipient,
                     tenant_id: &tenant,
                     project_id: &project,
-                    now: chrono::Utc::now(),
+                    now: lean_ctx_time::UtcDateTime::now(),
                 },
             )
         })
@@ -278,7 +278,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().expect("tempdir");
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let key = ed25519_dalek::SigningKey::from_bytes(&[73; 32]);
         let mut cfg = HttpServerConfig {
             project_root: dir.path().to_owned(),
@@ -302,8 +302,8 @@ mod tests {
                         tenant_id: "account".into(),
                         project_id: "project".into(),
                     }],
-                    not_before: now - chrono::Duration::minutes(1),
-                    expires_at: now + chrono::Duration::hours(1),
+                    not_before: now - lean_ctx_time::Duration::minutes(1),
+                    expires_at: now + lean_ctx_time::Duration::hours(1),
                     revoked: false,
                 }],
                 grants: vec![TaskCapabilityGrantV1 {
@@ -313,8 +313,8 @@ mod tests {
                     action: DELIVERY_CHECK.into(),
                     tenant_id: "account".into(),
                     project_id: "project".into(),
-                    not_before: now - chrono::Duration::minutes(1),
-                    expires_at: now + chrono::Duration::hours(1),
+                    not_before: now - lean_ctx_time::Duration::minutes(1),
+                    expires_at: now + lean_ctx_time::Duration::hours(1),
                     revoked: false,
                 }],
             },
@@ -361,7 +361,7 @@ mod tests {
                 digest(&lean_ctx::core::canonical::canonical_serialize(&operation))
             ),
             issued_at: now,
-            expires_at: now + chrono::Duration::minutes(1),
+            expires_at: now + lean_ctx_time::Duration::minutes(1),
             nonce: "request-1".into(),
             grant_ref: CapabilityGrantRefV1 {
                 schema_version: 1,

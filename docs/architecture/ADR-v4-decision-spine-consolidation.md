@@ -375,9 +375,9 @@ Amended 2026-10-29 (owner decision: nothing in the open engine is a paid tier):
   deterministic and local adaptive Context/Execution Autopilot, local context
   ranking and memory selection, the bounded local Agent Bus/Work Graph and the
   open protocols. No licensed runtime changes a local decision.
-- LeanCTX Hive Team adds tenant-scoped durable Workspace Bus and distributed
+- LeanCTX Cloud Team adds tenant-scoped durable Workspace Bus and distributed
   Work Graph.
-- LeanCTX Hive (Personal, Team, Enterprise) adds control and proof: filter
+- LeanCTX Cloud (Personal, Team, Enterprise) adds control and proof: filter
   packs, governed identity, org policy, compliance, fleet control, audit,
   Cockpit across engines and deployment choices.
 

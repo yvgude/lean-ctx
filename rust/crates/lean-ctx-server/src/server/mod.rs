@@ -6,6 +6,8 @@ pub use lean_ctx::core::bypass_hint;
 mod call_identity;
 #[cfg(test)]
 mod catalog_tests;
+#[doc(hidden)]
+pub mod client_sessions;
 pub mod compaction_sync;
 pub mod context_gate;
 #[cfg(test)]

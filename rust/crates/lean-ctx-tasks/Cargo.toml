@@ -1,21 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "lean-ctx-tasks"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
-description = "Local project tasks of LeanCTX | OSS: the Hive task model and state machine, kept per project on this machine."
+description = "Local project tasks of LeanCTX | OSS: the Cloud task model and state machine, kept per project on this machine."
 repository = "https://github.com/yvgude/lean-ctx"
 
 # A leaf crate: it never depends on `lean-ctx`. The connector's adapter
-# (lean-ctx-hive `tasks::local`) picks the store directory, posts the bus
-# notices and routes linked projects to Hive (see rust/CRATE_MAP.md).
+# (lean-ctx-cloud `tasks::local`) picks the store directory, posts the bus
+# notices and routes linked projects to Cloud (see rust/CRATE_MAP.md).
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+lean-ctx-time = { path = "../lean-ctx-time", version = "0.1.0" }
 fs2 = "0.4"
-lean-ctx-fs = { path = "../lean-ctx-fs", version = "0.2.0" }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.7.0" }
+lean-ctx-fs = { path = "../lean-ctx-fs", version = "0.2.1" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.8.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

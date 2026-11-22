@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ pub(crate) const PACKAGES_DIR: &str = "packages";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PackageIndex {
     pub schema_version: u32,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
     pub entries: Vec<PackageEntry>,
 }
 
@@ -27,7 +27,7 @@ pub struct PackageEntry {
     pub name: String,
     pub version: String,
     pub description: String,
-    pub installed_at: DateTime<Utc>,
+    pub installed_at: UtcDateTime,
     pub layers: Vec<String>,
     pub sha256: String,
     pub byte_size: u64,
@@ -78,7 +78,7 @@ impl PackageIndex {
     fn new() -> Self {
         Self {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
             entries: Vec::new(),
         }
     }
@@ -263,7 +263,7 @@ impl LocalRegistry {
             name: manifest.name.clone(),
             version: manifest.version.clone(),
             description: manifest.description.clone(),
-            installed_at: Utc::now(),
+            installed_at: UtcDateTime::now(),
             layers: manifest
                 .layers
                 .iter()
@@ -276,7 +276,7 @@ impl LocalRegistry {
             auto_load_projects,
             origin: Some(origin),
         });
-        index.updated_at = Utc::now();
+        index.updated_at = UtcDateTime::now();
         self.save_index(&index)?;
 
         Ok(pkg_dir)
@@ -315,7 +315,7 @@ impl LocalRegistry {
 
         let removed = (before - index.entries.len()) as u32;
         if removed > 0 {
-            index.updated_at = Utc::now();
+            index.updated_at = UtcDateTime::now();
             self.save_index(&index)?;
         }
 
@@ -398,7 +398,7 @@ impl LocalRegistry {
                 entry.auto_load_projects.push(project);
             }
             entry.auto_load = !entry.auto_load_projects.is_empty();
-            index.updated_at = Utc::now();
+            index.updated_at = UtcDateTime::now();
             self.save_index(&index)?;
         } else {
             return Err(format!("package {name}@{version} not found in index"));

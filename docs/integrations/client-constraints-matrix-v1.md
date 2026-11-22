@@ -1,7 +1,7 @@
 # Client Constraints Matrix v1 (docs‑backed SSOT)
 
 > **Status: local integration implementation reference.** LeanCTX is the **Context Gateway for AI Systems**.
-> **Control what your AI can see.** This reference describes supported local
+> **Less context. More intelligence.** This reference describes supported local
 > LeanCTX | OSS integration behavior; it is not a general release or
 > performance guarantee. See [current positioning](../POSITIONING_CANONICAL.md).
 

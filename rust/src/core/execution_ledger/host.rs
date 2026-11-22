@@ -601,8 +601,10 @@ pub fn parse_key(value: &str) -> Result<SigningKey, &'static str> {
 }
 
 fn now() -> Result<UtcTimestamp, &'static str> {
-    UtcTimestamp::new(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .map_err(|_| "host_clock_unavailable")
+    UtcTimestamp::new(
+        lean_ctx_time::UtcDateTime::now().to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
+    )
+    .map_err(|_| "host_clock_unavailable")
 }
 
 pub fn digest(bytes: &[u8]) -> Result<Sha256Digest, &'static str> {

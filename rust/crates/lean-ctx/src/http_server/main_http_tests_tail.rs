@@ -25,7 +25,7 @@ async fn relay_origin_policy_cannot_be_widened_by_forwarding_peer() {
         retry_count: 0,
         retry_delay_ms: 0,
     };
-    let now = chrono::Utc::now();
+    let now = lean_ctx_time::UtcDateTime::now();
     let mut record = RelayRecordV1::new_signed(
         "policy-delivery",
         "origin",
@@ -34,7 +34,7 @@ async fn relay_origin_policy_cannot_be_widened_by_forwarding_peer() {
         "project-a",
         TransportContentType::ContextPackage,
         DataClassification::Internal,
-        now + chrono::Duration::minutes(1),
+        now + lean_ctx_time::Duration::minutes(1),
         4,
         now,
         &test_origin_key("origin"),
@@ -271,6 +271,7 @@ async fn rate_limit_returns_429_when_exhausted() {
         server: LeanCtxServer::new_shared_with_context(".", "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -328,6 +329,7 @@ async fn audit_events_endpoint_returns_json() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -377,6 +379,7 @@ async fn capabilities_endpoint_returns_contract() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -449,6 +452,7 @@ async fn openapi_endpoint_returns_spec() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -505,6 +509,7 @@ async fn events_endpoint_replays_tool_call_event() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -569,6 +574,7 @@ async fn events_endpoint_scopes_directed_events_to_agent_identity() {
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
         local_ipc: false,
         project_servers: crate::http_server::ProjectServers::for_tests(),
+        oauth: None,
     };
 
     let app = Router::new()
@@ -641,7 +647,7 @@ fn session_rights_file(dir: &std::path::Path, worktree: &std::path::Path, denied
     std::fs::create_dir_all(worktree.join("specs/42")).expect("spec dir");
     std::fs::write(worktree.join("tests/locked_test.rs"), "#[test] fn t() {}\n").expect("test");
     let list = json!({
-        "schema": "leanctx.hive.process.feature-list/v1", "process": "1.0",
+        "schema": "leanctx.cloud.process.feature-list/v1", "process": "1.0",
         "task": {"vault": "#acme/payments", "number": 42},
         "spec_commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
         "test_command": "cargo test",

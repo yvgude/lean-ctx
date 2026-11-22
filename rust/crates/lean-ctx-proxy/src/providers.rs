@@ -101,8 +101,8 @@ pub async fn handler(
     mut req: Request<Body>,
 ) -> Result<Response, StatusCode> {
     // The built-in subscription-model provider (mz6): its credential is the
-    // Hive instance token, never a configured or caller key.
-    if id == lean_ctx::core::hive_models::PROVIDER_ID {
+    // Cloud instance token, never a configured or caller key.
+    if id == lean_ctx::core::cloud_models::PROVIDER_ID {
         return super::leanctx_provider::handle(state, &rest, req).await;
     }
     let Some(provider) = state.upstream_snapshot().provider_by_id(&id).cloned() else {

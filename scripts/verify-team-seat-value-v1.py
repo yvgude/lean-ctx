@@ -940,6 +940,36 @@ def ci_fragment_digest(lines):
 # change-envelope-v1 and managed-config-v1), so they are pinned only in the
 # lines that name this pack. Renaming, dropping or editing such a line still
 # fails here.
+#
+# In a Rust file a line that names the pack is pinned together with the rest of
+# its item: every attribute that rustc attaches to it (also across blank and
+# comment lines, and multi-line attributes such as `#[cfg(\n any()\n)]`), so a
+# `#[cfg(any())]` or `#[path = "..."]` cannot switch the module off or swap
+# its body unnoticed. Comments themselves are not pinned, but a pack-naming line
+# that holds no code (a comment, or the inside of a multi-line comment or string
+# literal) is pinned as a `comment:` line, so commenting a pack line out changes
+# the fragment; the protocol crate root may name the pack in code only. A pack item inside a
+# block, macro call or bracket also pins each enclosing opener item with its
+# attributes (`block:` lines), so moving a pack line into `#[cfg(any())] mod
+# hidden {` or a swallowing `drop_all! {` changes the fragment; in the protocol
+# crate root a pack line that is not at bracket depth 0 fails outright.
+#
+# In the protocol crate root the pack's items are reached through
+# `pub use seat_value::*` style globs, and the pack modules reach their
+# building blocks (`use crate::{TeamId, ...}`) through the root as well. An
+# explicit item or re-export in the root silently shadows a glob, so:
+# - the root may not name a public item of a pack module anywhere outside the
+#   pack's own lines (`pub use money::MoneyV1 as SeatUsageV1;` fails);
+# - every root statement that names a building block the pack modules import
+#   from `crate::` is pinned as a route line (`pub use money::MoneyV1 as
+#   TeamId;` changes the fragment).
+# A second glob cannot reroute a name silently: two globs that provide the same
+# name make it ambiguous, which is a compile error at every use (E0659).
+# The bodies of the building-block modules (common.rs, team_context.rs,
+# capability.rs, ...) are pinned by no pack: they are shared by every contract,
+# and a whole-file pin there would bring back the re-pin churn this narrowing
+# removed. Items generated in the root by a macro that builds names (paste-style
+# concatenation) are not recognised either.
 REGISTRY_FILES = (
     "docs/contracts/README.md",
     "rust/crates/lean-ctx-protocol/src/lib.rs",
@@ -947,11 +977,263 @@ REGISTRY_FILES = (
     "rust/src/core/server_capabilities.rs",
 )
 PACK_MARKERS = ("team-seat-value", "seat_value", "SEAT_VALUE")
+PROTOCOL_ROOT = "rust/crates/lean-ctx-protocol/src/lib.rs"
+PROTOCOL_MODULES = (
+    "rust/crates/lean-ctx-protocol/src/seat_value.rs",
+    "rust/crates/lean-ctx-protocol/src/team_seat_value_capability.rs",
+)
+_RUST_RAW_STRING = re.compile(r'[bc]?r(#*)"')
+_RUST_CHAR = re.compile(r"'(?:\\(?:x[0-9A-Fa-f]{2}|u\{[0-9A-Fa-f]{1,6}\}|.)|[^\\'\n])'")
+_RUST_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_RUST_ITEM = re.compile(
+    r"pub(?:\s*\([^)]*\))?\s+(?:(?:unsafe|async|const|extern(?:\s+\"[^\"]*\")?)\s+)*"
+    r"(?:struct|enum|fn|const|static|type|trait|union|mod)\s+([A-Za-z_][A-Za-z0-9_]*)")
+_RUST_MACRO_ITEM = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*!\s*[(\[{]\s*([A-Za-z_][A-Za-z0-9_]*)")
+_TERMINATORS = (";", ",", "{", "}", "[", "(")
 
 
-def registry_fragment(text):
-    return [line.strip() for line in text.splitlines()
-            if any(marker in line for marker in PACK_MARKERS)]
+def _blank(segment):
+    return "".join("\n" if ch == "\n" else " " for ch in segment)
+
+
+def rust_code(text):
+    """`text` with comment bodies and string/char literal contents blanked to
+    spaces (newlines kept, so lines stay aligned with the source)."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            out.append(_blank(text[i:end]))
+            i = end
+            continue
+        if text.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif text.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            out.append(_blank(text[i:j]))
+            i = j
+            continue
+        raw = _RUST_RAW_STRING.match(text, i)
+        if raw and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            close = text.find('"' + raw.group(1), raw.end())
+            close = n if close < 0 else close
+            out.append(" " * (raw.end() - i - 1) + '"' + _blank(text[raw.end():close]) + '"'
+                       + " " * len(raw.group(1)))
+            i = close + 1 + len(raw.group(1))
+            continue
+        if text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append('"' + _blank(text[i + 1:min(j, n)]) + '"')
+            i = j + 1
+            continue
+        char = _RUST_CHAR.match(text, i) if text[i] == "'" else None
+        if char:
+            out.append("''" + " " * (char.end() - i - 2))
+            i = char.end()
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
+def _attribute_only(code, depth):
+    """(True when `code` holds nothing but attributes or an attribute's
+    continuation, the open bracket depth after it)."""
+    i, n = 0, len(code)
+    while i < n:
+        if depth:
+            depth += {"[": 1, "]": -1}.get(code[i], 0)
+            i += 1
+        elif code[i].isspace():
+            i += 1
+        elif code.startswith("#[", i) or code.startswith("#![", i):
+            depth = 1
+            i = code.index("[", i) + 1
+        else:
+            return False, depth
+    return True, depth
+
+
+def rust_registry_fragment(text, nested=None, masked=None):
+    """The pack-naming lines of a Rust file, each with its whole item: the
+    attributes and lines since the previous item terminator, and the lines up
+    to the next one (blank and comment-only lines skipped). A pack item inside
+    an open block, macro call or bracket also pins every enclosing opener item
+    (with its attributes), once per opener, ahead of the first pack item in it:
+    wrapping a pack line in `#[cfg(any())] mod hidden {` or `drop_all! {`
+    changes the fragment. When `nested` is a list, the first line of every pack
+    item that does not start at bracket depth 0 is appended to it. A pack-naming
+    line with no code left after blanking (a comment, or the inside of a
+    multi-line comment or string literal) is pinned as a `comment:` line, so it
+    never equals the real line. When `masked` is a list, every line that names
+    the pack only inside a comment or literal is appended to it."""
+    picked, item, marked, depth = [], [], False, 0
+    stack, outer, pushed = [], [], []  # open-bracket openers; those around the item
+    for raw_line, code_line in zip(text.split("\n"), rust_code(text).split("\n")):
+        code = code_line.strip()
+        names_pack = any(marker in raw_line for marker in PACK_MARKERS)
+        if names_pack and masked is not None and not any(
+                marker in code_line for marker in PACK_MARKERS):
+            masked.append(raw_line.strip())
+        if not code:
+            if names_pack:
+                picked.append("comment: " + raw_line.strip())
+            continue
+        if not item:
+            outer = list(stack)
+        item.append(raw_line.strip())
+        marked = marked or names_pack
+        opener = None
+        for ch in code:
+            if ch in "{[(":
+                if opener is None:
+                    opener = {"lines": list(item), "pinned": False}
+                    pushed.append(opener)
+                stack.append(opener)
+            elif ch in "}])" and stack:
+                stack.pop()
+        attribute, depth = _attribute_only(code, depth)
+        if not attribute and code.endswith(_TERMINATORS):
+            if marked:
+                _pin_item(picked, item, outer, pushed, nested)
+            item, marked, pushed = [], False, []
+    if marked:
+        _pin_item(picked, item, outer, pushed, nested)
+    return picked
+
+
+def _pin_item(picked, item, outer, pushed, nested):
+    if outer and nested is not None:
+        nested.append(item[0])
+    for entry in outer:
+        if not entry["pinned"]:
+            entry["pinned"] = True
+            picked.extend("block: " + line for line in entry["lines"])
+    for entry in pushed:
+        entry["pinned"] = True  # its lines are part of this item
+    picked.extend(item)
+
+
+def rust_statements(code):
+    """Top-level statements of blanked Rust code (attributes included)."""
+    statements, start, depth = [], 0, 0
+    for i, ch in enumerate(code):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0 and ch == "}":
+                statements.append(code[start:i + 1])
+                start = i + 1
+        elif ch == ";" and depth == 0:
+            statements.append(code[start:i + 1])
+            start = i + 1
+    if code[start:].strip():
+        statements.append(code[start:])
+    return [" ".join(statement.split()) for statement in statements if statement.strip()]
+
+
+def _strip_attributes(statement):
+    while statement.startswith(("#[", "#![")):
+        depth, i = 1, statement.index("[") + 1
+        while depth and i < len(statement):
+            depth += {"[": 1, "]": -1}.get(statement[i], 0)
+            i += 1
+        statement = statement[i:].lstrip()
+    return statement
+
+
+def _use_tree_names(tree, leaves):
+    """Names a use tree binds: the leaf or alias names when `leaves`, else the
+    first path segment of each branch (the names looked up at its root)."""
+    names, part, depth = set(), "", 0
+    branches = []
+    for ch in tree.strip().rstrip(";"):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            branches.append(part)
+            part = ""
+        else:
+            part += ch
+    branches.append(part)
+    for branch in (b.strip() for b in branches):
+        if not branch:
+            continue
+        if branch.startswith("{") and branch.endswith("}"):
+            names |= _use_tree_names(branch[1:-1], leaves)
+            continue
+        head, sep, rest = branch.partition("::")
+        if not leaves:
+            names.add(head.strip())
+        elif sep and rest.strip().startswith("{"):
+            names |= _use_tree_names(rest.strip()[1:-1], True)
+        elif sep:
+            names |= _use_tree_names(rest, True)
+        else:
+            alias = re.fullmatch(r"\s*[A-Za-z_]\w*\s+as\s+([A-Za-z_]\w*)\s*", branch)
+            names.add(alias.group(1) if alias else branch.strip())
+    return {name for name in names if name not in ("self", "super", "crate", "*", "_")}
+
+
+def pack_module_names():
+    """(public item names of the pack modules, names they import from the
+    crate root)."""
+    public, imported = set(), set()
+    for rel in PROTOCOL_MODULES:
+        code = rust_code((ROOT / rel).read_text(encoding="utf-8"))
+        for statement in rust_statements(code):
+            statement = _strip_attributes(statement)
+            item = _RUST_ITEM.match(statement)
+            macro = _RUST_MACRO_ITEM.match(statement)
+            if item:
+                public.add(item.group(1))
+            elif macro and macro.group(1) != "macro_rules":
+                public.add(macro.group(2))
+            elif re.match(r"pub(?:\s*\([^)]*\))?\s+use\s", statement):
+                public |= _use_tree_names(statement.split("use", 1)[1], True)
+            crate_use = re.match(r"(?:pub(?:\s*\([^)]*\))?\s+)?use\s+crate\s*::\s*(.*)", statement)
+            if crate_use:
+                imported |= _use_tree_names(crate_use.group(1), False)
+        imported |= set(re.findall(r"\bcrate\s*::\s*([A-Za-z_][A-Za-z0-9_]*)", code))
+    return public, imported - public
+
+
+def protocol_routes(text):
+    """(route lines, shadowing statements) of the protocol crate root: the
+    statements outside the pack's own lines that name a building block the
+    pack imports, and those that name one of the pack's public items."""
+    public, imported = pack_module_names()
+    routes, shadows = [], []
+    for statement in rust_statements(rust_code(text)):
+        if any(marker in statement for marker in PACK_MARKERS):
+            continue  # the pack's own lines, pinned by the marker fragment
+        idents = set(_RUST_IDENT.findall(statement))
+        if idents & public:
+            shadows.append(statement)
+        elif idents & imported:
+            routes.append("route: " + statement)
+    return routes, shadows
+
+
+def registry_fragment(text, rel):
+    if not rel.endswith(".rs"):
+        return [line.strip() for line in text.splitlines()
+                if any(marker in line for marker in PACK_MARKERS)]
+    lines = rust_registry_fragment(text)
+    if rel == PROTOCOL_ROOT:
+        lines += protocol_routes(text)[0]
+    return lines
 
 
 def repin_command(rel):
@@ -998,9 +1280,25 @@ def verify_frozen():
         path = ROOT / rel
         if rel in hashes or not path.is_file():
             fail("frozen registry fragment: " + rel)
-        lines = registry_fragment(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        lines = registry_fragment(text, rel)
         if not lines:
             fail("frozen registry fragment: %s no longer names team-seat-value-v1" % rel)
+        if rel == PROTOCOL_ROOT:
+            nested, masked = [], []
+            rust_registry_fragment(text, nested, masked)
+            if masked:
+                fail("frozen registry fragment: %s names team-seat-value-v1 only inside a "
+                     "comment or string literal (the crate root may name the pack in code "
+                     "only): %s" % (rel, masked[0]))
+            if nested:
+                fail("frozen registry fragment: %s nests a team-seat-value-v1 line inside a "
+                     "block, macro call or bracket (pack modules and re-exports must stay at "
+                     "the crate root): %s" % (rel, nested[0]))
+            shadows = protocol_routes(text)[1]
+            if shadows:
+                fail("frozen registry fragment: %s shadows a team-seat-value-v1 item outside the "
+                     "pack's own lines: %s" % (rel, shadows[0]))
         if ci_fragment_digest(lines) != registry[rel]:
             frozen_change("registry fragment", rel, " - the lines that name team-seat-value-v1 changed")
 

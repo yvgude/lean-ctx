@@ -247,7 +247,7 @@ fn host_started_child_gets_scoped_delivery_until_the_receipt() {
                     recipient: "daemon",
                     tenant_id: "account",
                     project_id: "project",
-                    now: chrono::Utc::now(),
+                    now: lean_ctx_time::UtcDateTime::now(),
                 },
             )
             .is_err()

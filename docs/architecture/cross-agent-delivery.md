@@ -9,7 +9,7 @@ Cross-Agent Context Delivery verhindert, dass ein Agent denselben unveränderten
 Kontext erneut materialisiert, den ein anderer berechtigter Agent bereits
 erhalten hat. Das Ergebnis ist eine überprüfbare Referenz auf die ursprüngliche
 Auslieferung, nicht bloss ein anonymer Cache-Treffer. Auf einem Rechner gehört
-die Funktion zu LeanCTX OSS (frei, lokal); LeanCTX Hive Team erweitert den Scope
+die Funktion zu LeanCTX OSS (frei, lokal); LeanCTX Cloud Team erweitert den Scope
 auf autorisierte gemeinsame Workspaces, ohne die Isolationsregeln abzuschwächen.
 
 Nicht Teil dieses Vertrags sind Agent-Bus-Nachrichten, Task-Delegation,
@@ -93,7 +93,7 @@ bei Proxy oder Team-Dienst sind sie verschieden. Gemessen werden mindestens
 Referenzen, Expansionen, Validierungsfehler, Invalidierungen und vermiedene
 Tokens. Einsparung ist `max(original_tokens - reference_tokens, 0)` und wird
 nur nach erfolgreich bedienter Referenz gezählt. Das Reporting (lokales Cockpit,
-in LeanCTX Hive über Engines hinweg) aggregiert diese Werte, ohne Content, Pfade
+in LeanCTX Cloud über Engines hinweg) aggregiert diese Werte, ohne Content, Pfade
 oder Agentenkennungen offenzulegen.
 
 ## Vorhandene Implementierung
@@ -161,7 +161,7 @@ Der bestehende Stand ist kein vollständiges V4-Gate:
 - manipulierter Handle/Digest → typisierter Fehler, keine Einsparungsbuchung;
 - TTL, Capacity und explizite Invalidierung → keine veraltete Expansion;
 - Daemon-Restart und konkurrierende Agenten → deterministisches Ergebnis;
-- Hive-Lizenz abgelaufen → lokale Auslieferung unverändert, kein
+- Cloud-Lizenz abgelaufen → lokale Auslieferung unverändert, kein
   Team-Workspace-Scope;
 - Telemetrie/Reporting → korrekte Aggregate ohne Content- oder ID-Leak.
 

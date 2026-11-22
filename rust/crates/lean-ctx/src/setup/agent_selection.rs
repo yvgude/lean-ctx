@@ -140,15 +140,29 @@ pub fn detected_agents(home: &std::path::Path, targets: &[EditorTarget]) -> Vec<
             });
         }
     }
-    let pi_dir = home.join(".pi");
-    if pi_dir.exists() {
+    let pi_agent_dir = lean_ctx::core::editor_registry::pi_agent_dir(home);
+    if pi_agent_dir.exists() || home.join(".pi").exists() {
         agents.push(DetectedAgent {
             key: PI_KEY.to_string(),
             label: "Pi Coding Agent".to_string(),
-            connected: has_lean_ctx_entry(&pi_dir.join("rules/lean-ctx.md")),
+            connected: pi_rules_connected(home),
         });
     }
     agents
+}
+
+/// Pi loads its rules from `<agent dir>/AGENTS.md` (`~/.pi/agent`, or
+/// `PI_CODING_AGENT_DIR`); a lean-ctx block there marks Pi as connected.
+/// `~/.pi/rules/lean-ctx.md` is what releases before that wrote: it still
+/// counts until setup has rewritten it (fallback for one release).
+fn pi_rules_connected(home: &std::path::Path) -> bool {
+    let agents_md = lean_ctx::core::editor_registry::pi_agents_path(home);
+    std::fs::read_to_string(agents_md).is_ok_and(|content| {
+        lean_ctx::marked_block::contains_marker_line(
+            &content,
+            lean_ctx::core::rules_canonical::START_MARK,
+        )
+    }) || has_lean_ctx_entry(&home.join(".pi/rules/lean-ctx.md"))
 }
 
 /// Agent keys an earlier setup connected (a lean-ctx entry is present).
@@ -454,6 +468,8 @@ mod tests {
 
     #[test]
     fn detection_groups_targets_by_key_and_reads_connection_state() {
+        // Pi detection reads `PI_CODING_AGENT_DIR`, which other tests set.
+        let _env = lean_ctx::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let mk = |name: &'static str, key: &str, dir: &str, content: Option<&str>| {
@@ -506,5 +522,34 @@ mod tests {
             ]
         );
         assert_eq!(connected_agent_keys(home, &targets), keys(&["cline"]));
+    }
+
+    /// Setup moved Pi's rules into `<agent dir>/AGENTS.md` and deletes
+    /// `~/.pi/rules/lean-ctx.md`; the post-update refresh must still see Pi as
+    /// connected, also under `PI_CODING_AGENT_DIR`.
+    #[test]
+    fn pi_counts_as_connected_through_its_agents_md() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let pi_dir = home.join("custom-pi");
+        let _pi = lean_ctx::test_env::EnvVarGuard::set(
+            "PI_CODING_AGENT_DIR",
+            pi_dir.to_string_lossy().as_ref(),
+        );
+        std::fs::create_dir_all(&pi_dir).unwrap();
+        std::fs::write(pi_dir.join("AGENTS.md"), "# Mine\n").unwrap();
+        assert!(connected_agent_keys(home, &[]).is_empty());
+
+        std::fs::write(
+            pi_dir.join("AGENTS.md"),
+            format!(
+                "# Mine\n\n{}\nrules\n{}\n",
+                lean_ctx::core::rules_canonical::START_MARK,
+                lean_ctx::core::rules_canonical::END_MARK
+            ),
+        )
+        .unwrap();
+        assert_eq!(connected_agent_keys(home, &[]), keys(&["pi"]));
     }
 }

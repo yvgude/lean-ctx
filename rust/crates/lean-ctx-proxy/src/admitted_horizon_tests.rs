@@ -6,7 +6,7 @@
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -108,7 +108,9 @@ async fn the_original_horizon_passing_after_the_first_send_proof_sends_nothing()
                 model: None,
                 upstream_base: &upstream_b,
             };
-            clock.h.set(Utc::now() + chrono::Duration::seconds(3));
+            clock
+                .h
+                .set(UtcDateTime::now() + lean_ctx_time::Duration::seconds(3));
             clock.phase.set(Phase::Open);
             clock.fresh_calls.set(0);
             let admission_b = admit(
@@ -146,7 +148,7 @@ async fn the_original_horizon_passing_after_the_first_send_proof_sends_nothing()
             );
             assert_eq!(built.get(), 1);
             assert!(clock.fresh_calls.get() >= 1);
-            assert!(Utc::now() >= clock.h.get());
+            assert!(UtcDateTime::now() >= clock.h.get());
             let accepted_b = Cell::new(0_u32);
             let unexpected_accept = tokio::time::timeout(Duration::from_millis(200), async {
                 let connection = listener_b.accept().await;

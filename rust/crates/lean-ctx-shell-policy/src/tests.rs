@@ -12,6 +12,10 @@ mod delegation_option_tests;
 mod function_def_tests;
 #[path = "gh2231_tests.rs"]
 mod gh2231_tests;
+#[path = "gh2261_tests.rs"]
+mod gh2261_tests;
+#[path = "gh2267_tests.rs"]
+mod gh2267_tests;
 #[path = "inline_script_tests.rs"]
 mod inline_script_tests;
 #[path = "lexer_tests.rs"]
@@ -204,23 +208,23 @@ fn redirect_2to1_not_treated_as_command() {
 }
 #[test]
 fn redirect_ampersand_forms_not_separators() {
-    let list = allow(&["cmd"]);
-    assert!(check_all_segments("cmd >&2", &list).is_ok()); // >&fd
-    assert!(check_all_segments("cmd 1>&2", &list).is_ok()); // N>&M
-    assert!(check_all_segments("cmd &>out.log", &list).is_ok()); // &>file
-    assert!(check_all_segments("cmd &>>out.log", &list).is_ok()); // &>>file
+    let list = allow(&["mycmd"]);
+    assert!(check_all_segments("mycmd >&2", &list).is_ok()); // >&fd
+    assert!(check_all_segments("mycmd 1>&2", &list).is_ok()); // N>&M
+    assert!(check_all_segments("mycmd &>out.log", &list).is_ok()); // &>file
+    assert!(check_all_segments("mycmd &>>out.log", &list).is_ok()); // &>>file
     // The redirect must not leak the fd/target as a new segment.
     assert_eq!(split_on_operators("pnpm run compile 2>&1").len(), 1);
-    assert_eq!(split_on_operators("cmd &>out.log").len(), 1);
+    assert_eq!(split_on_operators("mycmd &>out.log").len(), 1);
 }
 #[test]
 fn noclobber_redirect_not_a_pipe() {
     // #387: `>|` (noclobber redirect) must not split as a pipe — the target
     // is a file path, not a command to allowlist.
-    let list = allow(&["date", "cmd"]);
+    let list = allow(&["date", "mycmd"]);
     assert!(check_all_segments("date >| out", &list).is_ok());
-    assert!(check_all_segments("cmd >>out", &list).is_ok());
-    assert!(check_all_segments("cmd > out", &list).is_ok());
+    assert!(check_all_segments("mycmd >>out", &list).is_ok());
+    assert!(check_all_segments("mycmd > out", &list).is_ok());
     // Exact reporter repros (both spellings of the fd-dup).
     assert!(check_all_segments("date --fsdfs >| out 2>&1", &list).is_ok());
     assert!(check_all_segments("date --fsdfs >| out 2>& 1", &list).is_ok());

@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn globs_match_segments_and_double_stars() {
         assert!(glob_match("rust/src/**/*.rs", "rust/src/a.rs"));
-        assert!(glob_match("rust/src/**/*.rs", "rust/src/core/hive/b.rs"));
+        assert!(glob_match("rust/src/**/*.rs", "rust/src/core/cloud/b.rs"));
         assert!(!glob_match("rust/src/**/*.rs", "rust/srcx/a.rs"));
         assert!(!glob_match("rust/src/*.rs", "rust/src/core/a.rs"));
         assert!(glob_match("a/?.md", "a/b.md"));
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(a.state(None, false), AnchorState::Missing);
     }
 
-    // C0 2.2 vectors (hive-v2 vectors/doc_anchor_digest).
+    // C0 2.2 vectors (cloud-v2 vectors/doc_anchor_digest).
     #[test]
     fn digest_vectors() {
         let lib = file_digest(b"pub mod x;\n");

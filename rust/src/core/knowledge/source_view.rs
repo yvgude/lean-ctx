@@ -22,13 +22,13 @@ impl ProjectKnowledge {
     }
 
     /// X5 invariant of every loaded store: the value of a fact pulled from
-    /// Hive (other members' text) is a Hive wrapper. Values stored before
+    /// Cloud (other members' text) is a Cloud wrapper. Values stored before
     /// the engine wrapped them at storage are wrapped here; a store written
     /// back (`mutate_locked`) keeps them so.
     fn with_pulled_values_wrapped(mut self) -> Self {
         use crate::core::untrusted::{UntrustedKind, is_wrapped, wrap};
         for fact in &mut self.facts {
-            if let Some(origin) = fact.hive_origin().map(str::to_string)
+            if let Some(origin) = fact.cloud_origin().map(str::to_string)
                 && !is_wrapped(&fact.value)
             {
                 fact.value = wrap(UntrustedKind::Knowledge, &origin, &fact.value);

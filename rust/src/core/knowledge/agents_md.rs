@@ -56,18 +56,18 @@ fn one_line(value: &str) -> String {
 /// The generated section, markers included; empty sections are left out.
 #[must_use]
 pub fn render(knowledge: &ProjectKnowledge) -> String {
-    render_with_hive(knowledge, false)
+    render_with_cloud(knowledge, false)
 }
 
-/// [`render`], with `include_hive` also a clearly marked section of the
-/// team's knowledge pulled from Hive. AGENTS.md instructs agents, and
+/// [`render`], with `include_cloud` also a clearly marked section of the
+/// team's knowledge pulled from Cloud. AGENTS.md instructs agents, and
 /// other members' text is data (X5) everywhere else; only a person's
-/// explicit export (`--include-hive`, owner decision 22.10.) republishes
+/// explicit export (`--include-cloud`, owner decision 22.10.) republishes
 /// it, and only reviewed knowledge: pull loads the delivered head revision
 /// (merged, released from quarantine), a swarm never reaches the store, and
 /// a fact under review (to verify, contradicted) is left out.
 #[must_use]
-pub fn render_with_hive(knowledge: &ProjectKnowledge, include_hive: bool) -> String {
+pub fn render_with_cloud(knowledge: &ProjectKnowledge, include_cloud: bool) -> String {
     let mut out = format!("{BEGIN}\n## Project knowledge (lean-ctx)\n");
     for (_, heading, categories) in SECTIONS {
         let mut values: Vec<String> = knowledge
@@ -76,7 +76,7 @@ pub fn render_with_hive(knowledge: &ProjectKnowledge, include_hive: bool) -> Str
             .filter(|fact| {
                 // Pulled knowledge only ever in its own section below.
                 fact.is_current()
-                    && fact.hive_origin().is_none()
+                    && fact.cloud_origin().is_none()
                     && fact.sensitivity == SensitivityLevel::Public
                     && !is_machine_derived(&fact.category, &fact.key)
                     && categories.contains(&fact.category.to_lowercase().as_str())
@@ -94,7 +94,7 @@ pub fn render_with_hive(knowledge: &ProjectKnowledge, include_hive: bool) -> Str
             out.push_str(&format!("- {value}\n"));
         }
     }
-    if include_hive {
+    if include_cloud {
         let mut team: Vec<String> = knowledge
             .facts
             .iter()
@@ -104,24 +104,24 @@ pub fn render_with_hive(knowledge: &ProjectKnowledge, include_hive: bool) -> Str
                     && fact.sensitivity == SensitivityLevel::Public
             })
             .filter_map(|fact| {
-                let origin = fact.hive_origin()?;
+                let origin = fact.cloud_origin()?;
                 let text = crate::core::untrusted::body_of(&fact.value)
                     .unwrap_or_else(|| fact.value.clone());
                 let text = one_line(&text);
-                // `hive-repo:@ns/name@r4` → `@ns/name r4`.
+                // `cloud-repo:@ns/name@r4` → `@ns/name r4`.
                 let source = super::import_tag::import_tag_source(origin)
                     .and_then(|rest| rest.rsplit_once("@r"))
                     .map_or_else(
                         || origin.to_string(),
                         |(repo, rev)| format!("{repo} r{rev}"),
                     );
-                (!text.is_empty()).then(|| format!("{text} (Hive {source})"))
+                (!text.is_empty()).then(|| format!("{text} (LeanCTX Cloud {source})"))
             })
             .collect();
         team.sort();
         team.dedup();
         if !team.is_empty() {
-            out.push_str("\n### Team knowledge from Hive (reviewed)\n\n");
+            out.push_str("\n### Team knowledge from LeanCTX Cloud (reviewed)\n\n");
             for line in team {
                 out.push_str(&format!("- {line}\n"));
             }

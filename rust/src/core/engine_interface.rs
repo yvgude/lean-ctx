@@ -678,14 +678,14 @@ impl NativeContextEngine {
                 ));
             }
         };
-        // The registered sink queues it for Hive only when receipt uploads
+        // The registered sink queues it for Cloud only when receipt uploads
         // are on (a marker check).
         receipt_sink::note_receipt(
             self.adapter.root(),
             receipt_link.receipt_id.as_str(),
             &invocation,
             &observation,
-            chrono::Utc::now(),
+            lean_ctx_time::UtcDateTime::now(),
         );
         let mut observation = observation;
         observation.receipt_link = Some(receipt_link);

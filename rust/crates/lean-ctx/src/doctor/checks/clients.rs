@@ -23,6 +23,46 @@ pub(crate) fn claude_truncation_outcome() -> Option<Outcome> {
         cfg.rules_injection_effective(),
     ))
 }
+
+/// The "connected without a ctx call" lines: one per client whose last
+/// `SESSIONS_PER_CLIENT` MCP sessions all ran at least a minute and ended
+/// without a tool call. Empty when no client has such a streak, and for every
+/// client when the user declined rule steering (a global setting, not one
+/// per client).
+pub(crate) fn empty_session_lines() -> Vec<String> {
+    let Ok(dir) = lean_ctx::core::data_dir::lean_ctx_data_dir() else {
+        return Vec::new();
+    };
+    let streaks = lean_ctx::core::activity::ClientSessions::in_data_dir(&dir).empty_streaks();
+    if streaks.is_empty() {
+        return Vec::new();
+    }
+    let declined = lean_ctx::core::config::Config::load().declines_rule_steering();
+    streaks
+        .iter()
+        .filter_map(|streak| {
+            let agent = streak.target()?.agent;
+            streak.line(lean_ctx::core::activity::Steering {
+                declined,
+                shell_hooks: lean_ctx::core::hook_mode::recommend_hook_mode(agent)
+                    != lean_ctx::core::hook_mode::HookMode::Mcp,
+            })
+        })
+        .collect()
+}
+
+/// [`empty_session_lines`] as unscored advisory doctor lines (`!`, ok in
+/// `--json`: an observation, never a failed check).
+pub(crate) fn empty_session_outcomes() -> Vec<Outcome> {
+    empty_session_lines()
+        .into_iter()
+        .map(|line| Outcome {
+            ok: true,
+            line: format!("{BOLD}Client usage{RST}  {YELLOW}{line}{RST}"),
+        })
+        .collect()
+}
+
 pub(crate) fn codebuddy_truncation_outcome() -> Option<Outcome> {
     let home = dirs::home_dir()?;
     let codebuddy_detected = lean_ctx::core::editor_registry::codebuddy_mcp_json_path(&home)

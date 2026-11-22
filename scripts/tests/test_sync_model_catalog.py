@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """CI diff check (mz6/mz14 T4): the bundled model catalog equals the vendored
-Hive catalog. Runs in the v4-provenance job through `unittest discover`."""
+Cloud catalog. Runs in the v4-provenance job through `unittest discover`."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def check() -> int:
 
 
 class ModelCatalogBundleTest(unittest.TestCase):
-    def test_bundle_equals_the_vendored_hive_catalog(self) -> None:
+    def test_bundle_equals_the_vendored_cloud_catalog(self) -> None:
         self.assertEqual(check(), 0)
 
     def test_a_drifted_bundle_or_edited_vendored_copy_fails(self) -> None:
@@ -36,7 +36,7 @@ class ModelCatalogBundleTest(unittest.TestCase):
             bundle.write_text(SYNC.BUNDLE.read_text(encoding="utf-8").replace('"CN"', '"US"'), encoding="utf-8")
             with mock.patch.object(SYNC, "BUNDLE", bundle), mock.patch.object(SYNC, "REPO", Path(tmp)):
                 self.assertEqual(check(), 1)
-            vendored = Path(tmp) / "model_catalog.hive.toml"
+            vendored = Path(tmp) / "model_catalog.cloud.toml"
             vendored.write_bytes(SYNC.VENDORED.read_bytes() + b"\n# hand edit\n")
             with mock.patch.object(SYNC, "VENDORED", vendored), mock.patch.object(SYNC, "REPO", Path(tmp)):
                 self.assertEqual(check(), 1)

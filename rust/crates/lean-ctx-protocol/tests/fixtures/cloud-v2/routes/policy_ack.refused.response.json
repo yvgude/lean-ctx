@@ -1,0 +1,10 @@
+{
+  "applied_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "applied_version": 2,
+  "digest": "sha256:309839a13391ba6c3367fb020714a044c2ccb092fe0f53d967609fbd49cf8468",
+  "reason_code": "key_unavailable",
+  "refused_at": "2026-10-25T12:00:05Z",
+  "schema": "leanctx.cloud.policy-ack/v1",
+  "state": "refused",
+  "version": 3
+}

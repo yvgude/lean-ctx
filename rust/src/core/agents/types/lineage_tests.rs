@@ -23,7 +23,7 @@ fn entry(message: String, metadata: HashMap<String, String>, root: &str) -> Scra
         message,
         metadata,
         project_root: Some(root.to_owned()),
-        timestamp: chrono::Utc::now(),
+        timestamp: lean_ctx_time::UtcDateTime::now(),
         read_by: Vec::new(),
         expires_at: None,
     }

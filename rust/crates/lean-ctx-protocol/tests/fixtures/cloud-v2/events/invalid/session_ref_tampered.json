@@ -1,0 +1,15 @@
+{
+  "case": "session_ref_tampered",
+  "base": "events/node.add.episode.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/session_ref",
+      "value": "mcp-4242-0002"
+    }
+  ],
+  "expect": {
+    "layer": "signature",
+    "code": "sig_invalid"
+  }
+}

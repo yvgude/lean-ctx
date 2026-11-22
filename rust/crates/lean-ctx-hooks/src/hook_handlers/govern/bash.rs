@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Governor rules for native Bash results (R1.bash, R2, R4, R3 shadow).
+//! Governor rules for native Bash results (R5 for `cat <file>`, R1.bash, R2,
+//! R4, R3 shadow).
 //!
 //! Claude Code's Bash result is `{stdout, stderr, interrupted, isImage}`; a
 //! replacement mirrors that object and swaps only `stdout`. Anything else is
@@ -35,7 +36,22 @@ const STUB_LABEL_CHARS: usize = 120;
 const EPOCH_FILE: &str = "edit.epoch";
 const R3_FILE: &str = "r3.win";
 
-pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -> Decision {
+/// Who reads the result. `Model`: the host hands it to the model, every rule
+/// applies. `Script`: a Code Mode REPL script gets it as data; R1 and R3 point
+/// into a conversation the model may never have seen, so they neither fire
+/// nor record, and the caller replays only an R2/R4 view ([`super::repl`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Scope {
+    Model,
+    Script,
+}
+
+pub(super) fn decide(
+    v: &serde_json::Value,
+    policy: &Policy,
+    session_id: &str,
+    scope: Scope,
+) -> Decision {
     let args = crate::hook_handlers::payload::resolve_tool_args(v);
     let Some(cmd) = crate::hook_handlers::payload::resolve_command(v, args.as_ref()) else {
         return Decision::default();
@@ -63,7 +79,22 @@ pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -
     let cwd = v.get("cwd").and_then(|s| s.as_str()).unwrap_or("");
     let tool_use_id = v.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("");
 
-    if !diagnostics && viewer && policy.r1_bash != RuleMode::Off {
+    // A live replacement beats a shadow observation; among shadow rules the
+    // earlier one keeps the receipt.
+    let mut shadow = None;
+    let excluded = std::cell::OnceCell::new();
+    let excluded = || {
+        excluded
+            .get_or_init(|| lean_ctx::core::config::Config::load().excluded_commands)
+            .as_slice()
+    };
+    if viewer && let Some(d) = r5_cat(v, policy, &cmd, stdout, excluded(), session_id) {
+        if !d.output.is_empty() {
+            return d;
+        }
+        shadow = Some(d);
+    }
+    if scope == Scope::Model && !diagnostics && viewer && policy.r1_bash != RuleMode::Off {
         let key = R1Key {
             session_id,
             agent_id,
@@ -74,18 +105,12 @@ pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -
             return d;
         }
     }
-    let class = lean_ctx::shell::output_policy::classify(
-        &cmd,
-        &lean_ctx::core::config::Config::load().excluded_commands,
-    );
+    let class = lean_ctx::shell::output_policy::classify(&cmd, excluded());
     let protected = class.is_protected();
     let r4_allowed = policy.r4 != RuleMode::Off && r4_may_collapse(&cmd, class);
     if protected && !r4_allowed {
-        return Decision::default();
+        return shadow.unwrap_or_default();
     }
-    // A live replacement beats a shadow observation; among shadow rules the
-    // earlier one keeps the receipt.
-    let mut shadow = None;
     if !protected
         && !diagnostics
         && policy.r2 != RuleMode::Off
@@ -94,7 +119,7 @@ pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -
         if !d.output.is_empty() {
             return d;
         }
-        shadow = Some(d);
+        shadow.get_or_insert(d);
     }
     if r4_allowed {
         let ctx = R4Context {
@@ -112,10 +137,89 @@ pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -
     if let Some(d) = shadow {
         return d;
     }
-    if !protected && !diagnostics && policy.r3 != RuleMode::Off {
+    if scope == Scope::Model && !protected && !diagnostics && policy.r3 != RuleMode::Off {
         return r3(stdout, session_id);
     }
     Decision::default()
+}
+
+/// R5 for a Bash read of one whole file: `cat <file>` gets the same first
+/// view, record and escape as a native whole-file Read of that file (a second
+/// whole read passes in full). Only a bare `cat` with exactly one operand
+/// qualifies — no flags, pipes, lists, redirections, globs or expansions —
+/// naming a regular file inside the session's project (`cwd`) whose content
+/// the output is, byte for byte. Secret-like paths and user-excluded commands
+/// pass untouched (`excluded`: the user's `excluded_commands`). In Code Mode
+/// the caller only remembers the view ([`super::repl`]); the script still
+/// gets the file.
+pub(super) fn r5_cat(
+    v: &serde_json::Value,
+    policy: &Policy,
+    cmd: &str,
+    stdout: &str,
+    excluded: &[String],
+    session_id: &str,
+) -> Option<Decision> {
+    if policy.r5 == RuleMode::Off {
+        return None;
+    }
+    let name = whole_cat_operand(cmd)?;
+    let root = v
+        .get("cwd")
+        .and_then(|c| c.as_str())
+        .filter(|c| !c.trim().is_empty())
+        .and_then(|c| std::fs::canonicalize(c).ok())?;
+    let (path, content) = super::repl::project_file(&root, &name)?;
+    if lean_ctx::core::io_boundary::is_secret_like(&path).is_some()
+        || lean_ctx::shell::output_policy::classify(cmd, excluded)
+            == lean_ctx::shell::output_policy::OutputPolicy::Passthrough
+        || stdout.trim_end_matches('\n') != content.trim_end_matches('\n')
+    {
+        return None;
+    }
+    let agent_id = v.get("agent_id").and_then(|s| s.as_str()).unwrap_or("");
+    let tool_use_id = v.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("");
+    let (view, baseline, actual) = super::outline::first_view(
+        &path.to_string_lossy(),
+        &content,
+        content.lines().count(),
+        agent_id,
+        tool_use_id,
+        session_id,
+    )?;
+    let output = replace_stdout(v, &view).unwrap_or_default();
+    Some(Decision::from_rule(policy.r5, output, "R5", baseline, actual, session_id).with_view(view))
+}
+
+/// The one file operand of a bare `cat <file>`, or `None` for anything else.
+fn whole_cat_operand(cmd: &str) -> Option<String> {
+    if cmd.contains(|c: char| {
+        matches!(
+            c,
+            '|' | '&'
+                | ';'
+                | '<'
+                | '>'
+                | '$'
+                | '`'
+                | '('
+                | ')'
+                | '*'
+                | '?'
+                | '['
+                | '{'
+                | '~'
+                | '\n'
+        )
+    }) {
+        return None;
+    }
+    match crate::hook_handlers::shell_tokenize(cmd.trim()).as_slice() {
+        [cat, file] if cat == "cat" && !file.is_empty() && !file.starts_with('-') => {
+            Some(file.clone())
+        }
+        _ => None,
+    }
 }
 
 /// R4's command guard (owner decision 2026-10-31). Compressible commands
@@ -335,14 +439,7 @@ fn r4(
     let text = view(&id);
     let actual = count_tokens(&text);
     let output = replace_stdout(v, &text)?;
-    Some(Decision::from_rule(
-        mode,
-        output,
-        "R4",
-        baseline,
-        actual,
-        ctx.session_id,
-    ))
+    Some(Decision::from_rule(mode, output, "R4", baseline, actual, ctx.session_id).with_view(text))
 }
 
 /// R4's trigger and minimum saving, from the token counts of the original
@@ -454,9 +551,10 @@ fn r2(v: &serde_json::Value, mode: RuleMode, stdout: &str, session_id: &str) -> 
         return None;
     }
     let output = replace_stdout(v, &collapsed.text)?;
-    Some(Decision::from_rule(
-        mode, output, "R2", baseline, actual, session_id,
-    ))
+    Some(
+        Decision::from_rule(mode, output, "R2", baseline, actual, session_id)
+            .with_view(collapsed.text),
+    )
 }
 
 /// R3 (shadow only): count the lines of this output that sit in a run of at

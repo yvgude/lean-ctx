@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::Local;
+use lean_ctx_time::LocalDateTime;
 use serde_json::{Value, json};
 
 use lean_ctx::core::{share::copy_to_clipboard, system_info};
@@ -273,14 +273,16 @@ fn percentage(part: usize, total: usize) -> f64 {
 }
 
 fn report_timestamp() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string()
+    LocalDateTime::now()
+        .format("%Y-%m-%d %H:%M:%S %Z")
+        .to_string()
 }
 
 fn default_report_path() -> Result<PathBuf, String> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| "HOME is not set; pass --output <path> instead".to_string())?;
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let timestamp = LocalDateTime::now().format("%Y%m%d_%H%M%S");
     Ok(home
         .join(REPORTS_DIRECTORY)
         .join(format!("benchmark_{timestamp}.md")))

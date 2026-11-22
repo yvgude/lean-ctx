@@ -253,7 +253,7 @@ fn smells_exits_zero() {
         dir.path().join("lib.rs"),
         "pub fn a() -> u8 { b() }\nfn b() -> u8 { 1 }\n",
     )
-    .unwrap();
+    .expect("write lib.rs");
     let root = format!("--root={}", dir.path().display());
     let out = run(&["smells", &root]);
     let code = exit_code(&out);
@@ -341,9 +341,33 @@ fn knowledge_no_args_exits_cleanly() {
     );
 }
 
+/// A two-file project for the commands that index their working directory.
+/// Run in the crate itself (the test's cwd), `overview` scanned the whole
+/// engine (~30 s on CI) and `heatmap` built its graph (~6 s); the tiny project
+/// keeps the same index→render path under test.
+fn tiny_project() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("lib.rs"),
+        "pub fn a() -> u8 { b() }\nfn b() -> u8 { 1 }\n",
+    )
+    .expect("write lib.rs");
+    fs::write(dir.path().join("main.rs"), "fn main() { let _ = 1; }\n").expect("write main.rs");
+    dir
+}
+
+fn run_in(dir: &std::path::Path, args: &[&str]) -> Output {
+    lean_ctx()
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("failed to spawn lean-ctx binary")
+}
+
 #[test]
 fn overview_exits_cleanly() {
-    let out = run(&["overview"]);
+    let project = tiny_project();
+    let out = run_in(project.path(), &["overview"]);
     let code = exit_code(&out);
     assert!(
         code == 0 || code == 1,
@@ -363,7 +387,8 @@ fn compress_no_args_exits_cleanly() {
 
 #[test]
 fn heatmap_exits_cleanly() {
-    let out = run(&["heatmap"]);
+    let project = tiny_project();
+    let out = run_in(project.path(), &["heatmap"]);
     let code = exit_code(&out);
     assert!(
         code == 0 || code == 1,

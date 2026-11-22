@@ -1,4 +1,4 @@
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::types::{KnowledgeArchetype, KnowledgeFact, ProjectKnowledge};
@@ -57,7 +57,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
     }
 
     if let Ok(entries) = serde_json::from_str::<Vec<SimpleFactEntry>>(data) {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let facts = entries
             .into_iter()
             .map(|e| KnowledgeFact {
@@ -101,7 +101,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
             continue;
         }
         if let Ok(entry) = serde_json::from_str::<SimpleFactEntry>(line) {
-            let now = Utc::now();
+            let now = UtcDateTime::now();
             facts.push(KnowledgeFact {
                 anchors: Vec::new(),
                 review: None,
@@ -147,7 +147,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
 }
 
 fn imported_fact(source: &KnowledgeFact, session_id: &str) -> KnowledgeFact {
-    let now = Utc::now();
+    let now = UtcDateTime::now();
     KnowledgeFact {
         anchors: Vec::new(),
         review: None,
@@ -208,7 +208,7 @@ impl ProjectKnowledge {
                     skipped += 1;
                 }
                 (ImportMerge::Replace, Some(idx)) => {
-                    self.facts[idx].valid_until = Some(Utc::now());
+                    self.facts[idx].valid_until = Some(UtcDateTime::now());
                     self.facts.push(imported_fact(&fact, session_id));
                     replaced += 1;
                 }
@@ -220,7 +220,7 @@ impl ProjectKnowledge {
         }
 
         if added > 0 || replaced > 0 {
-            self.updated_at = Utc::now();
+            self.updated_at = UtcDateTime::now();
             self.rebuild_index();
         }
 

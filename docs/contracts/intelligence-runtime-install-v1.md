@@ -2,23 +2,26 @@
 
 The public host owns package verification, installation and context admission.
 The private runtime does not install itself or migrate user context. Its absence
-leaves the public reference engine available. New commercial builds also enforce
-their own paid-feature entitlement; this does not grant access to context sources.
+leaves the public reference engine available. Current runtimes admit paid
+capabilities only through a LeanCTX Cloud lease; this does not grant access to
+context sources.
 
 Authenticated package metadata must explicitly declare `entitlement_required`
 as a boolean. Historical `false` packages retain their installation semantics.
-For `true`, invocation requires `LEANCTX_INTELLIGENCE_LICENSE_CONFIG`, an absolute
-path to bounded regular operator-provisioned configuration. The host passes only
-this explicit setting through its cleared child environment; the private peer
-owns the signed entitlement interpretation and rejects unpaid operations.
+For `true`, the host hands the runtime the current LeanCTX Cloud lease with each
+paid invocation, and the runtime verifies it against its compiled roots and
+rejects operations the lease's plan does not include. Older packages read
+`LEANCTX_INTELLIGENCE_LICENSE_CONFIG`, an absolute path to bounded regular
+operator-provisioned configuration; the host still passes only this explicit
+setting through its cleared child environment, and current runtimes ignore it.
 Description/health and retained public data do not require a paid invocation.
-No missing/expired license authorizes bypass of context protection.
+No missing/expired lease authorizes bypass of context protection.
 
 The production installation profile below is distinct from the explicit staging
 operator commands. Synthetic authority used in qualification is not a rollout or
 publication grant.
 
-## Normal LeanCTX Hive runtime installation
+## Normal LeanCTX Cloud runtime installation
 
 A trusted host build may carry a production channel using the three build inputs
 `LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL`,
@@ -31,7 +34,7 @@ invalid inputs fail the host build.
 The release workflow reads repository Actions variables with these same three
 names after its existing release/provenance gates. Set all three to the selected
 customer catalog URL, detached signature URL and public trust root before tagging
-a Hive-capable host. The workflow exports only a complete, bounded HTTPS tuple to
+a Cloud-capable host. The workflow exports only a complete, bounded HTTPS tuple to
 Cargo; unset variables preserve an OSS build without production discovery.
 No private signing key belongs in these variables. This wiring does not create
 catalogs, publish packages, authorize release, or qualify a native platform.
@@ -135,7 +138,7 @@ row. Tokens are never logged. Unavailability is `not_installed`,
 
 ### Signing a production Cockpit (owner)
 
-Two keys are involved, exactly as for a Hive runtime release:
+Two keys are involved, exactly as for a Cloud runtime release:
 
 - the **artifact key** (Ed25519, owner-only PEM): signs the package manifest. A
   dedicated Cockpit artifact key is recommended; its public half is what the
@@ -370,7 +373,7 @@ provided by the package. Unreadable global config is not overwritten.
 prompt in a terminal, without changing shell/editor/daemon configuration; a
 non-terminal invocation is rejected instead of inferring consent.
 
-These explicit staging examples retain their semantics. Normal Hive runtime commands
+These explicit staging examples retain their semantics. Normal Cloud runtime commands
 omit `--staging` and use only the compiled production policy described above.
 Published channels and native Windows delivery remain separate release gates;
 staging artifacts are not production releases.
@@ -584,8 +587,11 @@ lean-ctx engine runtime provision-configured --staging --accept-proprietary \
   --enrollment /absolute/private/leanctx-device.json
 ```
 
-The license configuration independently selects the account, device, issuer and
-storage paths. Never obtain those trust choices from an unverified enrollment.
+This path provisions older packages that still read a license configuration;
+current runtimes refuse runtime provisioning and are admitted by the LeanCTX
+Cloud lease instead. The license configuration independently selects the
+account, device, issuer and storage paths. Never obtain those trust choices
+from an unverified enrollment.
 The installed private verifier owns signed entitlement, current online renewal,
 credential and no-overwrite checks. The public host does not interpret the grant.
 It executes authenticated installed bytes, bounds the process to60seconds and

@@ -35,7 +35,7 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
             super::knowledge_freshness_cmd::run(action, args);
         }
         Some(action @ ("contradict" | "retract")) => {
-            match super::hive_curate_cmd::run(action, args, &project_root) {
+            match super::cloud_curate_cmd::run(action, args, &project_root) {
                 Ok(lines) => {
                     super::common::print_released(&released_curation(&project_root, &lines));
                 }
@@ -154,7 +154,7 @@ fn report_run(project_root: &str) -> super::common::CliToolRun<'_> {
     super::common::CliToolRun::new("ctx_knowledge", project_root, None).human_facing()
 }
 
-/// The report of `contradict` / `retract` (what was queued, Hive's refusal
+/// The report of `contradict` / `retract` (what was queued, Cloud's refusal
 /// reasons): released like every other output of this command, never a
 /// delivery.
 fn released_curation(project_root: &str, lines: &[String]) -> String {
@@ -238,7 +238,7 @@ fn cmd_remember(args: &[String], project_root: &str) {
         )
     });
     super::common::print_released(&out);
-    // Hive capture gate: the references the fact rests on (`--ref`, repeated).
+    // Cloud capture gate: the references the fact rests on (`--ref`, repeated).
     let refs: Vec<String> = args
         .windows(2)
         .filter(|w| w[0] == "--ref")
@@ -265,12 +265,12 @@ fn cmd_remember(args: &[String], project_root: &str) {
     }
 }
 
-/// On a machine connected to Hive: say in plain words whether the fact
+/// On a machine connected to Cloud: say in plain words whether the fact
 /// just remembered goes to the team, and if not, why and how to fix it
-/// (`lean_ctx_hive::capture::sharing`, the same line `ctx_knowledge
+/// (`lean_ctx_cloud::capture::sharing`, the same line `ctx_knowledge
 /// remember` gives).
 fn sharing_note(project_root: &str, value: &str, has_ref: bool) {
-    if let Some(line) = lean_ctx_hive::capture::sharing::note(project_root, value, has_ref) {
+    if let Some(line) = lean_ctx_cloud::capture::sharing::note(project_root, value, has_ref) {
         println!("{line}");
     }
 }
@@ -622,21 +622,21 @@ fn export_target_ok(root: &std::path::Path, path: &std::path::Path) -> Result<()
 /// project's conventions, procedures, decisions, architecture, gotchas, dead
 /// ends and experiences as the generated section of `AGENTS.md`. Without
 /// `--write` the section is printed; with it, the file is updated in place
-/// (only the generated section is replaced). `--include-hive` adds the
-/// team's reviewed knowledge from Hive in its own marked section; it is a
+/// (only the generated section is replaced). `--include-cloud` adds the
+/// team's reviewed knowledge from Cloud in its own marked section; it is a
 /// person's choice, refused from an agent's shell (E1).
 fn cmd_export_agents_md(args: &[String], project_root: &str) {
     use lean_ctx::core::knowledge::agents_md;
     let write = args.iter().any(|a| a == "--write");
     // Never by default (owner decision 22.10.).
-    let include_hive = args.iter().any(|a| a == "--include-hive");
+    let include_cloud = args.iter().any(|a| a == "--include-cloud");
     let file = value_arg(args, "--file").unwrap_or_else(|| "AGENTS.md".into());
     let path = std::path::Path::new(project_root).join(&file);
     let Some(knowledge) = lean_ctx::core::knowledge::ProjectKnowledge::load(project_root) else {
         eprintln!("No project knowledge yet: nothing to export.");
         std::process::exit(1);
     };
-    let section = agents_md::render_with_hive(&knowledge, include_hive);
+    let section = agents_md::render_with_cloud(&knowledge, include_cloud);
     if !write {
         let out = report_run(project_root).deliver_text(|| section);
         super::common::print_released_exact(&out);
@@ -1092,7 +1092,7 @@ Usage:
     automatic read-noise is left out unless --include-noise
   lean-ctx knowledge export [--format json|jsonl|simple|okf] [--output <path|dir>]
   lean-ctx knowledge import <path|dir> [--merge replace|append|skip-existing] [--dry-run]
-  lean-ctx knowledge export-agents-md [--write] [--file <path>] [--include-hive]
+  lean-ctx knowledge export-agents-md [--write] [--file <path>] [--include-cloud]
     conventions, procedures, decisions, gotchas, dead ends and experiences as the
     generated section of AGENTS.md (printed; --write updates the file in place)
   lean-ctx knowledge remove --category <cat> --key <key>
@@ -1138,7 +1138,7 @@ Examples:
   lean-ctx knowledge consolidate --dry-run
   lean-ctx knowledge restore --store facts --query auth
   lean-ctx knowledge status",
-        super::hive_curate_cmd::USAGE
+        super::cloud_curate_cmd::USAGE
     );
 }
 
@@ -1252,7 +1252,7 @@ mod tests {
         assert_eq!(lineage(&root, &printed), None);
     }
 
-    /// `contradict` / `retract` printed their report (with Hive's refusal
+    /// `contradict` / `retract` printed their report (with Cloud's refusal
     /// reasons) directly; it now passes the release point like the rest.
     #[test]
     fn a_curation_report_is_released() {
@@ -1262,10 +1262,13 @@ mod tests {
         let (_project, root) = project();
         let lines = [
             "Queued for @acme/main.".to_string(),
-            "Sent 1 event(s) to Hive.".to_string(),
+            "Sent 1 event(s) to LeanCTX Cloud.".to_string(),
         ];
         let printed = released_curation(&root, &lines);
-        assert_eq!(printed, "Queued for @acme/main.\nSent 1 event(s) to Hive.");
+        assert_eq!(
+            printed,
+            "Queued for @acme/main.\nSent 1 event(s) to LeanCTX Cloud."
+        );
         assert_eq!(lineage(&root, &printed), None);
         let leaked = released_curation(&root, &[format!("1 event(s) refused: {AWS_KEY}")]);
         assert!(!leaked.contains(AWS_KEY), "{leaked}");
@@ -1318,7 +1321,7 @@ mod tests {
         }
 
         // A long fact key is a slug, not a secret: it was masked (all such
-        // keys to one marker) and then withheld the whole export (Hive
+        // keys to one marker) and then withheld the whole export (Cloud
         // Desktop: "Unknown"). It is now kept as it is.
         let slug = "governor-design-pull-forward-2026-10-29";
         let slugged = serde_json::json!([{
@@ -1428,6 +1431,118 @@ mod tests {
             released_export(&root, "simple", format!("[{line}]")),
             Err(not_persisted)
         );
+    }
+
+    /// A secret one level below a credential's name (`{"token":["S"]}`,
+    /// `{"auth":{"value":"S"}}`) passed every text rule: they read a secret
+    /// only as a string right after its name. The whole value of such a
+    /// member is now masked, at any depth and in any shape, also inside a
+    /// JSON document kept as a string value; readable rows keep their text.
+    #[test]
+    fn a_nested_secret_is_masked_in_the_export() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_project, root) = project();
+        // Built at run time: no fixture looks like a real token to a scanner.
+        let secret = ["Pq4", "Wd8", "Ls2", "Kx7", "Mn3", "Rt9"].concat();
+        let control = serde_json::json!({
+            "category": "auth",
+            "key": "token-type",
+            "content": "Bearer tokens rotate daily; max_tokens is 4096.",
+            "tokens": 42,
+            "public_key": "kept-public-value",
+        });
+        let shapes = [
+            serde_json::json!({"token": [secret]}),
+            serde_json::json!({"auth": {"value": secret}}),
+            serde_json::json!({"a": {"b": {"c": {"d": {"e": {"password": {"x": [secret]}}}}}}}),
+            serde_json::json!({"rows": [
+                {"name": "first", "client_secret": secret},
+                {"name": "second", "api_key": {"id": 7, "value": secret}},
+            ]}),
+            serde_json::json!({
+                "content": serde_json::json!({"nested": {"credentials": [secret]}}).to_string()
+            }),
+            serde_json::json!({"pin_code": 1, "access_token": 123_456, "secret": true}),
+        ];
+        for shape in shapes {
+            let document = serde_json::json!([control, shape]);
+            for text in [
+                document.to_string(),
+                serde_json::to_string_pretty(&document).expect("pretty"),
+            ] {
+                let released =
+                    released_export(&root, "simple", text.clone()).expect("masked, not withheld");
+                assert!(!released.contains(&secret), "{released}");
+                assert_ne!(released, text, "something was masked");
+                assert_eq!(released.contains('\n'), text.contains('\n'), "layout kept");
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&released).expect("valid JSON");
+                assert_eq!(parsed[0], control, "control row readable: {released}");
+                assert!(released.contains("[REDACTED"), "{released}");
+            }
+            let line = serde_json::json!(shape).to_string();
+            let released = released_export(&root, "jsonl", format!("{control}\n{line}"))
+                .expect("masked, not withheld");
+            assert!(!released.contains(&secret), "{released}");
+            assert_eq!(released.lines().next(), Some(control.to_string().as_str()));
+        }
+        // Numbers and booleans under a credential name are masked too.
+        let released = released_export(
+            &root,
+            "simple",
+            serde_json::json!({"access_token": 123_456, "secret": true, "tokens": 9}).to_string(),
+        )
+        .expect("masked");
+        let parsed: serde_json::Value = serde_json::from_str(&released).expect("valid JSON");
+        assert!(parsed["access_token"].is_string(), "{released}");
+        assert!(parsed["secret"].is_string(), "{released}");
+        assert_eq!(parsed["tokens"], 9);
+        // A nested secret copied elsewhere withholds the document.
+        let copied = serde_json::json!({"token": [secret], "note": secret}).to_string();
+        match released_export(&root, "simple", copied) {
+            Err(reason) => assert!(!reason.contains(&secret), "{reason}"),
+            Ok(leaked) => panic!("a masked value left in place: {leaked}"),
+        }
+        // Only readable rows: the bytes are kept.
+        let clean = serde_json::json!([control]).to_string();
+        assert_eq!(
+            released_export(&root, "simple", clean.clone()).as_deref(),
+            Ok(clean.as_str())
+        );
+    }
+
+    /// !427 review B2/B3: a `jsonl` line released the value another line
+    /// masked structurally (the cross-line check saw only text-rule spans),
+    /// and JSON after other text in a string value was not inspected.
+    #[test]
+    fn a_structurally_masked_secret_reaches_no_other_line_or_string() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_project, root) = project();
+        // Built at run time: no fixture looks like a real token to a scanner.
+        let secret = ["Pq4", "Wd8", "Ls2", "Kx7", "Mn3", "Rt9"].concat();
+        let control = serde_json::json!({"key": "c", "value": "readable"}).to_string();
+        let first = serde_json::json!({"key": "a", "value": {"token": [secret]}}).to_string();
+        let second = serde_json::json!({"key": "b", "value": secret}).to_string();
+        match released_export(&root, "jsonl", format!("{control}\n{first}\n{second}")) {
+            Ok(released) => {
+                assert!(!released.contains(&secret), "{released}");
+                assert_eq!(released.lines().next(), Some(control.as_str()));
+            }
+            Err(reason) => assert!(!reason.contains(&secret), "{reason}"),
+        }
+        let embedded = format!("creds: {}", serde_json::json!({"token": [secret]}));
+        let row = serde_json::json!({"key": "c", "value": embedded});
+        for (format, text) in [
+            ("simple", serde_json::json!([row]).to_string()),
+            ("jsonl", row.to_string()),
+        ] {
+            let released = released_export(&root, format, text).expect("masked, not withheld");
+            assert!(!released.contains(&secret), "{format}: {released}");
+            assert!(released.contains("[REDACTED"), "{format}: {released}");
+            assert!(released.contains("creds: "), "{format}: {released}");
+        }
     }
 
     /// `recall --json` on a project without knowledge is the empty array,

@@ -7,12 +7,12 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use lean_ctx_time::{SecondsFormat, UtcDateTime};
 
 use lean_ctx::core::knowledge::{FactOrigin, KnowledgeFact, fact_version_id_v1};
 
 /// RFC 3339 UTC, whole seconds, `Z` (`2026-11-04T09:12:33Z`).
-pub fn rfc3339(at: DateTime<Utc>) -> String {
+pub fn rfc3339(at: UtcDateTime) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 

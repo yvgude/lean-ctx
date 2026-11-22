@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -126,8 +126,8 @@ pub struct Gotcha {
     pub file_patterns: Vec<String>,
     pub occurrences: u32,
     pub session_ids: Vec<String>,
-    pub first_seen: DateTime<Utc>,
-    pub last_seen: DateTime<Utc>,
+    pub first_seen: UtcDateTime,
+    pub last_seen: UtcDateTime,
     pub confidence: f32,
     pub source: GotchaSource,
     pub prevented_count: u32,
@@ -135,7 +135,7 @@ pub struct Gotcha {
     #[serde(default)]
     pub provenance: Vec<ProvenanceRef>,
     #[serde(default)]
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<UtcDateTime>,
     #[serde(default)]
     pub decay_rate_override: Option<f32>,
 }
@@ -149,7 +149,7 @@ impl Gotcha {
         source: GotchaSource,
         session_id: &str,
     ) -> Self {
-        let now = Utc::now();
+        let now = UtcDateTime::now();
         let confidence = match &source {
             GotchaSource::AgentReported { .. } => 0.9,
             GotchaSource::CrossSessionCorrelated { .. } => 0.85,
@@ -216,14 +216,14 @@ pub struct PendingError {
     pub command: String,
     pub exit_code: i32,
     pub files_at_error: Vec<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub raw_snippet: String,
     pub session_id: String,
 }
 
 impl PendingError {
     pub fn is_expired(&self) -> bool {
-        (Utc::now() - self.timestamp).num_seconds() > PENDING_TIMEOUT_SECS
+        (UtcDateTime::now() - self.timestamp).num_seconds() > PENDING_TIMEOUT_SECS
     }
 }
 
@@ -234,7 +234,7 @@ impl PendingError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionErrorLog {
     pub session_id: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
     pub errors: Vec<ErrorEntry>,
     pub fixes: Vec<FixEntry>,
 }
@@ -243,7 +243,7 @@ pub struct SessionErrorLog {
 pub struct ErrorEntry {
     pub signature: String,
     pub command: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,7 +251,7 @@ pub struct FixEntry {
     pub error_signature: String,
     pub resolution: String,
     pub files_changed: Vec<String>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +279,7 @@ pub struct GotchaStore {
     pub error_log: Vec<SessionErrorLog>,
     #[serde(default)]
     pub stats: GotchaStats,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: UtcDateTime,
 
     // Persisted (#451 shell-ding): a fail→fix spanning two `lean-ctx -c`
     // invocations is two separate processes, so the in-memory active store
@@ -307,7 +307,7 @@ impl GotchaStore {
             gotchas: Vec::new(),
             error_log: Vec::new(),
             stats: GotchaStats::default(),
-            updated_at: Utc::now(),
+            updated_at: UtcDateTime::now(),
             pending_errors: Vec::new(),
             capacity: MAX_GOTCHAS,
         }
@@ -316,7 +316,7 @@ impl GotchaStore {
     pub fn clear(&mut self) {
         self.gotchas.clear();
         self.pending_errors.clear();
-        self.updated_at = Utc::now();
+        self.updated_at = UtcDateTime::now();
     }
 }
 

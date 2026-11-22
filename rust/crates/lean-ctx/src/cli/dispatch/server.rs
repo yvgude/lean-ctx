@@ -229,6 +229,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // session's usage reaches the server today (bounded network wait).
         let stage = std::time::Instant::now();
         let _ = tokio::task::spawn_blocking(|| {
+            lean_ctx_server::server::client_sessions::ended();
             core::telemetry_features::record_mcp_session_end();
             lean_ctx::core::telemetry_send::send_telemetry(
                 core::telemetry_aggregate::SendTrigger::Exit,
@@ -244,6 +245,12 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // with the CLI tool arms and the parent watchdog so they can't drift (#550).
         core::tool_lifecycle::flush_all_at_exit();
         core::efficacy::capture();
+        // One-time first-session result, after the final flush so the numbers
+        // include this session. stderr only, never a tool output body (#498).
+        if let Some(line) = lean_ctx::core::stats::first_session_exit_notice() {
+            use std::io::Write as _;
+            let _ = writeln!(std::io::stderr(), "{line}");
+        }
         lean_ctx_server::tools::shutdown_stage("final flush", stage);
 
         Ok(())
@@ -396,6 +403,7 @@ fn spawn_parent_watchdog() {
                         // Same flush set as the clean shutdown path (#550) — the
                         // hand-rolled copy here used to miss the predictor + feedback.
                         core::tool_lifecycle::flush_all_at_exit();
+                        lean_ctx_server::server::client_sessions::ended();
                         core::telemetry_features::record_mcp_session_end();
                         lean_ctx::core::telemetry_send::send_telemetry(
                             core::telemetry_aggregate::SendTrigger::Exit,

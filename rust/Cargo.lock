@@ -88,15 +88,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "android_system_properties"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "anes"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -501,20 +492,6 @@ dependencies = [
  "cipher 0.4.4",
  "poly1305",
  "zeroize",
-]
-
-[[package]]
-name = "chrono"
-version = "0.4.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
-dependencies = [
- "iana-time-zone",
- "js-sys",
- "num-traits",
- "serde",
- "wasm-bindgen",
- "windows-link",
 ]
 
 [[package]]
@@ -1385,9 +1362,9 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -1823,30 +1800,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iana-time-zone"
-version = "0.1.65"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
-dependencies = [
- "android_system_properties",
- "core-foundation-sys",
- "iana-time-zone-haiku",
- "js-sys",
- "log",
- "wasm-bindgen",
- "windows-core",
-]
-
-[[package]]
-name = "iana-time-zone-haiku"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2041,6 +1994,58 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "jiff"
+version = "0.2.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26699905cc795a23e3949585cc7ba3ee8ade090872a27e4316304a777297894a"
+dependencies = [
+ "jiff-core",
+ "jiff-static",
+ "jiff-tzdb-platform",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
+ "windows-link",
+]
+
+[[package]]
+name = "jiff-core"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffe6854081f5ac0a3046a9b223729ccd7a20b1e0e8277e44dc0660eedf67dfe2"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "jiff-static"
+version = "0.2.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b4ff49b2887190c760b86207b55cdcaabbdecaf7a0660d68aa2ed6f652abf0a"
+dependencies = [
+ "jiff-core",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "jiff-tzdb"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa8377070c6bae868759445e5a77f66d84f0b72f3a054bfb00e6d038b8282da7"
+
+[[package]]
+name = "jiff-tzdb-platform"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8"
+dependencies = [
+ "jiff-tzdb",
+]
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2170,13 +2175,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.6"
+version = "3.12.7"
 dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
  "blake3",
- "chrono",
  "clap",
  "dirs",
  "ed25519-dalek",
@@ -2187,13 +2191,15 @@ dependencies = [
  "getrandom 0.4.3",
  "glob",
  "hex",
+ "hmac",
  "http",
  "ignore",
  "insta",
  "jsonschema",
+ "lean-ctx-apps",
+ "lean-ctx-cloud",
  "lean-ctx-doc",
  "lean-ctx-engine",
- "lean-ctx-hive",
  "lean-ctx-hooks",
  "lean-ctx-ocla",
  "lean-ctx-protocol",
@@ -2201,6 +2207,7 @@ dependencies = [
  "lean-ctx-server",
  "lean-ctx-shell-policy",
  "lean-ctx-tasks",
+ "lean-ctx-time",
  "libc",
  "md-5 0.11.0",
  "proptest",
@@ -2238,13 +2245,81 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-activity"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
- "chrono",
  "lean-ctx-fs",
+ "lean-ctx-time",
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "lean-ctx-apps"
+version = "3.12.7"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "dirs",
+ "getrandom 0.4.3",
+ "hex",
+ "lean-ctx-engine",
+ "lean-ctx-time",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "toml",
+ "zstd",
+]
+
+[[package]]
+name = "lean-ctx-cloud"
+version = "3.12.7"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chacha20poly1305",
+ "dirs",
+ "ed25519-dalek",
+ "fs2",
+ "futures",
+ "getrandom 0.4.3",
+ "hex",
+ "hkdf",
+ "hmac",
+ "http",
+ "jsonschema",
+ "keyring",
+ "lean-ctx-apps",
+ "lean-ctx-doc",
+ "lean-ctx-engine",
+ "lean-ctx-protocol",
+ "lean-ctx-tasks",
+ "lean-ctx-time",
+ "libc",
+ "p256",
+ "proc-macro2",
+ "regex",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "syn 2.0.119",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "toml",
+ "tracing",
+ "unicode-general-category",
+ "unicode-normalization",
+ "unicode-security",
+ "ureq",
+ "uuid",
+ "zeroize",
+ "zstd",
 ]
 
 [[package]]
@@ -2260,7 +2335,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-doc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "fs2",
  "serde",
@@ -2273,8 +2348,8 @@ dependencies = [
 name = "lean-ctx-embed"
 version = "0.1.0"
 dependencies = [
+ "lean-ctx-cloud",
  "lean-ctx-engine",
- "lean-ctx-hive",
  "lean-ctx-server",
  "serde_json",
  "thiserror 2.0.20",
@@ -2283,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.6"
+version = "3.12.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2292,7 +2367,6 @@ dependencies = [
  "blake3",
  "bytecount",
  "chacha20poly1305",
- "chrono",
  "clap",
  "criterion",
  "dashmap",
@@ -2321,6 +2395,7 @@ dependencies = [
  "lean-ctx-patterns",
  "lean-ctx-protocol",
  "lean-ctx-syntax",
+ "lean-ctx-time",
  "lean-ctx-workgraph",
  "leanctx-native-storage",
  "leanctx-verify",
@@ -2386,7 +2461,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-fs"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "dirs",
@@ -2401,61 +2476,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "lean-ctx-hive"
-version = "3.12.6"
-dependencies = [
- "base64 0.22.1",
- "blake3",
- "chacha20poly1305",
- "chrono",
- "dirs",
- "ed25519-dalek",
- "fs2",
- "futures",
- "getrandom 0.4.3",
- "hex",
- "hkdf",
- "hmac",
- "http",
- "jsonschema",
- "keyring",
- "lean-ctx-doc",
- "lean-ctx-engine",
- "lean-ctx-protocol",
- "lean-ctx-tasks",
- "libc",
- "p256",
- "proc-macro2",
- "regex",
- "rusqlite",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "syn 2.0.119",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "toml",
- "tracing",
- "unicode-general-category",
- "unicode-normalization",
- "unicode-security",
- "ureq",
- "uuid",
- "zeroize",
- "zstd",
-]
-
-[[package]]
 name = "lean-ctx-hooks"
-version = "3.12.6"
+version = "3.12.7"
 dependencies = [
  "blake3",
- "chrono",
  "dirs",
  "lean-ctx-engine",
  "lean-ctx-shell-policy",
+ "lean-ctx-time",
  "regex",
  "serde",
  "serde_json",
@@ -2468,7 +2496,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-ocla"
-version = "7.0.0"
+version = "8.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2498,13 +2526,13 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-protocol"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
- "chrono",
  "ed25519-dalek",
  "hmac",
+ "lean-ctx-time",
  "regex",
  "serde",
  "serde_json",
@@ -2513,14 +2541,13 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.6"
+version = "3.12.7"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum",
  "base64 0.22.1",
  "blake3",
- "chrono",
  "dirs",
  "flate2",
  "futures",
@@ -2530,6 +2557,7 @@ dependencies = [
  "lean-ctx-engine",
  "lean-ctx-protocol",
  "lean-ctx-server",
+ "lean-ctx-time",
  "libc",
  "regex",
  "reqwest",
@@ -2553,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.6"
+version = "3.12.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2561,7 +2589,6 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "bytecount",
- "chrono",
  "dirs",
  "ed25519-dalek",
  "fs2",
@@ -2569,14 +2596,15 @@ dependencies = [
  "glob",
  "ignore",
  "jsonschema",
+ "lean-ctx-cloud",
  "lean-ctx-doc",
  "lean-ctx-engine",
- "lean-ctx-hive",
  "lean-ctx-hooks",
  "lean-ctx-ocla",
  "lean-ctx-protocol",
  "lean-ctx-shell-policy",
  "lean-ctx-tasks",
+ "lean-ctx-time",
  "libc",
  "lsp-types",
  "md-5 0.11.0",
@@ -2602,7 +2630,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-shell-policy"
-version = "3.12.6"
+version = "3.12.7"
 dependencies = [
  "dirs",
  "lean-ctx-engine",
@@ -2653,15 +2681,25 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-tasks"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
- "chrono",
  "fs2",
  "lean-ctx-fs",
  "lean-ctx-protocol",
+ "lean-ctx-time",
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "lean-ctx-time"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2676,7 +2714,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-workgraph"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "lean-ctx-protocol",
@@ -3117,13 +3155,11 @@ dependencies = [
 [[package]]
 name = "oauth2"
 version = "5.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
  "base64 0.22.1",
- "chrono",
  "getrandom 0.2.17",
  "http",
+ "lean-ctx-time",
  "rand 0.8.8",
  "serde",
  "serde_json",
@@ -3932,12 +3968,12 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "bytes",
- "chrono",
  "futures",
  "http",
  "http-body",
  "http-body-util",
  "indexmap",
+ "lean-ctx-time",
  "libc",
  "oauth2",
  "pastey",
@@ -4035,9 +4071,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.1.4"
+version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
 dependencies = [
  "bitflags 2.13.1",
  "errno",
@@ -4171,7 +4207,6 @@ version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
 dependencies = [
- "chrono",
  "dyn-clone",
  "ref-cast",
  "schemars_derive",
@@ -5582,9 +5617,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

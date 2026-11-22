@@ -6,7 +6,7 @@
 //! never touch the body; anchors bind a page to the code it describes, so a
 //! change to that code turns the page stale. Everything here is pure: the
 //! engine reads and writes the replica through its own adapter, and LeanCTX |
-//! Hive replicates the pages as place nodes (`page`, `section`, `note`).
+//! Cloud replicates the pages as place nodes (`page`, `section`, `note`).
 
 pub mod anchor;
 pub mod emspace;

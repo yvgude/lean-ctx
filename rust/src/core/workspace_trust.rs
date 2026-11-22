@@ -111,7 +111,7 @@ pub(crate) fn config_hash_for(root: &Path) -> String {
 }
 
 fn now() -> String {
-    chrono::Utc::now().to_rfc3339()
+    lean_ctx_time::UtcDateTime::now().to_rfc3339()
 }
 
 fn env_trusted_roots() -> Vec<String> {

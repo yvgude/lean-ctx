@@ -139,6 +139,60 @@ function Stop-InstalledDaemon {
     return $wasRunning
 }
 
+# Starts the daemon again on the new binary (`daemon restart`, through its
+# autostart task when one is installed). A zero exit only means the start was
+# requested, so the new binary's `daemon status` must report it running within
+# LEAN_CTX_DAEMON_WAIT_SECS (default 10) seconds; otherwise the install warns.
+# Returns whether the daemon is confirmed running. Never fails the install.
+function Restore-InstalledDaemon {
+    param($Binary)
+
+    # Native tools may write to stderr (an update notice); in Windows
+    # PowerShell 5.1 that would end `daemon restart` or `daemon status` under
+    # the script-wide 'Stop', as in Install-Cockpit.
+    $ErrorActionPreference = 'Continue'
+    Write-Host 'Restarting the lean-ctx daemon...'
+    $restarted = $false
+    try {
+        & $Binary daemon restart 2>$null | Out-Null
+        $restarted = $LASTEXITCODE -eq 0
+    }
+    catch {
+    }
+    if (-not $restarted) {
+        Write-Host '  Could not restart the daemon; start it with: lean-ctx daemon start'
+        return $false
+    }
+    # ASCII digits only, parsed without throwing: an overflowing or
+    # non-ASCII value falls back to the default instead of ending the install.
+    $wait = 10
+    $parsed = 0
+    if ($env:LEAN_CTX_DAEMON_WAIT_SECS -match '^[0-9]+$' -and
+        [int]::TryParse($env:LEAN_CTX_DAEMON_WAIT_SECS, [ref]$parsed)) {
+        $wait = $parsed
+    }
+    while ($true) {
+        $status = ''
+        try {
+            $status = (& $Binary daemon status 2>$null) -join "`n"
+        }
+        catch {
+        }
+        if ($status -match 'running \(PID') {
+            Write-Host '  Daemon running on the new binary.'
+            return $true
+        }
+        if ($wait -le 0) {
+            break
+        }
+        $wait -= 1
+        Start-Sleep -Seconds 1
+    }
+    Write-Warning 'the lean-ctx daemon did not come back after the restart.'
+    Write-Host '  Check it with: lean-ctx daemon status; start it with: lean-ctx daemon start'
+    return $false
+}
+
 # Replaces the installed binary. A binary that another process (an editor's
 # MCP server, the proxy) still holds open cannot be overwritten on Windows but
 # can be renamed: it is moved aside to `.old`, as the npm postinstall does,
@@ -207,17 +261,7 @@ Install-Binary -Source $tempBinary -Destination $installedBinary
 Write-Host "Installed: $installedBinary"
 
 if ($restoreDaemon) {
-    Write-Host 'Restarting the lean-ctx daemon...'
-    $restarted = $false
-    try {
-        & $installedBinary daemon restart 2>$null | Out-Null
-        $restarted = $LASTEXITCODE -eq 0
-    }
-    catch {
-    }
-    if (-not $restarted) {
-        Write-Host '  Could not restart the daemon; start it with: lean-ctx daemon start'
-    }
+    Restore-InstalledDaemon -Binary $installedBinary | Out-Null
 }
 
 Install-Cockpit -Engine $installedBinary

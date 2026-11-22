@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/policy_bundle.schema.json",
+  "title": "Policy bundle: the signed, versioned rules a team gives its Hosts, and how a Host enforces them locally",
+  "description": "The cloud signs one effective policy per Host (Ed25519, version grows strictly, expires at not_after). The Host verifies it, refuses downgrades, enforces it without the cloud (an expired or damaged policy fails closed for sensitive operations) and acknowledges it (POST /v1/policy/ack). What the Host reports back is in audit_event.schema.json.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "(instance_id, version, digest)",
+    "views": {
+      "bundle_response": "GET /v1/policy/bundle answer",
+      "filter_pack": "one signed filter pack of the bundle",
+      "effective": "the signed effective policy of one Host",
+      "ack_request": "POST /v1/policy/ack body",
+      "installed": "the policy installed on a Host (local API)",
+      "sessions_doc": "GET /v1/local/cloud/policy/sessions (local API)",
+      "session_doc": "GET /v1/local/cloud/policy/sessions/{id} (local API)"
+    }
+  },
+  "$defs": {
+    "filter_pack": {
+      "type": "object",
+      "required": ["pack_id", "version", "sha256", "envelope"],
+      "additionalProperties": false,
+      "properties": {
+        "pack_id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs \"pack_id\""]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs bundle_packs"]
+        },
+        "sha256": {
+          "description": "hex sha256 of the statement",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs bundle_packs"]
+        },
+        "envelope": {
+          "$ref": "#/$defs/envelope",
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs bundle_packs"]
+        }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "required": ["statement_b64", "kid", "signature"],
+      "additionalProperties": false,
+      "properties": {
+        "statement_b64": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs \"statement_b64\""]
+        },
+        "kid": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs \"kid\""]
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs bundle_packs"]
+        }
+      }
+    },
+    "bundle_response": {
+      "description": "effective_policy is present for Cloud-Protocol 2.x (null when the server has no signing key) and absent for 1.x",
+      "type": "object",
+      "required": ["schema", "filter_packs"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.policy-bundle/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/telemetry.rs POLICY_BUNDLE_SCHEMA"]
+        },
+        "filter_packs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/filter_pack" },
+          "x-producers": ["p37 crates/cloud-server/src/routes/cockpit.rs bundle_packs"]
+        },
+        "effective_policy": {
+          "anyOf": [{ "$ref": "#/$defs/effective" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/policy_bundle.rs issue"]
+        }
+      }
+    },
+    "effective": {
+      "description": "signed effective policy (C0 2.x policy.schema.json bundle)",
+      "x-producers": ["p37 crates/cloud-server/src/policy_bundle.rs issue"],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/policy.schema.json#/$defs/bundle"
+    },
+    "ack_request": {
+      "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/effective_policy.rs \"/policy/ack\""],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/policy.schema.json#/$defs/ack_request"
+    },
+    "signature_state": {
+      "description": "verified: installed after its signature verified; invalid: the installed files are damaged (fails closed); none: no team policy",
+      "enum": ["verified", "invalid", "none"]
+    },
+    "policy_state": {
+      "description": "in_force; expired: past not_after, sensitive operations refused; none",
+      "enum": ["in_force", "expired", "none"]
+    },
+    "policy_digest": {
+      "x-producers": ["p37 crates/cloud-server/src/policy_bundle.rs issue", "p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs Installed.digest"],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/policy.schema.json#/$defs/digest"
+    },
+    "installed": {
+      "type": "object",
+      "required": ["version", "digest", "key_id", "signature", "state", "acked", "acked_at", "pulled_via", "last_pull_at", "nudges", "vaults", "enforcement"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.version"]
+        },
+        "digest": {
+          "anyOf": [{ "$ref": "#/$defs/policy_digest" }, { "type": "null" }],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.digest"]
+        },
+        "key_id": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.key_id"]
+        },
+        "signature": {
+          "$ref": "#/$defs/signature_state",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.signature"]
+        },
+        "state": {
+          "$ref": "#/$defs/policy_state",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.state"]
+        },
+        "acked": {
+          "type": "boolean",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.acked"]
+        },
+        "acked_at": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.acked_at"]
+        },
+        "pulled_via": {
+          "enum": ["nudge", "poll", "manual", null],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.pulled_via"]
+        },
+        "last_pull_at": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.last_pull_at"]
+        },
+        "nudges": {
+          "type": "boolean",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.nudges"]
+        },
+        "vaults": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/policy_vault" },
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.vaults"]
+        },
+        "enforcement": {
+          "$ref": "#/$defs/enforcement",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs InstalledDoc.enforcement"]
+        }
+      }
+    },
+    "policy_vault": {
+      "type": "object",
+      "required": ["vault_id", "ns", "name", "roots", "policy"],
+      "additionalProperties": false,
+      "properties": {
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/vault_id",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs PolicyVault.vault_id"]
+        },
+        "ns": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs PolicyVault.ns"]
+        },
+        "name": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs PolicyVault.name"]
+        },
+        "roots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs PolicyVault.roots"]
+        },
+        "policy": {
+          "description": "vault: the policy's own entry applies; default: the team default applies; unverified: the installed files cannot be checked (fails closed)",
+          "enum": ["vault", "default", "unverified"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs PolicyVault.policy"]
+        }
+      }
+    },
+    "enforcement": {
+      "type": "object",
+      "required": ["applied_version", "acknowledged_at", "sessions", "reported_at"],
+      "additionalProperties": false,
+      "properties": {
+        "applied_version": {
+          "description": "only a verified, in-force, acknowledged policy counts as enforced",
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs Enforcement.applied_version"]
+        },
+        "acknowledged_at": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs Enforcement.acknowledged_at"]
+        },
+        "sessions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs Enforcement.sessions"]
+        },
+        "reported_at": {
+          "description": "when the Host sent policy.applied (audit_event.schema.json#/$defs/policy_applied)",
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs Enforcement.reported_at"]
+        }
+      }
+    },
+    "session_row": {
+      "type": "object",
+      "required": ["session_id", "version", "digest", "signature", "state", "receipts", "last_at"],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.session_id"]
+        },
+        "version": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.version"]
+        },
+        "digest": {
+          "anyOf": [{ "$ref": "#/$defs/policy_digest" }, { "type": "null" }],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.digest"]
+        },
+        "signature": {
+          "$ref": "#/$defs/signature_state",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.signature"]
+        },
+        "state": {
+          "$ref": "#/$defs/policy_state",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.state"]
+        },
+        "receipts": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.receipts"]
+        },
+        "last_at": {
+          "type": "string",
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionRow.last_at"]
+        }
+      }
+    },
+    "applied_row": {
+      "description": "one policy version a session ran under, with the receipts made under it",
+      "type": "object",
+      "required": ["version", "digest", "key_id", "signature", "state", "acked", "first_at", "last_at", "receipts", "receipt_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.version"]
+        },
+        "digest": {
+          "anyOf": [{ "$ref": "#/$defs/policy_digest" }, { "type": "null" }],
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.digest"]
+        },
+        "key_id": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.key_id"]
+        },
+        "signature": {
+          "$ref": "#/$defs/signature_state",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.signature"]
+        },
+        "state": {
+          "$ref": "#/$defs/policy_state",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.state"]
+        },
+        "acked": {
+          "type": "boolean",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.acked"]
+        },
+        "first_at": {
+          "type": "string",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.first_at"]
+        },
+        "last_at": {
+          "type": "string",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.last_at"]
+        },
+        "receipts": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.receipts"]
+        },
+        "receipt_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs AppliedRow.receipt_ids"]
+        }
+      }
+    },
+    "sessions_doc": {
+      "type": "object",
+      "required": ["installed", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "installed": {
+          "description": "null: no team policy installed on this Host",
+          "anyOf": [{ "$ref": "#/$defs/installed" }, { "type": "null" }],
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionsDoc.installed"]
+        },
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/session_row" },
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionsDoc.sessions"]
+        }
+      }
+    },
+    "session_doc": {
+      "type": "object",
+      "required": ["session_id", "applied"],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionDoc.session_id", "p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs SessionEvidence.session_id"]
+        },
+        "applied": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/applied_row" },
+          "x-producers": ["p5 rust/crates/lean-ctx/src/cli/local_read/sync.rs SessionDoc.applied", "p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs SessionEvidence.applied"]
+        }
+      }
+    }
+  }
+}

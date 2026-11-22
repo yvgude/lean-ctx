@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Tasks as an agent reads them. Every text people or other agents wrote
+//! (titles, goals, criteria, summaries, labels) is fenced as foreign data
+//! ([`crate::untrusted::wrap`], X5); only the numbers, states
+//! and the engine's own words stand outside the fence.
+//! Deterministic for the same answer (#498).
+
+use super::TaskView;
+use crate::untrusted::{UntrustedKind, wrap};
+use lean_ctx_protocol::cloud::tasks::{
+    TaskAckV1, TaskLifecycle, TaskListV1, TaskOriginKind, TaskPriority, TaskResultV1, TaskState,
+};
+
+fn state(state: TaskState) -> &'static str {
+    match state {
+        TaskState::Proposed => "proposed",
+        TaskState::Open => "open",
+        TaskState::Claimed => "claimed",
+        TaskState::Submitted => "submitted",
+        TaskState::Done => "done",
+        TaskState::Rejected => "rejected",
+        TaskState::Cancelled => "cancelled",
+        TaskState::Failed => "failed",
+        TaskState::Unknown => "unknown",
+    }
+}
+
+/// The state word, plus ` running` when a Cloud v5 lifecycle says the
+/// holder reported progress (the one thing `state` does not show). A 1.x
+/// Cloud sends no lifecycle: the state alone, as before.
+pub(super) fn state_with(task_state: TaskState, lifecycle: Option<TaskLifecycle>) -> String {
+    let word = state(task_state);
+    if task_state == TaskState::Claimed && lifecycle == Some(TaskLifecycle::Running) {
+        format!("{word} running")
+    } else {
+        word.to_owned()
+    }
+}
+
+/// What carries a result: a 1.x proposal, or (Cloud v5, proposal 0) the
+/// log seq of its knowledge, or the task alone.
+fn result_line(result: &TaskResultV1) -> String {
+    let carrier = match (result.proposal, result.seq) {
+        (0, Some(seq)) => format!("knowledge at log seq {seq}"),
+        (0, None) => "recorded on the task".to_owned(),
+        (proposal, _) => format!("proposal #{proposal}"),
+    };
+    format!("\nResult: {carrier} ({} evidence)", result.evidence.len())
+}
+
+/// What a result did, from Cloud's answer: `submitted` waits for a second
+/// agent's check, `done` or `failed` ends the task.
+#[must_use]
+pub fn render_result_ack(ack: &TaskAckV1) -> String {
+    let n = ack.number;
+    match ack.state {
+        TaskState::Submitted => {
+            format!("Result submitted on task #{n}; another agent checks it before it is done.")
+        }
+        TaskState::Done => format!("Task #{n} completed with this result."),
+        TaskState::Failed => format!("Task #{n} ended as failed with this result."),
+        other => format!("Result recorded on task #{n} (now {}).", state(other)),
+    }
+}
+
+/// What a verdict did (C0 2.2 E48): `done`, or `open` again.
+#[must_use]
+pub fn render_verify_ack(ack: &TaskAckV1) -> String {
+    let n = ack.number;
+    match ack.state {
+        TaskState::Done => format!("Task #{n} is done: the result is accepted."),
+        TaskState::Open => format!("Task #{n} is open again: the result is rejected."),
+        other => format!("Verdict recorded on task #{n} (now {}).", state(other)),
+    }
+}
+
+pub(super) fn origin(origin: TaskOriginKind) -> &'static str {
+    match origin {
+        TaskOriginKind::Person => "person",
+        TaskOriginKind::Agent => "agent",
+        TaskOriginKind::Contradiction => "contradiction",
+        TaskOriginKind::Question => "question",
+        TaskOriginKind::Unknown => "unknown",
+    }
+}
+
+/// `"high "` before the state of a high-priority task, nothing for normal.
+pub(super) fn high(priority: Option<TaskPriority>) -> &'static str {
+    if priority == Some(TaskPriority::High) {
+        "high "
+    } else {
+        ""
+    }
+}
+
+/// ` [a, b]` for a task's labels, nothing without any.
+pub(super) fn labels(labels: &[String]) -> String {
+    if labels.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", labels.join(", "))
+    }
+}
+
+/// The first `limit` tasks of `list`, one line each.
+#[must_use]
+pub fn render_list(list: &TaskListV1, limit: usize) -> String {
+    if list.tasks.is_empty() {
+        return "No LeanCTX Cloud tasks match.".into();
+    }
+    let mut body = String::new();
+    for task in list.tasks.iter().take(limit) {
+        body.push_str(&format!(
+            "#{} {}{} ({}){}{}{}: {}\n",
+            task.number,
+            high(task.priority),
+            state_with(task.state, task.lifecycle),
+            origin(task.origin),
+            task.role
+                .as_deref()
+                .map(|role| format!(" role={role}"))
+                .unwrap_or_default(),
+            if task.mine { " mine" } else { "" },
+            labels(&task.labels),
+            task.title.as_deref().unwrap_or("(untitled)"),
+        ));
+    }
+    let more = list.tasks.len().saturating_sub(limit);
+    let mut out = format!("LeanCTX Cloud tasks ({}):\n", list.tasks.len());
+    out.push_str(&wrap(
+        UntrustedKind::TaskBody,
+        "cloud tasks",
+        body.trim_end(),
+    ));
+    if more > 0 {
+        out.push_str(&format!("\n… {more} more (ctx_tasks action=list)"));
+    }
+    out
+}
+
+/// The line under a partial listing.
+pub const PARTIAL_NOTE: &str = "(partial: LeanCTX Cloud sends at most 100 tasks per answer, so older tasks may be missing; narrow the list with state or role)";
+
+/// [`render_list`] of a listing; a partial one says so under the tasks.
+#[must_use]
+pub fn render_listing(listing: &super::TaskListing, limit: usize) -> String {
+    let out = render_list(&listing.list, limit);
+    if listing.partial {
+        format!("{out}\n{PARTIAL_NOTE}")
+    } else {
+        out
+    }
+}
+
+/// One task with its updates and result.
+#[must_use]
+pub fn render_task(view: &TaskView) -> String {
+    let task = &view.task;
+    let mut out = format!(
+        "LeanCTX Cloud task #{} — {} ({})",
+        task.number,
+        state_with(task.state, task.lifecycle),
+        origin(task.origin.kind)
+    );
+    // Outside the fence only a validated role slug: anything else Cloud
+    // sends there is someone's text and never reaches the header (X5).
+    if let Some(role) = task
+        .role
+        .as_deref()
+        .filter(|role| lean_ctx_protocol::cloud::tasks::validate_role(role).is_ok())
+    {
+        out.push_str(&format!(" role={role}"));
+    }
+    match (&view.held_until, &task.claim) {
+        (Some(until), _) => out.push_str(&format!("\nThis machine holds the claim until {until}.")),
+        (None, Some(claim)) => out.push_str(&format!(
+            "\nClaimed until {}{}.",
+            claim.until.as_str(),
+            if claim.holder.mine {
+                " (by you, elsewhere)"
+            } else {
+                ""
+            }
+        )),
+        (None, None) => {}
+    }
+    let (title, goal, acceptance) = (
+        task.title.as_deref(),
+        task.goal.as_deref(),
+        task.acceptance.as_deref(),
+    );
+    let mut body = String::new();
+    if let Some(title) = title {
+        body.push_str(&format!("Title: {title}\n"));
+    }
+    if let Some(goal) = goal {
+        body.push_str(&format!("Goal: {goal}\n"));
+    }
+    if let Some(acceptance) = acceptance {
+        body.push_str(&format!("Done when: {acceptance}\n"));
+    }
+    body.push_str(&format!(
+        "Priority: {}\n",
+        super::fields::priority_word(task.priority)
+    ));
+    if !task.labels.is_empty() {
+        body.push_str(&format!("Labels: {}\n", task.labels.join(", ")));
+    }
+    body.push_str(&format!("Created by: {}\n", task.created_by.label));
+    let source = format!("cloud task #{}", task.number);
+    out.push('\n');
+    out.push_str(&wrap(UntrustedKind::TaskBody, &source, body.trim_end()));
+    if !task.updates.is_empty() {
+        let mut updates = String::new();
+        for update in &task.updates {
+            updates.push_str(&format!(
+                "{} {}: {}\n",
+                update.at.as_str(),
+                update.by.label,
+                update.summary.as_deref().unwrap_or("(no summary)")
+            ));
+        }
+        out.push_str("\nUpdates:\n");
+        out.push_str(&wrap(
+            UntrustedKind::TaskUpdate,
+            &source,
+            updates.trim_end(),
+        ));
+    }
+    if let Some(result) = &task.result {
+        out.push_str(&result_line(result));
+    }
+    out
+}

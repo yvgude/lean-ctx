@@ -24,8 +24,8 @@ SPEC.loader.exec_module(GOVERNANCE)
 PRODUCT = {
     "name": "LeanCTX",
     "category": "Context Gateway for AI Systems",
-    "promise": "Control what your AI can see.",
-    "components": ["LeanCTX | OSS", "LeanCTX SDK"],
+    "promise": "Less context. More intelligence.",
+    "components": ["LeanCTX | OSS", "LeanCTX | SDK"],
     "primary_story": ["Select", "Control", "Prove"],
 }
 PRIMARY = [
@@ -51,7 +51,7 @@ def valid_contract() -> dict[str, object]:
             "docs/what-is-leanctx.md",
         ],
         "required_text": {"README.md": ["Get started", "Real-world scenarios"]},
-        "forbidden_text": {},
+        "forbidden_text": {"README.md": ["LeanCTX SDK"]},
         "status_guarded_records": [],
         "feature_statuses": {"ContextKits": "Research"},
         "canonical_reference": "docs/POSITIONING_CANONICAL.md",
@@ -132,7 +132,7 @@ def write_fixture(root: Path) -> None:
             lines.extend(
                 [
                     "",
-                    "LeanCTX | OSS and LeanCTX SDK.",
+                    "LeanCTX | OSS and LeanCTX | SDK.",
                     "",
                     "Select → Control → Prove.",
                 ]
@@ -272,6 +272,38 @@ class NarrativeGovernanceTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Narrative governance passed.", result.stdout)
+
+    def test_sdk_component_uses_piped_name_and_bans_unpiped_name(self) -> None:
+        # Owner naming rule: the SDK is "LeanCTX | SDK"; "LeanCTX SDK" is banned.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            write_fixture(root)
+            self.assertEqual(GOVERNANCE.check_repository(root), [])
+
+            readme = root / "README.md"
+            original = readme.read_text(encoding="utf-8")
+            readme.write_text(original + "\nThe LeanCTX SDK embeds the Engine.\n", encoding="utf-8")
+            failures = GOVERNANCE.check_repository(root)
+            self.assertTrue(
+                any("README.md: forbidden public claim 'LeanCTX SDK'" in item for item in failures),
+                failures,
+            )
+            readme.write_text(original, encoding="utf-8")
+
+            surface = root / "docs/what-is-leanctx.md"
+            surface.write_text(
+                surface.read_text(encoding="utf-8").replace("LeanCTX | SDK", "LeanCTX SDK"),
+                encoding="utf-8",
+            )
+            failures = GOVERNANCE.check_repository(root)
+
+        self.assertTrue(
+            any(
+                "docs/what-is-leanctx.md: missing product component 'LeanCTX | SDK'" in item
+                for item in failures
+            ),
+            failures,
+        )
 
     def test_primary_page_category_and_promise_are_required(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -441,7 +473,7 @@ class NarrativeGovernanceTests(unittest.TestCase):
             write_fixture(root)
             page = root / "new-guide/README.md"
             page.write_text(
-                "# LeanCTX\n\n### Control what your AI can see.\n\n"
+                "# LeanCTX\n\n### Less context. More intelligence.\n\n"
                 "> LeanCTX is the Context SDK for AI\n> Agents.\n\n## Install\n",
                 encoding="utf-8",
             )

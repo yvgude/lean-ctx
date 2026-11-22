@@ -134,7 +134,7 @@ fn materialize(root: &Path, input: &Value, binding: &str) -> Output {
     )
 }
 
-fn retention_fixture(root: &Path, observed_at: chrono::DateTime<chrono::Utc>) -> Value {
+fn retention_fixture(root: &Path, observed_at: lean_ctx_time::UtcDateTime) -> Value {
     let _ = client(root);
     std::fs::write(
         root.join("config/kernel-policy.toml"),
@@ -148,7 +148,7 @@ fn retention_fixture(root: &Path, observed_at: chrono::DateTime<chrono::Utc>) ->
         "invoice ledger retained source"
     )]);
     input["sources"][0]["descriptor"]["observed_at"] =
-        json!(observed_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        json!(observed_at.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true));
     input
 }
 
@@ -162,7 +162,10 @@ fn replay_request(input: &Value, plan: &EngineContextSourcePlanResponseV1) -> Va
 fn retained_source_materialization_replays_identity_but_never_authorization() {
     let directory = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(directory.path()).unwrap();
-    let input = retention_fixture(&root, chrono::Utc::now() - chrono::Duration::hours(1));
+    let input = retention_fixture(
+        &root,
+        lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::hours(1),
+    );
     let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
     assert_eq!(planned.source_bindings.len(), 1);
     let replay = replay_request(&input, &planned);
@@ -206,20 +209,21 @@ fn retained_source_materialization_replays_identity_but_never_authorization() {
 fn retained_source_expiry_wins_over_the_original_epoch_and_binding() {
     let directory = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(directory.path()).unwrap();
-    let observed = chrono::Utc::now() - chrono::Duration::days(7) + chrono::Duration::seconds(4);
+    let observed = lean_ctx_time::UtcDateTime::now() - lean_ctx_time::Duration::days(7)
+        + lean_ctx_time::Duration::seconds(4);
     let input = retention_fixture(&root, observed);
     let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
     assert_eq!(planned.source_bindings.len(), 1);
     let replay = replay_request(&input, &planned);
-    let cutoff = chrono::DateTime::parse_from_rfc3339(
+    let cutoff = lean_ctx_time::OffsetDateTime::parse_from_rfc3339(
         input["sources"][0]["descriptor"]["observed_at"]
             .as_str()
             .unwrap(),
     )
     .unwrap()
-        + chrono::Duration::days(7);
+        + lean_ctx_time::Duration::days(7);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
-    while chrono::Utc::now() < cutoff {
+    while lean_ctx_time::UtcDateTime::now() < cutoff {
         assert!(
             std::time::Instant::now() < deadline,
             "retention boundary clock did not advance"

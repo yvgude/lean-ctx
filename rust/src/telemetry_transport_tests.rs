@@ -68,7 +68,7 @@ fn every_workspace_package_counts_as_cargo_launched() {
         "lean-ctx-engine",
         "lean-ctx",
         "lean-ctx-server",
-        "lean-ctx-hive",
+        "lean-ctx-cloud",
         "lean-ctx-hooks",
         "lean-ctx-proxy",
         "leanctx-native-storage",

@@ -238,7 +238,7 @@ pub enum Mode {
 }
 
 thread_local! {
-    static FORCED_HOST: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    static FORCED_HOST: std::cell::Cell<Option<Dialect>> = const { std::cell::Cell::new(None) };
 }
 
 /// The shell that actually executes the checked line. The check cannot read
@@ -255,19 +255,27 @@ pub enum Dialect {
 /// Runs `f` with the allowlist reading the line for the shell that will
 /// execute it, instead of the one this process resolves.
 pub fn with_dialect<T>(dialect: Dialect, f: impl FnOnce() -> T) -> T {
-    let _restore = HostGuard::powershell(dialect == Dialect::PowerShell);
+    let _restore = HostGuard::dialect(dialect);
     f()
 }
 
 /// Scoped override of the executing shell for this thread.
 pub struct HostGuard {
-    prev: Option<bool>,
+    prev: Option<Dialect>,
 }
 
 impl HostGuard {
     pub fn powershell(on: bool) -> Self {
+        Self::dialect(if on {
+            Dialect::PowerShell
+        } else {
+            Dialect::Posix
+        })
+    }
+
+    pub fn dialect(dialect: Dialect) -> Self {
         Self {
-            prev: FORCED_HOST.with(|host| host.replace(Some(on))),
+            prev: FORCED_HOST.with(|host| host.replace(Some(dialect))),
         }
     }
 }
@@ -278,19 +286,34 @@ impl Drop for HostGuard {
     }
 }
 
-/// The mode for the shell that runs the checked line: the one `ctx_shell`
-/// and the shell aliases execute with, unless the caller named the executor
-/// through [`with_dialect`].
-pub fn host_mode() -> Mode {
+/// The shell that runs the checked line: the one `ctx_shell` and the shell
+/// aliases execute with, unless the caller named the executor through
+/// [`with_dialect`].
+pub fn host_dialect() -> Dialect {
     if let Some(forced) = FORCED_HOST.with(std::cell::Cell::get) {
-        return if forced {
-            Mode::PowerShell
-        } else {
-            Mode::Strict
-        };
+        return forced;
     }
     let (shell, _) = crate::shell::shell_and_flag();
     if crate::shell::platform::is_powershell(&shell) {
+        return Dialect::PowerShell;
+    }
+    let name = std::path::Path::new(&shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name == "cmd" || name == "cmd.exe" {
+        Dialect::Cmd
+    } else {
+        Dialect::Posix
+    }
+}
+
+/// The mode for the shell that runs the checked line. cmd keeps the POSIX
+/// reading here; lines it cannot read that way are refused before any check
+/// (see `enforce_with` in the shell-policy crate).
+pub fn host_mode() -> Mode {
+    if host_dialect() == Dialect::PowerShell {
         Mode::PowerShell
     } else {
         Mode::Strict

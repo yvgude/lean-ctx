@@ -1,0 +1,24 @@
+{
+  "case": "metrics_hours_latency_eight",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/buckets/0/slices/0/tools/0/latency_ms",
+      "value": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "v2.5 latency histogram must have exactly 9 buckets"
+}

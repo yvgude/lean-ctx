@@ -1,0 +1,14 @@
+{
+  "case": "queen_kind_unknown",
+  "base": "bus/frame.place_publish.queen.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/kind",
+      "value": "Hello"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

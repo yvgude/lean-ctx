@@ -27,7 +27,9 @@ mod workspace_scope;
 
 #[allow(clippy::wildcard_imports)]
 use checks::*;
-pub(crate) use checks::{configured_host_coverage, shadow_hosts, shadow_status};
+pub(crate) use checks::{
+    configured_host_coverage, empty_session_lines, shadow_hosts, shadow_status,
+};
 #[allow(clippy::wildcard_imports)]
 use common::*;
 
@@ -109,25 +111,25 @@ fn daemon_outcome(running_pid: Option<u32>, autostart: &DaemonAutostart) -> Outc
     Outcome { ok: true, line }
 }
 
-/// Doctor's line for Hive's background sync, which runs in the daemon: on a
-/// machine connected to Hive the daemon must be supervised (start at login,
+/// Doctor's line for Cloud's background sync, which runs in the daemon: on a
+/// machine connected to Cloud the daemon must be supervised (start at login,
 /// restart after a crash), or nothing syncs until someone starts it by
 /// hand. `None` when not connected or no supervisor exists. Pure.
-fn hive_sync_outcome(hive_connected: bool, autostart: &DaemonAutostart) -> Option<Outcome> {
-    if !hive_connected {
+fn cloud_sync_outcome(cloud_connected: bool, autostart: &DaemonAutostart) -> Option<Outcome> {
+    if !cloud_connected {
         return None;
     }
     match autostart {
         DaemonAutostart::On(_) => Some(Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Hive sync{RST}  {GREEN}in the background (supervised daemon){RST}"
+                "{BOLD}LeanCTX Cloud sync{RST}  {GREEN}in the background (supervised daemon){RST}"
             ),
         }),
         DaemonAutostart::Off => Some(Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Hive sync{RST}  {YELLOW}needs a supervised daemon{RST}  {DIM}(run: lean-ctx daemon enable){RST}"
+                "{BOLD}LeanCTX Cloud sync{RST}  {YELLOW}needs a supervised daemon{RST}  {DIM}(run: lean-ctx daemon enable){RST}"
             ),
         }),
         DaemonAutostart::Unsupported => None,
@@ -141,10 +143,12 @@ fn hive_sync_outcome(hive_connected: bool, autostart: &DaemonAutostart) -> Optio
 /// The old hand-maintained `passed`/`effective_total` pair drifted whenever a
 /// check was added without bumping the total — routing every render through the
 /// board makes that class of bug structurally impossible.
+///
+/// The tally is never kept beside the entries: [`Scoreboard::summary`]
+/// derives it from the entries `--json` emits as `checks`, so every count a
+/// consumer reads is a count of that array.
 #[derive(Default)]
 struct Scoreboard {
-    passed: u32,
-    total: u32,
     json_mode: bool,
     entries: Vec<JsonCheck>,
 }
@@ -155,6 +159,45 @@ struct JsonCheck {
     ok: bool,
     name: String,
     scored: bool,
+    /// A scored check that failed (rendered ✗). An unscored entry that is
+    /// not ok is optional (rendered –) and never needs attention.
+    needs_attention: bool,
+}
+
+impl JsonCheck {
+    fn new(ok: bool, name: String, scored: bool) -> Self {
+        Self {
+            ok,
+            name,
+            scored,
+            needs_attention: scored && !ok,
+        }
+    }
+}
+
+/// The tally of a doctor run, derived from its emitted entries only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Summary {
+    /// Scored entries that are ok.
+    passed: u32,
+    /// Scored entries.
+    total: u32,
+    /// Entries flagged `needs_attention` (scored and not ok).
+    needs_attention: u32,
+    /// Unscored entries that are not ok: optional, rendered –, not counted.
+    optional: u32,
+}
+
+fn summarize(entries: &[JsonCheck]) -> Summary {
+    let count = |keep: fn(&JsonCheck) -> bool| {
+        u32::try_from(entries.iter().filter(|entry| keep(entry)).count()).unwrap_or(u32::MAX)
+    };
+    Summary {
+        passed: count(|entry| entry.scored && entry.ok),
+        total: count(|entry| entry.scored),
+        needs_attention: count(|entry| entry.needs_attention),
+        optional: count(|entry| !entry.scored && !entry.ok),
+    }
 }
 
 fn strip_ansi(s: &str) -> String {
@@ -187,8 +230,6 @@ pub(crate) fn emit_line(line: &str) {
 impl Scoreboard {
     fn new(json_mode: bool) -> Self {
         Self {
-            passed: 0,
-            total: 0,
             json_mode,
             entries: Vec::new(),
         }
@@ -196,15 +237,8 @@ impl Scoreboard {
 
     /// A scored health check: render it and count it (pass iff `ok`).
     fn check(&mut self, outcome: &Outcome) {
-        self.total += 1;
-        if outcome.ok {
-            self.passed += 1;
-        }
-        self.entries.push(JsonCheck {
-            ok: outcome.ok,
-            name: strip_ansi(&outcome.line),
-            scored: true,
-        });
+        self.entries
+            .push(JsonCheck::new(outcome.ok, strip_ansi(&outcome.line), true));
         if !self.json_mode {
             print_check(outcome, true);
         }
@@ -212,11 +246,8 @@ impl Scoreboard {
 
     /// An optional/advisory line: render it but never count it toward the score.
     fn info(&mut self, outcome: &Outcome) {
-        self.entries.push(JsonCheck {
-            ok: outcome.ok,
-            name: strip_ansi(&outcome.line),
-            scored: false,
-        });
+        self.entries
+            .push(JsonCheck::new(outcome.ok, strip_ansi(&outcome.line), false));
         if !self.json_mode {
             print_check(outcome, false);
         }
@@ -226,14 +257,59 @@ impl Scoreboard {
     /// mode, recorded as an unscored JSON entry with `--json`, so nothing but
     /// the JSON document reaches stdout (#2179).
     fn note(&mut self, outcome: &Outcome) {
-        self.entries.push(JsonCheck {
-            ok: outcome.ok,
-            name: strip_ansi(outcome.line.trim()),
-            scored: false,
-        });
+        self.entries.push(JsonCheck::new(
+            outcome.ok,
+            strip_ansi(outcome.line.trim()),
+            false,
+        ));
         if !self.json_mode {
             println!("{}", outcome.line);
         }
+    }
+
+    /// The tally, counted from the entries — never kept beside them.
+    fn summary(&self) -> Summary {
+        summarize(&self.entries)
+    }
+
+    /// The `--json` document: the entries and the counts of those entries.
+    fn report_json(&self) -> serde_json::Value {
+        let summary = self.summary();
+        serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "build": lean_ctx::core::integrity::build().to_json(),
+            "passed": summary.passed,
+            "total": summary.total,
+            "needs_attention": summary.needs_attention,
+            "optional": summary.optional,
+            "checks": self.entries,
+        })
+    }
+
+    /// The text summary lines, from the same counts as `--json`.
+    fn summary_lines(&self) -> Vec<String> {
+        let Summary {
+            passed,
+            total,
+            needs_attention,
+            optional,
+        } = self.summary();
+        let mut lines = vec![format!(
+            "  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed"
+        )];
+        if needs_attention > 0 {
+            lines.push(format!(
+                "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}lean-ctx doctor --fix{RST}"
+            ));
+        } else {
+            lines.push(format!("  {GREEN}Everything looks good.{RST}"));
+        }
+        if optional > 0 {
+            lines.push(format!(
+                "  {DIM}{optional} optional item(s) marked – are not set up (not counted in score){RST}"
+            ));
+        }
+        lines
     }
 }
 
@@ -690,10 +766,13 @@ fn run_inner(json: bool) -> u32 {
     if let Some(claude_mod) = checks::claude_mod_outcome() {
         board.check(&claude_mod);
     }
+    if let Some(code_mode) = checks::claude_code_mode_outcome() {
+        board.info(&code_mode);
+    }
 
-    // 9a') Hive org policy (HIVE-RT-D5): informational, never fails doctor.
-    if let Some(hive_policy) = checks::hive_policy_outcome() {
-        board.info(&hive_policy);
+    // 9a') Cloud org policy (CLOUD-RT-D5): informational, never fails doctor.
+    if let Some(cloud_policy) = checks::cloud_policy_outcome() {
+        board.info(&cloud_policy);
     }
 
     // 9b) Output triage (#1534): the 3.9.19 filter ran invisibly while doctor
@@ -725,9 +804,9 @@ fn run_inner(json: bool) -> u32 {
     // PID can be reused by any process (#2176 review #1).
     let daemon_pid = lean_ctx::daemon::verified_daemon().map(|daemon| daemon.pid);
     board.check(&daemon_outcome(daemon_pid, &daemon_autostart));
-    let hive_connected =
-        lean_ctx_hive::HiveStore::open().is_ok_and(|store| matches!(store.instance(), Ok(Some(_))));
-    if let Some(sync) = hive_sync_outcome(hive_connected, &daemon_autostart) {
+    let cloud_connected = lean_ctx_cloud::CloudStore::open()
+        .is_ok_and(|store| matches!(store.instance(), Ok(Some(_))));
+    if let Some(sync) = cloud_sync_outcome(cloud_connected, &daemon_autostart) {
         board.check(&sync);
     }
     if let Some(unrecorded) =
@@ -828,6 +907,12 @@ fn run_inner(json: bool) -> u32 {
     let codebuddy_truncation = codebuddy_truncation_outcome();
     if let Some(ref cbt) = codebuddy_truncation {
         board.check(cbt);
+    }
+
+    // 14a2) Clients that connect but never call LeanCTX (local ledger, no
+    // telemetry): one advisory line each, only while the streak lasts.
+    for check in empty_session_outcomes() {
+        board.info(&check);
     }
 
     // 14b) Installed addons: what the registry actually holds, which is not
@@ -1010,38 +1095,26 @@ fn run_inner(json: bool) -> u32 {
             "  {BOLD}Session cache{RST}  {WHITE}{} sessions{RST}  {DIM}{}/{} reads cached ({hit_ratio:.0}% hit) · prove: lean-ctx verify-cache{RST}",
             cep.sessions, cep.total_cache_hits, cep.total_cache_reads
         );
+        println!(
+            "  {BOLD}Usage{RST}  {WHITE}{}{RST}",
+            lean_ctx::core::stats::display_calls_saved_line()
+        );
     }
 
-    // The board counted exactly what it rendered — the displayed ✓/✗ list and
-    // this tally can no longer drift apart (#433).
-    let passed = board.passed;
-    let total = board.total;
-    let needs_attention = total.saturating_sub(passed);
+    // The tally is counted from the entries the board rendered and emits —
+    // the displayed ✓/✗ list, `checks` and the counts cannot drift apart
+    // (#433).
+    let needs_attention = board.summary().needs_attention;
 
     if json {
-        let output = serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "build": lean_ctx::core::integrity::build().to_json(),
-            "passed": passed,
-            "total": total,
-            "needs_attention": needs_attention,
-            "checks": board.entries,
-        });
         println!(
             "{}",
-            serde_json::to_string_pretty(&output).unwrap_or_default()
+            serde_json::to_string_pretty(&board.report_json()).unwrap_or_default()
         );
     } else {
         println!();
-        println!(
-            "  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed"
-        );
-        if needs_attention > 0 {
-            println!(
-                "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}lean-ctx doctor --fix{RST}"
-            );
-        } else {
-            println!("  {GREEN}Everything looks good.{RST}");
+        for line in board.summary_lines() {
+            println!("{line}");
         }
         println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
         println!("  {DIM}{}{RST}", lean_ctx::core::integrity::origin_line());
@@ -1189,18 +1262,70 @@ fn config_migration_pause_outcome(config: &std::path::Path) -> Option<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::is_active_shell_impl;
-    use super::{DaemonAutostart, daemon_outcome, hive_sync_outcome, unrecorded_services_outcome};
+    use super::{DaemonAutostart, cloud_sync_outcome, daemon_outcome, unrecorded_services_outcome};
     use super::{request_ledger_outcomes, strip_ansi};
 
+    /// `doctor --json` once reported passed/total/needs_attention that no
+    /// count of its own `checks` array reproduced (79/82/3 next to 101
+    /// entries, 4 of them not ok). Every count is now a count of the emitted
+    /// entries, an entry says itself whether it needs attention, and the
+    /// text summary uses the same counts.
     #[test]
-    fn hive_sync_needs_a_supervised_daemon_when_connected() {
-        assert!(hive_sync_outcome(false, &DaemonAutostart::Off).is_none());
-        assert!(hive_sync_outcome(true, &DaemonAutostart::Unsupported).is_none());
-        let off = hive_sync_outcome(true, &DaemonAutostart::Off).unwrap();
+    fn doctor_summary_counts_are_counts_of_the_emitted_checks() {
+        use super::{Outcome, Scoreboard};
+        let outcome = |ok: bool, line: &str| Outcome {
+            ok,
+            line: line.to_owned(),
+        };
+        let mut board = Scoreboard::new(true);
+        board.check(&outcome(true, "Version ok"));
+        board.check(&outcome(false, "Capacity [gateway receipts] CRIT"));
+        board.check(&outcome(false, "Claude auth"));
+        board.info(&outcome(false, "Plan mode  VS Code  not configured"));
+        board.info(&outcome(true, "LSP rust-analyzer"));
+        board.note(&outcome(true, "  daemon note  "));
+
+        let document = board.report_json();
+        let checks = document["checks"].as_array().expect("checks array");
+        let count = |keep: &dyn Fn(&serde_json::Value) -> bool| {
+            checks.iter().filter(|entry| keep(entry)).count() as u64
+        };
+        let flag = |entry: &serde_json::Value, key: &str| entry[key].as_bool().expect(key);
+        let scored = count(&|e| flag(e, "scored"));
+        let passed = count(&|e| flag(e, "scored") && flag(e, "ok"));
+        let attention = count(&|e| flag(e, "needs_attention"));
+        let optional = count(&|e| !flag(e, "scored") && !flag(e, "ok"));
+
+        assert_eq!(document["total"], scored, "{document}");
+        assert_eq!(document["passed"], passed, "{document}");
+        assert_eq!(document["needs_attention"], attention, "{document}");
+        assert_eq!(document["optional"], optional, "{document}");
+        assert_eq!((scored, passed, attention, optional), (3, 1, 2, 1));
+        // Every entry that is not ok is accounted for exactly once.
+        assert_eq!(count(&|e| !flag(e, "ok")), attention + optional);
+        for entry in checks {
+            assert_eq!(
+                flag(entry, "needs_attention"),
+                flag(entry, "scored") && !flag(entry, "ok"),
+                "{entry}"
+            );
+        }
+
+        let text = board.summary_lines().join("\n");
+        let plain = strip_ansi(&text);
+        assert!(plain.contains("1/3 checks passed"), "{plain}");
+        assert!(plain.contains("2 check(s) need attention"), "{plain}");
+        assert!(plain.contains("1 optional item(s)"), "{plain}");
+    }
+    #[test]
+    fn cloud_sync_needs_a_supervised_daemon_when_connected() {
+        assert!(cloud_sync_outcome(false, &DaemonAutostart::Off).is_none());
+        assert!(cloud_sync_outcome(true, &DaemonAutostart::Unsupported).is_none());
+        let off = cloud_sync_outcome(true, &DaemonAutostart::Off).unwrap();
         assert!(!off.ok);
         assert!(off.line.contains("lean-ctx daemon enable"), "{}", off.line);
         assert!(
-            hive_sync_outcome(true, &DaemonAutostart::On(None))
+            cloud_sync_outcome(true, &DaemonAutostart::On(None))
                 .unwrap()
                 .ok
         );

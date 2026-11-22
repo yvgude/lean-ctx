@@ -5,7 +5,7 @@
 workflow:
   # A new commit on an MR branch (rebase worker push) cancels the superseded
   # pipeline, including running interruptible jobs. Only merge request jobs
-  # are interruptible (see .interruptible-on-mr below).
+  # are interruptible (see .not-on-mr below).
   # A failed job cancels every other job of the pipeline at once (owner
   # 10.11.: a red cheap check must stop the pipeline within about two minutes,
   # not after 20+ minutes of heavy jobs). The cheap gates below also gate the
@@ -14,6 +14,24 @@ workflow:
     on_new_commit: interruptible
     on_job_failure: all
   rules:
+    # Weave schedule bisect (owner 20.11., lean main pipelines): postland does
+    # not attribute a red scheduled run, so Weave replays the red jobs on the
+    # landings in the window. It pushes weave-bisect/<id> at a
+    # landing and starts an API pipeline with WEAVE_SCHEDULE_BISECT=1 and
+    # WEAVE_BISECT_JOBS=<comma list of job names>; only those jobs run (see
+    # "Weave schedule bisect pipelines" below). Any other pipeline on such a
+    # branch, or a job list that is not plain comma-separated job names
+    # (no spaces): none. weave-bisect/* is a protected branch (owner 20.11.,
+    # push and merge: Maintainers), so the jobs run on the protected
+    # lane-p5-main runners and volume, like a schedule.
+    - if: '$CI_COMMIT_BRANCH =~ /^weave-bisect\// && $CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $WEAVE_BISECT_JOBS =~ /^[a-z0-9-]+(,[a-z0-9-]+)*$/'
+      # Both bisect jobs run to the end: a red one must not cancel the other,
+      # or a red with two jobs can never be attributed.
+      auto_cancel:
+        on_new_commit: none
+        on_job_failure: none
+    - if: '$CI_COMMIT_BRANCH =~ /^weave-bisect\//'
+      when: never
     # CI_LANE_TAG picks the project's runner lane (see `variables` below):
     # merge trains test what lands, so they take the main lane; every other
     # merge request pipeline takes the MR lane.
@@ -84,40 +102,96 @@ variables:
   # domain. This incremental target is the only compiler cache (W1-08).
   GIT_CLEAN_FLAGS: -ffdx
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  # Fast MR mode (owner decision 20.11.2026: "until the release is out").
+  # "1": a merge request runs only format, type checking (mr-lint: cargo
+  # check) and the tests of the touched packages (mr-quick --fast), and every
+  # push to integration/* or the default branch runs the FULL suite with
+  # clippy (v4-runtime and its gates, .fast-mr-main), where the Weave postland
+  # revert judges it. After the release set this to "0" (or delete this line
+  # and the .fast-mr-main rules): every job is back exactly as before, nothing
+  # was removed. A pipeline or project variable P5_FAST_MR=0 also switches it
+  # off for one pipeline or the whole project.
+  P5_FAST_MR: "1"
+  # Test-level selection (owner 20.11.2026: "never wait on tests"; design
+  # docs/internal/ci/test-selection.md). "1" is SHADOW mode: mr-quick
+  # fetches the coverage map of the default branch (job test-coverage-map,
+  # every scheduled pipeline), computes and logs the coverage selection (the
+  # tests that executed a changed file, ORed with the static selection for
+  # everything the map cannot answer) and which failed tests it would have
+  # dropped, but still runs today's static selection of mr_quick.py and never
+  # skips the build. "enforce" runs the coverage selection (and may skip a
+  # fully cached build in fast mode); it needs the owner's and bd's approval
+  # on shadow evidence and is not set anywhere. Any doubt (no map, a degraded,
+  # stale or foreign map, a workspace-wide input) falls back to the static
+  # selection. "0" (here, or as a pipeline/project variable) restores exactly
+  # the previous behaviour and stops building the map.
+  P5_TEST_SELECT: "1"
 
-# Interruptible on merge requests only: a newer MR push may stop the
-# superseded run, while integration/* and default-branch runs always finish
-# (each merge keeps its own verdict). Jobs of this file that run on both kinds
-# of pipeline take these rules via !reference; ee/ci/scope-register.yml repeats
-# them (an included file cannot reference the including one).
-.interruptible-on-mr:
+# Lean merge request pipelines (owner 20.11.: "absolut leichtgewichtiges
+# CI/CD"). Weave is the one full gate before main: it checks the merge result
+# itself before it lands. A merge request pipeline therefore runs only three
+# automatic jobs, no manual ones:
+#   lint     - the light gates of this file and ee/ci/scope-register.yml in
+#              one job on the light runner (one job start instead of five);
+#   mr-lint  - clippy, only on Rust inputs; the warm target re-lints only the
+#              crates the change touches and their dependents;
+#   mr-quick - the affected tests (scripts/ci/mr_quick.py), never the full
+#              suite.
+# Every merge request job is interruptible, so a newer push to the same merge
+# request cancels the superseded pipeline (workflow auto_cancel above).
+# The light gates keep running as their own jobs on integration/* and the
+# default branch, exactly as before (v4-runtime needs them there); on merge
+# requests they take these rules and leave their work to `lint`. The
+# provenance gate (v4-provenance) and the docs drift check run only after
+# the merge (v4-runtime) and in Weave. ee/ci/scope-register.yml repeats these
+# rules (an included file cannot reference the including one).
+.not-on-mr:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      interruptible: true
+      when: never
     - when: on_success
       interruptible: false
 
-# Path-scoped merge request gates (ci-slim 11.11.): a merge request runs a
-# gate only when it changes one of that gate's inputs; merge trains,
-# integration/* and the default branch always run every gate. An unchanged
-# input was already checked on the protected branch the merge request
-# targets, so no changed code loses a check. The Rust gates (rust-fmt,
-# mr-lint) read rust/ (build scripts watch only rust/), the cargo
-# configuration and the job definitions under ci/; include_str! of a file
-# outside rust/ embeds data only, and a missing one fails mr-quick's build.
-# Each job appends the MR `when: never` and the branch catch-all itself
-# (mr-lint is merge-request only and appends nothing).
-.rust-changes-on-mr:
+# Lean main pipelines (owner 20.11.): a push to integration/* or the default
+# branch runs only main-smoke (build + smoke) and public-api; Weave checked
+# the merged tree before it landed (the affected tests plus the security set,
+# scope=affected, checks/p5.sh). The heavy and the
+# light branch gates (v4-runtime, v4-provenance, rust-fmt, scope-register,
+# ip-boundary-skill-installed, change-class) run in scheduled pipelines only
+# (every 6 hours on main, owner 20.11.), where v4-runtime also publishes the
+# warm farm golden generation.
+.schedule-only:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"'
-      interruptible: true
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        paths:
-          - rust/**/*
-          - .cargo/**/*
-          - ci/**/*
-      interruptible: true
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      interruptible: false
+    - !reference [.fast-mr-main, rules]
+    - when: never
+
+# Fast MR mode (P5_FAST_MR above, owner 20.11.2026): while it is on, the
+# scheduled branch gates (.schedule-only: rust-fmt, ip-boundary-skill-installed,
+# v4-provenance, change-class; scope-register repeats this rule) and the full
+# suite (v4-runtime: nextest over the workspace, clippy x2, doctests, rustdoc)
+# also run on every push to integration/* and the default branch, beside
+# main-smoke. Their required jobs make a red main pipeline that the Weave
+# postland ladder judges (revert, or a card when several lands share the run).
+# P5_FAST_MR=0 drops the rule and restores the lean main pipeline.
+.fast-mr-main:
+  rules:
+    - if: '$P5_FAST_MR == "1" && $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)'
+      interruptible: false
+
+# Weave schedule bisect pipelines (see workflow): each scheduled job runs
+# there only when WEAVE_BISECT_JOBS names it, through a first rule of the form
+#   - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)<job>(,|$)/'
+# v4-runtime and main-smoke keep their rules; they run there as
+# weave-bisect-v4-runtime and weave-bisect-main-smoke (end of this file),
+# which fix the resource group `weave-bisect` and a pull-only cache in the
+# YAML, so no pipeline variable can move them into another queue or make
+# them write a cache. The warm farm is neither read nor published (both need
+# a merge request, push or schedule): the job builds on the slot target.
+# public-api, which runs on every non-MR pipeline, skips the bisect pipelines
+# it is not named in. Mandatory needs come along: naming v4-runtime also runs
+# rust-fmt and v4-provenance, naming change-class also runs public-api.
 
 # Flake handling (Integration Engine W1-02; the design of leanctx-workspace
 # task 597). A job is retried only for infrastructure failures, never for a
@@ -127,7 +201,7 @@ variables:
 # ci/flaky-quarantine.json lists the known flaky tests, each with its issue; a
 # quarantined test that fails twice, or an unlisted one that passes on the
 # retry, ends the job with exit 76, a warning: never green, never red.
-# ee/ci/scope-register.yml repeats the retry block (see .interruptible-on-mr).
+# ee/ci/scope-register.yml repeats the retry block (see .not-on-mr).
 .flake-retry:
   retry:
     max: 2
@@ -142,12 +216,80 @@ variables:
 # (2 CPU / 4 GB, not throttled): rust-fmt, ip-boundary-skill-installed and
 # scope-register (ee/ci). The heavy jobs (mr-quick, mr-lint, v4-runtime) list
 # them in `needs:`, so a red gate stops a pipeline before any lane slot is
-# taken. On merge requests the gates are path-scoped (.rust-changes-on-mr and
-# the gates' own rules), so they are `optional` in mr-quick's needs; the two
-# private-tree gates are also optional because a checkout without them (or
-# another project) runs none. v4-runtime keeps rust-fmt mandatory. v4-provenance (also light) takes
-# 3-8 minutes, too long to hold every MR back: on merge requests it runs beside
-# the heavy jobs, and its failure cancels them (auto_cancel on_job_failure).
+# taken. The two private-tree gates are optional there because a checkout
+# without them (or another project) runs none; v4-runtime keeps rust-fmt
+# mandatory. v4-provenance (also light) takes 3-8 minutes: on integration/*
+# and the default branch v4-runtime needs it; merge requests leave it to
+# Weave (.not-on-mr, owner 20.11.).
+# On merge requests (owner 20.11.) these gates run as their own jobs no longer:
+# `lint` runs the same scripts one after the other in one job (!reference, so
+# the commands stay one copy), then public-api and change-class.
+# One job start instead of five; mr-quick and mr-lint need `lint`.
+
+# The merge request half of the light gates (owner 20.11.): every merge
+# request push, no path rules, interruptible. The blocking parts are the
+# scripts of rust-fmt, ip-boundary-skill-installed and scope-register,
+# verbatim (!reference); `cd "$CI_PROJECT_DIR"` resets the directory a part
+# changed (the parts share one shell). scope-register comes from
+# ee/ci/scope-register.yml, which this private mirror always carries. The
+# informational public-api and change-class run last and never block.
+lint:
+  extends: .flake-retry
+  stage: verify
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
+  tags: [light]
+  timeout: 10 minutes
+  interruptible: true
+  rules:
+    # The skill gate reads a variable of this project only (see
+    # ip-boundary-skill-installed).
+    - if: '$CI_PROJECT_PATH != "root/lean-ctx"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      interruptible: true
+  needs: []
+  script:
+    - !reference [rust-fmt, script]
+    - cd "$CI_PROJECT_DIR"
+    - !reference [ip-boundary-skill-installed, script]
+    - cd "$CI_PROJECT_DIR"
+    - !reference [scope-register, script]
+    - cd "$CI_PROJECT_DIR"
+    # PUBLISH_MANIFEST.toml names every file new to the public tree
+    # (`new_paths`); blocking, Python only, under a second. The full export
+    # audit stays in v4-provenance (main, schedules).
+    - python3 -I scripts/derivations.py write-publish-manifest --check
+    - |
+      # public-api and change-class: informational, they never block (both
+      # jobs are allow_failure on branches), so a failure here is a warning
+      # line, not a red lint. Same commands as those two jobs.
+      lint_base="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$(git rev-parse HEAD^1)}"
+      set --
+      if python3 -I scripts/public-api-snapshot snapshot "$lint_base" --out api-snapshot/base \
+        && python3 -I scripts/public-api-snapshot snapshot HEAD --out api-snapshot/head \
+        && python3 -I scripts/public-api-snapshot diff api-snapshot/base api-snapshot/head --json api-snapshot/diff.json > api-snapshot/diff.txt; then
+        cat api-snapshot/diff.txt
+        set -- --base-snapshots api-snapshot/base --head-snapshots api-snapshot/head
+      else
+        echo "lint: public-api failed (informational, does not block)" >&2
+      fi
+      mkdir -p change-class
+      if python3 -I scripts/change-class "$lint_base" HEAD --verbose "$@" > change-class/class.txt \
+        && python3 -I scripts/change-class "$lint_base" HEAD --json "$@" > change-class/class.json; then
+        cat change-class/class.txt
+      else
+        echo "lint: change-class failed (informational, does not block)" >&2
+      fi
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - api-snapshot/
+      - change-class/
+      - ee/delivery/FEATURE_SCOPE_REGISTER.csv
+      - ee/delivery/FEATURE_SCOPE_METRICS.csv
 
 # Rust formatting on its own, on the light runner: no compilation, so a format
 # error fails the pipeline within a minute instead of after the lane queue and
@@ -160,16 +302,14 @@ rust-fmt:
     name: lean-ctx-ci-rust:65e3bbf776c5
     pull_policy: if-not-present
   tags: [light]
-  timeout: 5 minutes
+  timeout: 10 minutes
   interruptible: false
-  # Merge requests: only when Rust inputs change (.rust-changes-on-mr);
-  # branches: always (v4-runtime needs it there).
+  # Scheduled pipelines (.schedule-only; v4-runtime needs it there). Merge
+  # requests: part of `lint`.
   rules:
-    - !reference [.rust-changes-on-mr, rules]
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: never
-    - when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(rust-fmt|v4-runtime)(,|$)/'
       interruptible: false
+    - !reference [.schedule-only, rules]
   needs: []
   script:
     - cd rust
@@ -190,32 +330,18 @@ ip-boundary-skill-installed:
     name: lean-ctx-ci-rust:65e3bbf776c5
     pull_policy: if-not-present
   # Python only: run on the small runner (2 CPU / 4 GB slots), so the job does
-  # not queue behind Rust builds for a 6-CPU slot.
+  # not queue behind Rust builds for a 12-CPU slot.
   tags: [light]
   timeout: 5 minutes
   interruptible: false
-  # Merge requests: only when the checked tree changes (the skill copies in
-  # .agents/, .claude/, .cursor/, the root AGENTS.md; a branch cut from the
-  # public tree shows .agents/ as deleted) or the job itself (ci/). Merge
-  # trains and branches: always, against the protected bundle digest.
+  # Scheduled pipelines (.schedule-only), against the pinned bundle digest.
+  # Merge requests: part of `lint`, on every push.
   rules:
     - if: '$CI_PROJECT_PATH != "root/lean-ctx"'
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"'
-      interruptible: true
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        paths:
-          - .agents/**/*
-          - .claude/**/*
-          - .cursor/**/*
-          - AGENTS.md
-          - ci/**/*
-      interruptible: true
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: never
-    - when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)ip-boundary-skill-installed(,|$)/'
       interruptible: false
+    - !reference [.schedule-only, rules]
   needs: []
   script:
     - |
@@ -244,10 +370,12 @@ ip-boundary-skill-installed:
       done
       echo "tampered skill refused: PASS"
 
-# Full Rust validation, post-merge only (owner 08.11.: merge fast, test the
-# combined result). Merge requests get the fast `mr-quick` gate below; this
-# job runs on every integration/* and default-branch push and is the only
-# writer of the shared build cache. A red run is fixed forward at once.
+# Full Rust validation (owner 08.11.: merge fast, test the combined result).
+# Merge requests get the fast `mr-quick` gate below; pushes to integration/*
+# and the default branch get main-smoke (owner 20.11., lean main pipelines;
+# Weave checked the affected tests before it landed). This job runs in the
+# scheduled pipelines (every 6 hours on main) and is the only writer of the
+# shared build cache and the warm farm. A red run is fixed forward at once.
 # This is not a replacement for product E2E or release approval.
 v4-runtime:
   extends: .flake-retry
@@ -282,8 +410,16 @@ v4-runtime:
   # here; once admitted, a run whose commit is no longer the branch tip stops
   # as "superseded" (see before_script), so only the newest commit is tested.
   resource_group: v4-rust-$CI_COMMIT_REF_SLUG
+  # Scheduled pipelines only (owner 20.11., every 6 hours on main): pushes
+  # run main-smoke instead. mr-quick and main-smoke override these rules.
+  # Fast MR mode (P5_FAST_MR, owner 20.11.2026): also every push there, the
+  # full suite after the merge (.fast-mr-main). Pushes that land during a run
+  # queue in the resource group; only the newest tip is tested (exit 75), so
+  # one run can cover several lands. The 3-hour timeout is over 4x the
+  # 41-minute post-merge run (20.11.): a timeout is infra, never a hidden red.
   rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)'
+    - !reference [.fast-mr-main, rules]
   # Exit 75 is used only by the superseded check and shows as a warning, not
   # as a pass: that commit's content is tested by the newer run. Exit 76 comes
   # only from the flake gate (W1-02; runtime-evidence/flake-verdict.txt says
@@ -302,7 +438,8 @@ v4-runtime:
     # Keyed on the lockfile and image only (MinIO is shared, so no ref slug
     # or runner id). The job name is spelled out so `mr-quick` reads the same
     # cache; MR jobs only pull, so MR branches never poison it.
-    - key:
+    - &v4_cargohome_lock
+      key:
         prefix: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1"
         files:
           - rust/Cargo.lock
@@ -334,15 +471,21 @@ v4-runtime:
     # `target`: tests recognise build output by paths like /target/debug/deps.
     # It is the only compiler cache (W1-08: sccache is gone; the persistent
     # target already holds every unchanged crate).
-    # One target per concurrent build directory of a runner, keyed like the
-    # runner's own /builds/<short token>/<concurrent id> (11.11., p5 jobs
-    # 32317/32318/32345: jobs in /builds/<token>/1 and /2 built into one
-    # target, and one job's cargo replaced or removed the other's test
-    # binaries mid-run).
-    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_RUNNER_SHORT_TOKEN-$CI_CONCURRENT_PROJECT_ID/target"
-    # A target over this size (GiB) is wiped at job start. Per slot: with
-    # about six slots on the host, 30 keeps the worst case near 180 GiB.
-    CI_TARGET_CAP_GB: "30"
+    # One target per runner slot (CI_CONCURRENT_ID), never one per project:
+    # in pipeline 13180 (MR !493) mr-quick (slot 0) wiped the shared
+    # 42-GB target over the cap while mr-lint (slot 1) built in it, and both
+    # died with EPERM/ENOENT. Everything the setup below keeps beside the
+    # target (stamp, overlay upper/work, overlay.base, the overlay mount at
+    # the target path itself) is per slot too; a lock around the target alone
+    # would still let two jobs wipe each other's overlay or stack two
+    # mounts on one path. The runner runs at most one job per slot.
+    # Exception: main-smoke on the default branch (its rules override this
+    # with .../main-smoke/target; before_script derives and checks it).
+    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_CONCURRENT_ID/target"
+    # A slot target over this size (GiB) is wiped at job start. The cap holds
+    # per slot: a lane with `limit = N` keeps up to N slot targets on its
+    # /builds volume. A lower cap would wipe the ~33-GB target on every job.
+    CI_TARGET_CAP_GB: "40"
     # Warm build farm (W4-04, scripts/ci/warm_farm.py). The runner mounts the
     # root-owned host directory /srv/ci-cache/warm-farm here. A green
     # protected post-merge run publishes its target (incremental data
@@ -351,6 +494,36 @@ v4-runtime:
     # CI_TARGET_DIR (see before_script). Without the mount the slot target
     # is used as before.
     CI_WARM_FARM: /warm-farm
+    # A generation only matches the checkout path it was built at (build
+    # scripts and env!("CARGO_MANIFEST_DIR") embed it). The runner's default
+    # path holds the runner's short token (/builds/<token>/<slot>/...), which
+    # differs between lane-p5-main and lane-p5-mr, so merge-request jobs never
+    # found a main generation and fell back to the 33-GB slot target
+    # (lean-ctx-3e, 19.11., job 51300). The pinned path is the same on every
+    # lane; CI_CONCURRENT_ID keeps concurrent jobs of one runner apart.
+    # No cross-lane collision (runner config on pounce-server, 19.11.): each
+    # lane runner bind-mounts its own host directory at /builds
+    # (/srv/ci-builds/lane-p5-main and /srv/ci-builds/lane-p5-mr), so the same
+    # in-container path is two different checkouts. Only the farm
+    # (/srv/ci-cache/warm-farm) is shared. A runner that mounted one /builds
+    # for both lanes would need a lane part in this path.
+    # The checkout path and CI_TARGET_DIR both name the slot, so Cargo does not
+    # build at them: before_script bind-mounts both at fixed in-container
+    # paths (/ci-build/src/<project>, /ci-build/target), and a generation
+    # published from slot 0 (lane-p5-main, `limit = 1`) matches every
+    # merge-request slot (owner 20.11.; before: 28 of 45 heavy MR jobs missed).
+    GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_CONCURRENT_ID/$CI_PROJECT_PATH
+    # "0" builds at the slot paths again (kill switch; costs one rebuild).
+    CI_FIXED_BUILD_PATHS: "1"
+    # Publishing writes ~20 GB to the host disk (lean-ctx-3e, 19.11.). Skip
+    # while the newest generation is younger than this (minutes): on 16.-19.11.
+    # 17 of 32 gaps between green main pipelines were under 60 minutes. MR jobs
+    # then start from a generation at most about one hour older, which costs
+    # them only the crates changed in that hour (the engine rebuilds anyway).
+    CI_WARM_FARM_MIN_AGE_MIN: "60"
+    # Copy rate cap of a publish (MiB/s; 320 MB/s spikes before). The host's
+    # NVMe devices use the `none` scheduler, where ionice has no effect.
+    CI_WARM_FARM_MAX_MIBPS: "100"
     # No git commit in the build stamp (rust/build.rs): a commit in the
     # Engine's env rebuilt it and every dependent on each new commit, which
     # defeated the warm and the persistent target. Release builds still stamp.
@@ -358,9 +531,8 @@ v4-runtime:
     # Incremental compilation of the workspace crates into the slot's
     # persistent target (W1-08): a change recompiles only what it touched.
     CARGO_INCREMENTAL: "1"
-    # The runner gives each job a cgroup of 6 CPUs (cpu.max 600000/100000, as
-    # mr-quick prints it, 12.11.); all jobs share the host's 24-CPU / 64-GiB CI
-    # slice. 12 jobs exceed the quota and the cgroup throttles the excess. The
+    # The runner gives each job a 12-CPU / 20-GiB cgroup (all jobs share the
+    # host's 24-CPU / 64-GiB CI slice); more jobs than CPUs gain nothing. The
     # two ~9-GiB engine rustc (lib, lib test) dominate and fit side by side.
     CARGO_BUILD_JOBS: "12"
     CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -377,7 +549,10 @@ v4-runtime:
   before_script:
     - |
       # Branch runs only: a newer push to this branch makes this run redundant.
-      if test -n "${CI_COMMIT_BRANCH:-}"; then
+      # Scheduled runs (test-coverage-map, the full nightly suite) are never
+      # superseded: no later push runs their jobs, so on a busy main they
+      # would otherwise never finish.
+      if test -n "${CI_COMMIT_BRANCH:-}" && test "${CI_PIPELINE_SOURCE:-}" != schedule; then
         tip="$(git ls-remote origin "refs/heads/$CI_COMMIT_BRANCH" | cut -f1)"
         if test -n "$tip" && test "$tip" != "$CI_COMMIT_SHA"; then
           echo "superseded: $CI_COMMIT_BRANCH is at $tip; that run tests this commit too" >&2
@@ -426,8 +601,15 @@ v4-runtime:
     # only); on Linux that roughly triples their compile time (08.11.: Engine
     # lib 133 s -> 47 s, lean-ctx lib 36 s -> 12 s, no cache), and their test
     # harnesses never come from the cache. Root-owned, read-only.
+    # strip = true (17.11., with lean-ctx-3e): a package override makes cargo
+    # pass -C strip=debuginfo for that package whatever CARGO_PROFILE_*_STRIP
+    # says (cargo 1.99.1, reproduced; the runner environment sets
+    # CARGO_PROFILE_{DEV,TEST}_STRIP=symbols on the Rust lanes since 17.11.),
+    # so the engine lib tests, the engine suites and lean_ctx_cli kept 268 of
+    # their 527 MB as symbol tables on the runner's disk. Panic messages keep
+    # file:line; stack backtraces of these binaries lose names and line tables.
     - |
-      printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
+      printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' 'strip = true' '[profile.dev.package.lean-ctx]' 'opt-level = 0' 'strip = true' \
         > "$CI_PROJECT_DIR/rust/target/ci-cargo-home/config.toml"
       chmod 0644 "$CI_PROJECT_DIR/rust/target/ci-cargo-home/config.toml"
     - |
@@ -442,173 +624,383 @@ v4-runtime:
       # Persistent Cargo target (CI_TARGET_DIR; owner 10.11.): the slot keeps
       # its compiled output between jobs, so unchanged crates are not
       # compiled again. Root prepares it before any job code
-      # runs. /builds/.ci-cache and the project directory below it are
-      # root-owned 0755 real directories, so job code (ci-runner) can neither
+      # runs. /builds/.ci-cache, the project directory below it and the
+      # slot directory below that are root-owned 0755 real directories (all
+      # state of a slot lives in its own directory, never beside another
+      # slot's), so job code (ci-runner) can neither
       # swap the target for a link nor forge the stamp beside it; the target
       # belongs to ci-runner. Nothing here follows a symlink. Toolchain or
       # image changes and targets over CI_TARGET_CAP_GB start fresh.
-      # Each concurrent build directory has its own target (CI_TARGET_DIR).
-      # Should two jobs ever share one (11.11., p5 jobs 32317/32318/32321: a
-      # wipe deleted a running job's test binaries and du failed on files
-      # another job removed), each holds a shared lock on target.lock (fd 9)
-      # until the job ends; only a job that gets the lock exclusively without
-      # waiting (fd 8) wipes or cleans up. A busy slot keeps its target.
       test "${CI_BUILDS_DIR:-}" = /builds || { echo "target: unexpected CI_BUILDS_DIR" >&2; exit 1; }
       case "${CI_PROJECT_PATH_SLUG:-}" in ''|*[!a-z0-9-]*) echo "target: unexpected CI_PROJECT_PATH_SLUG" >&2; exit 1;; esac
       case "${CI_TARGET_CAP_GB:-}" in ''|*[!0-9]*) echo "target: unexpected CI_TARGET_CAP_GB" >&2; exit 1;; esac
-      case "${CI_RUNNER_SHORT_TOKEN:-}" in ''|*[!A-Za-z0-9_-]*) echo "target: unexpected CI_RUNNER_SHORT_TOKEN" >&2; exit 1;; esac
-      case "${CI_CONCURRENT_PROJECT_ID:-}" in ''|*[!0-9]*) echo "target: unexpected CI_CONCURRENT_PROJECT_ID" >&2; exit 1;; esac
-      ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_RUNNER_SHORT_TOKEN-$CI_CONCURRENT_PROJECT_ID"
+      # The runner's slot number: one job at a time per slot, so the slot
+      # directory below is this job's alone (see CI_TARGET_DIR).
+      case "${CI_CONCURRENT_ID:-}" in ''|*[!0-9]*|????*) echo "target: unexpected CI_CONCURRENT_ID" >&2; exit 1;; esac
+      # At most 4 digits: a longer value would make `test -lt` error out below.
+      case "${CI_OVERLAY_MIN_FREE_GB:-20}" in ''|*[!0-9]*|?????*) echo "target: unexpected CI_OVERLAY_MIN_FREE_GB" >&2; exit 1;; esac
+      ci_target_project="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG"
+      # main-smoke on the protected default branch keeps one target of its
+      # own, independent of the slot (lean-ctx-3e, 20.11.; see main-smoke),
+      # paired with one checkout of its own: Cargo judges path packages by
+      # mtime, so one target must never be compared against two slot
+      # checkouts (bd review !521 F1: main also runs in slot 1). Its resource
+      # group runs one such job at a time, and a root lock on the directory
+      # below backs that up; no other job (the scheduled v4-runtime, merge
+      # requests, integration/*) resolves to it.
+      ci_target_slot="slot-$CI_CONCURRENT_ID"
+      if test "${CI_JOB_NAME:-}" = main-smoke && test "${CI_PIPELINE_SOURCE:-}" = push && test "${CI_COMMIT_REF_PROTECTED:-}" = true \
+        && test -n "${CI_DEFAULT_BRANCH:-}" && test "${CI_COMMIT_BRANCH:-}" = "$CI_DEFAULT_BRANCH"; then
+        ci_target_slot=main-smoke
+        test -n "${CI_PROJECT_PATH:-}" && test "${CI_PROJECT_DIR:-}" = "/builds/main-smoke/$CI_PROJECT_PATH" \
+          || { echo "target: main-smoke checkout is not /builds/main-smoke/\$CI_PROJECT_PATH (GIT_CLONE_PATH)" >&2; exit 1; }
+      fi
+      ci_target_parent="$ci_target_project/$ci_target_slot"
       ci_target="$ci_target_parent/target"
       test "${CI_TARGET_DIR:-}" = "$ci_target" || { echo "target: unexpected CI_TARGET_DIR" >&2; exit 1; }
       case "$ci_target/" in "$CI_PROJECT_DIR"/*) echo "target: inside the checkout" >&2; exit 1;; esac
-      case "${CI_JOB_ID:-}" in ''|*[!0-9]*) echo "target: unexpected CI_JOB_ID" >&2; exit 1;; esac
       if test -L /builds; then echo "target: /builds is a symlink" >&2; exit 1; fi
-      for ci_dir in /builds/.ci-cache "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG" "$ci_target_parent"; do
+      for ci_dir in /builds/.ci-cache "$ci_target_project" "$ci_target_parent"; do
         if test -L "$ci_dir"; then echo "target: $ci_dir is a symlink" >&2; exit 1; fi
-        if ! test -e "$ci_dir"; then mkdir -m 0755 -- "$ci_dir" 2>/dev/null || test -d "$ci_dir"; fi
+        if ! test -e "$ci_dir"; then mkdir -m 0755 -- "$ci_dir"; fi
         if ! test -d "$ci_dir" || test -L "$ci_dir"; then echo "target: $ci_dir is no directory" >&2; exit 1; fi
         if test "$(stat -c %u -- "$ci_dir")" != 0; then echo "target: $ci_dir is not owned by root" >&2; exit 1; fi
         chown -h root:root -- "$ci_dir"
         chmod 0755 -- "$ci_dir"
       done
+      # Single writer of main-smoke/ (F3): root holds the lock on fd 9 until
+      # the job's shell ends (before_script and script share it); job code
+      # never gets the descriptor. It waits (40 minutes at most) if the
+      # resource group ever stopped serialising.
+      if test "$ci_target_slot" = main-smoke; then
+        if test -L "$ci_target_parent/lock"; then echo "target: $ci_target_parent/lock is a symlink" >&2; exit 1; fi
+        exec 9>>"$ci_target_parent/lock"
+        flock -w 2400 9 || { echo "target: $ci_target_parent is locked by another job" >&2; exit 1; }
+      fi
       ci_stamp="$(printf '%s\n' "${CI_JOB_IMAGE:-}" "$(rustc +stable -vV)" | sha256sum | cut -d' ' -f1)"
-      # This job's stamp, written at its start, in a root-owned job-local
-      # directory: the slot's target.stamp is shared, the warm-farm publish
-      # must read this job's own.
-      if test -L /run/ci-target; then echo "target: /run/ci-target is a symlink" >&2; exit 1; fi
-      install -d -m 0755 -o root -g root -- /run/ci-target
-      printf '%s\n' "$ci_stamp" > /run/ci-target/stamp
-      ci_target_lock="$ci_target_parent/target.lock"
-      if test -L "$ci_target_lock"; then echo "target: $ci_target_lock is a symlink" >&2; exit 1; fi
-      exec 8>>"$ci_target_lock"
-      if test -L "$ci_target_lock" || ! test -f "$ci_target_lock" || test "$(stat -c %u -- "$ci_target_lock")" != 0; then echo "target: $ci_target_lock is not root's file" >&2; exit 1; fi
-      chmod 0600 -- "$ci_target_lock"
+      # Size cap of the slot target. Only a job that builds in the slot target
+      # needs it: a warm-farm overlay below hides the slot target, and nothing
+      # writes into it while the overlay is mounted (the upper layer lives in
+      # overlay/, wiped per job), so it cannot grow past the cap unseen. By
+      # default the check therefore runs after the farm lookup, and only when
+      # no overlay was mounted (CI_TARGET_DU_DEFER=0: always, before it). du
+      # runs at idle I/O and lowest CPU priority where the host honours them.
+      ci_idle="nice -n 19"
+      if command -v ionice >/dev/null 2>&1; then ci_idle="$ci_idle ionice -c3"; fi
+      ci_measure_target() {
+        # Another job's cargo may delete files while du walks the tree; du then exits 1 and,
+        # under pipefail, failed the whole job (16.11. mr-lint 45121: "du: cannot access ...").
+        # The size is an estimate for the cap: keep the total du printed, say so, never fail.
+        if ! ci_target_gb="$($ci_idle du -sx --block-size=1G -- "$ci_target" 2>/dev/null | cut -f1)"; then
+          echo "target: files vanished while measuring $ci_target (concurrent job); size is an estimate" >&2
+        fi
+        ci_target_gb="${ci_target_gb:-0}"
+        if test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then
+          ci_target_state="wiped ($ci_target_gb GB > cap)"
+        else
+          ci_target_state="reused $ci_target_gb GB"
+        fi
+      }
       ci_target_state=fresh
       if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
-      if flock -xn 8; then
-        # No other job holds the lock: nothing below is in use.
-        if test -e "$ci_target"; then
-          if ! test -d "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then
-            ci_target_state="wiped (not a ci-runner directory)"
-          elif ! test -f "$ci_target_parent/target.stamp" || test -L "$ci_target_parent/target.stamp" \
-            || test "$(cat -- "$ci_target_parent/target.stamp")" != "$ci_stamp"; then
-            ci_target_state="wiped (toolchain or image changed)"
-          else
-            # du exits 1, and still prints the total, when a file vanishes
-            # under it; any other failure fails the job.
-            ci_target_gb="$({ du -sx --block-size=1G -- "$ci_target" 2>/dev/null || test "$?" = 1; } | cut -f1)"
-            case "$ci_target_gb" in ''|*[!0-9]*) ci_target_gb=unknown;; esac
-            if test "$ci_target_gb" = unknown; then
-              ci_target_state="wiped (size unknown)"
-            elif test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then
-              ci_target_state="wiped ($ci_target_gb GB > cap)"
-            else
-              ci_target_state="reused $ci_target_gb GB"
-            fi
-          fi
-          case "$ci_target_state" in wiped*) rm -rf --one-file-system -- "$ci_target";; esac
-          # Reports of an earlier job must never pass for this job's report.
-          rm -rf --one-file-system -- "$ci_target/nextest"
+      if test -e "$ci_target"; then
+        if ! test -d "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then
+          ci_target_state="wiped (not a ci-runner directory)"
+        elif ! test -f "$ci_target_parent/target.stamp" || test -L "$ci_target_parent/target.stamp" \
+          || test "$(cat -- "$ci_target_parent/target.stamp")" != "$ci_stamp"; then
+          ci_target_state="wiped (toolchain or image changed)"
+        elif test "${CI_TARGET_DU_DEFER:-1}" = 1; then
+          ci_target_state="reused (size unmeasured)"
+        else
+          ci_measure_target
         fi
-        # Overlay layers and records of earlier jobs.
-        for ci_old in "$ci_target_parent/overlay" "$ci_target_parent/overlay.base" "$ci_target_parent"/overlay.[0-9]*; do
-          if test -e "$ci_old" || test -L "$ci_old"; then rm -rf --one-file-system -- "$ci_old"; fi
-        done
-        rm -f -- "$ci_target_parent/target.stamp"
-        printf '%s\n' "$ci_stamp" > "$ci_target_parent/target.stamp"
-        chmod 0644 -- "$ci_target_parent/target.stamp"
-      elif test -e "$ci_target"; then
-        ci_target_state="reused (slot busy: no wipe)"
+        case "$ci_target_state" in wiped*) rm -rf --one-file-system -- "$ci_target";; esac
+        # Reports of an earlier job must never pass for this job's report.
+        rm -rf --one-file-system -- "$ci_target/nextest"
       fi
-      exec 8>&-
-      # Held until the job's shell exits (before_script and script share it).
-      exec 9>>"$ci_target_lock"
-      flock -s -w 1800 9 || { echo "target: cannot lock $ci_target_lock" >&2; exit 1; }
+      rm -f -- "$ci_target_parent/target.stamp"
+      printf '%s\n' "$ci_stamp" > "$ci_target_parent/target.stamp"
+      chmod 0644 -- "$ci_target_parent/target.stamp"
       if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
       install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target"
       if test -L "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then echo "target: $ci_target is not ci-runner's directory" >&2; exit 1; fi
+      # Slot-independent build paths (warm runners, owner 20.11.;
+      # docs/internal/ci/warm-runners.md). Cargo embeds the checkout, CARGO_HOME
+      # and target paths in fingerprints, dep-info and build-script output, and
+      # a farm generation matches only the paths it was built at. Both used to
+      # name the slot (/builds/<slot>/..., slot-<n>/target), so a generation
+      # published from slot 0 never matched a job in slot 1+ (28 of 45 heavy
+      # merge-request jobs, 17.-20.11.). Cargo therefore builds at fixed paths
+      # inside this container's own mount namespace: the checkout and the
+      # slot target (or the farm overlay below) are bind-mounted at
+      # /ci-build/src/<project> and /ci-build/target. Nothing changes on the
+      # host; the slot directories, locks and trust boundary stay as above.
+      # CI_FIXED_BUILD_PATHS=0 falls back to the slot paths (one rebuild).
+      ci_build_src="$CI_PROJECT_DIR"
+      ci_build_target="$ci_target"
+      if test "${CI_FIXED_BUILD_PATHS:-1}" = 1; then
+        case "${CI_PROJECT_PATH:-}" in ''|/*|*..*|*//*|*[!A-Za-z0-9._/-]*) echo "build paths: unexpected CI_PROJECT_PATH" >&2; exit 1;; esac
+        if test -e /ci-build || test -L /ci-build; then
+          echo "build paths: /ci-build already exists; building at the slot paths" >&2
+        elif (umask 022 && mkdir -p -- "/ci-build/src/$CI_PROJECT_PATH" /ci-build/target) \
+          && mount --bind "$CI_PROJECT_DIR" "/ci-build/src/$CI_PROJECT_PATH"; then
+          ci_build_src="/ci-build/src/$CI_PROJECT_PATH"
+          ci_build_target=/ci-build/target
+        else
+          echo "build paths: cannot bind the checkout; building at the slot paths" >&2
+        fi
+      fi
       # Warm build farm (W4-04): mount the newest golden target of the
       # branch (published by a protected post-merge run, root-owned,
       # read-only here) as the lower layer of an overlay at the target path.
-      # The upper layer is this job's own (overlay.$CI_JOB_ID; a concurrent
-      # job of the slot has its own), so no job sees another job's output. Merge requests take their target branch, a
+      # The upper layer is this job's own, wiped here, so no job sees
+      # another job's output. Merge requests take their target branch, a
       # protected push its own branch (it then publishes the next generation
       # from this overlay, see script). The checkout's mtimes are then set
       # against the golden commit: unchanged files get a fixed old time,
       # files that differ the current one, so Cargo rebuilds only what
       # changed. The slot target stays untouched below the mount; anything
       # missing (no mount, no generation for this toolchain) keeps it.
-      # Every Rust job builds at these fixed, container-local paths (bind
-      # mounts below); generations are published and picked by them.
-      ci_view=/ci-build
       ci_farm="${CI_WARM_FARM:-}"
       ci_farm_branch=""
+      ci_farm_fallback=""
       if test "${CI_PIPELINE_SOURCE:-}" = merge_request_event; then
         ci_farm_branch="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}"
-      elif test "${CI_COMMIT_REF_PROTECTED:-}" = true && test "${CI_PIPELINE_SOURCE:-}" = push; then
+        # A merge request into a branch without generations (a feature
+        # branch; 20.11.: merge requests into feat/cloud-computer-ssh-p0 built
+        # from the slot target) falls back to the default branch's newest generation;
+        # normalize diffs against that commit, so the result is the same.
+        # Merge requests only: a protected run publishes only from its own
+        # branch. CI_WARM_FARM_FALLBACK=0 switches it off.
+        if test "${CI_WARM_FARM_FALLBACK:-1}" = 1; then ci_farm_fallback="${CI_DEFAULT_BRANCH:-}"; fi
+      elif test "${CI_COMMIT_REF_PROTECTED:-}" = true && { test "${CI_PIPELINE_SOURCE:-}" = push || test "${CI_PIPELINE_SOURCE:-}" = schedule; }; then
         ci_farm_branch="${CI_COMMIT_BRANCH:-}"
       fi
-      rm -f -- /run/ci-target/overlay.base
-      ci_overlay="$ci_target_parent/overlay.$CI_JOB_ID"
+      rm -f -- "$ci_target_parent/overlay.base"
       if test -n "$ci_farm_branch" && test -n "$ci_farm" && test -d "$ci_farm" && ! test -L "$ci_farm" && mountpoint -q "$ci_farm"; then
         if ! mount -o remount,bind,ro "$ci_farm"; then echo "warm-farm: cannot make $ci_farm read-only" >&2; exit 1; fi
         if runuser --user ci-runner -- touch "$ci_farm/.ci-write-probe" 2>/dev/null; then echo "warm-farm: $ci_farm is still writable" >&2; exit 1; fi
-        if test -L "$ci_overlay"; then echo "warm-farm: overlay dir is a symlink" >&2; exit 1; fi
-        rm -rf --one-file-system -- "$ci_overlay"
-        if test "$(stat -c %u -- "$ci_farm")" = 0 \
-          && ci_golden="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" pick --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$ci_farm_branch" --stamp "$ci_stamp" --project-dir "$ci_view/src" --cargo-home "$ci_view/src/rust/target/ci-cargo-home" --target-dir "$ci_view/target")" \
-          && install -d -m 0755 -- "$ci_overlay" \
-          && install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_overlay/upper" \
-          && install -d -m 0700 -- "$ci_overlay/work" \
-          && mount -t overlay ci-warm-target -o "lowerdir=${ci_golden%% *},upperdir=$ci_overlay/upper,workdir=$ci_overlay/work,metacopy=on" "$ci_target"; then
+        if test -L "$ci_target_parent/overlay"; then echo "warm-farm: overlay dir is a symlink" >&2; exit 1; fi
+        # The host admin may mount a tmpfs at overlay/ (lean-ctx-3e, 17.11.).
+        # Removing a mountpoint fails with EBUSY and aborted the job, so there
+        # the mount root is reset to root:root 0755 (a plain tmpfs is 1777 or
+        # may be mounted with uid=ci-runner) and its contents are wiped; a
+        # tmpfs with less than CI_OVERLAY_MIN_FREE_GB free falls back to the
+        # slot target. A tmpfs mounted with size=0 reports 0 free and always
+        # falls back: the admin must set an explicit size=.
+        ci_overlay_usable=true
+        if test -d "$ci_target_parent/overlay" && mountpoint -q -- "$ci_target_parent/overlay"; then
+          chown -h root:root -- "$ci_target_parent/overlay"
+          chmod 0755 -- "$ci_target_parent/overlay"
+          find "$ci_target_parent/overlay" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} +
+          ci_overlay_free_gb="$(stat -f -c '%a %S' -- "$ci_target_parent/overlay" | awk '{ printf "%d\n", $1 * $2 / 1073741824 }')" || ci_overlay_free_gb=0
+          case "$ci_overlay_free_gb" in ''|*[!0-9]*) ci_overlay_free_gb=0;; esac
+          if test "$ci_overlay_free_gb" -lt "${CI_OVERLAY_MIN_FREE_GB:-20}"; then
+            echo "warm-farm: overlay tmpfs only $ci_overlay_free_gb GB free; using the slot target" >&2
+            ci_overlay_usable=false
+          fi
+        else
+          rm -rf --one-file-system -- "$ci_target_parent/overlay"
+        fi
+        if test "$ci_overlay_usable" = true && test "$(stat -c %u -- "$ci_farm")" = 0 \
+          && ci_golden="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" pick --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$ci_farm_branch" --stamp "$ci_stamp" --project-dir "$ci_build_src" --cargo-home "$ci_build_src/rust/target/ci-cargo-home" --target-dir "$ci_build_target" --fallback-branch "$ci_farm_fallback")" \
+          && install -d -m 0755 -- "$ci_target_parent/overlay" \
+          && install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target_parent/overlay/upper" \
+          && install -d -m 0700 -- "$ci_target_parent/overlay/work" \
+          && mount -t overlay ci-warm-target -o "lowerdir=${ci_golden%% *},upperdir=$ci_target_parent/overlay/upper,workdir=$ci_target_parent/overlay/work,metacopy=on" "$ci_target"; then
           # A partial normalization could pass a stale unit as fresh: fail.
           python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" normalize --repo "$CI_PROJECT_DIR" --base "${ci_golden##* }" || { echo "warm-farm: normalize failed" >&2; exit 1; }
-          printf '%s\n' "${ci_golden##* }" > /run/ci-target/overlay.base
-          # A missed cargo-home cache (pipelines started by an unprotected
-          # user get a key no job writes; owner 12.11.: no shared key) is
-          # seeded from the generation's crates instead of ~7 s of index and
-          # crate downloads. ci-runner copies, as it would download them.
-          ci_seed="${ci_golden%% *}/.warm-farm-cargo-home"
-          if test -d "$ci_seed" && ! test -L "$ci_seed" && ! test -d "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry/index"; then
-            if runuser --user ci-runner -- /bin/sh -ec 'mkdir -p -- "$2" && cp -R --preserve=mode,timestamps -- "$1/." "$2/"' sh "$ci_seed" "$CI_PROJECT_DIR/rust/target/ci-cargo-home"; then
-              echo "cargo-home: cache missed; seeded from warm-farm ${ci_golden##* }"
-            else
-              echo "cargo-home: seeding failed; Cargo downloads what is missing" >&2
-            fi
-          fi
+          printf '%s\n' "${ci_golden##* }" > "$ci_target_parent/overlay.base"
           ci_target_state="warm-farm ${ci_golden%% *} (slot target: $ci_target_state)"
-        else
+        elif test "$ci_overlay_usable" = true; then
           echo "warm-farm: no usable generation; using the slot target" >&2
         fi
       fi
+      # The deferred size check (see ci_measure_target): this job builds in
+      # the slot target, so measure it now and wipe it over the cap, before
+      # the bind below and before any job code runs.
+      if test "$ci_target_state" = "reused (size unmeasured)"; then
+        ci_measure_target
+        case "$ci_target_state" in
+          wiped*)
+            rm -rf --one-file-system -- "$ci_target"
+            if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
+            install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target"
+            if test -L "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then echo "target: $ci_target is not ci-runner's directory" >&2; exit 1; fi
+            ;;
+        esac
+      fi
+      # The target (the slot directory or the overlay just mounted on it)
+      # at the fixed path. If that bind fails on a plain slot target, drop
+      # the checkout bind and build at the slot paths (no runner change is
+      # required); on a warm-farm overlay it fails closed. From here on CI_PROJECT_DIR and
+      # CI_TARGET_DIR name the fixed paths (before_script and script share
+      # this shell); CI_SLOT_TARGET_DIR keeps the slot path for the publish
+      # step's unmount.
+      if test "$ci_build_target" != "$ci_target"; then
+        if ! mount --bind "$ci_target" "$ci_build_target"; then
+          # After a farm hit the overlay holds a generation for the fixed
+          # paths: fail closed instead of building on it at the slot paths.
+          if test -f "$ci_target_parent/overlay.base"; then echo "build paths: cannot bind the target over a warm-farm overlay" >&2; exit 1; fi
+          echo "build paths: cannot bind the target; building at the slot paths" >&2
+          umount -- "$ci_build_src" || { echo "build paths: cannot drop the checkout bind" >&2; exit 1; }
+          ci_build_src="$CI_PROJECT_DIR" ci_build_target="$ci_target"
+        fi
+      fi
+      if test "$ci_build_target" != "$ci_target"; then
+        export CI_SLOT_TARGET_DIR="$ci_target"
+        export CI_PROJECT_DIR="$ci_build_src" CI_TARGET_DIR="$ci_build_target"
+        ci_target_state="$ci_target_state; built at $ci_build_src -> $ci_build_target"
+      fi
       echo "target: $ci_target_state" > "$CI_PROJECT_DIR/runtime-evidence/target.txt"
       cat -- "$CI_PROJECT_DIR/runtime-evidence/target.txt"
-      # Fixed build paths (CI-v2, 11.11.). Cargo fingerprints, incremental
-      # data and the warm-farm match (warm_farm.py pick compares the project,
-      # CARGO_HOME and target paths exactly) hold absolute paths, and both the
-      # checkout (/builds/<runner token>/<concurrent id>/...) and the slot
-      # target differ per runner and slot. So merge-request jobs, on another
-      # runner than the post-merge publisher, never matched a generation
-      # (11.11.: no warm-farm hit in 78 MR Rust jobs) and built from a cold
-      # or capped slot target. Every job now builds at the same paths: bind
-      # mounts of this checkout and of the (overlaid) slot target, made by
-      # root in this job's own container. Nothing on the host changes.
-      if test -e "$ci_view" || test -L "$ci_view"; then echo "target: $ci_view already exists" >&2; exit 1; fi
-      install -d -m 0755 -o root -g root -- "$ci_view" "$ci_view/src" "$ci_view/target"
-      mount --bind "$CI_PROJECT_DIR" "$ci_view/src"
-      mount --bind "$ci_target" "$ci_view/target"
-      test "$(git -C "$ci_view/src" rev-parse --show-toplevel)" = "$ci_view/src"
-      if test -L "$ci_view/target" || test "$(stat -c %u -- "$ci_view/target")" != 10999; then echo "target: $ci_view/target is not ci-runner's directory" >&2; exit 1; fi
-      export CI_PROJECT_DIR="$ci_view/src" CI_TARGET_DIR="$ci_view/target"
     # No compiler wrapper (W1-08): a wrapper set by the runner or an image
     # default would put a cache between the build and the persistent target.
     - unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER SCCACHE_DIR
   script:
     - set -o pipefail
     - |
-      # The shared slot lock (fd 9, before_script) must still be open here.
-      { : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }
+      # Weave verdict (owner 17.11.): a push to the default branch or an
+      # integration/* branch whose exact tree the Weave merge queue already
+      # checked green with the FULL test set does not run the full nextest
+      # suite again; only the security set runs (WEAVE_NEXTEST_SCOPE=security).
+      # Everything else in this job (clippy, doctests, the default-feature
+      # check, the warm farm) runs as before. The runner host mounts Weave's
+      # verdicts read-only at /weave-verdicts (0640 cloud:cloud, so root reads
+      # them here, before the runuser section): p5/<tree>.ok with key=value
+      # lines v, proj, iid, check_sha, tree, scope, tests, security, rustc,
+      # features, secwords, ts. Weave writes one only after a fully green
+      # check. The verdict is bound to what produced it (M2): the sha256 of
+      # `rustc +stable -vV`, the test feature list (mr_quick.py
+      # --print-test-features) and the sha256 of ci/security-words.txt must
+      # equal this job's own. Fail-safe: any missing file, other pipeline
+      # source or branch, duplicate or unexpected value, other toolchain,
+      # feature list or word list, or a check commit whose tree differs means
+      # the full run. mr-quick
+      # overrides this script and never takes the shortcut. The scope is set
+      # here unconditionally, so no pipeline variable can preset it.
+      # Main remainder (Weave Bauplan, 19.11.): most Weave checks run only the
+      # affected tests plus the security set (scope=affected), and Weave
+      # stores that nextest filterset next to the verdict as p5/<tree>.tests.
+      # For such a verdict main runs only the rest: every test outside the
+      # stored selection, plus the security set again
+      # (WEAVE_NEXTEST_SCOPE=remainder). The same checks apply as for a full
+      # verdict (one rustc, feature list and word list, else the full run);
+      # in addition the selection must be one printable line of at most
+      # 64 KiB whose sha256 (of the expression, without the newline) equals
+      # the verdict's selection= key. It needs
+      # both protected variables, WEAVE_VERDICT_SKIP=1 and
+      # WEAVE_VERDICT_REMAINDER=1 (off by default). While either is off, the
+      # log names the remainder filter, and after the full run nextest lists
+      # how many tests it would have run (runtime-evidence/weave-remainder.txt).
+      WEAVE_NEXTEST_SCOPE=full
+      WEAVE_FEATURES=""
+      WEAVE_SELECTION=""
+      WEAVE_REMAINDER_DRY=""
+      export WEAVE_NEXTEST_SCOPE WEAVE_FEATURES WEAVE_SELECTION WEAVE_REMAINDER_DRY
+      weave_reason=""
+      weave_check() {
+        weave_dir=/weave-verdicts/p5
+        # Owner 17.11.: off until MR jobs can no longer reach the runner host
+        # (privileged runners + docker.sock, see lean-ctx-3e). A protected CI
+        # variable WEAVE_VERDICT_SKIP=1 switches the shortcut on. While it is
+        # off, every check below still runs as a dry run: the log says why a
+        # verdict would be refused, or that it would be accepted, and the full
+        # run happens either way.
+        if test "${CI_PIPELINE_SOURCE:-}" != push; then weave_reason="pipeline source ${CI_PIPELINE_SOURCE:-unset} is not push"; return 1; fi
+        if test -n "${CI_COMMIT_TAG:-}" || test -z "${CI_COMMIT_BRANCH:-}"; then weave_reason="not a branch pipeline"; return 1; fi
+        case "$CI_COMMIT_BRANCH" in
+          integration/*) ;;
+          *) if test -z "${CI_DEFAULT_BRANCH:-}" || test "$CI_COMMIT_BRANCH" != "$CI_DEFAULT_BRANCH"; then weave_reason="branch $CI_COMMIT_BRANCH is neither the default branch nor integration/*"; return 1; fi ;;
+        esac
+        if ! weave_tree="$(git -C "$CI_PROJECT_DIR" rev-parse --verify --quiet "HEAD^{tree}")"; then weave_reason="cannot resolve the tree of HEAD"; return 1; fi
+        if ! printf '%s\n' "$weave_tree" | grep -Eqx '[0-9a-f]{40}([0-9a-f]{24})?'; then weave_reason="unexpected tree id"; return 1; fi
+        weave_file="$weave_dir/$weave_tree.ok"
+        if ! test -d /weave-verdicts || test -L /weave-verdicts || test -L "$weave_dir"; then weave_reason="no verdict mount"; return 1; fi
+        if ! test -f "$weave_file" || test -L "$weave_file" || ! test -r "$weave_file"; then weave_reason="no readable verdict for tree $weave_tree"; return 1; fi
+        weave_size="$(stat -c %s -- "$weave_file")" || { weave_reason="cannot stat the verdict"; return 1; }
+        if test "$weave_size" -gt 4096; then weave_reason="verdict file too large"; return 1; fi
+        # Each key exactly once, value verbatim after the first "=".
+        weave_val() { awk -F= -v k="$1" '$1 == k { n++; v = substr($0, length(k) + 2) } END { if (n != 1) exit 1; print v }' "$weave_file"; }
+        weave_proj="$(weave_val proj)" || { weave_reason="proj missing or repeated"; return 1; }
+        weave_vtree="$(weave_val tree)" || { weave_reason="tree missing or repeated"; return 1; }
+        weave_scope="$(weave_val scope)" || { weave_reason="scope missing or repeated"; return 1; }
+        weave_security="$(weave_val security)" || { weave_reason="security missing or repeated"; return 1; }
+        weave_check_sha="$(weave_val check_sha)" || { weave_reason="check_sha missing or repeated"; return 1; }
+        weave_v="$(weave_val v)" || { weave_reason="v missing or repeated (verdict before M2)"; return 1; }
+        weave_rustc="$(weave_val rustc)" || { weave_reason="rustc missing or repeated"; return 1; }
+        weave_features="$(weave_val features)" || { weave_reason="features missing or repeated"; return 1; }
+        weave_secwords="$(weave_val secwords)" || { weave_reason="secwords missing or repeated"; return 1; }
+        weave_iid="$(weave_val iid)" || weave_iid="?"
+        weave_tests="$(weave_val tests)" || weave_tests="?"
+        if test "$weave_proj" != p5; then weave_reason="proj=$weave_proj, not p5"; return 1; fi
+        if test "$weave_vtree" != "$weave_tree"; then weave_reason="verdict names another tree"; return 1; fi
+        case "$weave_scope" in
+          full | affected) ;;
+          *) weave_reason="scope=$weave_scope, neither full nor affected"; return 1 ;;
+        esac
+        if test "$weave_security" != pass; then weave_reason="security=$weave_security, not pass"; return 1; fi
+        if test "$weave_v" != 2; then weave_reason="verdict format v=$weave_v, not 2"; return 1; fi
+        # Remainder: the stored selection, read before the M2 checks so the
+        # dry run can name the remainder even when one of them refuses.
+        weave_sel_bound=""
+        if test "$weave_scope" = affected; then
+          weave_sel_file="$weave_dir/$weave_tree.tests"
+          if ! test -f "$weave_sel_file" || test -L "$weave_sel_file" || ! test -r "$weave_sel_file"; then weave_reason="scope=affected without a readable selection $weave_tree.tests"; return 1; fi
+          weave_sel_size="$(stat -c %s -- "$weave_sel_file")" || { weave_reason="cannot stat the selection"; return 1; }
+          if test "$weave_sel_size" -lt 2 || test "$weave_sel_size" -gt 65536; then weave_reason="selection empty or larger than 64 KiB"; return 1; fi
+          if test "$(wc -l < "$weave_sel_file")" != 1 || ! LC_ALL=C grep -qxE '[ -~]+' "$weave_sel_file"; then weave_reason="selection is not one printable line"; return 1; fi
+          weave_sel="$(cat -- "$weave_sel_file")" || { weave_reason="cannot read the selection"; return 1; }
+          # The hash of the expression without its newline, the selection
+          # key the Weave probe uses for filterset.txt as well.
+          weave_sel_sha="$(printf '%s' "$weave_sel" | sha256sum | cut -d' ' -f1)" || { weave_reason="cannot hash the selection"; return 1; }
+          # selection= is optional in the file format (writers before 19.11.
+          # lack it); without it the remainder is never taken, only logged.
+          if weave_sel_key="$(weave_val selection)"; then
+            if test "$weave_sel_key" != "$weave_sel_sha"; then weave_reason="selection $weave_tree.tests does not match the verdict's selection= hash"; return 1; fi
+            weave_sel_bound=1
+          fi
+          WEAVE_SELECTION="$weave_sel"
+        fi
+        # M2: same compiler, same test features, same security word list.
+        if ! weave_own_rustc="$(rustc +stable -vV | sha256sum | cut -d' ' -f1)" || test -z "$weave_own_rustc"; then weave_reason="cannot read rustc +stable -vV"; return 1; fi
+        if test "$weave_rustc" != "$weave_own_rustc"; then weave_reason="verdict built with another rustc ($weave_rustc, this job $weave_own_rustc)"; return 1; fi
+        if ! WEAVE_FEATURES="$(python3 -I -B "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --print-test-features)" || test -z "$WEAVE_FEATURES"; then weave_reason="cannot read the test feature list"; return 1; fi
+        if test "$weave_features" != "$WEAVE_FEATURES"; then weave_reason="verdict tested other features"; return 1; fi
+        if ! test -f "$CI_PROJECT_DIR/ci/security-words.txt" || test -L "$CI_PROJECT_DIR/ci/security-words.txt"; then weave_reason="no ci/security-words.txt"; return 1; fi
+        if test "$weave_secwords" != "$(sha256sum < "$CI_PROJECT_DIR/ci/security-words.txt" | cut -d' ' -f1)"; then weave_reason="verdict used another security word list"; return 1; fi
+        if ! printf '%s\n' "$weave_check_sha" | grep -Eqx '[0-9a-f]{40}([0-9a-f]{24})?'; then weave_reason="unexpected check_sha"; return 1; fi
+        # The checked commit is often not in a shallow clone; then tree= decides.
+        if git -C "$CI_PROJECT_DIR" cat-file -e "$weave_check_sha^{commit}" 2>/dev/null; then
+          if test "$(git -C "$CI_PROJECT_DIR" rev-parse --verify --quiet "$weave_check_sha^{tree}")" != "$weave_tree"; then weave_reason="check $weave_check_sha has another tree"; return 1; fi
+        fi
+        if test "$weave_scope" = affected && test -z "$weave_sel_bound"; then weave_reason="scope=affected verdict for tree $weave_tree (check $weave_check_sha) does not bind its selection (no selection= key)"; return 1; fi
+        weave_off=""
+        if test "${WEAVE_VERDICT_SKIP:-0}" != 1; then weave_off="WEAVE_VERDICT_SKIP is not 1"; fi
+        if test "$weave_scope" = affected && test "${WEAVE_VERDICT_REMAINDER:-0}" != 1; then weave_off="${weave_off:+$weave_off, }WEAVE_VERDICT_REMAINDER is not 1"; fi
+        if test -n "$weave_off"; then weave_reason="dry run: scope=$weave_scope verdict for tree $weave_tree (check $weave_check_sha) would be accepted, but the shortcut is off ($weave_off)"; return 1; fi
+        return 0
+      }
+      if weave_check; then
+        if test "$weave_scope" = full; then
+          WEAVE_NEXTEST_SCOPE=security
+          echo "weave-verdict: tree $weave_tree scope=full from check $weave_check_sha (MR !$weave_iid, $weave_tests tests) → heavy skipped, security set only" | tee "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"
+        else
+          WEAVE_NEXTEST_SCOPE=remainder
+          echo "weave-verdict: tree $weave_tree scope=affected from check $weave_check_sha (MR !$weave_iid, $weave_tests tests) → remainder: every test outside the stored selection, plus the security set" | tee "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"
+          echo "weave-verdict: stored selection: $WEAVE_SELECTION" | tee -a "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"
+        fi
+        if ! cat -- "$weave_file" >> "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"; then echo "weave-verdict: could not copy the verdict into the evidence" >&2; fi
+      else
+        echo "weave-verdict: none/not taken ($weave_reason) → full run" | tee "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"
+        # Dry run of the remainder: the full run below decides; afterwards
+        # nextest only lists what the remainder filter would have selected.
+        if test -n "$WEAVE_SELECTION"; then
+          WEAVE_REMAINDER_DRY=1
+          echo "weave-verdict: remainder (not taken) would run: (not (<stored selection>)) | <security set>; stored selection: $WEAVE_SELECTION" | tee -a "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"
+        fi
+      fi
+      unset -f weave_check weave_val
     - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
@@ -619,7 +1011,7 @@ v4-runtime:
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_TARGET_DIR"
-        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/|/ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
         if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
@@ -637,12 +1029,7 @@ v4-runtime:
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
         cd "$CI_PROJECT_DIR/rust"
         # Format is the rust-fmt job; no gate runs twice in one pipeline (W1-08).
-        # Its own profile (clippy-lib, = dev): clippy-driver records its lint
-        # arguments (CLIPPY_ARGS) in each workspace unit, so the two runs
-        # below, whose arguments differ, re-checked all 13 workspace crates
-        # of each other on every run (2 x ~33 s with no Rust change). Same
-        # targets, features and lints; only the output directory differs.
-        cargo +stable clippy --locked --all-features --config profile.clippy-lib.inherits=\"dev\" --profile clippy-lib -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+        cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
         # Test, bench and example targets too (task 173): the same lints, except
         # unwrap and length, which tests may use (AGENTS.md quality gate).
         cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
@@ -663,11 +1050,6 @@ v4-runtime:
         # run once more on the same commit through scripts/ci/flake_gate.py
         # (W1-02) against ci/flaky-quarantine.json: exit 0 green, 76 warning
         # (quarantined failure or new flake), anything else red.
-        # Tier 2 (owner 11.11.): merge requests run only the tests their change
-        # affects, this job the full suite. A red run on a branch push ends its
-        # log with the last green commit (newest warm-farm generation), the
-        # merges since it, the failing tests and a git bisect command
-        # (scripts/ci/postmerge_bisect.py, runtime-evidence/bisect.txt).
         # The pz21 origin scan (lean-ctx-server --test input_check) judges the
         # diff of this pipeline: the MR diff base, else the first parent.
         INPUT_CHECK_COMMIT="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
@@ -675,11 +1057,48 @@ v4-runtime:
         if git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "$INPUT_CHECK_SPEC_COMMIT" "${INPUT_CHECK_SPEC_LOCK:-}" && git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "${INPUT_CHECK_SPEC_LOCK:-}" HEAD; then INPUT_CHECK_SPEC_COMMIT="$INPUT_CHECK_SPEC_LOCK"; fi
         export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT
         nextest_rc=0
-        mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
-        if test -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"; then cp "$CARGO_TARGET_DIR/nextest/ci/junit.xml" "$CI_PROJECT_DIR/runtime-evidence/junit.xml"; fi
+        # nextest keeps its store in the checkout (rust/target/nextest), not in
+        # the target above: a report of an earlier job must never pass for this
+        # one. Removed here, as the job identity, not by the root setup.
+        rm -rf --one-file-system -- "$CI_PROJECT_DIR/rust/target/nextest"
+        # M3: the security words come from ci/security-words.txt, the list the
+        # Weave check uses too. The shortcut needs a non-empty list and the
+        # feature list the verdict was checked with; otherwise the full run.
+        security_words="$(sed -e "s/#.*//" "$CI_PROJECT_DIR/ci/security-words.txt" 2>/dev/null | tr -d " \t\r" | grep -E "^[A-Za-z0-9_-]+\$" | tr "A-Z" "a-z" | sort -u | paste -sd "|" -)" || security_words=""
+        # The words are matched case-insensitively anywhere in the test name
+        # or the binary id (package::binary, so package names count too;
+        # package() would fail the run when no package matches), a superset
+        # of the Weave match at name-part starts.
+        security_filter="test(/(?i)$security_words/) | binary_id(/(?i)$security_words/)"
+        # The remainder (see above): every test outside the selection Weave
+        # ran on this exact tree, plus the security set once more.
+        remainder_filter="(not (${WEAVE_SELECTION:-all()})) | $security_filter"
+        case "${WEAVE_NEXTEST_SCOPE:-full}" in
+          security | remainder)
+            if test -z "$security_words" || test "$test_features" != "${WEAVE_FEATURES:-}" || { test "$WEAVE_NEXTEST_SCOPE" = remainder && test -z "${WEAVE_SELECTION:-}"; }; then
+              echo "weave-verdict: empty word list, other test features or no selection at test time → full run" | tee -a "$CI_PROJECT_DIR/runtime-evidence/weave-verdict.txt"
+              WEAVE_NEXTEST_SCOPE=full
+            fi ;;
+          *) WEAVE_NEXTEST_SCOPE=full ;;
+        esac
+        if test "$WEAVE_NEXTEST_SCOPE" = security; then
+          # Weave verdict (see above): this tree passed the full set in the
+          # merge queue; only the security set runs again. Same profile, no
+          # retries, same flake gate below (it reruns only the failed tests).
+          echo "$security_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/test-filter.txt"
+          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast -E "$security_filter" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+        elif test "$WEAVE_NEXTEST_SCOPE" = remainder; then
+          # Weave verdict, scope=affected: Weave ran its stored selection on
+          # this tree green; the rest runs here. Same profile and flake gate.
+          echo "$remainder_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/test-filter.txt"
+          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast -E "$remainder_filter" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+        else
+          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+        fi
+        if test -f "$CI_PROJECT_DIR/rust/target/nextest/ci/junit.xml"; then cp "$CI_PROJECT_DIR/rust/target/nextest/ci/junit.xml" "$CI_PROJECT_DIR/runtime-evidence/junit.xml"; fi
         if test "$nextest_rc" != 0; then
           flake_rc=0
-          python3 -I -u "$CI_PROJECT_DIR/scripts/ci/flake_gate.py" --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml" --rerun-junit "$CARGO_TARGET_DIR/nextest/ci/junit.xml" --quarantine "$CI_PROJECT_DIR/ci/flaky-quarantine.json" --job v4-runtime --evidence "$CI_PROJECT_DIR/runtime-evidence" -- mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/flake-gate.log" || flake_rc=$?
+          python3 -I -u "$CI_PROJECT_DIR/scripts/ci/flake_gate.py" --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml" --rerun-junit "$CI_PROJECT_DIR/rust/target/nextest/ci/junit.xml" --quarantine "$CI_PROJECT_DIR/ci/flaky-quarantine.json" --job v4-runtime --evidence "$CI_PROJECT_DIR/runtime-evidence" -- mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/flake-gate.log" || flake_rc=$?
           nextest_rc="$flake_rc"
         fi
         # nextest does not run doctests.
@@ -688,10 +1107,38 @@ v4-runtime:
         # Default features, library and binaries only: the cheapest proof that
         # what users install compiles, on the warm incremental target.
         cargo +stable check --locked --workspace 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"
+        # Fast MR mode: mr-lint runs this exact check, and check fingerprints
+        # are not clippy ones, so without it a warm-farm hit still re-checked
+        # every workspace crate (20-24 crates even with no Rust change, traces
+        # 21.11.). Built here, the published generation carries them.
+        # Kill switch: CI_WARM_FARM_LINT_CHECK=0.
+        if test "${P5_FAST_MR:-0}" = 1 && test "${CI_WARM_FARM_LINT_CHECK:-1}" = 1; then
+          cargo +stable check --locked --workspace --all-features --all-targets 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-all-targets.log"
+        fi
+        # Rustdoc and the generated reference (owner 19.11., light hooks): the
+        # local hooks no longer run them on every push, so the post-merge run
+        # catches a broken doc link, stale generated docs or a stale registry
+        # snapshot before the GitHub sync does. Same commands as
+        # scripts/preflight.sh and mr-docs.
+        RUSTDOCFLAGS="-D warnings" cargo +stable doc --locked --no-deps --all-features 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/rustdoc.log"
+        mold -run cargo +stable run --locked -p lean-ctx-server --quiet --example gen_docs --features dev-tools -- --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/gen-docs.log"
+        mold -run cargo +stable run --locked -p lean-ctx-engine --quiet --example gen_registry --features dev-tools -- --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/gen-registry.log"
+        # Remainder dry run (see above): list, on the build the full run just
+        # used, how many tests the remainder filter would have run. Evidence
+        # only; it never changes this job verdict.
+        if test "${WEAVE_REMAINDER_DRY:-}" = 1 && test "$WEAVE_NEXTEST_SCOPE" = full && test -n "${WEAVE_SELECTION:-}" && test -n "$security_words"; then
+          remainder_total="$(sed -n "s/.*<testsuites[^>]* tests=\"\\([0-9]*\\)\".*/\\1/p" "$CI_PROJECT_DIR/runtime-evidence/junit.xml" 2>/dev/null | head -n 1)" || remainder_total=""
+          if mold -run cargo +stable nextest list --locked --workspace --features "$test_features" --message-format oneline -E "$remainder_filter" > "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.txt" 2> "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.err"; then
+            remainder_n="$(grep -c . "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.txt")" || remainder_n=0
+            echo "weave-verdict: remainder dry run: would run $remainder_n of ${remainder_total:-?} tests; filter: $remainder_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/weave-remainder.txt"
+          else
+            echo "weave-verdict: remainder dry run: nextest list failed (see weave-remainder-list.err); filter: $remainder_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/weave-remainder.txt"
+          fi
+        fi
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
         if test "$doc_rc" != 0 || { test "$nextest_rc" != 0 && test "$nextest_rc" != 76; }; then echo "tests failed: nextest exit $nextest_rc, doctests exit $doc_rc" >&2; exit 1; fi
         if test "$nextest_rc" = 76; then echo "tests: WARNING (flake gate; see runtime-evidence/flake-register.json)" >&2; exit 76; fi
-      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; if test "${CI_PIPELINE_SOURCE:-}" = push && test -n "${CI_COMMIT_BRANCH:-}" && test "$rc" != 76; then python3 -I "$CI_PROJECT_DIR/scripts/ci/postmerge_bisect.py" --repo "$CI_PROJECT_DIR" --farm "${CI_WARM_FARM:-}" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml" --out "$CI_PROJECT_DIR/runtime-evidence/bisect.txt"; fi; if test "$rc" = 76 && ! grep -qx warning "$CI_PROJECT_DIR/runtime-evidence/flake-verdict.txt" 2>/dev/null; then echo "a check exited 76 without a flake-gate warning; reported as a failure" >&2; rc=1; fi; exit "$rc"; }
+      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; if test "$rc" = 76 && ! grep -qx warning "$CI_PROJECT_DIR/runtime-evidence/flake-verdict.txt" 2>/dev/null; then echo "a check exited 76 without a flake-gate warning; reported as a failure" >&2; rc=1; fi; exit "$rc"; }
     - |
       # Warm build farm (W4-04): a green protected post-merge push publishes
       # its target (the overlay of the previous generation, or the slot
@@ -703,16 +1150,53 @@ v4-runtime:
       # are dropped; unchanged files are hard links to the previous
       # generation. Best effort: a failed publish keeps the previous
       # generation and leaves this run's verdict alone.
+      # IO budget (lean-ctx-3e, 19.11.): no publish while the newest
+      # generation holds this tree or is younger than CI_WARM_FARM_MIN_AGE_MIN
+      # minutes, and the copy is capped at CI_WARM_FARM_MAX_MIBPS. Afterwards
+      # the overlay is unmounted and its upper layer (~18 GB on the host
+      # tmpfs) wiped: nothing after this step reads the target (artifacts and
+      # cache live in the checkout), and the next job wipes it anyway.
       ci_farm="${CI_WARM_FARM:-}"
-      if test "${CI_COMMIT_REF_PROTECTED:-}" = true && test "${CI_PIPELINE_SOURCE:-}" = push && test -n "${CI_COMMIT_BRANCH:-}" \
+      # Published by the scheduled run (owner 20.11.); main-smoke never
+      # reaches this step (it has its own script).
+      if test "${CI_COMMIT_REF_PROTECTED:-}" = true && { test "${CI_PIPELINE_SOURCE:-}" = push || test "${CI_PIPELINE_SOURCE:-}" = schedule; } && test -n "${CI_COMMIT_BRANCH:-}" \
         && test -n "$ci_farm" && test -d "$ci_farm" && ! test -L "$ci_farm" && mountpoint -q "$ci_farm" && test "$(stat -c %u -- "$ci_farm")" = 0; then
+        ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_CONCURRENT_ID"
         ci_farm_base=""
-        if test -f /run/ci-target/overlay.base && ! test -L /run/ci-target/overlay.base; then ci_farm_base="$(cat -- /run/ci-target/overlay.base)"; fi
+        if test -f "$ci_target_parent/overlay.base" && ! test -L "$ci_target_parent/overlay.base"; then ci_farm_base="$(cat -- "$ci_target_parent/overlay.base")"; fi
+        ci_farm_min_age="${CI_WARM_FARM_MIN_AGE_MIN:-60}"
+        case "$ci_farm_min_age" in ''|*[!0-9]*|?????*) ci_farm_min_age=60;; esac
+        ci_farm_mibps="${CI_WARM_FARM_MAX_MIBPS:-100}"
+        case "$ci_farm_mibps" in ''|*[!0-9]*|?????*) ci_farm_mibps=100;; esac
         if mount -o remount,bind,rw "$ci_farm"; then
-          python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" publish --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --stamp "$(cat -- /run/ci-target/stamp)" --project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$CI_TARGET_DIR" --target "$CI_TARGET_DIR" --commit "$CI_COMMIT_SHA" --base "$ci_farm_base" --started-file /run/ci-target/stamp --pipeline "${CI_PIPELINE_ID:-}" \
+          python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" publish --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --stamp "$(cat -- "$ci_target_parent/target.stamp")" --project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$CI_TARGET_DIR" --target "$CI_TARGET_DIR" --commit "$CI_COMMIT_SHA" --base "$ci_farm_base" --started-file "$ci_target_parent/target.stamp" --pipeline "${CI_PIPELINE_ID:-}" --min-age-minutes "$ci_farm_min_age" --max-mib-per-s "$ci_farm_mibps" \
             || echo "warm-farm: publish failed; the previous generation stays" >&2
         else
           echo "warm-farm: cannot make $ci_farm writable; nothing published" >&2
+        fi
+        # Fixed build paths (before_script): drop the bind first, so the
+        # overlay below is unmounted at the slot path, not just the bind. If
+        # the bind stays, skip the overlay teardown: unmounting "the overlay"
+        # at the bind path would only drop the bind a second time and then
+        # wipe an upper layer that is still mounted.
+        ci_teardown=true
+        if test -n "${CI_SLOT_TARGET_DIR:-}" && test "$CI_TARGET_DIR" != "$CI_SLOT_TARGET_DIR"; then
+          if mountpoint -q -- "$CI_TARGET_DIR" && umount -- "$CI_TARGET_DIR"; then
+            CI_TARGET_DIR="$CI_SLOT_TARGET_DIR"
+          else
+            echo "build paths: cannot unmount the target bind; the next job wipes the overlay" >&2
+            ci_teardown=false
+          fi
+        fi
+        if test "$ci_teardown" = true && test -f "$ci_target_parent/overlay.base" && ! test -L "$ci_target_parent/overlay" && test -d "$ci_target_parent/overlay" \
+          && mountpoint -q -- "$CI_TARGET_DIR" && test "$(stat -f -c %T -- "$CI_TARGET_DIR")" = overlayfs; then
+          if umount -- "$CI_TARGET_DIR"; then
+            find "$ci_target_parent/overlay" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} +
+            rm -f -- "$ci_target_parent/overlay.base"
+            echo "warm-farm: overlay unmounted, upper layer wiped"
+          else
+            echo "warm-farm: cannot unmount the overlay; the next job wipes its upper layer" >&2
+          fi
         fi
       fi
   artifacts:
@@ -730,27 +1214,19 @@ v4-runtime:
 # engine modules and test modules the MR changes, as one cargo-nextest
 # filterset over that build (scripts/ci/mr_quick.py, profile ci). It reuses the
 # post-merge build cache of v4-runtime with identical flags, so only changed
-# code compiles. The full suite runs after the merge.
+# code compiles. The full suite runs after the merge. Automatic on every
+# merge request again since 20.11. (lean pipeline, see .not-on-mr); Weave runs
+# the same selection on the merge result before it lands.
 mr-quick:
   extends: v4-runtime
   timeout: 45 minutes
   # Merge request only, so always interruptible (overrides v4-runtime).
   interruptible: true
-  # Starts once the cheap gates are green (about a minute on the light
-  # runner), so a format or skill/scope error never takes a lane slot.
-  # v4-provenance runs beside it; a red provenance cancels it
-  # (auto_cancel on_job_failure). mr-lint inherits this list.
-  # rust-fmt is optional here: on a merge request without Rust changes
-  # (docs, scripts, fixtures) it does not run, while mr-quick still runs the
-  # Rust tests that read those files. v4-runtime keeps it mandatory.
+  # Starts once `lint` (the light gates in one job) is green, so a format or
+  # skill/scope error never takes a lane slot. mr-lint inherits this list.
+  # Optional only for a project where `lint` does not run (see its rules).
   needs:
-    - job: rust-fmt
-      artifacts: false
-      optional: true
-    - job: ip-boundary-skill-installed
-      artifacts: false
-      optional: true
-    - job: scope-register
+    - job: lint
       artifacts: false
       optional: true
   # One run per merge request: a newer push to the same MR waits here (and
@@ -762,7 +1238,9 @@ mr-quick:
     # Rust tests also read fixtures and contracts outside rust/ (docs/,
     # tests/, packages/, kits/, product/, ...), so every such tree counts as
     # an input. MRs that touch none of them skip this job.
+    # Automatic and blocking (owner 20.11.): the affected tests only.
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      interruptible: true
       changes:
         paths:
           - "*"
@@ -779,6 +1257,12 @@ mr-quick:
           - skills/**/*
           - integrations/**/*
   allow_failure: false
+  # Only the lockfile entry (mr-lint inherits it). MR jobs read the tip
+  # through its fallback_keys; the second entry of v4-runtime named a key no
+  # job writes (...-mr-no-tip below), so every MR job logged "file does not
+  # exist" for it (traces 20.-21.11.). The variables below stay as a guard.
+  cache:
+    - *v4_cargohome_lock
   variables:
     V4_CACHE_POLICY: pull
     # MR jobs read the tip only through fallback_keys; this key is never written.
@@ -787,8 +1271,20 @@ mr-quick:
   script:
     - set -o pipefail
     - |
-      # The shared slot lock (fd 9, before_script) must still be open here.
-      { : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }
+      # Test-level selection (P5_TEST_SELECT): the result cache of passed
+      # tests lives beside the slot's target, in the root-owned slot directory
+      # (before_script), so a warm-farm overlay, whose upper layer is wiped
+      # per job, does not drop it. Its entries are empty files named by
+      # content address; past 400,000 of them it starts over.
+      if test "${P5_TEST_SELECT:-0}" = 1 || test "${P5_TEST_SELECT:-0}" = enforce; then
+        ts_cache="$(dirname -- "$CI_TARGET_DIR")/test-results"
+        if test -L "$ts_cache"; then echo "test-results: $ts_cache is a symlink" >&2; exit 1; fi
+        if test -d "$ts_cache" && test "$(find "$ts_cache" -xdev -type f | head -n 400001 | wc -l)" -gt 400000; then
+          rm -rf --one-file-system -- "$ts_cache"
+        fi
+        install -d -m 0700 -o ci-runner -g ci-runner -- "$ts_cache"
+        if test -L "$ts_cache" || test "$(stat -c %u -- "$ts_cache")" != 10999; then echo "test-results: $ts_cache is not ci-runner's directory" >&2; exit 1; fi
+      fi
     - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
@@ -797,7 +1293,7 @@ mr-quick:
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_TARGET_DIR"
-        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/|/ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
         if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
@@ -823,7 +1319,30 @@ mr-quick:
         INPUT_CHECK_SPEC_COMMIT="$MR_BASE"
         if git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "$INPUT_CHECK_SPEC_COMMIT" "${INPUT_CHECK_SPEC_LOCK:-}" && git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "${INPUT_CHECK_SPEC_LOCK:-}" HEAD; then INPUT_CHECK_SPEC_COMMIT="$INPUT_CHECK_SPEC_LOCK"; fi
         export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT
-        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$MR_BASE" --evidence "$CI_PROJECT_DIR/runtime-evidence" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/mr-quick.log"
+        # Fast MR mode (P5_FAST_MR, owner 20.11.2026): the touched packages
+        # only (plus lean-ctx-shell-policy when it or a crate it depends on is
+        # touched), stop at the first failure, time-boxed; the full suite runs
+        # on main.
+        quick_mode=""
+        if test "${P5_FAST_MR:-0}" = 1; then quick_mode="--fast"; fi
+        # Test-level selection (P5_TEST_SELECT): the newest coverage map of
+        # the default branch. Without one (fetch never fails the job),
+        # mr_quick.py keeps the static selection; so does any map it rejects.
+        select_args=""
+        select_mode=shadow
+        if test "${P5_TEST_SELECT:-0}" = enforce; then select_mode=enforce; fi
+        if test "${P5_TEST_SELECT:-0}" = 1 || test "$select_mode" = enforce; then
+          fetch_args=""
+          if test "$select_mode" = enforce; then fetch_args="--require-attested"; fi
+          if ! python3 -I -u "$CI_PROJECT_DIR/scripts/ci/select_tests.py" fetch --out "$HOME/test-map.json.gz" $fetch_args; then
+            echo "mr-quick: coverage map fetch failed; static selection"
+            rm -f -- "$HOME/test-map.json.gz"
+          fi
+          if test -s "$HOME/test-map.json.gz"; then
+            select_args="--coverage-map $HOME/test-map.json.gz --result-cache $(dirname -- "$CI_TARGET_DIR")/test-results --test-select-mode $select_mode"
+          fi
+        fi
+        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$MR_BASE" $select_args --evidence "$CI_PROJECT_DIR/runtime-evidence" $quick_mode 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/mr-quick.log"
         # Stopping the server flushes pending cache writes and prints its stats.
         if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
@@ -841,18 +1360,28 @@ mr-lint:
   resource_group: mr-lint-$CI_MERGE_REQUEST_IID
   # Clippy reads only Rust inputs: no run for a docs- or scripts-only merge
   # request (v4-runtime lints every integration/* and default-branch push).
+  # Automatic and blocking (owner 20.11.). The whole workspace is named, but
+  # the warm target (warm farm or slot target) holds every unchanged crate's
+  # clippy result, so only the changed crates and their dependents are linted
+  # again; `-p` would change feature unification and rebuild the engine.
   rules:
-    - !reference [.rust-changes-on-mr, rules]
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      interruptible: true
+      changes:
+        paths:
+          - rust/**/*
+          - .cargo/**/*
+          - ci/**/*
   artifacts:
     when: always
     expire_in: 30 days
     paths:
       - runtime-evidence/
+    # mr-lint runs no tests: the junit report inherited from v4-runtime only
+    # made the runner look for runtime-evidence/junit.xml (never written here).
+    reports: null
   script:
     - set -o pipefail
-    - |
-      # The shared slot lock (fd 9, before_script) must still be open here.
-      { : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }
     - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
@@ -861,7 +1390,7 @@ mr-lint:
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_TARGET_DIR"
-        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/|/ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
         if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
@@ -876,17 +1405,194 @@ mr-lint:
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
         cd "$CI_PROJECT_DIR/rust"
         # Format is the rust-fmt job this one needs (W1-08: no gate twice).
-        # Its own profile (clippy-lib, = dev): clippy-driver records its lint
-        # arguments (CLIPPY_ARGS) in each workspace unit, so the two runs
-        # below, whose arguments differ, re-checked all 13 workspace crates
-        # of each other on every run (2 x ~33 s with no Rust change). Same
-        # targets, features and lints; only the output directory differs.
-        cargo +stable clippy --locked --all-features --config profile.clippy-lib.inherits=\"dev\" --profile clippy-lib -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
-        # Test, bench and example targets too (task 173): the same lints, except
-        # unwrap and length, which tests may use (AGENTS.md quality gate).
-        cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
+        # Clippy runs here in fast MR mode too: v4-runtime on main stops as
+        # superseded (exit 75) while lands keep coming, so a lint found only
+        # after the merge reached main unseen (!513, 21.11.). Clippy type-checks
+        # every target as `check` does. P5_FAST_MR_LINT=check restores the
+        # type check alone (kill switch). Weave waits for mr-lint (lint_job).
+        if test "${P5_FAST_MR:-0}" = 1 && test "${P5_FAST_MR_LINT:-clippy}" = check; then
+          cargo +stable check --locked --workspace --all-features --all-targets 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-all-targets.log"
+        else
+          cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+          # Test, bench and example targets too (task 173): the same lints, except
+          # unwrap and length, which tests may use (AGENTS.md quality gate).
+          cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
+        fi
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
       '
+
+# Build + smoke on every integration/* and default-branch push (owner 20.11.,
+# lean main pipelines): Weave checked the merged tree before it landed
+# (scope=affected), so a push only proves that the installable binary builds
+# and starts. A red run makes Weave revert the landing (postland). Extends
+# v4-runtime for its image, lane, caches, persistent target and superseded
+# check (exit 75); it never publishes to the warm farm, the scheduled
+# v4-runtime does. On the default branch its target is its own (see rules).
+main-smoke:
+  extends: v4-runtime
+  timeout: 45 minutes
+  needs: []
+  # Its own queue: a push never waits 17-41 minutes behind a scheduled
+  # v4-runtime run on the same branch (v4-rust-$CI_COMMIT_REF_SLUG).
+  resource_group: main-smoke-$CI_COMMIT_REF_SLUG
+  # Disk writes (lean-ctx-3e, 20.11.): on the protected default branch the
+  # job builds in one stable target of its own (main-smoke/target, not the
+  # slot's) from one checkout of its own (GIT_CLONE_PATH, paired 1:1 with
+  # the target), incrementally from the previous push, and skips the warm farm.
+  # The farm's generations come from v4-runtime, which never builds the
+  # default-feature binary, so the overlay's freshly wiped upper layer
+  # received a near-full engine + binary build on every push (27 of 59 MB/s
+  # on the host's md0). The before_script derives the same path only for
+  # this job on a protected default-branch push and fails closed otherwise.
+  # integration/* keeps the slot target and the farm.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
+      interruptible: false
+      variables:
+        CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/main-smoke/target"
+        CI_WARM_FARM: ""
+        GIT_CLONE_PATH: $CI_BUILDS_DIR/main-smoke/$CI_PROJECT_PATH
+    - if: '$CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)'
+      interruptible: false
+  allow_failure:
+    exit_codes:
+      - 75
+  # The scheduled v4-runtime stays the only writer of the shared caches.
+  variables:
+    V4_CACHE_POLICY: pull
+    V4_TIP_CACHE_POLICY: pull
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - runtime-evidence/
+  script:
+    - set -o pipefail
+    - |
+      runuser --user ci-runner --preserve-environment -- /bin/bash -c '
+        set -euo pipefail
+        umask 077
+        export HOME=/home/ci-runner
+        case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
+        export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+        export CARGO_TARGET_DIR="$CI_TARGET_DIR"
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/|/ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
+        test "$(id -un)" = ci-runner
+        test "$(id -u)" -gt 0
+        test "$(id -g)" -gt 0
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
+        rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
+        cd "$CI_PROJECT_DIR/rust"
+        # The binary users install, default features. Linked with mold (in the
+        # image, like every test link of v4-runtime and mr-quick): `mold -run`
+        # changes no fingerprint, and linking the binary is the step that
+        # follows every engine rebuild.
+        mold -run cargo +stable build --locked -p lean-ctx --bin lean-ctx 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/build.log"
+        "$CARGO_TARGET_DIR/debug/lean-ctx" --version 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/smoke-version.txt"
+        "$CARGO_TARGET_DIR/debug/lean-ctx" cloud --help 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/smoke-cloud-help.txt"
+        GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
+      ' 9>&-
+
+# Coverage map for test-level selection (P5_TEST_SELECT; design
+# docs/internal/ci/test-selection.md). In every scheduled pipeline on the
+# protected default branch, after v4-runtime (so it never delays the full
+# suite on the one-slot main lane): every test of the full suite runs once
+# under -C instrument-coverage; the nextest wrapper
+# rust/.config/nextest-coverage.sh (profile coverage) records which
+# functions each test and the processes it spawned executed, and
+# select_tests.py build-map turns that into "source file -> tests". The map
+# goes to the generic package registry (newest upload wins, read by
+# mr-quick) and stays a job artifact for 7 days. It records the ref, source,
+# protection and time of the pipeline that built it; mr-quick rejects a map
+# that is not from a protected schedule of the default branch, older than 7
+# days, or whose commit is not an ancestor of the merge base. A red or missing map costs
+# nothing but speed: mr-quick then keeps the static selection. The
+# instrumented build lives in coverage/target inside the slot target and is
+# removed at the end (after_script too), so the slot keeps its normal size.
+# The image does not ship llvm-tools yet (follow-up: add `--component
+# llvm-tools` to ci/images/rust/Dockerfile and re-tag); until then root adds
+# the component to this job's container only, and the job stops softly
+# (exit 77, a warning) when that is not possible.
+test-coverage-map:
+  extends: v4-runtime
+  timeout: 3 hours
+  interruptible: false
+  rules:
+    - if: '($P5_TEST_SELECT == "1" || $P5_TEST_SELECT == "enforce") && $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: always
+      interruptible: false
+  needs:
+    - job: v4-runtime
+      artifacts: false
+  resource_group: test-coverage-map-$CI_COMMIT_REF_SLUG
+  allow_failure: true
+  variables:
+    V4_CACHE_POLICY: pull
+    V4_TIP_CACHE_KEY: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-coverage-no-tip"
+    V4_TIP_CACHE_POLICY: pull
+    # The instrumented build shares nothing with the golden target.
+    CI_WARM_FARM: ""
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - test-coverage/
+  script:
+    - set -o pipefail
+    - |
+      llvm_bin="$(rustc +stable --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+      if ! test -x "$llvm_bin/llvm-profdata"; then
+        rustup component add llvm-tools --toolchain stable >/dev/null 2>&1 || true
+      fi
+      if ! test -x "$llvm_bin/llvm-profdata" || ! test -x "$llvm_bin/llvm-cov"; then
+        echo "test-coverage-map: no llvm-tools in this image; no map (mr-quick keeps the static selection)" >&2
+        exit 77
+      fi
+      install -d -m 0755 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/test-coverage"
+    - |
+      runuser --user ci-runner --preserve-environment -- /bin/bash -c '
+        set -euo pipefail
+        umask 077
+        export HOME=/home/ci-runner
+        case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
+        export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+        case "$CI_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CI_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CI_TARGET_DIR" >&2; exit 1;; esac
+        if test -L "$CI_TARGET_DIR" || ! test -d "$CI_TARGET_DIR" || ! test -O "$CI_TARGET_DIR"; then echo "CI_TARGET_DIR is not the job user directory" >&2; exit 1; fi
+        test "$(id -un)" = ci-runner
+        # The last component stays `target` (tests recognise build output by it).
+        export CARGO_TARGET_DIR="$CI_TARGET_DIR/coverage/target"
+        rm -rf --one-file-system -- "$CI_TARGET_DIR/coverage"
+        mkdir -p -- "$CARGO_TARGET_DIR"
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        commit="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
+        cd "$CI_PROJECT_DIR/rust"
+        export RUSTFLAGS="-C instrument-coverage"
+        # Build scripts and proc macros are instrumented too; their profiles
+        # are noise and go to a scratch directory, never into the checkout.
+        export LLVM_PROFILE_FILE="$HOME/build-profiles/%p-%m.profraw"
+        export LEAN_CTX_LLVM_BIN="$(rustc +stable --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+        export LEAN_CTX_COVERAGE_DIR="$CARGO_TARGET_DIR/coverage-data"
+        mkdir -p -- "$LEAN_CTX_COVERAGE_DIR/tests" "$LEAN_CTX_COVERAGE_DIR/samples"
+        test_features="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --print-test-features)"
+        test -n "$test_features"
+        mold -run cargo +stable nextest list --locked --workspace --features "$test_features" --message-format json > "$CARGO_TARGET_DIR/list.json"
+        # Failing tests still record what they executed; the map does not
+        # judge results (v4-runtime does).
+        mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile coverage --no-fail-fast 2>&1 | tail -n 200 > "$CI_PROJECT_DIR/test-coverage/run.log" || true
+        build_rc=0
+        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/select_tests.py" build-map --repo "$CI_PROJECT_DIR" --commit "$commit" \
+          --coverage-dir "$LEAN_CTX_COVERAGE_DIR" --list-json "$CARGO_TARGET_DIR/list.json" --llvm-bin "$LEAN_CTX_LLVM_BIN" \
+          --objects-dir "$CARGO_TARGET_DIR/debug" --out "$CI_PROJECT_DIR/test-coverage/map.json.gz" 2>&1 | tee "$CI_PROJECT_DIR/test-coverage/build-map.log" || build_rc=$?
+        rm -rf --one-file-system -- "$CI_TARGET_DIR/coverage"
+        test "$build_rc" = 0
+        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/select_tests.py" publish --map "$CI_PROJECT_DIR/test-coverage/map.json.gz"
+        GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
+      '
+  after_script:
+    - |
+      case "${CI_TARGET_DIR:-}" in /builds/.ci-cache/*/target) rm -rf --one-file-system -- "$CI_TARGET_DIR/coverage" ;; esac
 
 v4-provenance:
   extends: .flake-retry
@@ -899,8 +1605,13 @@ v4-provenance:
   tags: [light]
   timeout: 15 minutes
   interruptible: false
+  # Scheduled pipelines only (owner 20.11., .schedule-only; 4-11 minutes,
+  # and Weave runs these checks on the merge result before it lands), where
+  # v4-runtime needs it.
   rules:
-    - !reference [.interruptible-on-mr, rules]
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(v4-provenance|v4-runtime)(,|$)/'
+      interruptible: false
+    - !reference [.schedule-only, rules]
   needs: []
   # `cargo fetch` below downloaded every crate from crates.io on each run
   # (measured 09.11.: 7-11 s). Read the crates v4-runtime already keeps in the
@@ -923,7 +1634,33 @@ v4-provenance:
     CARGO_HOME: "$CI_PROJECT_DIR/rust/target/ci-cargo-home"
   before_script:
     - git fetch origin refs/heads/cla-signatures:refs/remotes/origin/cla-signatures
-    - cargo fetch --locked --manifest-path rust/Cargo.toml
+    - |
+      # Disk IO (lean-ctx-3e, 18.11.): `cargo fetch` unpacks every crate of
+      # Cargo.lock into $CARGO_HOME/registry/src, about 1.2 GB in ~600
+      # directories on each run (job 50837: 1.2 GB src next to the 130 MB
+      # cache and 38 MB index restored from the shared cache), and the next
+      # job's git clean deletes it again. That made this job the largest disk
+      # writer of the light runner. The unpacked sources are scratch: only
+      # `cargo metadata --offline` (third-party notices, script tests) reads
+      # them. Keep them on the job's /tmp tmpfs (pounce-light: 2 GB) when it
+      # is a tmpfs with room; otherwise, or if the fetch fails there, unpack
+      # in the checkout as before. The checks and their reports are the same.
+      src_dir="$CARGO_HOME/registry/src"
+      tmp_avail_kb="$(df -Pk /tmp 2>/dev/null | awk 'NR==2 {print $4}')"
+      if test "$(stat -f -c %T /tmp 2>/dev/null)" = tmpfs && test "${tmp_avail_kb:-0}" -ge 1945600 && ! test -e "$src_dir"; then
+        mkdir -p "$CARGO_HOME/registry"
+        tmp_src="$(mktemp -d /tmp/cargo-registry-src.XXXXXX)"
+        ln -s "$tmp_src" "$src_dir"
+        if cargo fetch --locked --manifest-path rust/Cargo.toml; then
+          echo "cargo registry src on tmpfs: $(du -sh "$tmp_src" | cut -f1)"
+        else
+          echo "cargo fetch on tmpfs failed; unpacking in the checkout instead" >&2
+          rm -f "$src_dir"; rm -rf "$tmp_src"
+          cargo fetch --locked --manifest-path rust/Cargo.toml
+        fi
+      else
+        cargo fetch --locked --manifest-path rust/Cargo.toml
+      fi
   script:
     - test "$(git rev-parse --is-shallow-repository)" = "false"
     - python3 -m unittest discover -s scripts/tests -v
@@ -950,6 +1687,11 @@ v4-provenance:
       else
         python3 scripts/ip-provenance-audit.py --root . --output ip-provenance-gitlab-report.json
       fi
+    # Last reader of the unpacked crates is the audit above: it runs the
+    # third-party notices generator check again (cargo metadata --offline)
+    # inside the export, so the tmpfs sources must survive until here. Then
+    # free the tmpfs (it counts against the job's memory). No match: nothing to do.
+    - rm -rf /tmp/cargo-registry-src.*
     - python3 scripts/history-policy-gate.py gate --root . --policy security/history-policy-v1.json --output history-delta-gitlab-report.json
     - if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then git diff --check "$CI_MERGE_REQUEST_DIFF_BASE_SHA" HEAD; else git diff --check HEAD^ HEAD; fi
   artifacts:
@@ -974,7 +1716,11 @@ public-api:
   timeout: 10 minutes
   interruptible: false
   rules:
-    - !reference [.interruptible-on-mr, rules]
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(public-api|change-class)(,|$)/'
+      interruptible: false
+    - if: '$WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\//'
+      when: never
+    - !reference [.not-on-mr, rules]
   needs: []
   allow_failure: true
   script:
@@ -1002,7 +1748,9 @@ change-class:
   timeout: 10 minutes
   interruptible: false
   rules:
-    - !reference [.interruptible-on-mr, rules]
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)change-class(,|$)/'
+      interruptible: false
+    - !reference [.schedule-only, rules]
   needs:
     - job: public-api
       artifacts: true
@@ -1025,3 +1773,39 @@ change-class:
     expire_in: 30 days
     paths:
       - change-class/
+
+# Weave schedule bisect copies of the two Rust jobs with a resource group
+# (see "Weave schedule bisect pipelines"): WEAVE_BISECT_JOBS names them
+# v4-runtime and main-smoke. Everything but the queue, the cache and the
+# rules comes from the job itself.
+.weave-bisect-rust:
+  resource_group: weave-bisect
+  cache:
+    - key:
+        prefix: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1"
+        files:
+          - rust/Cargo.lock
+      fallback_keys:
+        - "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1-tip"
+      paths:
+        - rust/target/ci-cargo-home/registry/index/
+        - rust/target/ci-cargo-home/registry/cache/
+        - rust/target/ci-cargo-home/git/db/
+      policy: pull
+      when: always
+
+weave-bisect-v4-runtime:
+  extends:
+    - v4-runtime
+    - .weave-bisect-rust
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)v4-runtime(,|$)/'
+      interruptible: false
+
+weave-bisect-main-smoke:
+  extends:
+    - main-smoke
+    - .weave-bisect-rust
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)main-smoke(,|$)/'
+      interruptible: false

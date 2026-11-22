@@ -244,7 +244,7 @@ fn apply_overlay(
         scope,
         before_hash: String::new(),
         author: OverlayAuthor::Agent("mcp".to_string()),
-        created_at: chrono::Utc::now(),
+        created_at: lean_ctx_time::UtcDateTime::now(),
         stale: false,
     };
     overlays.add(overlay);
@@ -340,8 +340,8 @@ fn format_scope(scope: &OverlayScope) -> &'static str {
     }
 }
 
-fn format_age(created_at: &chrono::DateTime<chrono::Utc>) -> String {
-    let elapsed = chrono::Utc::now().signed_duration_since(*created_at);
+fn format_age(created_at: &lean_ctx_time::UtcDateTime) -> String {
+    let elapsed = lean_ctx_time::UtcDateTime::now().signed_duration_since(*created_at);
     if elapsed.num_seconds() < 60 {
         "just now".to_string()
     } else if elapsed.num_minutes() < 60 {

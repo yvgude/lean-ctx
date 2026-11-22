@@ -2,7 +2,7 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::core::a2a::rate_limiter::{RateLimitResult, check_rate_limit};
@@ -17,8 +17,8 @@ static LOCAL_TRANSPORT: OnceLock<LocalSignedCapsuleTransport> = OnceLock::new();
 /// Outcomes of the reserved capsule deliveries of this process.
 #[derive(Debug, Clone, Copy, Default)]
 struct DeliveryOutcomes {
-    last_success: Option<DateTime<Utc>>,
-    last_failure: Option<DateTime<Utc>>,
+    last_success: Option<UtcDateTime>,
+    last_failure: Option<UtcDateTime>,
     consecutive_failures: u32,
 }
 
@@ -38,11 +38,11 @@ fn delivery_outcomes() -> std::sync::MutexGuard<'static, DeliveryOutcomes> {
 /// consecutive-failure count, a failure (negative or lost acknowledgement)
 /// increments it.
 pub fn record_delivery(succeeded: bool) {
-    delivery_outcomes().record(succeeded, Utc::now());
+    delivery_outcomes().record(succeeded, UtcDateTime::now());
 }
 
 impl DeliveryOutcomes {
-    fn record(&mut self, succeeded: bool, at: DateTime<Utc>) {
+    fn record(&mut self, succeeded: bool, at: UtcDateTime) {
         if succeeded {
             self.last_success = Some(at);
             self.consecutive_failures = 0;
@@ -60,8 +60,8 @@ pub struct TransportHealth {
     pub dlq_depth: usize,
     pub dlq_available: bool,
     pub rate_limiter_available: bool,
-    pub last_successful_delivery: Option<DateTime<Utc>>,
-    pub last_failed_delivery: Option<DateTime<Utc>>,
+    pub last_successful_delivery: Option<UtcDateTime>,
+    pub last_failed_delivery: Option<UtcDateTime>,
     pub consecutive_failures: u32,
 }
 
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn failures_count_up_until_a_delivery_succeeds() {
         let mut outcomes = DeliveryOutcomes::default();
-        let at = chrono::Utc::now();
+        let at = lean_ctx_time::UtcDateTime::now();
         for _ in 0..3 {
             outcomes.record(false, at);
         }

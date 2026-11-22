@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use chrono::Local;
+use lean_ctx_time::LocalDateTime;
 use serde::{Deserialize, Serialize};
 
 const STORE_FILE: &str = "solution_tracker.json";
@@ -134,7 +134,7 @@ fn with_store<F: FnOnce(&mut SolutionStore)>(f: F) {
 }
 
 fn current_day_record(store: &mut SolutionStore) -> &mut DayRecord {
-    let date = Local::now().format("%F").to_string();
+    let date = LocalDateTime::now().format("%F").to_string();
     if let Some(index) = store
         .daily_records
         .iter()

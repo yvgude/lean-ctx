@@ -287,7 +287,7 @@ mod tests {
     }
 }
 
-/// Cross-agent memory sharing configuration (Hive adaptation).
+/// Cross-agent memory sharing configuration (Cloud adaptation).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrossAgentConfig {
     /// Share knowledge facts across agent sessions.

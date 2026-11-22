@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use super::{AgentRegistry, AgentStatus};
 
@@ -211,7 +211,8 @@ fn persistent_logical_session_presence_validates_and_roundtrips() {
 fn logical_session_expiry_is_bounded_by_heartbeat_not_tool_activity() {
     let mut registry = AgentRegistry::new();
     registry.open_or_heartbeat_logical_session("vscode", "/project", "chat-a");
-    registry.logical_sessions[0].last_heartbeat = Utc::now() - chrono::Duration::seconds(181);
+    registry.logical_sessions[0].last_heartbeat =
+        UtcDateTime::now() - lean_ctx_time::Duration::seconds(181);
 
     registry.cleanup_stale_logical_sessions(180);
 

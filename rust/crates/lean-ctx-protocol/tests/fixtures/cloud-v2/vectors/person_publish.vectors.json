@@ -1,0 +1,14 @@
+{
+  "description": "presence_signature on a person's place.publish (bus.schema.json $defs/presence_signature). Test key only: ed25519 seed = sha256(\"leanctx-cloud test presence key: person_publish\")",
+  "cases": [
+    {
+      "fixture": "bus/frame.place_publish.person.json",
+      "alg": "ed25519",
+      "seed": "97c8a3df1d24093d03e9d9c18c0af753477d4c33a3f1d03efdc50a78a75eda27",
+      "public_key": "GoSZCP3AB0ZFlJi6xjNwa21B1pMGOtJxLFWUH2y04H4",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "signing_input": "leanctx.cloud.person_publish.v1\n{\"body\":{\"deadline\":1792803600000,\"text\":\"Can the export wait until the ledger close is done?\"},\"client_msg_id\":\"01M5NKA2Z8B000000000000002\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"schema\":\"leanctx.cloud.bus/v2\",\"sender\":{\"kind\":\"person\"},\"t\":\"place.publish\",\"to\":\"#acme/payments\",\"type\":\"question\"}",
+      "signature": "Ne6ZEAgtjyY2-K0geGNagTckI3Fy6AmltkM5o6dxypiqqAcq7o0kU0OhKvI2FRtjkLfDQ4Aznpmw19ZWuQ6HBw"
+    }
+  ]
+}

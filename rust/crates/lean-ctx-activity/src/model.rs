@@ -82,7 +82,7 @@ pub enum Source {
     Hook,
     /// A LeanCTX MCP tool call.
     Mcp,
-    /// An ACP client callback (Hive Desktop driving the agent).
+    /// An ACP client callback (Cloud Desktop driving the agent).
     Acp,
 }
 

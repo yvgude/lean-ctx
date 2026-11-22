@@ -624,7 +624,7 @@ jobs:
     # test/clippy/doc jobs never see it; this job is its dedicated gate
     # (pedantic clippy, doctests, the engine-integration tests, example build).
     #
-    # Deliberately NOT called an SDK: the LeanCTX SDK is thinkery-leanctx-sdk
+    # Deliberately NOT called an SDK: the LeanCTX | SDK is thinkery-leanctx-sdk
     # (sdk/ in the product checkout). See docs/reference/sdk-surface.md.
     name: Embed facade (lean-ctx-embed)
     runs-on: ubuntu-latest

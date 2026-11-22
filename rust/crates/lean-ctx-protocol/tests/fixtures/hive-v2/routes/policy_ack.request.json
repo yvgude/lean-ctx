@@ -1,7 +1,0 @@
-{
-  "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
-  "unenforced": [
-    "context.max_context_tokens"
-  ],
-  "version": 3
-}

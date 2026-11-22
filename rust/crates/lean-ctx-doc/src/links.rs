@@ -14,7 +14,7 @@ pub enum Target<'a> {
         slug: &'a str,
         fragment: Option<&'a str>,
     },
-    /// A Hive node by id (`hive:n_…`), with an optional `#heading-slug`.
+    /// A Cloud node by id (`cloud:n_…`), with an optional `#heading-slug`.
     Node {
         id: &'a str,
         fragment: Option<&'a str>,
@@ -44,7 +44,7 @@ pub fn classify(target: &str) -> Target<'_> {
             fragment,
         };
     }
-    if let Some(node) = target.strip_prefix("hive:") {
+    if let Some(node) = target.strip_prefix("cloud:") {
         let (id, fragment) = match node.split_once('#') {
             Some((i, f)) => (i, Some(f)),
             None => (node, None),
@@ -96,7 +96,7 @@ pub fn rewrite(body: &str, mut f: impl FnMut(&str) -> Option<String>) -> String 
 }
 
 /// C0 2.2 write rule: `/slug[#frag]` naming a live page becomes
-/// `hive:<id>[#frag]`. Returns the body and the targets no page has, which
+/// `cloud:<id>[#frag]`. Returns the body and the targets no page has, which
 /// stay as written. Other targets are untouched.
 pub fn to_storage(body: &str, id_of: impl Fn(&str) -> Option<String>) -> (String, Vec<String>) {
     let mut dangling = Vec::new();
@@ -108,12 +108,12 @@ pub fn to_storage(body: &str, id_of: impl Fn(&str) -> Option<String>) -> (String
         if id.is_none() {
             dangling.push(t.to_owned());
         }
-        id.map(|id| Edit::Target(with_fragment(&format!("hive:{id}"), fragment)))
+        id.map(|id| Edit::Target(with_fragment(&format!("cloud:{id}"), fragment)))
     });
     (out, dangling)
 }
 
-/// C0 2.2 export rule: `hive:<id>[#frag]` becomes the target page's
+/// C0 2.2 export rule: `cloud:<id>[#frag]` becomes the target page's
 /// `<slug>.md` relative to `from_slug`'s; a link to no live page keeps its
 /// text only.
 pub fn to_export(body: &str, from_slug: &str, slug_of: impl Fn(&str) -> Option<String>) -> String {
@@ -126,7 +126,7 @@ pub fn to_export(body: &str, from_slug: &str, slug_of: impl Fn(&str) -> Option<S
     })
 }
 
-/// `hive:<id>[#frag]` back to `/slug[#frag]`, for agents reading a page.
+/// `cloud:<id>[#frag]` back to `/slug[#frag]`, for agents reading a page.
 pub fn to_slugs(body: &str, slug_of: impl Fn(&str) -> Option<String>) -> String {
     scan(body, |t| match classify(t) {
         Target::Node { id, fragment } => {
@@ -343,13 +343,13 @@ mod tests {
             }
         );
         assert_eq!(
-            classify("hive:n_01abc#retry-budget"),
+            classify("cloud:n_01abc#retry-budget"),
             Target::Node {
                 id: "n_01abc",
                 fragment: Some("retry-budget")
             }
         );
-        assert_eq!(classify("hive:x"), Target::Other("hive:x"));
+        assert_eq!(classify("cloud:x"), Target::Other("cloud:x"));
         assert_eq!(classify("https://x.y/z"), Target::Other("https://x.y/z"));
         assert_eq!(classify("//cdn/x"), Target::Other("//cdn/x"));
     }
@@ -364,14 +364,14 @@ mod tests {
     fn rewrites_selected_targets_losslessly() {
         let body = "[A](/a) [U](https://u) [T](emspace:tasks/9)\n";
         let out = rewrite(body, |t| match classify(t) {
-            Target::Object { id, .. } => Some(format!("hive:task/{id}")),
+            Target::Object { id, .. } => Some(format!("cloud:task/{id}")),
             _ => None,
         });
-        assert_eq!(out, "[A](/a) [U](https://u) [T](hive:task/9)\n");
+        assert_eq!(out, "[A](/a) [U](https://u) [T](cloud:task/9)\n");
         assert_eq!(rewrite(body, |_| None), body);
     }
 
-    // C0 2.2 vectors (hive-v2 vectors/doc_links + heading_slug).
+    // C0 2.2 vectors (cloud-v2 vectors/doc_links + heading_slug).
     fn pages() -> Vec<(&'static str, &'static str)> {
         vec![
             ("n_aaaaaaaaaaaaaaaaaaaaaadpga", "knowledge/wiki"),
@@ -394,12 +394,12 @@ mod tests {
         let cases = [
             (
                 "[types](/knowledge/knowledge-items#types-and-bodies)",
-                "[types](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies)",
+                "[types](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies)",
                 vec![],
             ),
             (
                 "[log](/architecture/place-event-store)",
-                "[log](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgc)",
+                "[log](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgc)",
                 vec![],
             ),
             (
@@ -432,28 +432,28 @@ mod tests {
         };
         let cases = [
             (
-                "[types](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies)",
+                "[types](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies)",
                 "[types](knowledge-items.md#types-and-bodies)",
             ),
             (
-                "[log](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgc)",
+                "[log](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgc)",
                 "[log](../architecture/place-event-store.md)",
             ),
-            ("[gone](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgd)", "gone"),
+            ("[gone](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgd)", "gone"),
         ];
         for (input, out) in cases {
             assert_eq!(to_export(input, "knowledge/wiki", slug_of), out, "{input}");
         }
         assert_eq!(
             to_slugs(
-                "[t](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#x) ![i](hive:n_zz)",
+                "[t](cloud:n_aaaaaaaaaaaaaaaaaaaaaadpgb#x) ![i](cloud:n_zz)",
                 slug_of
             ),
-            "[t](/knowledge/knowledge-items#x) ![i](hive:n_zz)"
+            "[t](/knowledge/knowledge-items#x) ![i](cloud:n_zz)"
         );
         assert_eq!(
-            to_export("![i](hive:n_zz) and [g](hive:n_zz).", "a", slug_of),
-            "![i](hive:n_zz) and g."
+            to_export("![i](cloud:n_zz) and [g](cloud:n_zz).", "a", slug_of),
+            "![i](cloud:n_zz) and g."
         );
     }
 

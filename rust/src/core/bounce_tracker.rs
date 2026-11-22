@@ -178,7 +178,7 @@ impl BounceTracker {
         if self.persist && compressed {
             // K10: a compressed view is a truncated output of its read mode.
             {
-                use crate::core::hive_signals as signals;
+                use crate::core::cloud_signals as signals;
                 signals::truncated(&signals::read_mode_filter(mode));
             }
             // Keep the long-term majority rule honest: compressed reads that
@@ -345,7 +345,7 @@ impl BounceTracker {
             crate::core::savings_ledger::record_bounce_event(wasted);
             // K10: the compressed view was fetched back in full.
             {
-                use crate::core::hive_signals as signals;
+                use crate::core::cloud_signals as signals;
                 signals::refetched(&signals::read_mode_filter(&mode));
             }
             // Long-term per-path memory (#496): remember which exact

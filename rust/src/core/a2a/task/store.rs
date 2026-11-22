@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -30,7 +30,7 @@ pub(super) struct TaskIdempotencyRecordV1 {
     key_id: String,
     descriptor_digest: String,
     task_id: String,
-    pub(super) created_at: DateTime<Utc>,
+    pub(super) created_at: UtcDateTime,
 }
 
 impl TaskIdempotencyRecordV1 {
@@ -53,7 +53,7 @@ pub struct RemoteTaskMaterialization {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TaskStore {
     pub tasks: Vec<Task>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<UtcDateTime>,
     #[serde(default)]
     pub(super) idempotency: Vec<TaskIdempotencyRecordV1>,
 }
@@ -160,7 +160,7 @@ impl TaskStore {
                 "task idempotency entry limit exceeded",
             )));
         }
-        store.updated_at = Some(Utc::now());
+        store.updated_at = Some(UtcDateTime::now());
         store.save_to_path(path).map_err(E::from)?;
         Ok(result)
     }
@@ -312,7 +312,7 @@ impl TaskStore {
         let task = Task::new(from, to, description);
         let id = task.id.clone();
         self.tasks.push(task);
-        self.updated_at = Some(Utc::now());
+        self.updated_at = Some(UtcDateTime::now());
         id
     }
 
@@ -328,7 +328,7 @@ impl TaskStore {
         let task = Task::new(from, to, &admit_for_store(description)?);
         let index = self.tasks.len();
         self.tasks.push(task);
-        self.updated_at = Some(Utc::now());
+        self.updated_at = Some(UtcDateTime::now());
         Ok(&mut self.tasks[index])
     }
 
@@ -355,7 +355,7 @@ impl TaskStore {
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
         let digest = descriptor.content_digest();
         Self::mutate_locked(path, |store| {
-            let now = Utc::now();
+            let now = UtcDateTime::now();
             store.prune_idempotency(now);
             if let Some(existing) = store
                 .idempotency
@@ -415,8 +415,8 @@ impl TaskStore {
     /// rejected once expired, so a record older than that plus the accepted
     /// clock skew can never turn a replay into a duplicate. Records with a
     /// creation time in the future (clock moved backwards) are kept.
-    fn prune_idempotency(&mut self, now: DateTime<Utc>) {
-        let cutoff = now - chrono::Duration::seconds(IDEMPOTENCY_RETENTION_SECONDS);
+    fn prune_idempotency(&mut self, now: UtcDateTime) {
+        let cutoff = now - lean_ctx_time::Duration::seconds(IDEMPOTENCY_RETENTION_SECONDS);
         self.idempotency.retain(|record| record.created_at > cutoff);
     }
 
@@ -443,8 +443,8 @@ impl TaskStore {
     }
 
     pub fn cleanup_old(&mut self, max_age_hours: u64) {
-        let now = Utc::now();
-        let cutoff = now - chrono::Duration::hours(max_age_hours as i64);
+        let now = UtcDateTime::now();
+        let cutoff = now - lean_ctx_time::Duration::hours(max_age_hours as i64);
         self.tasks
             .retain(|t| !t.state.is_terminal() || t.updated_at > cutoff);
         self.prune_idempotency(now);

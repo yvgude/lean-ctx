@@ -130,6 +130,15 @@ pub const TYPES_DTS: &str = include_str!("../templates/claude_mod/cockpit.d.ts")
 /// Source manifest; `hooks::agents::claude_mod::plugin_manifest` stamps the engine version into it.
 pub const PLUGIN_JSON: &str = include_str!("../templates/claude_mod/plugin.json");
 
+/// The `lean-ctx-jobs` companion plugin: the mod's `tool.call` layer
+/// (background-job wakes, sleep answers, native Bash shaping). Claude Code
+/// refuses Code Mode while any enabled plugin hooks `tool.call`, so it ships
+/// separately and `lean-ctx claude-mod code-mode` turns it off per session.
+pub const JOBS_REGISTER_TS: &str = include_str!("../templates/claude_mod_jobs/register.ts");
+pub const JOBS_HOOKS_JSON: &str = include_str!("../templates/claude_mod_jobs/hooks.json");
+/// Source manifest; `claude_mod::jobs_plugin_manifest` stamps the engine version into it.
+pub const JOBS_PLUGIN_JSON: &str = include_str!("../templates/claude_mod_jobs/plugin.json");
+
 #[cfg(test)]
 mod tests {
     use super::settings_have_govern_hook;

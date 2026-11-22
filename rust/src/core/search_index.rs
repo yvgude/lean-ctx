@@ -530,10 +530,10 @@ where
         return None;
     }
 
-    // ent2-3: files the Hive policy keeps out of context never enter the
+    // ent2-3: files the Cloud policy keeps out of context never enter the
     // index; a policy that cannot be trusted builds none (the search walk
     // then refuses, fail closed).
-    let hive = crate::core::policy::hive_io::rules_for(root_path).ok()?;
+    let cloud = crate::core::policy::cloud_io::rules_for(root_path).ok()?;
     let walker = WalkBuilder::new(root_path)
         // #1792: same corpus rule as the BM25 walk above — see
         // `walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK`.
@@ -565,9 +565,9 @@ where
         if !allow_secret_paths && crate::core::io_boundary::is_secret_like(path).is_some() {
             continue;
         }
-        if hive
+        if cloud
             .as_ref()
-            .is_some_and(|hive| hive.refusal(path).is_some())
+            .is_some_and(|cloud| cloud.refusal(path).is_some())
         {
             continue;
         }

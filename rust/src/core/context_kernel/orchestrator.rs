@@ -2,7 +2,7 @@
 
 //! Candidate orchestration, scoring, and feedback artifacts for the context kernel.
 
-use chrono::{DateTime, FixedOffset};
+use lean_ctx_time::OffsetDateTime;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use thiserror::Error;
 
@@ -128,7 +128,7 @@ impl ContextKernel {
         &self,
         ctx: &RetrievalContext,
         policy: &ContextPolicy,
-        evaluation_time: Option<&DateTime<FixedOffset>>,
+        evaluation_time: Option<&OffsetDateTime>,
     ) -> Result<(ContextPlanV1, Vec<BlockedEntry>), KernelPlanError> {
         let mut offered = self.candidates(ctx);
         offered.sort_by(|a, b| {
@@ -517,7 +517,7 @@ fn build_plan(
     mut excluded: Vec<ExcludedEntry>,
     mut provider_stats: HashMap<String, ProviderStat>,
     origins: BTreeMap<String, Vec<ContextOriginV1>>,
-    evaluation_time: Option<&DateTime<FixedOffset>>,
+    evaluation_time: Option<&OffsetDateTime>,
 ) -> Result<ContextPlanV1, KernelPlanError> {
     let objects: HashMap<_, _> = scored
         .iter()
@@ -653,7 +653,7 @@ fn plan_material(
     scored: &[(ContextObjectV1, f64)],
     result: &CompileResult,
     plan: &ContextPlanV1,
-    evaluation_time: Option<&DateTime<FixedOffset>>,
+    evaluation_time: Option<&OffsetDateTime>,
 ) -> String {
     let mut entries: Vec<_> = scored
         .iter()
@@ -694,7 +694,7 @@ fn plan_material(
     if policy.retention_days.is_some() {
         material.insert(
             "evaluation_time".to_owned(),
-            serde_json::json!(evaluation_time.map(DateTime::to_rfc3339)),
+            serde_json::json!(evaluation_time.map(|t| t.to_rfc3339())),
         );
     }
     serde_json::Value::Object(material).to_string()

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Client Calls v1 (`"contract": "client-calls/1"`, experimental;
 //! `docs/contracts/client-calls-v1.md`): the calls an ACP client such as
-//! LeanCTX | Hive Desktop makes on behalf of an agent — read a text file,
+//! LeanCTX | Cloud Desktop makes on behalf of an agent — read a text file,
 //! write a text file, run a command — routed through this Instance, so the
 //! PathJail, the secret-path policy, the shell allowlist, the context policy
 //! and receipts apply exactly as for `ctx_read`, `ctx_edit` and `ctx_shell`.

@@ -1,0 +1,23 @@
+{
+  "name": "lean-ctx-jobs",
+  "version": "0.1.0",
+  "description": "LeanCTX tool-call layer: wake Claude when lean-ctx background jobs finish, answer sleep-polls while a job is watched, and shape large native Bash output. Disabled in Code Mode sessions (lean-ctx claude-mod code-mode).",
+  "author": {
+    "name": "Thinkery / Yves Gugger"
+  },
+  "license": "Apache-2.0",
+  "userConfig": {
+    "shape_native_output": {
+      "type": "boolean",
+      "title": "Shape native Bash output",
+      "description": "Compress large native Bash stdout through lean-ctx (recoverable); off keeps it byte-for-byte.",
+      "default": true
+    },
+    "wake_on_job_finish": {
+      "type": "boolean",
+      "title": "Wake Claude when a lean-ctx background job finishes",
+      "description": "Watch ctx_shell background jobs and start a turn when they finish (shown as a prompt from the lean-ctx-jobs plugin). Jobs finishing close together share one wake. Off: Claude checks a job's status itself.",
+      "default": true
+    }
+  }
+}

@@ -167,7 +167,7 @@ what the project knows. OKF is a **local feature, free on every plan**. See the
 
 Three ways bring knowledge back: copying a backup of the data directory,
 `lean-ctx knowledge restore` (from the reclaim archive), and
-`lean-ctx cloud pull` (LeanCTX Hive, from your account). `lean-ctx snapshot restore`
+`lean-ctx cloud pull` (LeanCTX Cloud, from your account). `lean-ctx snapshot restore`
 only resumes a saved session slice and, with `--git`, checks out its commit
 (never over a dirty tree); it does not touch knowledge or account access.
 
@@ -240,9 +240,9 @@ code**, which it never sees.
   devices race to create it, the first one the service stores wins; the other
   is told to unlock.
 
-### Cloud Cockpit metrics (LeanCTX Hive)
+### Cloud Cockpit metrics (LeanCTX Cloud)
 
-On a signed-in LeanCTX Hive account each device also uploads the numbers its Cockpit
+On a signed-in LeanCTX Cloud account each device also uploads the numbers its Cockpit
 shows, per project and UTC day, so the Cloud Dashboard adds up all your
 devices (contract `cloud-cockpit-metrics-v1`). Free accounts upload nothing.
 

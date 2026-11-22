@@ -42,7 +42,7 @@ impl RemoteReplayGuard {
     pub(super) async fn reserve(
         &self,
         authenticated_id: &str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: lean_ctx_time::UtcDateTime,
     ) -> Result<Reservation, String> {
         self.reserve_with_alias(authenticated_id, None, now).await
     }
@@ -51,7 +51,7 @@ impl RemoteReplayGuard {
         &self,
         authenticated_id: &str,
         legacy_alias: Option<&str>,
-        now: chrono::DateTime<chrono::Utc>,
+        now: lean_ctx_time::UtcDateTime,
     ) -> Result<Reservation, String> {
         self.reserve_inner(authenticated_id, legacy_alias, None, now)
             .await
@@ -62,7 +62,7 @@ impl RemoteReplayGuard {
         authenticated_id: &str,
         legacy_alias: Option<&str>,
         fingerprint: Option<&str>,
-        now: chrono::DateTime<chrono::Utc>,
+        now: lean_ctx_time::UtcDateTime,
     ) -> Result<Reservation, String> {
         let path = self.ledger_path.clone();
         let authenticated_id = authenticated_id.to_string();
@@ -90,7 +90,7 @@ impl RemoteReplayGuard {
         scoped_origin_id: &str,
         record: &lean_ctx::core::a2a::relay::RelayRecordV1,
         fingerprint: &str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: lean_ctx_time::UtcDateTime,
     ) -> Result<super::relay_replay::Reservation, super::relay_replay::StoreError> {
         self.relay
             .reserve(scoped_origin_id, record, fingerprint, now)
@@ -530,7 +530,7 @@ mod tests {
         use super::super::relay_replay::Reservation as RelayReservation;
         let root = tempfile::tempdir().unwrap();
         let guard = RemoteReplayGuard::new(root.path().to_str().unwrap(), 86_730);
-        let now = chrono::Utc::now();
+        let now = lean_ctx_time::UtcDateTime::now();
         let record = super::super::relay_replay_async::test_record(now);
         let id = "a".repeat(64);
         let binding_a = "b".repeat(64);

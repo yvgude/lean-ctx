@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 
 use lean_ctx::core::editor_registry::{EditorTarget, WriteAction, WriteOptions};
 use lean_ctx::core::portable_binary::resolve_agent_binary;
@@ -13,7 +13,7 @@ use super::options::SetupOptions;
 
 pub fn run_setup_with_options(opts: &SetupOptions) -> Result<SetupReport, String> {
     let _quiet_guard = opts.json.then(lean_ctx::core::runtime_flags::scoped_quiet);
-    let started_at = Utc::now();
+    let started_at = UtcDateTime::now();
     let home = lean_ctx::core::home::resolve_home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
     let binary = resolve_agent_binary();
@@ -248,7 +248,7 @@ fn build_daemon_step() -> SetupStepReport {
     use lean_ctx::daemon_autostart::{self as autostart, Supervision};
     let mut daemon_step = setup_step("daemon");
     // Supervised where the platform has a supervisor: the daemon starts at
-    // login and restarts after a crash, so Hive's background sync never
+    // login and restarts after a crash, so Cloud's background sync never
     // depends on a daemon started by hand. A supervised daemon is
     // restarted to load this build.
     let supervision = if cfg!(test) {
@@ -700,6 +700,8 @@ fn build_claude_mod_step(opts: &SetupOptions, targets: &[EditorTarget]) -> Optio
     // (`front_loaded_tools`, 9 by default), which would put their schemas back
     // into every request. The no-MCP governor has no lean-ctx MCP tools, so
     // there the mod adds nothing the model sees (its hooks key on the server).
+    // Setup and the rewire never disable an installed mod: only an explicit
+    // `init --mode governor-mcp` does, once (a re-enabled plugin stays on).
     if lean_ctx::core::home::resolve_home_dir()
         .and_then(|h| lean_ctx_hooks::hooks::agents::claude_governor::installed_arm(&h))
         == Some(lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::McpDeferred)
@@ -909,10 +911,10 @@ fn maybe_enable_ide_config_access(opts: &SetupOptions) {
 }
 
 fn build_setup_report(
-    started_at: chrono::DateTime<Utc>,
+    started_at: lean_ctx_time::UtcDateTime,
     steps: Vec<SetupStepReport>,
 ) -> SetupReport {
-    let finished_at = Utc::now();
+    let finished_at = UtcDateTime::now();
     let success = steps.iter().all(|s| s.ok);
     SetupReport {
         schema_version: 1,

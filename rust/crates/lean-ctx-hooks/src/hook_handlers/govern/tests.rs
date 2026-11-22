@@ -11,6 +11,7 @@ const ALL_ON: Policy = Policy {
     r3: RuleMode::Shadow,
     // R4 needs an archive and a project; its tests turn it on explicitly.
     r4: RuleMode::Off,
+    r5: RuleMode::Off,
 };
 
 fn unique_session(tag: &str) -> String {
@@ -59,6 +60,19 @@ fn listing() -> String {
     (0..200).fold(String::new(), |mut s, i| {
         s.push_str(&format!("src/module_{i}/mod.rs\n"));
         s
+    })
+}
+
+/// A 540-line Rust file whose every line names `tag`, so two fixtures never
+/// share content (views match by content).
+fn code_file(tag: &str) -> String {
+    (0..60).fold(String::new(), |mut acc, i| {
+        acc.push_str(&format!(
+            "pub fn {tag}_{i}(input: &str) -> usize {{\n    let trimmed = input.trim(); // {tag}\n    \
+             let words = trimmed.split_whitespace().count();\n    let bytes = trimmed.len() + {i};\n    \
+             if words > bytes {{ // {tag}\n        return words;\n    }}\n    bytes * 2 + words\n}}\n"
+        ));
+        acc
     })
 }
 
@@ -176,6 +190,28 @@ fn r1_bash_passes_changed_output_duplicates_and_shadow() {
 }
 
 #[test]
+fn hook_calls_count_host_tools_but_not_leanctx_mcp_tools() {
+    let s = unique_session("hookcount");
+    let host = decide(&bash(&s, "t1", "git status", "clean\n"), &ALL_ON);
+    assert_eq!(host.hook_session.as_deref(), Some(s.as_str()));
+    let ctx_read = serde_json::json!({
+        "session_id": s,
+        "tool_use_id": "t2",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "mcp__lean-ctx__ctx_read",
+        "cwd": "/repo",
+        "tool_input": { "path": "src/lib.rs" },
+        "tool_response": "fn main() {}",
+    })
+    .to_string();
+    assert_eq!(
+        decide(&ctx_read, &ALL_ON).hook_session,
+        None,
+        "the MCP server already counts its own ctx_read; the hook must not count it again"
+    );
+}
+
+#[test]
 fn r1_bash_stub_is_deterministic() {
     let render = |tag: &str| {
         let s = unique_session(tag);
@@ -286,6 +322,7 @@ const R4_ONLY: Policy = Policy {
     r2: RuleMode::Off,
     r3: RuleMode::Off,
     r4: RuleMode::On,
+    r5: RuleMode::Off,
 };
 /// A compressible command (asserted in the R2 test). File viewers such as
 /// `cat` are verbatim-class: no governor rule touches their output.
@@ -582,6 +619,169 @@ fn r1_read_runs_inside_the_governor_with_the_min_saving_guard() {
     lean_ctx::test_env::remove_var("LEAN_CTX_READ_DEDUP");
 }
 
+/// R5 (owner decision 2026-11-18): the first whole-file Read of a large code
+/// file comes as its outline; ranged reads, small files and the second
+/// whole-file Read get the native content, and that second Read is not
+/// mistaken for an R1 re-read of content the model never saw.
+#[test]
+fn r5_outlines_the_first_whole_read_of_a_large_code_file_once() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    lean_ctx::test_env::set_var("LEAN_CTX_READ_DEDUP", "on");
+    let dir = tempfile::tempdir().unwrap();
+    // 60 functions of 9 lines: bodies dominate, as in real code.
+    let big = (0..60).fold(String::new(), |mut s, i| {
+        s.push_str(&format!(
+            "pub fn handler_{i}(input: &str) -> usize {{\n    let trimmed = input.trim_start_matches('#');\n    \
+             let words = trimmed.split_whitespace().count();\n    let bytes = trimmed.len() + {i};\n    \
+             if words > bytes {{\n        return words;\n    }}\n    bytes * 2 + words\n}}\n"
+        ));
+        s
+    });
+    let big_rs = dir.path().join("big.rs");
+    std::fs::write(&big_rs, &big).unwrap();
+    let small = big.lines().take(40).collect::<Vec<_>>().join("\n");
+    let small_rs = dir.path().join("small.rs");
+    std::fs::write(&small_rs, &small).unwrap();
+    let s = unique_session("r5");
+    let read = |tool_use: &str, file: &std::path::Path, body: &str, extra: serde_json::Value| {
+        let mut input = serde_json::json!({ "file_path": file.to_string_lossy() });
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::json!({
+            "session_id": s, "tool_use_id": tool_use, "hook_event_name": "PostToolUse",
+            "tool_name": "Read", "tool_input": input,
+            "tool_response": { "type": "text", "file": { "filePath": file.to_string_lossy(),
+                "content": body, "numLines": body.lines().count() } },
+        })
+        .to_string()
+    };
+    let policy = Policy {
+        r5: RuleMode::On,
+        ..ALL_ON
+    };
+    let content = |d: &Decision| -> String {
+        let v: serde_json::Value = serde_json::from_str(&d.output).expect("replaced");
+        v["hookSpecificOutput"]["updatedToolOutput"]["file"]["content"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    let first = decide(&read("t1", &big_rs, &big, serde_json::json!({})), &policy);
+    assert_eq!(first.receipt.as_ref().map(|r| r.rule_id), Some("R5"));
+    let outline = content(&first);
+    assert!(outline.contains("[outline 540L"), "{outline}");
+    assert!(
+        outline.contains("fn pub handler_7(input:&str) → usize @L64-72"),
+        "{outline}"
+    );
+    assert!(outline.len() * 2 < big.len());
+    // A duplicate fire of the same event gets the same answer.
+    assert_eq!(
+        content(&decide(
+            &read("t1", &big_rs, &big, serde_json::json!({})),
+            &policy
+        )),
+        outline
+    );
+
+    // Ranged reads and small files pass through.
+    let ranged = decide(
+        &read(
+            "t2",
+            &big_rs,
+            &big,
+            serde_json::json!({ "offset": 64, "limit": 9 }),
+        ),
+        &policy,
+    );
+    assert!(ranged.output.is_empty() && ranged.receipt.is_none());
+    let small_read = decide(
+        &read("t3", &small_rs, &small, serde_json::json!({})),
+        &policy,
+    );
+    assert!(small_read.output.is_empty());
+
+    // The second whole-file Read delivers the full file, not an outline and
+    // not an `[unchanged]` stub; only a third one is a real R1 re-read.
+    let second = decide(&read("t4", &big_rs, &big, serde_json::json!({})), &policy);
+    assert!(second.output.is_empty(), "full content the second time");
+    let third = decide(&read("t5", &big_rs, &big, serde_json::json!({})), &policy);
+    assert_eq!(third.receipt.as_ref().map(|r| r.rule_id), Some("R1.read"));
+
+    // Shadow: native content and an R5 receipt.
+    let s2 = unique_session("r5-shadow");
+    let shadow_policy = Policy {
+        r5: RuleMode::Shadow,
+        ..ALL_ON
+    };
+    let shadow_read = serde_json::json!({
+        "session_id": s2, "tool_use_id": "u1", "hook_event_name": "PostToolUse",
+        "tool_name": "Read", "tool_input": { "file_path": big_rs.to_string_lossy() },
+        "tool_response": { "type": "text", "file": { "content": big } },
+    })
+    .to_string();
+    let d = decide(&shadow_read, &shadow_policy);
+    assert!(d.output.is_empty());
+    assert_eq!(d.receipt.map(|r| r.rule_id), Some("R5"));
+    // The live rule would deliver the second whole Read in full: shadow must
+    // not count it as an R5 saving (R1, on here, may stub it).
+    let again = decide(&shadow_read.replace("\"u1\"", "\"u2\""), &shadow_policy);
+    assert_ne!(again.receipt.map(|r| r.rule_id), Some("R5"));
+
+    // Off, a subagent's own first Read, an upper-case extension, and a file
+    // without extractable symbols.
+    let s4 = unique_session("r5-more");
+    let read_as = |tool_use: &str, agent: &str, file: &std::path::Path, body: &str| {
+        serde_json::json!({
+            "session_id": s4, "tool_use_id": tool_use, "agent_id": agent,
+            "hook_event_name": "PostToolUse", "tool_name": "Read",
+            "tool_input": { "file_path": file.to_string_lossy() },
+            "tool_response": { "type": "text", "file": { "content": body } },
+        })
+        .to_string()
+    };
+    let off = Policy {
+        r5: RuleMode::Off,
+        ..ALL_ON
+    };
+    let d = decide(&read_as("o1", "", &big_rs, &big), &off);
+    assert!(d.output.is_empty() && d.receipt.is_none());
+    let main_ctx = decide(&read_as("o2", "", &big_rs, &big), &policy);
+    assert_eq!(main_ctx.receipt.map(|r| r.rule_id), Some("R5"));
+    let sub_ctx = decide(&read_as("o3", "agent-7", &big_rs, &big), &policy);
+    assert_eq!(sub_ctx.receipt.map(|r| r.rule_id), Some("R5"));
+    // A name of its own: on a case-insensitive disk "BIG.RS" is big.rs.
+    let upper = dir.path().join("UPPER.RS");
+    std::fs::write(&upper, &big).unwrap();
+    let d = decide(&read_as("o4", "", &upper, &big), &policy);
+    assert_eq!(d.receipt.map(|r| r.rule_id), Some("R5"));
+    let plain = "just a sentence without any code in it\n".repeat(400);
+    let no_symbols = dir.path().join("notes.rs");
+    std::fs::write(&no_symbols, &plain).unwrap();
+    let d = decide(&read_as("o5", "", &no_symbols, &plain), &policy);
+    assert!(d.output.is_empty());
+
+    // A Read cut at the host's line cap: the outline names the uncovered
+    // lines instead of claiming the whole file.
+    let s3 = unique_session("r5-capped");
+    let capped_read = serde_json::json!({
+        "session_id": s3, "tool_use_id": "c1", "hook_event_name": "PostToolUse",
+        "tool_name": "Read", "tool_input": { "file_path": big_rs.to_string_lossy() },
+        "tool_response": { "type": "text", "file": { "content": big, "totalLines": 5000 } },
+    })
+    .to_string();
+    let capped = content(&decide(&capped_read, &policy));
+    assert!(capped.contains("[outline 1-540 of 5000L"), "{capped}");
+    assert!(
+        capped.contains("Lines 541-5000 are not covered"),
+        "{capped}"
+    );
+    lean_ctx::test_env::remove_var("LEAN_CTX_READ_DEDUP");
+}
+
 /// Bench finding (dry setup of c8c1b83e6b): with defaults, R1.read was inert
 /// because `read_dedup = auto` sniffs host env markers that hook processes do
 /// not carry. A governor install alone must make it apply.
@@ -746,6 +946,7 @@ fn policy_env_caps_every_rule() {
         "LEAN_CTX_GOVERNOR_R2",
         "LEAN_CTX_GOVERNOR_R3",
         "LEAN_CTX_GOVERNOR_R4",
+        "LEAN_CTX_GOVERNOR_R5",
     ] {
         lean_ctx::test_env::remove_var(var);
     }
@@ -760,8 +961,9 @@ fn policy_env_caps_every_rule() {
             r2: RuleMode::Shadow,
             r3: RuleMode::Shadow,
             r4: RuleMode::Shadow,
+            r5: RuleMode::On,
         },
-        "built-in defaults without config: R1.read live, everything new log-only"
+        "built-in defaults without config: R1.read and R5 live, the rest log-only"
     );
     // `[governor]` keys apply without env; R3 stays capped at shadow.
     let mut installed = GovernorConfig {
@@ -777,6 +979,7 @@ fn policy_env_caps_every_rule() {
             r2: RuleMode::On,
             r3: RuleMode::Shadow,
             r4: RuleMode::On,
+            r5: RuleMode::On,
         },
         "config rule modes honoured"
     );
@@ -994,4 +1197,446 @@ fn governed_compaction_events_write_the_compaction_marker() {
     let _ = std::fs::remove_file(&marker);
     drop(decide(&edit(&s), &ALL_ON));
     assert!(!marker.exists(), "Edit: no marker without a compaction");
+}
+
+/// Code Mode: a REPL script always gets native tool results; the governor
+/// view replaces them only where the script hands them to the model verbatim.
+#[test]
+fn code_mode_never_rewrites_inner_calls_and_shapes_the_repl_result() {
+    let s = unique_session("repl");
+    let policy = Policy {
+        r5: RuleMode::On,
+        ..ALL_ON
+    };
+    let repl = |tool_use: &str, result: &str, stdout: &str| {
+        event(
+            &s,
+            "PostToolUse",
+            &serde_json::json!({ "tool_use_id": tool_use, "tool_name": "REPL",
+                "tool_input": { "code": "…" },
+                "tool_response": { "code": "…", "result": result, "stdout": stdout,
+                    "stderr": "", "toolsUsed": ["Bash"] } }),
+        )
+    };
+    let shaped = |d: &Decision| -> serde_json::Value {
+        assert_eq!(d.receipt.as_ref().map(|r| r.rule_id), Some("REPL"));
+        let v: serde_json::Value = serde_json::from_str(&d.output).unwrap();
+        v["hookSpecificOutput"]["updatedToolOutput"].clone()
+    };
+
+    // R1: an inner viewer leaves no record, so the model's own `ls` with the
+    // same output is not stubbed as already seen.
+    let ls = listing();
+    assert!(
+        decide(&bash(&s, "repl_a", "ls src", &ls), &policy)
+            .output
+            .is_empty()
+    );
+    assert!(
+        decide(&bash(&s, "m1", "ls src", &ls), &policy)
+            .output
+            .is_empty()
+    );
+
+    // R2: the script gets the native output …
+    let original = progress_output();
+    assert!(
+        decide(&bash(&s, "repl_b", BUILD_CMD, &original), &policy)
+            .output
+            .is_empty()
+    );
+    // … a cut of it reaches the model unchanged, and the finished eval
+    // consumes the view …
+    assert!(
+        decide(&repl("r1", &format!("'{}'", &original[..40]), ""), &policy)
+            .output
+            .is_empty()
+    );
+    assert!(
+        decide(&repl("r1b", "undefined", &original), &policy)
+            .output
+            .is_empty(),
+        "a view never outlives its eval"
+    );
+    // … and in the eval of a new inner call, verbatim it arrives collapsed: in console output and inside the
+    // `'…\n' +` literal chain util.inspect prints for a returned string.
+    let inspect = original
+        .split_inclusive('\n')
+        .map(|l| format!("'{}'", l.replace('\n', "\\n")))
+        .collect::<Vec<_>>()
+        .join(" +\n  ");
+    assert!(
+        decide(&bash(&s, "repl_b2", BUILD_CMD, &original), &policy)
+            .output
+            .is_empty()
+    );
+    let out = shaped(&decide(
+        &repl("r2", &format!("{{ log: {inspect} }}"), &original),
+        &policy,
+    ));
+    let collapsed = out["stdout"].as_str().unwrap();
+    assert_eq!(lossless_collapse::expand(collapsed), original);
+    let result = out["result"].as_str().unwrap();
+    let chain = super::repl::parse_chain(result, result.find('\'').unwrap())
+        .expect("re-encoded as a literal chain");
+    assert_eq!(lossless_collapse::expand(&chain.decoded), original);
+    assert!(
+        result.starts_with("{ log: '") && result.ends_with(" }"),
+        "{result}"
+    );
+
+    // R5: an inner whole-file Read keeps its content for the script; the
+    // numbered text the script got becomes the outline for the model.
+    let dir = tempfile::tempdir().unwrap();
+    let inner_read = |tool_use: &str, path: &std::path::Path, content: &str| {
+        serde_json::json!({
+            "session_id": s, "tool_use_id": tool_use, "hook_event_name": "PostToolUse",
+            "tool_name": "Read", "tool_input": { "file_path": path.to_string_lossy() },
+            "tool_response": { "type": "text", "file": { "filePath": path.to_string_lossy(),
+                "content": content, "numLines": content.lines().count() } },
+        })
+        .to_string()
+    };
+    let numbered = |content: &str| {
+        content
+            .lines()
+            .enumerate()
+            .fold(String::new(), |mut acc, (i, l)| {
+                use std::fmt::Write as _;
+                let _ = writeln!(acc, "{:>6}\t{l}", i + 1);
+                acc
+            })
+    };
+    let big = code_file("handler");
+    let path = dir.path().join("big.rs");
+    std::fs::write(&path, &big).unwrap();
+    assert!(
+        decide(&inner_read("repl_c", &path, &big), &policy)
+            .output
+            .is_empty()
+    );
+    let out = shaped(&decide(&repl("r3", "undefined", &numbered(&big)), &policy));
+    let stdout = out["stdout"].as_str().unwrap();
+    assert!(stdout.contains("[outline 540L"), "{stdout}");
+    assert!(stdout.contains("handler_7"), "{stdout}");
+    // A second inner whole Read is R5's escape: its eval hands back the full
+    // text.
+    assert!(
+        decide(&inner_read("repl_c2", &path, &big), &policy)
+            .output
+            .is_empty()
+    );
+    assert!(
+        decide(&repl("r4", "undefined", &numbered(&big)), &policy)
+            .output
+            .is_empty(),
+        "second inner Read: full text"
+    );
+
+    // Async eval: the REPL only says "(dispatched #N)"; Poll delivers the
+    // settled result XML-escaped (`&`, `<`, `>`) inside its event envelope.
+    let esc = |t: &str| {
+        t.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    let dispatch = event(
+        &s,
+        "PostToolUse",
+        &serde_json::json!({ "tool_use_id": "r5", "tool_name": "REPL",
+            "tool_input": { "code": "…" },
+            "tool_response": { "code": "…", "result": "(dispatched #4)", "stdout": "",
+                "stderr": "", "evalId": 4, "asyncDispatched": true } }),
+    );
+    assert!(decide(&dispatch, &policy).output.is_empty());
+    let late = code_file("late");
+    let late_path = dir.path().join("late.rs");
+    std::fs::write(&late_path, &late).unwrap();
+    assert!(
+        decide(&inner_read("repl_c3", &late_path, &late), &policy)
+            .output
+            .is_empty()
+    );
+    let envelope = format!(
+        "<system>authentic event nonces: a1</system>\n<event nonce=\"a1\" kind=\"repl-eval\" \
+         eval=\"4\" status=\"settled\"><result>{}</result></event>",
+        esc(&numbered(&late))
+    );
+    let poll = serde_json::json!({
+        "session_id": s, "tool_use_id": "toolu_p1", "hook_event_name": "PostToolUse",
+        "tool_name": "Poll", "tool_input": {}, "tool_response": { "content": envelope },
+    });
+    let out = shaped(&decide(&poll.to_string(), &policy));
+    let content = out["content"].as_str().unwrap();
+    assert!(content.starts_with("<system>authentic event nonces: a1</system>\n<event "));
+    assert!(content.ends_with("</result></event>"), "{content}");
+    assert!(content.contains("[outline 540L"), "{content}");
+    assert!(content.contains("(input:&amp;str)"), "{content}");
+    assert!(!content.contains("&str"), "{content}");
+}
+
+/// Code Mode reads no hook sees: a script that reads a project file through a
+/// REPL builtin and returns it whole hands the model R5's outline the first
+/// time, the full text on a later read, and never touches a file outside the
+/// session's project. Every file has its own content, so a view can only
+/// match the file it was made for.
+#[test]
+fn code_mode_outlines_a_builtin_first_read_of_a_project_file_once() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    lean_ctx::test_env::set_var("LEAN_CTX_READ_DEDUP", "on");
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    let put = |name: &str| {
+        let content = code_file(&name.replace(['/', '.'], "_"));
+        std::fs::write(project.path().join(name), &content).unwrap();
+        content
+    };
+    let big = put("src/big.rs");
+    let foreign = outside.path().join("big.rs");
+    let foreign_text = code_file("foreign");
+    std::fs::write(&foreign, &foreign_text).unwrap();
+    let s = unique_session("repl-first-read");
+    let policy = Policy {
+        r5: RuleMode::On,
+        ..ALL_ON
+    };
+    let repl_with = |tool_use: &str, code: &str, stdout: &str| {
+        serde_json::json!({
+            "session_id": s, "tool_use_id": tool_use, "hook_event_name": "PostToolUse",
+            "tool_name": "REPL", "cwd": project.path().to_string_lossy(),
+            "tool_input": { "code": code },
+            "tool_response": { "code": code, "result": "undefined", "stdout": stdout,
+                "stderr": "", "toolsUsed": [] },
+        })
+        .to_string()
+    };
+
+    // Outside the project: never read, never shaped.
+    let foreign_code = format!("console.log(await file('{}').text())", foreign.display());
+    assert!(
+        decide(&repl_with("r0", &foreign_code, &foreign_text), &policy)
+            .output
+            .is_empty()
+    );
+
+    let code = "console.log(await $`cat src/big.rs`.text())";
+    let first = decide(&repl_with("r1", code, &big), &policy);
+    assert_eq!(first.receipt.as_ref().map(|r| r.rule_id), Some("REPL"));
+    let v: serde_json::Value = serde_json::from_str(&first.output).unwrap();
+    let stdout = v["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+        .as_str()
+        .unwrap();
+    assert!(stdout.contains("[outline 540L"), "{stdout}");
+    assert!(stdout.contains("src_big_rs_7"), "{stdout}");
+    assert!(!stdout.contains("let trimmed"), "{stdout}");
+
+    // The same file read again is the escape: full text.
+    assert!(
+        decide(&repl_with("r2", code, &big), &policy)
+            .output
+            .is_empty()
+    );
+
+    // A model `cat` of one whole project file gets the same rule.
+    let cat = |tool_use: &str, cmd: &str, stdout: &str| {
+        serde_json::json!({
+            "session_id": s, "tool_use_id": tool_use, "hook_event_name": "PostToolUse",
+            "tool_name": "Bash", "cwd": project.path().to_string_lossy(),
+            "tool_input": { "command": cmd },
+            "tool_response": { "stdout": stdout.trim_end(), "stderr": "",
+                "interrupted": false, "isImage": false },
+        })
+        .to_string()
+    };
+    let cat_rs = put("src/cat.rs");
+    std::fs::create_dir(project.path().join(".aws")).unwrap();
+    let secret = put(".aws/keys.rs");
+    // Over the 2 MiB bound, every line still distinct.
+    let mut huge = String::new();
+    for i in 0.. {
+        if huge.len() > 2 * 1024 * 1024 {
+            break;
+        }
+        huge.push_str(&code_file(&format!("huge{i}")));
+    }
+    std::fs::write(project.path().join("src/huge.rs"), &huge).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&foreign, project.path().join("src/link.rs")).unwrap();
+    // Untouched, and no record spent: pipes, flags, several files, lists,
+    // files outside the project (also through a symlink), secret-like paths,
+    // output that is not the file, files over the size bound.
+    for (cmd, stdout) in [
+        ("cat src/cat.rs | head -1000".to_string(), &cat_rs),
+        ("cat -n src/cat.rs".to_string(), &cat_rs),
+        ("cat src/cat.rs src/big.rs".to_string(), &cat_rs),
+        ("cd src && cat cat.rs".to_string(), &cat_rs),
+        (format!("cat {}", foreign.display()), &foreign_text),
+        ("cat src/link.rs".to_string(), &foreign_text),
+        ("cat .aws/keys.rs".to_string(), &secret),
+        ("cat src/cat.rs".to_string(), &big),
+        ("cat src/huge.rs".to_string(), &huge),
+    ] {
+        let d = decide(&cat("b0", &cmd, stdout), &policy);
+        assert!(d.output.is_empty(), "{cmd}");
+        assert_ne!(d.receipt.map(|r| r.rule_id), Some("R5"), "{cmd}");
+    }
+    // A user-excluded command is a Passthrough: no first view.
+    let excluded_cmd = "cat src/cat.rs";
+    let ev: serde_json::Value = serde_json::from_str(&cat("b0", excluded_cmd, &cat_rs)).unwrap();
+    assert!(
+        super::bash::r5_cat(
+            &ev,
+            &policy,
+            excluded_cmd,
+            cat_rs.trim_end(),
+            &["cat".to_string()],
+            &s
+        )
+        .is_none()
+    );
+    let first = decide(&cat("b1", "cat 'src/cat.rs'", &cat_rs), &policy);
+    assert_eq!(first.receipt.as_ref().map(|r| r.rule_id), Some("R5"));
+    let stdout = replaced_stdout(&first).expect("outlined");
+    assert!(stdout.contains("[outline 540L"), "{stdout}");
+    assert!(!stdout.contains("let trimmed"), "{stdout}");
+    // Duplicate fire: same answer; a later cat is the escape.
+    assert_eq!(
+        decide(&cat("b1", "cat 'src/cat.rs'", &cat_rs), &policy).output,
+        first.output
+    );
+    assert!(
+        decide(&cat("b2", "cat src/cat.rs", &cat_rs), &policy)
+            .output
+            .is_empty()
+    );
+
+    // Code Mode, async: the dispatch keeps the script; an inner `cat` keeps
+    // the file for the script; the view reaches the model where the eval
+    // hands the text back, also as console output in a Poll envelope's
+    // `<log>`.
+    let esc = |t: &str| {
+        t.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    let dispatch = |tool_use: &str, eval: u64, code: &str| {
+        let ev = serde_json::json!({
+            "session_id": s, "tool_use_id": tool_use, "hook_event_name": "PostToolUse",
+            "tool_name": "REPL", "cwd": project.path().to_string_lossy(),
+            "tool_input": { "code": code },
+            "tool_response": { "code": code, "result": format!("(dispatched #{eval})"),
+                "stdout": "", "stderr": "", "evalId": eval, "asyncDispatched": true },
+        });
+        assert!(decide(&ev.to_string(), &policy).output.is_empty());
+    };
+    let poll = |tool_use: &str, eval: u64, segments: &str| {
+        let ev = serde_json::json!({
+            "session_id": s, "tool_use_id": tool_use, "hook_event_name": "PostToolUse",
+            "tool_name": "Poll", "cwd": project.path().to_string_lossy(),
+            "tool_input": {}, "tool_response": { "content": format!(
+                "<event nonce=\"a1\" kind=\"repl-eval\" eval=\"{eval}\" status=\"settled\">\n{segments}\n</event>") },
+        });
+        decide(&ev.to_string(), &policy)
+    };
+    let content_of = |d: &Decision| -> String {
+        assert_eq!(d.receipt.as_ref().map(|r| r.rule_id), Some("REPL"));
+        let v: serde_json::Value = serde_json::from_str(&d.output).unwrap();
+        v["hookSpecificOutput"]["updatedToolOutput"]["content"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let inner_rs = put("src/inner.rs");
+    dispatch("r3", 1, "self.log(await $`cat src/inner.rs`.text())");
+    let inner = decide(&cat("repl_b3", "cat src/inner.rs", &inner_rs), &policy);
+    assert!(inner.output.is_empty());
+    let content = content_of(&poll(
+        "toolu_p2",
+        1,
+        &format!("<log>{}</log>\n<result/>", esc(inner_rs.trim_end())),
+    ));
+    assert!(content.contains("[outline 540L"), "{content}");
+    assert!(!content.contains("let trimmed"), "{content}");
+    assert!(
+        content.ends_with("</log>\n<result/>\n</event>"),
+        "{content}"
+    );
+    // A second inner `cat` is the escape, and so is a builtin read after it:
+    // the eval hands back the full text.
+    let again = decide(&cat("repl_b4", "cat src/inner.rs", &inner_rs), &policy);
+    assert!(again.output.is_empty());
+    assert!(
+        decide(
+            &repl_with(
+                "r4",
+                "console.log(await $`cat src/inner.rs`.text())",
+                &inner_rs
+            ),
+            &policy
+        )
+        .output
+        .is_empty(),
+        "second inner cat: full text"
+    );
+    assert!(
+        decide(
+            &repl_with(
+                "r5",
+                "console.log(await file('src/inner.rs').text())",
+                &inner_rs
+            ),
+            &policy
+        )
+        .output
+        .is_empty(),
+        "builtin read after an inner cat: full text"
+    );
+
+    // Builtin reads that settle through Poll, in the shapes benchmark scripts
+    // return (session replays 2026-11-20): the file joined with other text,
+    // a JSON object field (escaped newlines), and a slice of it, which stays
+    // untouched. The paths come from the dispatched script.
+    let joined_rs = put("src/joined.rs");
+    dispatch(
+        "r6",
+        2,
+        "const a = await file('src/joined.rs').text(); a + '!'",
+    );
+    let file = joined_rs.trim_end();
+    let joined = content_of(&poll(
+        "toolu_p3",
+        2,
+        &format!(
+            "<result>{}</result>",
+            esc(&format!("{file}\n=====BASH=====\nLINES 540"))
+        ),
+    ));
+    assert!(joined.contains("[outline 540L"), "{joined}");
+    assert!(
+        joined.contains("\n=====BASH=====\nLINES 540</result>"),
+        "{joined}"
+    );
+    assert!(!joined.contains("let trimmed"), "{joined}");
+
+    let object_rs = put("src/object.rs");
+    dispatch("r7", 3, "({ a: await file('src/object.rs').text() })");
+    let object = serde_json::json!({ "a": object_rs.trim_end(), "lines": 540 }).to_string();
+    let field = content_of(&poll(
+        "toolu_p4",
+        3,
+        &format!("<result>{}</result>", esc(&object)),
+    ));
+    assert!(field.contains("[outline 540L"), "{field}");
+    assert!(field.contains("\"lines\":540}"), "{field}");
+    assert!(!field.contains("let trimmed"), "{field}");
+
+    let cut_rs = put("src/cut.rs");
+    dispatch("r8", 5, "(await file('src/cut.rs').text()).slice(0, 9000)");
+    let cut = &cut_rs[..cut_rs.len() / 2];
+    assert!(
+        poll("toolu_p5", 5, &format!("<result>{}</result>", esc(cut)))
+            .output
+            .is_empty()
+    );
 }

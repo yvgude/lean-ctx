@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx docs`: the project's doc pages, with or without Hive.
+//! `lean-ctx docs`: the project's doc pages, with or without Cloud.
 //!
 //! A checkout linked to a vault reads the vault's pages (as `ctx_doc` and
-//! `hive docs` do); any other checkout keeps its pages on this Instance
-//! ([`lean_ctx_hive::local_docs`]): every write is one revision with its
+//! `cloud docs` do); any other checkout keeps its pages on this Instance
+//! ([`lean_ctx_cloud::local_docs`]): every write is one revision with its
 //! author, and history is kept. `--json` prints Local Read v1 documents
 //! (`docs.list`, `docs.page`, `docs.history`, `docs.saved`).
 
@@ -11,9 +11,9 @@ use std::io::Read;
 
 use serde::Serialize;
 
+use lean_ctx_cloud::CloudError;
+use lean_ctx_cloud::local_docs::{self, SharedTo, shared_of};
 use lean_ctx_doc::local::{self, Author, Revision};
-use lean_ctx_hive::HiveError;
-use lean_ctx_hive::local_docs::{self, SharedTo, shared_of};
 use lean_ctx_server::tools::ctx_doc;
 
 use super::local_read::docs::{PageDetail, PageRow, VaultRef, page_detail};
@@ -98,9 +98,9 @@ pub(crate) struct Saved {
     pub events: usize,
 }
 
-fn failure(e: HiveError) -> Failure {
+fn failure(e: CloudError) -> Failure {
     match e {
-        HiveError::Config(m) => Failure::invalid(m),
+        CloudError::Config(m) => Failure::invalid(m),
         other => Failure::from(other),
     }
 }
@@ -296,7 +296,7 @@ pub(crate) fn run(args: &[String]) {
     if args.iter().any(|a| a == "--help" || a == "-h") || args.first().is_some_and(|a| a == "help")
     {
         println!(
-            "lean-ctx docs: the project's doc pages (local, or its linked Hive vault)\n\nusage:\n{USAGE}"
+            "lean-ctx docs: the project's doc pages (local, or its linked LeanCTX Cloud vault)\n\nusage:\n{USAGE}"
         );
         return;
     }
@@ -328,7 +328,7 @@ fn run_json(root: &str, action: &str, slug: Option<&str>, to: Option<&str>, args
     ));
 }
 
-/// The `--json` document of `docs <action>`, for `via`; `hive docs
+/// The `--json` document of `docs <action>`, for `via`; `cloud docs
 /// list|show --json` (CLI and socket) on a checkout no vault is linked to
 /// comes here too. Never ends the process: the socket builds it inside the
 /// daemon.
@@ -349,11 +349,11 @@ pub(crate) fn json_answer(
     };
     if linked {
         return match action {
-            // The vault's pages, as `hive docs list|show --json` prints them.
+            // The vault's pages, as `cloud docs list|show --json` prints them.
             "list" | "show" => local_read::docs::answer(&vault_args(action, slug, root), via),
             _ => local_read::Answer::failure(&Failure::new(
                 Code::Forbidden,
-                "this checkout's docs are in its Hive vault: write them through ctx_doc",
+                "this checkout's docs are in its LeanCTX Cloud vault: write them through ctx_doc",
             )),
         };
     }

@@ -3,12 +3,14 @@ import type {
   EngineInterface,
   McpToolResult,
   Register,
-  Timer,
-  ToolCallResult,
   TurnStepResult,
 } from "claude-code";
 
 import { registerCockpit } from "./cockpit";
+
+// This plugin registers no tool-call hook: Claude Code turns Code Mode off for any
+// enabled plugin that does. Background-job wakes, sleep answers and native
+// Bash shaping live in the separate `lean-ctx-jobs` plugin.
 import { registerResultRendering } from "./render";
 
 // Every tool the injected rules route an intent to must stay in front: a
@@ -30,23 +32,6 @@ const DEFAULT_FRONT_LOADED_TOOLS = [
 // ctx_shell would otherwise stay front-loaded under `alwaysLoad`.
 const LEAN_CTX_TOOL_PATTERN = /^mcp__lean[-_]ctx__[A-Za-z0-9_-]+$/;
 const LEAN_CTX_TOOL_NAME = /^mcp__(lean[-_]ctx)__([A-Za-z0-9_-]+)$/;
-const SHELL_TOOLS = new Set(["ctx_shell", "shell"]);
-const WATCH_CONTEXT =
-  "This background job is being watched; you will be woken automatically on completion, so do not poll or sleep.";
-const WATCH_INTERVAL_MS = 2_000;
-// A submitted wake normally starts its turn within seconds; after this many
-// watcher ticks' worth it is treated as gone, so held jobs never stay stuck.
-const WAKE_IN_FLIGHT_MAX_MS = 60_000;
-// Consecutive unreadable status checks before a job is handed back to the
-// model's own polling; one transient MCP hiccup must not drop the watch.
-const MAX_STATUS_MISSES = 5;
-const MAX_TAIL_LINES = 20;
-const MAX_TAIL_LINE_CHARS = 300;
-// Native Bash stdout below this is kept byte-for-byte: the shaping gain cannot
-// pay for the extra hop, and short output is usually exactly what was asked.
-const SHAPE_MIN_CHARS = 2_000;
-// Commands that explicitly ask for exact bytes are never shaped.
-const RAW_INTENT = /\bLEAN_CTX_(?:RAW|DISABLED)=1\b|\blean-ctx\s+raw\b/;
 // Upper bound for the session state injected after a compaction (~500 tokens).
 const MAX_RESUME_CHARS = 2_000;
 type LeanCtxHookTextEnd = { end: string; continues?: readonly string[] };
@@ -192,15 +177,6 @@ const LEAN_CTX_HOOK_TEXT_SIGNATURES: readonly LeanCtxHookTextSignature[] = [
 const HOOK_CONTEXT_FRAME = /(?:^|\n)([A-Za-z]+ hook additional context: )$/;
 
 type JsonRecord = Record<string, unknown>;
-type WatchJob = { server: string; id: string; contextSent: boolean; misses: number };
-type JobStatus = { state: "running" | "terminal" | "unknown"; exitCode?: number; archiveId?: string; summary?: string };
-type FinishedJob = { job: WatchJob; status: JobStatus; response: McpToolResult };
-type JobCheck = {
-  key: string;
-  job: WatchJob;
-  status?: JobStatus;
-  response?: McpToolResult;
-};
 type Metrics = {
   requests: number;
   input: number;
@@ -209,16 +185,11 @@ type Metrics = {
   cacheCreation: number;
   toolSearchOnly: number;
   leanCtxCalls: number;
-  sleepsAnswered: number;
-  wakesDelivered: number;
-  shapedCalls: number;
-  shapedCharsSaved: number;
   droppedHookAttachments: number;
   droppedHookChars: number;
   compactions: number;
 };
 
-const watchedJobs = new Map<string, WatchJob>();
 const metrics: Metrics = {
   requests: 0,
   input: 0,
@@ -227,30 +198,10 @@ const metrics: Metrics = {
   cacheCreation: 0,
   toolSearchOnly: 0,
   leanCtxCalls: 0,
-  sleepsAnswered: 0,
-  wakesDelivered: 0,
-  shapedCalls: 0,
-  shapedCharsSaved: 0,
   droppedHookAttachments: 0,
   droppedHookChars: 0,
   compactions: 0,
 };
-let watcher: Timer | undefined;
-let watcherTickInProgress = false;
-// True between a main-loop `turn.start` and its `turn.complete`. A wake
-// submitted then is only delivered after the turn, by which time the model
-// may have read the job itself — so finished jobs wait in `pendingWakes`.
-let mainTurnActive = false;
-const pendingWakes = new Map<string, FinishedJob>();
-// Watcher ticks since the last wake was submitted, until its turn starts. Jobs
-// that finish meanwhile are held too: every wake is a visible prompt row and a
-// turn, and in that turn the model often reads the other jobs itself, which
-// drops them.
-let wakeInFlightTicks: number | undefined;
-
-function isWakeInFlight(): boolean {
-  return wakeInFlightTicks !== undefined && wakeInFlightTicks * WATCH_INTERVAL_MS < WAKE_IN_FLIGHT_MAX_MS;
-}
 let leanCtxSeen = false;
 // The lean-ctx MCP server name as this session spells it (`lean-ctx`/`lean_ctx`).
 let leanServer: string | undefined;
@@ -261,19 +212,9 @@ let resumePending = false;
 
 export const register: Register = (on, options) => {
   // The cockpit: sidebar, pulse line, turn and milestone overlays (cockpit.tsx).
-  // Held wakes go out on the next watcher tick after the turn (≤ 2 s); the
-  // watcher keeps running while any are held.
   registerCockpit(
     on,
-    {
-      onTurnStart: () => {
-        mainTurnActive = true;
-        wakeInFlightTicks = undefined;
-      },
-      onMainTurnComplete: () => {
-        mainTurnActive = false;
-      },
-    },
+    {},
     {
       panel: asRecord(options).cockpit_panel !== false,
       pulse: asRecord(options).cockpit_pulse_line !== false,
@@ -284,10 +225,7 @@ export const register: Register = (on, options) => {
   // (render.tsx). Display only: the model receives every result unchanged.
   if (asRecord(options).color_output !== false) registerResultRendering(on);
   const frontLoaded = getFrontLoadedTools(options);
-  const shapeNative = asRecord(options).shape_native_output !== false;
   const keepHookContext = asRecord(options).keep_hook_context === true;
-  // Off: background jobs are not watched and the model checks them itself.
-  const wakeOnFinish = asRecord(options).wake_on_job_finish !== false;
 
   on("tool.describe", { tool: LEAN_CTX_TOOL_PATTERN }, async ($, event) => {
     const match = getLeanCtxTool(event.tool);
@@ -304,11 +242,28 @@ export const register: Register = (on, options) => {
 
   // Live skill (concept K5): the shipped SKILL.md is static; this prefixes it
   // with what is true in *this* session, so the guidance never contradicts the
-  // mod (e.g. "no need to poll") or the configured tool surface. Byte-stable
-  // for a given configuration, so it never churns the prompt cache.
+  // mod or the configured tool surface. Byte-stable for a given
+  // configuration, so it never churns the prompt cache. The lean-ctx-jobs
+  // plugin adds its own section for job wakes and Bash shaping.
   on("skill.prompt", { skill: "lean-ctx" }, async ($, event, next) => {
     const base = await next(event);
-    return { text: `${liveSkillHeader(frontLoaded, shapeNative, wakeOnFinish)}\n\n${base.text}` };
+    return { text: `${liveSkillHeader(frontLoaded)}\n\n${base.text}` };
+  });
+
+  // Code Mode: Claude calls tools from REPL code, and the lean-ctx names carry
+  // a hyphen, so `tools.ctx_read` and `tools.mcp__lean_ctx__…` both throw.
+  // Measured: two failed calls per session before the model found the form.
+  // One session-side section, only while REPL is offered and lean-ctx is
+  // connected; byte-stable for a given server name.
+  on("prompt.compose", async ($, event, next) => {
+    const result = await next(event);
+    if (!leanServer || !event.tools.includes("REPL")) return result;
+    return {
+      sections: [
+        ...result.sections,
+        { id: "lean-ctx:code-mode", text: codeModeSection(leanServer), scope: "session" },
+      ],
+    };
   });
 
   // The MCP instructions and live skill carry the durable guidance. Drop only
@@ -352,74 +307,6 @@ export const register: Register = (on, options) => {
     return next(event);
   });
 
-  on("tool.call", async ($, event, next) => {
-    const fields = event as unknown as JsonRecord;
-    const tool = typeof fields.tool === "string" ? fields.tool : "";
-    const leanCtxTool = getLeanCtxTool(tool);
-
-    if (!leanCtxTool) {
-      if (tool === "Bash" && watchedJobs.size > 0 && isSleepWait(readString(fields, "command"))) {
-        metrics.sleepsAnswered += 1;
-        return { result: sleepAnswer() };
-      }
-      if (tool === "Bash" && shapeNative) {
-        return shapeBash($, readString(fields, "command"), await next(event));
-      }
-      return next(event);
-    }
-
-    leanCtxSeen = true;
-    leanServer = leanCtxTool.server;
-    metrics.leanCtxCalls += 1;
-    await ensureMeterCommand($);
-
-    if (
-      SHELL_TOOLS.has(leanCtxTool.tool) &&
-      watchedJobs.size > 0 &&
-      isSleepWait(readString(fields, "command"))
-    ) {
-      metrics.sleepsAnswered += 1;
-      return { result: sleepAnswer() };
-    }
-
-    if (SHELL_TOOLS.has(leanCtxTool.tool) && fields.run_in_background && wakeOnFinish) {
-      const result = await next(event);
-      const jobId = extractJobId(result);
-      if (!jobId) return result;
-
-      const key = watchKey(leanCtxTool.server, jobId);
-      const job = watchedJobs.get(key) ?? { server: leanCtxTool.server, id: jobId, contextSent: false, misses: 0 };
-      watchedJobs.set(key, job);
-      if (!startWatcher($)) {
-        watchedJobs.delete(key);
-        stopWatcherWhenIdle();
-        return result;
-      }
-      return addWatchContext(result, job);
-    }
-
-    const backgroundAction = readString(fields, "background_action");
-    if (SHELL_TOOLS.has(leanCtxTool.tool) && (backgroundAction === "status" || backgroundAction === "cancel")) {
-      const jobId = readString(fields, "job_id");
-      const key = jobId ? watchKey(leanCtxTool.server, jobId) : undefined;
-      const job = key ? watchedJobs.get(key) : undefined;
-      const result = await next(event);
-      if (!key || !jobId || (!job && !pendingWakes.has(key))) return result;
-      // The model has now seen this job's terminal state itself: stop
-      // watching it and drop a wake the watcher already held for it, or the
-      // same result arrives again and costs a whole extra turn.
-      if (toolCallJobStatus(result, jobId).state === "terminal") {
-        if (job && watchedJobs.get(key) === job) watchedJobs.delete(key);
-        pendingWakes.delete(key);
-        stopWatcherWhenIdle();
-        return result;
-      }
-      return job ? addWatchContext(result, job) : result;
-    }
-
-    return next(event);
-  });
-
   // K8 compaction coordination: before the main conversation is compacted,
   // lean-ctx persists its session state and the summarizer is told what lean-ctx
   // still depends on; afterwards the next prompt carries that state once.
@@ -459,65 +346,11 @@ export const register: Register = (on, options) => {
   });
 };
 
-// Shape, don't redirect (concept K2): the native Bash call already ran; its
-// stdout goes through lean-ctx's command-aware compressor (`ctx_shape`, which
-// also applies lean-ctx's secret redaction and output filters) instead of
-// denying the call and forcing a round trip to ctx_shell. Lossy results end
-// with a recovery handle. stderr is kept verbatim. Fail-open everywhere: any
-// refusal on the way (workflow, role, budget) comes back as an error.
-// ctx_shape is not listed, and `$.mcp.call` only reaches listed tools (Claude
-// Code 2.1.296+), so the call goes through the listed `ctx_call` (#2089).
-async function shapeBash(
-  $: EngineInterface,
-  command: string | undefined,
-  result: ToolCallResult,
-): Promise<ToolCallResult> {
-  if (!leanServer || !command || RAW_INTENT.test(command)) return result;
-  if ("deny" in result || result.isError) return result;
-  const record = asRecord(result.result);
-  const stdout = typeof record.stdout === "string" ? record.stdout : "";
-  if (
-    stdout.length < SHAPE_MIN_CHARS ||
-    record.isImage ||
-    record.backgroundTaskId ||
-    record.persistedOutputPath
-  ) {
-    return result;
-  }
-  try {
-    // A non-error result without a special-exit interpretation exited 0, so the
-    // engine takes its success path (folds build/test noise); otherwise it gets
-    // no exit code and keeps the unknown-outcome guard.
-    const exitCode = record.returnCodeInterpretation ? {} : { exit_code: 0 };
-    const shaped = await $.mcp.call(leanServer, "ctx_call", {
-      name: "ctx_shape",
-      arguments: { tool: "Bash", command, output: stdout, ...exitCode },
-    });
-    if (shaped.isError) return result;
-    const text = mcpText(shaped);
-    if (!text || text.length >= stdout.length) return result;
-    metrics.shapedCalls += 1;
-    metrics.shapedCharsSaved += stdout.length - text.length;
-    return { result: { ...record, stdout: text }, context: result.context } as ToolCallResult;
-  } catch {
-    return result;
-  }
-}
-
-// What the compaction summary must keep for lean-ctx to stay usable: ids of
-// jobs that will still wake the model, and recovery handles of compressed
-// output the ongoing work refers to. Deterministic for a given watch set.
+// What the compaction summary must keep for lean-ctx to stay usable: recovery
+// handles of compressed output the ongoing work refers to. The lean-ctx-jobs
+// plugin adds the ids of jobs that will still wake the model.
 function compactionInstructions(): string {
-  const ids = [...watchedJobs.values()].map((job) => job.id).sort();
-  const lines = [
-    "lean-ctx: keep, verbatim, any lean-ctx recovery handles the ongoing work still relies on (ctx_expand ids and `full original at …` paths).",
-  ];
-  if (ids.length > 0) {
-    lines.push(
-      `lean-ctx: background job(s) ${ids.join(", ")} are still running and will report when done — keep their ids and do not plan to poll them.`,
-    );
-  }
-  return lines.join("\n");
+  return "lean-ctx: keep, verbatim, any lean-ctx recovery handles the ongoing work still relies on (ctx_expand ids and `full original at …` paths).";
 }
 
 // The lean-ctx session state (task, decisions, findings) for the first prompt
@@ -535,17 +368,18 @@ async function sessionState($: EngineInterface, server: string): Promise<string 
   }
 }
 
-function liveSkillHeader(frontLoaded: Set<string>, shapeNative: boolean, wakeOnFinish: boolean): string {
+function liveSkillHeader(frontLoaded: Set<string>): string {
   const front = [...frontLoaded].sort().join(", ");
   return [
     "## Live in this session (lean-ctx Claude Code mod)",
-    wakeOnFinish
-      ? "- Background jobs (`ctx_shell(run_in_background=true)` or Bash `run_in_background`) wake you when they finish: start them, then continue other work or end the turn. Never `sleep` or poll their status."
-      : "- Bash `run_in_background` jobs wake you when they finish. `ctx_shell(run_in_background=true)` jobs do not: check one with `ctx_shell(background_action=\"status\", job_id=…)` once you need its result.",
     `- In your tool list: ${front}. Other lean-ctx tools load with one ToolSearch \`select:\` or run via \`ctx_call\`.`,
-    shapeNative
-      ? "- Native Bash output is compressed automatically (a recovery handle ends any lossy result); there is no need to route commands through ctx_shell just for compression."
-      : "- Native Bash output is passed through unchanged in this session.",
+  ].join("\n");
+}
+
+function codeModeSection(server: string): string {
+  return [
+    "# lean-ctx in REPL code",
+    `Call lean-ctx tools by their full name with bracket syntax: \`await tools["mcp__${server}__ctx_read"]({ path, mode })\`, the name spelled exactly so; \`tools.ctx_read\` is not defined.`,
   ].join("\n");
 }
 
@@ -559,225 +393,6 @@ function getLeanCtxTool(name: string): { server: string; tool: string } | undefi
   const match = LEAN_CTX_TOOL_NAME.exec(name);
   if (!match?.[1] || !match[2]) return undefined;
   return { server: match[1], tool: match[2] };
-}
-
-function readString(record: JsonRecord, key: string): string | undefined {
-  return typeof record[key] === "string" ? (record[key] as string) : undefined;
-}
-
-function isSleepWait(command: string | undefined): boolean {
-  return !!command &&
-    /^\s*sleep\s+\d+(?:\.\d+)?(?:\s*&&\s*(?=[^;\n]*(?:\bstatus\b|\btail\b))[^;\n]*)?\s*$/i.test(command);
-}
-
-function sleepAnswer(): string {
-  const ids = [...watchedJobs.values()].map((job) => job.id).sort();
-  return `No need to wait: background job(s) ${ids.join(", ")} are watched and you will be woken automatically; end the turn or continue other work.`;
-}
-
-function watchKey(server: string, id: string): string {
-  return `${server}\u0000${id}`;
-}
-
-function addWatchContext(result: ToolCallResult, job: WatchJob): ToolCallResult {
-  if (job.contextSent || "deny" in result) return result;
-  job.contextSent = true;
-  const context = [...(result.context ?? [])];
-  if (!context.includes(WATCH_CONTEXT)) context.push(WATCH_CONTEXT);
-  return { ...result, context };
-}
-
-function extractJobId(result: ToolCallResult): string | undefined {
-  if ("deny" in result) return undefined;
-  return readString(readShellFields(result.result, result.text), "jobId");
-}
-
-// ctx_shell reports background state as MCP `structuredContent`
-// (`{ jobId, state, exitCode?, archiveId?, summary }`, or `{ jobId, errorCode }`
-// for an expired id — rust/crates/lean-ctx-server/src/server/tool_trait.rs). Hosts often render
-// only that object as the text block, so a JSON text block is the second
-// source; the `[background:…]` text header is the last resort.
-function readShellFields(raw: unknown, extraText?: string): JsonRecord {
-  const body = asRecord(raw);
-  const structured = asRecord(body.structuredContent);
-  if (readString(structured, "jobId") || readString(structured, "job_id")) return normalize(structured);
-
-  const texts = [
-    ...(Array.isArray(body.content)
-      ? body.content.map((block) => asRecord(block).text).filter((t): t is string => typeof t === "string")
-      : []),
-    ...(extraText ? [extraText] : []),
-  ];
-  for (const text of texts) {
-    const trimmed = text.trim();
-    if (!trimmed.startsWith("{")) continue;
-    try {
-      const parsed = asRecord(JSON.parse(trimmed));
-      if (readString(parsed, "jobId") || readString(parsed, "job_id")) return normalize(parsed);
-    } catch {
-      // Not a JSON block; try the next source.
-    }
-  }
-
-  const joined = texts.join("\n");
-  const header = /\[(?:auto-)?background:([A-Za-z0-9_-]+)\s*(running|started|completed|failed|cancelled|canceled|not found)?(?:,\s*exit\s+(-?\d+))?/i.exec(joined);
-  if (!header) return {};
-  const word = header[2]?.toLowerCase();
-  return {
-    jobId: header[1],
-    state: word === "started" ? "running" : word === "not found" ? "expired" : word,
-    exitCode: header[3] === undefined ? undefined : Number(header[3]),
-    text: joined,
-  };
-}
-
-function normalize(fields: JsonRecord): JsonRecord {
-  return {
-    jobId: readString(fields, "jobId") ?? readString(fields, "job_id"),
-    state: readString(fields, "errorCode") ? "expired" : readString(fields, "state"),
-    exitCode: getNumber(fields, ["exitCode", "exit_code"]),
-    archiveId: readString(fields, "archiveId") ?? readString(fields, "archive_id"),
-    summary: readString(fields, "summary"),
-  };
-}
-
-function getNumber(record: JsonRecord, keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-  }
-  return undefined;
-}
-
-function startWatcher($: EngineInterface): boolean {
-  if (watcher) return true;
-  try {
-    watcher = $.clock.every(WATCH_INTERVAL_MS, () => {
-      void pollWatchedJobs($);
-    });
-    return true;
-  } catch {
-    watcher = undefined;
-    return false;
-  }
-}
-
-function stopWatcherWhenIdle(): void {
-  if (watchedJobs.size > 0 || pendingWakes.size > 0 || !watcher) return;
-  try {
-    watcher.cancel();
-  } catch {
-    // Cancellation failure must not affect the model's tool flow.
-  }
-  watcher = undefined;
-}
-
-// Deliver the held wakes of jobs the model has not read itself, as one wake.
-function flushPendingWakes($: EngineInterface): void {
-  if (mainTurnActive || isWakeInFlight() || pendingWakes.size === 0) return;
-  const finished = [...pendingWakes.values()];
-  pendingWakes.clear();
-  stopWatcherWhenIdle();
-  submitWake($, formatWakeSummary(finished));
-}
-
-async function pollWatchedJobs($: EngineInterface): Promise<void> {
-  if (wakeInFlightTicks !== undefined) wakeInFlightTicks += 1;
-  // The tick doubles as the fallback flush once no turn runs.
-  flushPendingWakes($);
-  if (watcherTickInProgress || watchedJobs.size === 0) return;
-  watcherTickInProgress = true;
-  const snapshot = [...watchedJobs.entries()];
-
-  try {
-    const checks = await Promise.all(
-      snapshot.map(async ([key, job]): Promise<JobCheck> => {
-        try {
-          const response = await $.mcp.call(job.server, "ctx_shell", {
-            background_action: "status",
-            job_id: job.id,
-          });
-          // A finished job with a non-zero exit is an MCP error result too;
-          // only the parsed state decides, never `isError`.
-          return { key, job, response, status: inspectJobStatus(response, job.id) };
-        } catch {
-          return { key, job, status: { state: "unknown" } };
-        }
-      }),
-    );
-
-    const finished: FinishedJob[] = [];
-    const lost: WatchJob[] = [];
-    for (const check of checks) {
-      if (watchedJobs.get(check.key) !== check.job) continue;
-      if (!check.status || check.status.state === "running") {
-        check.job.misses = 0;
-        continue;
-      }
-      if (check.status.state === "unknown") {
-        check.job.misses += 1;
-        if (check.job.misses >= MAX_STATUS_MISSES) {
-          watchedJobs.delete(check.key);
-          lost.push(check.job);
-        }
-        continue;
-      }
-      watchedJobs.delete(check.key);
-      if (!check.response) continue;
-      const done = { job: check.job, status: check.status, response: check.response };
-      // Mid-turn, or while an earlier wake waits for its turn, hold the wake:
-      // the model may still read this job itself.
-      if (mainTurnActive || isWakeInFlight()) pendingWakes.set(check.key, done);
-      else finished.push(done);
-    }
-    stopWatcherWhenIdle();
-    const text = [
-      finished.length > 0 ? formatWakeSummary(finished) : "",
-      lost.length > 0 ? formatLostNotice(lost) : "",
-    ].filter(Boolean).join("\n\n");
-    if (text) submitWake($, text);
-  } catch {
-    // The watcher can no longer read job state: hand every watched job back
-    // to the model explicitly — it was told it would be woken, so a silent
-    // drop would leave it waiting forever.
-    const lost = [...watchedJobs.values()];
-    watchedJobs.clear();
-    stopWatcherWhenIdle();
-    if (lost.length > 0) submitWake($, formatLostNotice(lost));
-  } finally {
-    watcherTickInProgress = false;
-  }
-}
-
-function formatLostNotice(lost: WatchJob[]): string {
-  const ids = lost.map((job) => job.id).sort();
-  return `lean-ctx can no longer watch background job(s) ${ids.join(", ")}: check each once with ctx_shell(background_action="status", job_id=…) when you need its result.`;
-}
-
-function inspectJobStatus(response: McpToolResult, jobId: string): JobStatus {
-  return jobStatus(readShellFields(response), jobId);
-}
-
-// The model's own ctx_shell call reaches `tool.call` as the host's result
-// wrapper (`{ result, text }`), not as the raw MCP response the watcher polls.
-function toolCallJobStatus(result: ToolCallResult, jobId: string): JobStatus {
-  if ("deny" in result) return { state: "unknown" };
-  return jobStatus(readShellFields(result.result, result.text), jobId);
-}
-
-function jobStatus(fields: JsonRecord, jobId: string): JobStatus {
-  if (fields.jobId !== undefined && fields.jobId !== jobId) return { state: "unknown" };
-  const state = readString(fields, "state")?.toLowerCase();
-  if (state === "running") return { state: "running" };
-  if (state === "completed" || state === "failed" || state === "cancelled" || state === "canceled" || state === "expired") {
-    return {
-      state: "terminal",
-      exitCode: getNumber(fields, ["exitCode"]),
-      archiveId: readString(fields, "archiveId"),
-      summary: readString(fields, "summary"),
-    };
-  }
-  return { state: "unknown" };
 }
 
 function mcpText(response: McpToolResult): string {
@@ -872,72 +487,6 @@ function removeJoinedTextBlock(text: string, block: LeanCtxHookTextBlock): strin
   return `${before}${after}`;
 }
 
-function submitWake($: EngineInterface, text: string): void {
-  wakeInFlightTicks = 0;
-  // A wake that never got through holds nothing back.
-  const failed = () => {
-    wakeInFlightTicks = undefined;
-  };
-  try {
-    void $.prompt
-      .submit({ text })
-      .then(() => {
-        metrics.wakesDelivered += 1;
-      })
-      .catch(() => {
-        // A failed wake leaves native status polling available.
-        failed();
-      });
-  } catch {
-    // A failed wake leaves native status polling available.
-    failed();
-  }
-}
-
-function formatWakeSummary(finished: FinishedJob[]): string {
-  const ordered = [...finished].sort((a, b) =>
-    a.job.id < b.job.id ? -1 : a.job.id > b.job.id ? 1 : a.job.server < b.job.server ? -1 : 1,
-  );
-  const sections = ordered.map(({ job, status, response }) => {
-    const handle = recoveryHandle(response, status.archiveId);
-    const lines = tailLines(response, job.id);
-    const body = handle
-      ? `Full output: ${handle}`
-      : status.summary || lines.join("\n") || "No output captured.";
-    const exit = status.exitCode === undefined ? "unknown" : status.exitCode;
-    return `Job ${job.id} finished · exit ${exit}\n${body}`;
-  });
-  return `Watched background job(s) finished:\n${sections.join("\n\n")}`;
-}
-
-function recoveryHandle(response: McpToolResult, archiveId?: string): string | undefined {
-  if (archiveId) return `ctx_expand id=${archiveId}`;
-  const structured = asRecord(response.structuredContent);
-  const direct =
-    readString(structured, "recovery_handle") ??
-    readString(structured, "recoveryHandle") ??
-    readString(structured, "tee_path") ??
-    readString(structured, "teePath");
-  if (direct) return direct;
-
-  const match = /(?:full output at|full output:)\s+([^\]\n]*?)(?:\s+—|\]|$)/i.exec(mcpText(response));
-  return match?.[1]?.trim();
-}
-
-function tailLines(response: McpToolResult, jobId: string): string[] {
-  const escapedId = jobId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const statusLine = new RegExp(`^\\[background:${escapedId}(?:\\s|\\])`, "i");
-  return mcpText(response)
-    .split(/\r?\n/)
-    // Status headers and the structured JSON echo are metadata, not output.
-    .filter((line) => {
-      const trimmed = line.trim();
-      return trimmed.length > 0 && !statusLine.test(trimmed) && !trimmed.startsWith("{");
-    })
-    .slice(-MAX_TAIL_LINES)
-    .map((line) => (line.length <= MAX_TAIL_LINE_CHARS ? line : `${line.slice(0, MAX_TAIL_LINE_CHARS)}…`));
-}
-
 function recordRequest(result: TurnStepResult): void {
   metrics.requests += 1;
   if (result.usage) {
@@ -952,6 +501,7 @@ function recordRequest(result: TurnStepResult): void {
   ) {
     metrics.toolSearchOnly += 1;
   }
+  metrics.leanCtxCalls += result.toolUses.filter((use) => getLeanCtxTool(use.name) !== undefined).length;
 }
 
 function formatMetrics(): string {
@@ -963,9 +513,6 @@ function formatMetrics(): string {
     `cache creation ${metrics.cacheCreation}`,
     `ToolSearch-only ${metrics.toolSearchOnly}`,
     `lean-ctx calls ${metrics.leanCtxCalls}`,
-    `sleeps answered ${metrics.sleepsAnswered}`,
-    `wakes delivered ${metrics.wakesDelivered}`,
-    `Bash outputs shaped ${metrics.shapedCalls} (−${metrics.shapedCharsSaved} chars)`,
     `hook attachments dropped ${metrics.droppedHookAttachments} (−${metrics.droppedHookChars} chars)`,
     `compactions ${metrics.compactions}`,
   ].join(" · ");
@@ -997,17 +544,10 @@ function resetSessionState(): void {
   metrics.cacheCreation = 0;
   metrics.toolSearchOnly = 0;
   metrics.leanCtxCalls = 0;
-  metrics.sleepsAnswered = 0;
-  metrics.wakesDelivered = 0;
-  metrics.shapedCalls = 0;
-  metrics.shapedCharsSaved = 0;
   metrics.droppedHookAttachments = 0;
   metrics.droppedHookChars = 0;
   metrics.compactions = 0;
   resumePending = false;
-  wakeInFlightTicks = undefined;
-  watchedJobs.clear();
-  stopWatcherWhenIdle();
 }
 
 function asRecord(value: unknown): JsonRecord {

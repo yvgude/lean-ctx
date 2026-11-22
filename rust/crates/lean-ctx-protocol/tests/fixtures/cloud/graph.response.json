@@ -1,0 +1,69 @@
+{
+  "edges": [
+    {
+      "from": "actor:claude-3e",
+      "to": "proposal:12",
+      "type": "worked_on"
+    },
+    {
+      "from": "fact:cloud.outbox-order",
+      "to": "code:rust/src/core/cloud/outbox.rs#cloud::outbox::enqueue",
+      "type": "applies_to"
+    },
+    {
+      "from": "fact:cloud.outbox-order",
+      "to": "fact:cloud.never-blocks",
+      "type": "explains"
+    },
+    {
+      "from": "page:cloud.outbound",
+      "to": "fact:cloud.never-blocks",
+      "type": "shows"
+    },
+    {
+      "from": "page:cloud.outbound",
+      "to": "fact:cloud.outbox-order",
+      "type": "shows"
+    },
+    {
+      "from": "proposal:12",
+      "to": "fact:cloud.outbox-order",
+      "type": "changed"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "actor:claude-3e",
+      "kind": "actor",
+      "label": "claude-3e"
+    },
+    {
+      "id": "code:rust/src/core/cloud/outbox.rs#cloud::outbox::enqueue",
+      "kind": "code",
+      "label": "cloud::outbox::enqueue"
+    },
+    {
+      "id": "fact:cloud.never-blocks",
+      "kind": "knowledge",
+      "label": "Cloud never blocks a tool call"
+    },
+    {
+      "id": "fact:cloud.outbox-order",
+      "kind": "knowledge",
+      "label": "The outbox keeps upload order per project"
+    },
+    {
+      "id": "page:cloud.outbound",
+      "kind": "knowledge",
+      "label": "Outbound path"
+    },
+    {
+      "id": "proposal:12",
+      "kind": "work",
+      "label": "Outbox ordering"
+    }
+  ],
+  "revision": 4,
+  "schema": "leanctx.cloud.graph/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

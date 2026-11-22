@@ -8,7 +8,7 @@
 //!
 //! # Delivery
 //!
-//! The launcher (Hive Desktop) writes one rights file per session and starts
+//! The launcher (Cloud Desktop) writes one rights file per session and starts
 //! the session with `LEAN_CTX_RIGHTS_FILE=<absolute path>`:
 //!
 //! - the session's own stdio MCP server and every hook the host runs are
@@ -48,7 +48,7 @@
 //! it grants no file write. `locked` is derived from the feature list: its
 //! `locked_paths` resolved against the first `own_worktree` entry (the
 //! checkout) and every `repo` binding. Further `own_worktree` entries are
-//! more folders the role may write (Hive Desktop: the session's scratchpad
+//! more folders the role may write (Cloud Desktop: the session's scratchpad
 //! and its build/sandbox folder), never lock roots.
 //! A relative `feature_list` resolves against the first `own_worktree`, and
 //! the list must name itself among its `locked_paths`. `base_commit` is the

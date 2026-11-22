@@ -2,18 +2,18 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:7820ef5ed1f811b380510bd202a32045bd5e8b027930033f24cb6d2a13d110fb
+Content-Digest: sha256:b02d731867196f7fb6bed74c471d8399102ac53a3ec57bfdc3d385a874032028
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: 3f36e6edaf70dd16aaa140a76fe27726f6308a93bd31614fe66382db70931a5b
-Cargo metadata inventory SHA-256: 0ec86e75785b11497500997a1c951d7ea4406d7559dd7d605dd0350a23cb179f
-SBOM.cdx.json SHA-256: 265e4ef4cfbc8e0d834c240ca4ce667957f5a1b898ba41ba97dd11a9f60a677d
-SBOM components: 559
-Asset manifest SHA-256: eb4d0cfd3d81fad8de02741f6adbcc25872c1a4f2913561cf9d31e3649cfc536
-npm package-lock.json SHA-256: 2f3d2808b17c364e7c3acbf09582f687328f46f427678be8c66d2755d0d3e03a
+Cargo.lock SHA-256: 7f3380b0c8e9f867f775c5291284a3835dea2a1a0ea2581d56f27bc197c4317e
+Cargo metadata inventory SHA-256: 2c2b319b6d8a70d026a1f20a26b0a6ae847bbee2e2548b88fdcbf3ce0ce700be
+SBOM.cdx.json SHA-256: 3ad2e6aa56e1478eba0d149eb3b7b3da6a5a76007d40c888bb423392c568bddd
+SBOM components: 561
+Asset manifest SHA-256: 791183b7a8ed375a98a35826754b56ba0bd8d3b114594a763214cf7154dd5af2
+npm package-lock.json SHA-256: bc8e29a38ef28bc408567551d1e7cc1469154331f2adaae0f078d55513f2834b
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
-Cargo graph packages: 624
+Cargo graph packages: 627
 Third-party Cargo packages: 601
 
 ## Cargo dependency graph
@@ -88,14 +88,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: allocator_api2[lib]
 Features: alloc, default, fresh-rust, nightly, serde, std
 Dependencies: (none)
-
-### android_system_properties 0.1.6
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/nical/android_system_properties
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: android_system_properties[lib], time_zone[example]
-Features: (none)
-Dependencies: libc
 
 ### anes 0.1.6
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -456,14 +448,6 @@ SPDX-License-Identifier: Apache-2.0 OR MIT
 Targets: chacha20poly1305[lib], lib[test]
 Features: alloc, default, getrandom, heapless, rand_core, reduced-round, std, stream
 Dependencies: aead, chacha20, cipher, poly1305, zeroize
-
-### chrono 0.4.45
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/chronotope/chrono
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: chrono[lib], dateutils[test], wasm[test], win_bindings[test]
-Features: __internal_bench, alloc, arbitrary, clock, core-error, default, defmt, iana-time-zone, js-sys, libc, now, oldtime, pure-rust-locales, rkyv, rkyv-16, rkyv-32, rkyv-64, rkyv-validation, serde, std, unstable-locales, wasm-bindgen, wasmbind, winapi, windows-link
-Dependencies: iana-time-zone, js-sys, num-traits, serde, wasm-bindgen, windows-link
 
 ### ciborium 0.2.2
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -1201,7 +1185,7 @@ Targets: foreign_types_shared[lib]
 Features: (none)
 Dependencies: (none)
 
-### form_urlencoded 1.2.2
+### form_urlencoded 1.2.3
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/servo/rust-url
 SPDX-License-Identifier: MIT OR Apache-2.0
@@ -1537,22 +1521,6 @@ Targets: client[example], hyper_util[lib], legacy_client[test], proxy[test], ser
 Features: __internal_happy_eyeballs_tests, client, client-legacy, client-pool, client-proxy, client-proxy-system, default, full, http1, http2, server, server-auto, server-graceful, service, tokio, tracing
 Dependencies: base64, bytes, futures-channel, futures-util, http, http-body, hyper, ipnet, libc, percent-encoding, pin-project-lite, socket2, tokio, tower-service, tracing
 
-### iana-time-zone 0.1.65
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/strawlab/iana-time-zone
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: get_timezone[example], get_timezone_loop[example], iana_time_zone[lib], stress-test[example]
-Features: fallback
-Dependencies: android_system_properties, core-foundation-sys, iana-time-zone-haiku, js-sys, log, wasm-bindgen, windows-core
-
-### iana-time-zone-haiku 0.1.2
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/strawlab/iana-time-zone
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: build-script-build[custom-build], iana_time_zone_haiku[lib]
-Features: (none)
-Dependencies: cc
-
 ### icu_collections 2.1.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/unicode-org/icu4x
@@ -1704,6 +1672,46 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: bench[bench], itoa[lib], test[test]
 Features: no-panic
 Dependencies: (none)
+
+### jiff 0.2.43
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/BurntSushi/jiff
+SPDX-License-Identifier: Unlicense OR MIT
+Targets: integration[test], jiff[lib]
+Features: alloc, arbitrary, default, defmt, js, logging, perf-inline, serde, static, static-tz, std, tz-fat, tz-system, tzdb-bundle-always, tzdb-bundle-platform, tzdb-concatenated, tzdb-zoneinfo
+Dependencies: jiff-core, jiff-static, jiff-tzdb-platform, log, portable-atomic, portable-atomic-util, serde_core, windows-link
+
+### jiff-core 0.1.5
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/BurntSushi/jiff
+SPDX-License-Identifier: Unlicense OR MIT
+Targets: jiff_core[lib]
+Features: alloc, arbitrary, default, defmt, logging, std, tz-fat
+Dependencies: log
+
+### jiff-static 0.2.43
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/BurntSushi/jiff
+SPDX-License-Identifier: Unlicense OR MIT
+Targets: jiff_static[proc-macro]
+Features: default, perf-inline, tz-fat, tzdb
+Dependencies: jiff-core, proc-macro2, quote, syn
+
+### jiff-tzdb 0.1.9
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/BurntSushi/jiff
+SPDX-License-Identifier: Unlicense OR MIT
+Targets: jiff_tzdb[lib]
+Features: (none)
+Dependencies: (none)
+
+### jiff-tzdb-platform 0.1.3
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/BurntSushi/jiff
+SPDX-License-Identifier: Unlicense OR MIT
+Targets: jiff_tzdb_platform[lib]
+Features: (none)
+Dependencies: jiff-tzdb
 
 ### jni 0.22.4
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -2136,14 +2144,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: build-script-build[custom-build], cast[test], num_traits[lib]
 Features: default, i128, libm, std
 Dependencies: autocfg
-
-### oauth2 5.0.0
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/ramosbugs/oauth2-rs
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: github[example], github_async[example], google[example], google_devicecode[example], letterboxd[example], microsoft_devicecode_common_user[example], microsoft_devicecode_tenant_user[example], msgraph[example], oauth2[lib], wunderlist[example]
-Features: curl, default, native-tls, pkce-plain, reqwest, reqwest-blocking, rustls-tls, timing-resistant-secret-traits, ureq
-Dependencies: base64, chrono, getrandom, http, rand, serde, serde_json, serde_path_to_error, sha2, thiserror, url
 
 ### once_cell 1.21.4
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -2817,7 +2817,7 @@ Targets: all[test], rustc_version[lib]
 Features: (none)
 Dependencies: semver
 
-### rustix 1.1.4
+### rustix 1.1.6
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/bytecodealliance/rustix
 SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
@@ -2919,7 +2919,7 @@ Package source: https://github.com/GREsau/schemars
 SPDX-License-Identifier: MIT
 Targets: custom_serialization[example], custom_settings[example], doc_comments[example], enum_repr[example], from_value[example], integration[test], main[example], no_std[test], remote_derive[example], schemars[lib], schemars_attrs[example], serde_attrs[example], serialize_contract[example], ui[test], validate[example]
 Features: _ui_test, arrayvec07, bigdecimal04, bytes1, chrono04, default, derive, either1, indexmap2, jiff02, preserve_order, raw_value, rust_decimal1, schemars_derive, semver1, smallvec1, smol_str02, smol_str03, std, url2, uuid1
-Dependencies: chrono, dyn-clone, ref-cast, schemars_derive, serde, serde_json
+Dependencies: dyn-clone, ref-cast, schemars_derive, serde, serde_json
 
 ### schemars_derive 1.2.2
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -4041,7 +4041,7 @@ Targets: ureq_proto[lib]
 Features: client, default, server
 Dependencies: base64, http, httparse, log
 
-### url 2.5.8
+### url 2.5.9
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/servo/rust-url
 SPDX-License-Identifier: MIT OR Apache-2.0
@@ -4849,9 +4849,21 @@ Evidence paths: packages/pi-lean-ctx/extensions/vendor/mcp-sdk.d.cts, packages/p
 Copyright: as declared by upstream
 Modified: no
 
+### vendored-oauth2
+Path: rust/crates/vendor/oauth2
+Digest: sha256:70ffab67d09b67133fd302c92fd3fc199023966fb7c0d29c2ac95694c11eb72e
+Version: 5.0.0
+Source: https://github.com/ramosbugs/oauth2-rs/tree/5.0.0
+SPDX-License-Identifier: MIT OR Apache-2.0
+License text path: rust/crates/vendor/oauth2/LICENSE-MIT
+Evidence paths: rust/Cargo.toml, rust/crates/vendor/oauth2/Cargo.toml, rust/crates/vendor/oauth2/LICENSE-APACHE, rust/crates/vendor/oauth2/LICENSE-MIT, rust/crates/vendor/oauth2/src/devicecode.rs, rust/crates/vendor/oauth2/src/introspection.rs
+Copyright: as declared by upstream
+Modified: yes
+Modification summary: LeanCTX replaces the chrono dependency (RUSTSEC-2026-0543, unmaintained) with lean-ctx-time: Cargo.toml swaps the chrono dependency for the in-tree lean-ctx-time crate; src/introspection.rs uses lean_ctx_time::UtcDateTime for exp/iat/nbf and adds a private ts_seconds_option serde module mirroring chrono 0.4.45's (integer Unix seconds on the wire, same error texts; instants outside jiff's range -009999-01-02T01:59:59Z..=9999-12-30T22:00:00Z, which chrono accepted, are rejected) plus a wire-format test; src/devicecode.rs uses UtcDateTime for the polling clock (set_time_fn, timeout) and lean_ctx_time::Duration for the timeout conversion. Each change is marked with a LeanCTX comment. Every .rs file carries an SPDX NOASSERTION header line. The package is upstream oauth2 5.0.0 (git f3424b4b2190c83c6d031fdc71eed2351d49e0df) from crates.io; Cargo.toml is upstream Cargo.toml.orig, and the registry Cargo.toml, lock files, .github and VCS metadata are not kept.
+
 ### vendored-rmcp
 Path: rust/crates/vendor/rmcp
-Digest: sha256:083999c4e663cc3ad89a8a93851302ba9bf0278a3afdf7dbac3b9fff2a519a83
+Digest: sha256:1220c05cbdc78b86cc836640bcd7fedbb05f50f3f635f262fd220266bea978d7
 Version: 3.9.0
 Source: https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0
 SPDX-License-Identifier: Apache-2.0
@@ -5090,3 +5102,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+### MIT OR Apache-2.0
+Source paths: rust/crates/vendor/oauth2
+
+Copyright (c) 2014 Alex Crichton
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.

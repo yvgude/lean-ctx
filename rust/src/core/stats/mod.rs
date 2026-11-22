@@ -296,7 +296,7 @@ fn apply_record(
     turn: u64,
 ) {
     // Tool-call accounting is durable per event, matching the savings ledger.
-    let now = chrono::Local::now();
+    let now = lean_ctx_time::LocalDateTime::now();
     let today = now.format("%Y-%m-%d").to_string();
     let timestamp = now.to_rfc3339();
 
@@ -395,7 +395,10 @@ pub fn reset_all() {
 }
 
 pub fn load_stats() -> GainSummary {
-    let store = load();
+    summary_of(&load())
+}
+
+fn summary_of(store: &StatsStore) -> GainSummary {
     let input_saved = store
         .total_input_tokens
         .saturating_sub(store.total_output_tokens);
@@ -403,6 +406,50 @@ pub fn load_stats() -> GainSummary {
         total_saved: input_saved,
         total_calls: store.total_commands,
     }
+}
+
+/// The one-line usage result, "N calls, X tokens saved". Shown by
+/// `lean-ctx status`, `lean-ctx doctor` and once on MCP server exit; never
+/// part of a tool output body (#498).
+pub fn calls_saved_line(summary: &GainSummary) -> String {
+    format!(
+        "{} calls, {} tokens saved",
+        summary.total_calls, summary.total_saved
+    )
+}
+
+/// [`calls_saved_line`] over every data dir holding stats, like `gain`.
+pub fn display_calls_saved_line() -> String {
+    calls_saved_line(&summary_of(&load_for_display()))
+}
+
+/// Marker in the data dir: the first-session result was printed.
+const FIRST_SESSION_MARKER: &str = "first-session-result.shown";
+
+/// The stderr line an exiting MCP server prints once per install, after the
+/// first session that recorded calls. `None` when it was printed before, when
+/// nothing was recorded yet, or on any I/O error (silently). The numbers use
+/// the same data-dir resolution as `status`, `doctor` and `gain`
+/// ([`load_for_display`]), so all four show the same result.
+pub fn first_session_exit_notice() -> Option<String> {
+    let dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
+    first_session_notice_in(&dir, &summary_of(&load_for_display()))
+}
+
+fn first_session_notice_in(dir: &std::path::Path, summary: &GainSummary) -> Option<String> {
+    if summary.total_calls == 0 {
+        return None;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    // `create_new`: one winner even when several servers exit at once.
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(dir.join(FIRST_SESSION_MARKER)).ok()?;
+    Some(format!("lean-ctx: {}", calls_saved_line(summary)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -529,7 +576,7 @@ fn apply_cep_snapshot(
     let tokens_saved = tokens_original.saturating_sub(tokens_compressed);
 
     cep.scores.push(CepSessionSnapshot {
-        timestamp: chrono::Local::now().to_rfc3339(),
+        timestamp: lean_ctx_time::LocalDateTime::now().to_rfc3339(),
         score,
         cache_hit_rate,
         mode_diversity,
@@ -555,6 +602,36 @@ mod tests {
             total_output_tokens: output,
             ..Default::default()
         }
+    }
+
+    /// The first-session result prints once per install: not before any call
+    /// was recorded, then exactly once, with a private marker.
+    #[test]
+    fn first_session_notice_prints_once_after_the_first_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let none = summary_of(&make_store(0, 0, 0));
+        assert_eq!(first_session_notice_in(dir.path(), &none), None);
+        let some = summary_of(&make_store(12, 5000, 1200));
+        assert_eq!(
+            first_session_notice_in(dir.path(), &some).as_deref(),
+            Some("lean-ctx: 12 calls, 3800 tokens saved")
+        );
+        assert_eq!(first_session_notice_in(dir.path(), &some), None);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.path().join(FIRST_SESSION_MARKER))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o077, 0, "marker is private: {mode:o}");
+        }
+        let gone = dir.path().join("missing");
+        assert_eq!(
+            first_session_notice_in(&gone, &some),
+            None,
+            "errors stay silent"
+        );
     }
 
     /// Write amplification (Mac, 11.11.): `flush` runs after every tool call

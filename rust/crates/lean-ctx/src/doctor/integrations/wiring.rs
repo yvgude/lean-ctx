@@ -469,16 +469,34 @@ pub(crate) fn missing_hook_programs(content: &str) -> Vec<String> {
     missing
 }
 
+/// A lean-ctx-owned rules file (`lean-ctx.md`, `lean-ctx.mdc`) is healthy when
+/// it exists. A shared user file (`AGENTS.md`, `GEMINI.md`) exists anyway, so
+/// it is only healthy when it carries the lean-ctx rules block.
 pub(crate) fn check_rules_file(path: &std::path::Path) -> NamedCheck {
-    let ok = path.exists();
+    let owned = path
+        .file_stem()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("lean-ctx"));
+    let (ok, detail) = if !path.exists() {
+        (false, format!("missing ({})", path.display()))
+    } else if owned
+        || std::fs::read_to_string(path).is_ok_and(|content| {
+            lean_ctx::core::rules_canonical::RulesFile::parse(&content).has_content()
+        })
+    {
+        (true, path.display().to_string())
+    } else {
+        (
+            false,
+            format!(
+                "no lean-ctx block ({}; run: lean-ctx setup)",
+                path.display()
+            ),
+        )
+    };
     NamedCheck {
         name: "Rules file".to_string(),
         ok,
-        detail: if ok {
-            path.display().to_string()
-        } else {
-            format!("missing ({})", path.display())
-        },
+        detail,
     }
 }
 
@@ -584,18 +602,20 @@ pub(crate) fn last_ctx_call_ago()
         return Ok(None);
     };
     let parsed =
-        chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").map_err(|_| {
+        lean_ctx_time::parse_civil_datetime(&ts, "%Y-%m-%dT%H:%M:%S%.3f").map_err(|_| {
             lean_ctx::core::context_os::ObservationPersistenceError::InvalidRow(
                 "invalid legacy tool-call timestamp".into(),
             )
         })?;
-    let delta = chrono::Local::now()
-        .naive_local()
-        .signed_duration_since(parsed);
+    let delta = lean_ctx_time::Duration::from_jiff(
+        lean_ctx_time::LocalDateTime::now()
+            .naive_local()
+            .duration_since(parsed),
+    );
     Ok(Some(humanize_ago(delta)))
 }
 
-pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
+pub(crate) fn humanize_ago(d: lean_ctx_time::Duration) -> String {
     let secs = d.num_seconds().max(0);
     if secs < 60 {
         format!("{secs}s ago")
@@ -608,8 +628,23 @@ pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
     }
 }
 
-pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
+/// The global rules file setup writes for an MCP editor target. Shared and
+/// dedicated mode differ for the hosts whose dedicated file is lean-ctx-owned.
+/// Pi Coding Agent has no arm: it is not an MCP editor target (see
+/// `editor_registry::detect`), so the doctor never reaches it here.
+pub(crate) fn rules_path_for(
+    name: &str,
+    home: &std::path::Path,
+    injection: lean_ctx::core::config::RulesInjection,
+) -> Option<std::path::PathBuf> {
+    let dedicated = injection == lean_ctx::core::config::RulesInjection::Dedicated;
     match name {
+        "OpenCode" if dedicated => {
+            Some(lean_ctx::rules_inject::opencode_dedicated_rules_path(home))
+        }
+        "Antigravity" if dedicated => Some(
+            lean_ctx::rules_inject::antigravity_dedicated_rules_path(home),
+        ),
         "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
         "Cline" | "Cline CLI" => Some(home.join(".cline/rules/lean-ctx.md")),
         "Roo Code" => Some(home.join(".roo/rules/lean-ctx.md")),
@@ -620,9 +655,8 @@ pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::
         "Qwen Code" => Some(home.join(".qwen/rules/lean-ctx.md")),
         "Amazon Q Developer" => Some(home.join(".aws/amazonq/rules/lean-ctx.md")),
         "JetBrains IDEs" => Some(home.join(".jb-rules/lean-ctx.md")),
-        "Antigravity" => Some(home.join(".gemini/antigravity/rules/lean-ctx.md")),
+        "Antigravity" => Some(home.join(".gemini/AGENTS.md")),
         "Augment CLI" | "Augment (VS Code)" => Some(home.join(".augment/rules/lean-ctx.md")),
-        "Pi Coding Agent" => Some(home.join(".pi/rules/lean-ctx.md")),
         "Crush" => Some(home.join(".config/crush/rules/lean-ctx.md")),
         _ => None,
     }
@@ -729,6 +763,32 @@ mod tests {
         let c = check_rules_file_for_policy(&path, RulesInjection::Shared, RulesScope::Project);
         assert!(c.ok);
         assert!(c.detail.contains("project scope"));
+    }
+
+    #[test]
+    fn shared_rules_file_needs_the_lean_ctx_block() {
+        let home = tempfile::tempdir().unwrap();
+        let shared = rules_path_for("Antigravity", home.path(), RulesInjection::Shared).unwrap();
+        std::fs::create_dir_all(shared.parent().unwrap()).unwrap();
+        std::fs::write(&shared, "# My own rules\n").unwrap();
+        let c = check_rules_file(&shared);
+        assert!(
+            !c.ok,
+            "a user AGENTS.md without our block is drift: {}",
+            c.detail
+        );
+
+        let block = format!(
+            "# My own rules\n\n{}\nrules\n{}\n",
+            lean_ctx::core::rules_canonical::START_MARK,
+            lean_ctx::core::rules_canonical::END_MARK
+        );
+        std::fs::write(&shared, block).unwrap();
+        assert!(check_rules_file(&shared).ok);
+
+        let dedicated =
+            rules_path_for("Antigravity", home.path(), RulesInjection::Dedicated).unwrap();
+        assert!(dedicated.ends_with(".gemini/config/rules/lean-ctx.md"));
     }
 
     #[test]

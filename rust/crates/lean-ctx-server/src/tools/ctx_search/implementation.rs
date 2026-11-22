@@ -362,11 +362,11 @@ fn search_compiled_pattern(
                 }
             }
 
-            if !allow_secret_paths {
-                if let Some(reason) = lean_ctx::core::io_boundary::is_secret_like(path) {
-                    skipped_boundary_files.push((filter_rel(path, root).into_owned(), reason));
-                    continue;
-                }
+            if let Some(reason) =
+                lean_ctx::core::io_boundary::withheld_secret(path, allow_secret_paths)
+            {
+                skipped_boundary_files.push((filter_rel(path, root).into_owned(), reason));
+                continue;
             }
 
             // Size / regular-file filtering happens once in the shared read loop
@@ -386,20 +386,22 @@ fn search_compiled_pattern(
         });
     }
 
-    // ent2-3: the Hive policy's readable roots and never-send patterns apply
+    // ent2-3: the Cloud policy's readable roots and never-send patterns apply
     // to every file the scan would read, from either collection path; a policy
     // that cannot be trusted refuses the search (fail closed).
-    match lean_ctx::core::io_boundary::hive_io_rules(None) {
+    match lean_ctx::core::io_boundary::cloud_io_rules(None) {
         Ok(None) => {}
         Ok(Some(rules)) => {
             files.retain(|path| match rules.refusal(path) {
                 None => true,
                 Some(refusal) => {
                     let reason = match refusal {
-                        lean_ctx::core::policy::hive_io::Refusal::OutsideRoots => {
-                            "outside the Hive readable roots"
+                        lean_ctx::core::policy::cloud_io::Refusal::OutsideRoots => {
+                            "outside the Cloud readable roots"
                         }
-                        lean_ctx::core::policy::hive_io::Refusal::NeverSend(_) => "Hive never_send",
+                        lean_ctx::core::policy::cloud_io::Refusal::NeverSend(_) => {
+                            "Cloud never_send"
+                        }
                     };
                     skipped_boundary_files.push((filter_rel(path, root).into_owned(), reason));
                     false
@@ -410,7 +412,7 @@ fn search_compiled_pattern(
         Err(e) => {
             return SearchOutcome::error(format!(
                 "ERROR: [I/O BOUNDARY] search refused: {e}; reads stay refused until a valid \
-                 Hive policy is installed."
+                 LeanCTX Cloud policy is installed."
             ));
         }
     }

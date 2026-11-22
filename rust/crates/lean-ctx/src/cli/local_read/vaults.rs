@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx hive vaults --json [--project-root P]`: the vaults of the
+//! `lean-ctx cloud vaults --json [--project-root P]`: the vaults of the
 //! connected workspace this Instance knows, for a local reader choosing
 //! where to share a project. No request leaves the machine.
 //!
-//! Hive has no Instance route that lists a workspace's vaults (that list is
+//! Cloud has no Instance route that lists a workspace's vaults (that list is
 //! web-only, `GET /api/v1/orgs/{o}/vaults` with a browser session), so the
 //! document is `complete: false`: it names the vaults this Instance has
-//! shared with (`<data>/hive/projects.json`) and the vault the project's
+//! shared with (`<data>/cloud/projects.json`) and the vault the project's
 //! link file names. What the Instance does not know (the person's role in
 //! a vault, whether it is private) is `null`, never guessed.
 
@@ -15,11 +15,11 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use lean_ctx_hive::HiveStore;
-use lean_ctx_hive::link::{self, VaultLink};
-use lean_ctx_hive::state::InstanceRecord;
-use lean_ctx_hive::vault::VaultMap;
-use lean_ctx_hive::vault_address::{HOSTED_SERVER, VaultAddress};
+use lean_ctx_cloud::CloudStore;
+use lean_ctx_cloud::link::{self, VaultLink};
+use lean_ctx_cloud::state::InstanceRecord;
+use lean_ctx_cloud::vault::VaultMap;
+use lean_ctx_cloud::vault_address::{VaultAddress, is_hosted_server};
 
 use super::{Code, Failure};
 
@@ -29,7 +29,7 @@ pub(crate) struct VaultList {
     pub workspace: Workspace,
     /// Always `false` in local-read/1: see the module docs.
     pub complete: bool,
-    /// The Hive web app, where the full list lives; `null` when unknown.
+    /// The Cloud web app, where the full list lives; `null` when unknown.
     pub web_url: Option<String>,
     pub vaults: Vec<VaultRow>,
 }
@@ -46,7 +46,7 @@ pub(crate) struct Workspace {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct VaultRow {
-    /// `<ws>/<vault>[@<server>]`, what `hive link --vault` takes.
+    /// `<ws>/<vault>[@<server>]`, what `cloud link --vault` takes.
     pub address: String,
     pub ns: String,
     pub name: String,
@@ -62,14 +62,14 @@ pub(crate) struct VaultRow {
     pub sources: Vec<&'static str>,
 }
 
-/// The server part of addresses on the Hive at `origin`; `None` = hosted.
+/// The server part of addresses on the Cloud at `origin`; `None` = hosted.
 pub(crate) fn server_of(origin: &str) -> Option<String> {
     let host = origin
         .trim_end_matches('/')
         .split_once("://")
         .map_or(origin, |(_, rest)| rest)
         .to_ascii_lowercase();
-    (host != HOSTED_SERVER && !host.is_empty()).then_some(host)
+    (!is_hosted_server(&host) && !host.is_empty()).then_some(host)
 }
 
 /// The document for `instance` (`None`: not connected).
@@ -82,7 +82,7 @@ pub(crate) fn build(
     let instance = instance.ok_or_else(|| {
         Failure::new(
             Code::NotConnected,
-            "this Instance is not connected to a Hive workspace (`lean-ctx hive connect`)",
+            "this Instance is not connected to a LeanCTX Cloud workspace (`lean-ctx cloud connect`)",
         )
     })?;
     let server = server_of(&instance.url);
@@ -142,8 +142,8 @@ pub(crate) fn build(
 }
 
 pub(crate) fn run(args: &[String]) {
-    super::emit("hive.vaults", || {
-        let store = HiveStore::open().map_err(Failure::from)?;
+    super::emit("cloud.vaults", || {
+        let store = CloudStore::open().map_err(Failure::from)?;
         let instance = store.instance().map_err(Failure::from)?;
         // The project is optional here: outside one, the list stands alone;
         // a --project-root that names no project is still refused.
@@ -168,7 +168,7 @@ pub(crate) fn run(args: &[String]) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use lean_ctx_hive::vault::VaultRecord;
+    use lean_ctx_cloud::vault::VaultRecord;
 
     pub(crate) fn instance(url: &str) -> InstanceRecord {
         InstanceRecord {
@@ -179,7 +179,7 @@ pub(crate) mod tests {
             url: url.into(),
             org_salt_id: "salt".into(),
             enrolled_at: "2026-11-04T00:00:00Z".into(),
-            web_url: Some("https://hive.leanctx.com".into()),
+            web_url: Some("https://cloud.leanctx.com".into()),
             org_kind: Some("team".into()),
             company_name: None,
         }
@@ -211,7 +211,10 @@ pub(crate) mod tests {
         let failure = build(None, &known, None, None).unwrap_err();
         assert_eq!(failure.code, Code::NotConnected);
 
-        let hosted = instance("https://hive.leanctx.com");
+        // Enrolled at the hosted service.
+        let hosted = instance("https://cloud.leanctx.com");
+        assert_eq!(server_of("https://cloud.leanctx.com/"), None);
+        assert_eq!(server_of(&hosted.url), None);
         let dir = tempfile::tempdir().unwrap();
         link::link(dir.path(), "platform/docs").unwrap();
         let linked = link::read_link(dir.path()).unwrap();
@@ -236,7 +239,7 @@ pub(crate) mod tests {
                 ("platform/web", false, &["shared"][..], Some("vlt_web")),
             ]
         );
-        let text = super::super::document("hive.vaults", &list);
+        let text = super::super::document("cloud.vaults", &list);
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["contract"], "local-read/1");
         assert_eq!(value["complete"], false);
@@ -245,12 +248,12 @@ pub(crate) mod tests {
 
         // A self-hosted Instance names its server in every address.
         let own = build(
-            Some(&instance("https://hive.acme.example/")),
+            Some(&instance("https://cloud.acme.example/")),
             &known,
             None,
             None,
         )
         .unwrap();
-        assert_eq!(own.vaults[0].address, "platform/api@hive.acme.example");
+        assert_eq!(own.vaults[0].address, "platform/api@cloud.acme.example");
     }
 }

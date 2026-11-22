@@ -105,17 +105,142 @@ pub(super) fn cmd_restart() {
         None => {}
     }
 
-    if lean_ctx::daemon_autostart::is_installed() {
-        lean_ctx::daemon_autostart::start();
-        eprintln!("  ✓ Daemon restarted via autostart.");
-    } else {
-        match daemon::start_daemon(&[]) {
-            Ok(()) => eprintln!("  ✓ Daemon restarted."),
-            Err(e) => {
-                eprintln!("  ✗ Daemon start failed: {e}");
-                std::process::exit(1);
-            }
+    // The exit code is the verdict callers act on (the app rolls a bad
+    // update back on a non-zero exit): success only once the daemon is up.
+    let via_autostart = lean_ctx::daemon_autostart::is_installed();
+    let started = start_daemon_and_wait(
+        || start_daemon_via(via_autostart, &[]),
+        daemon_ready,
+        DAEMON_READY_TIMEOUT,
+        DAEMON_READY_POLL,
+    );
+    match started {
+        Ok(()) if via_autostart => eprintln!("  ✓ Daemon restarted via autostart."),
+        Ok(()) => eprintln!("  ✓ Daemon restarted."),
+        Err(e) => {
+            eprintln!("  ✗ {e}");
+            std::process::exit(1);
         }
+    }
+}
+
+/// How long `restart` and `daemon restart` wait for the started daemon.
+pub(super) const DAEMON_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// How often they look while waiting.
+pub(super) const DAEMON_READY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Whether the daemon of the active data dir is up: `daemon.pid` names a
+/// verified lean-ctx daemon of this user and its socket (pipe) exists.
+pub(super) fn daemon_ready() -> bool {
+    lean_ctx::daemon::verified_daemon().is_some() && lean_ctx::daemon::daemon_addr().is_listening()
+}
+
+/// Start the daemon through the autostart service when it is installed,
+/// else directly with `args`. `Err` is the line to show.
+pub(super) fn start_daemon_via(via_autostart: bool, args: &[String]) -> Result<(), String> {
+    if via_autostart {
+        lean_ctx::daemon_autostart::start();
+        Ok(())
+    } else {
+        lean_ctx::daemon::start_daemon(args).map_err(|e| format!("Daemon start failed: {e}"))
+    }
+}
+
+/// Run `start`, then poll `ready` every `poll` until it reports the daemon
+/// up or `timeout` has passed (one last look at the deadline). `Err` is the
+/// line to show before exiting non-zero.
+pub(super) fn start_daemon_and_wait(
+    start: impl FnOnce() -> Result<(), String>,
+    mut ready: impl FnMut() -> bool,
+    timeout: std::time::Duration,
+    poll: std::time::Duration,
+) -> Result<(), String> {
+    start()?;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if ready() {
+            return Ok(());
+        }
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return Err(daemon_not_ready_message(timeout));
+        }
+        std::thread::sleep(poll.min(deadline - now));
+    }
+}
+
+/// The failure line when the started daemon never came up.
+fn daemon_not_ready_message(timeout: std::time::Duration) -> String {
+    format!(
+        "Daemon did not come up within {} s: no live daemon process and socket for data dir {}. \
+         Check: lean-ctx daemon status",
+        timeout.as_secs(),
+        lean_ctx::ipc::endpoint_dir().display()
+    )
+}
+
+#[cfg(test)]
+mod restart_ready_tests {
+    use super::start_daemon_and_wait;
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    const POLL: Duration = Duration::from_millis(1);
+
+    #[test]
+    fn restart_fails_when_the_daemon_never_comes_up() {
+        let looks = Cell::new(0u32);
+        let result = start_daemon_and_wait(
+            || Ok(()),
+            || {
+                looks.set(looks.get() + 1);
+                false
+            },
+            Duration::from_millis(30),
+            POLL,
+        );
+        let message = result.expect_err("a daemon that never came up is a failed restart");
+        assert!(
+            message.starts_with("Daemon did not come up within 0 s: "),
+            "{message}"
+        );
+        assert!(
+            looks.get() >= 2,
+            "polled until the deadline: {}",
+            looks.get()
+        );
+    }
+
+    #[test]
+    fn restart_succeeds_once_the_daemon_is_up() {
+        let looks = Cell::new(0u32);
+        let result = start_daemon_and_wait(
+            || Ok(()),
+            || {
+                looks.set(looks.get() + 1);
+                looks.get() >= 3
+            },
+            Duration::from_secs(10),
+            POLL,
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(looks.get(), 3);
+    }
+
+    #[test]
+    fn a_failed_start_is_reported_without_waiting() {
+        let looked = Cell::new(false);
+        let result = start_daemon_and_wait(
+            || Err("Daemon start failed: boom".to_string()),
+            || {
+                looked.set(true);
+                true
+            },
+            Duration::from_secs(10),
+            POLL,
+        );
+        assert_eq!(result, Err("Daemon start failed: boom".to_string()));
+        assert!(!looked.get());
     }
 }
 

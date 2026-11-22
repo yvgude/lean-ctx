@@ -99,10 +99,11 @@ impl ServerHandler for LeanCtxServer {
         // before any registration below reads it. A shared server serves
         // several clients from one process, so it names no single host.
         if self.session_mode != crate::tools::SessionMode::Shared {
-            lean_ctx::core::client_capabilities::record_handshake(
+            let handshake = lean_ctx::core::client_capabilities::record_handshake(
                 &name,
                 &request.client_info.version,
             );
+            crate::server::client_sessions::started(&handshake.host);
         }
         // Per-agent savings attribution: a personal server serves exactly one
         // client, so its ledger events can carry that client's identity. The
@@ -792,6 +793,9 @@ impl ServerHandler for LeanCtxServer {
             });
 
         ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Handler);
+        // The agent calls LeanCTX: this session is no "without a ctx call"
+        // session, also when the tool then panics or is cancelled.
+        crate::server::client_sessions::called();
         // #1781: scope the request's cancellation token for the whole dispatch
         // so a tool that waits on a child process can observe an abandoned call
         // instead of holding its blocking-pool slot until its own soft cap.

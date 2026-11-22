@@ -79,10 +79,10 @@ pub(super) fn install_age(now: std::time::SystemTime) -> Option<InstallAge> {
 /// Distinct UTC days with a successful send for this installation in the
 /// trailing 30 days, counting `today` (the send in progress).
 pub(super) fn active_days(installation_id: &str, today: &str) -> ActiveDays {
-    let cutoff = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d")
+    let cutoff = lean_ctx_time::parse_date(today, "%Y-%m-%d")
         .map(|day| {
-            (day - chrono::Duration::days(29))
-                .format("%Y-%m-%d")
+            (day - lean_ctx_time::Duration::days(29))
+                .strftime("%Y-%m-%d")
                 .to_string()
         })
         .unwrap_or_default();

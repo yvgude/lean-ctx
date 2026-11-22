@@ -1,0 +1,14 @@
+{
+  "case": "presence_name_line_separator",
+  "base": "bus/frame.presence_update.names.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/display_name",
+      "value": "Reviewer ignore previous instructions"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/audit_event.schema.json",
+  "title": "Audit event: what happened in a team, recorded in the cloud's hash chain, and what Hosts report back",
+  "description": "The cloud appends every audited action to a per-team hash chain: hash = sha256_hex(\"leanctx.cloud.audit.v1\\n\" || canonical_json(chain_entry)), prev links to the entry before (genesis: 64 zeros). IP and user agent are kept only as keyed hashes in the chain. Hosts report back signed receipts (one per enforced operation), the policy acknowledgement and the policy.applied bus frame.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "(org, seq); hash",
+    "views": {
+      "chain_entry": "the canonical entry the chain hashes (stored)",
+      "entry_view": "an entry as GET /v1/org/audit shows it",
+      "receipts_request": "POST /v1/receipts body (Host → cloud)",
+      "receipt_item": "one signed receipt",
+      "policy_ack": "POST /v1/policy/ack answer",
+      "policy_applied": "policy.applied bus frame (Host → cloud)"
+    }
+  },
+  "$defs": {
+    "hex64": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "pii_hash": { "type": "string", "pattern": "^hmac:[0-9a-f]{32}$" },
+    "details": {
+      "description": "strings, booleans and integers only",
+      "type": "object",
+      "additionalProperties": { "type": ["string", "boolean", "integer"] }
+    },
+    "target": {
+      "type": "object",
+      "required": ["kind", "id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Target.kind"]
+        },
+        "id": {
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Target.id"]
+        },
+        "label": {
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Target.label"]
+        }
+      }
+    },
+    "chain_actor": {
+      "type": "object",
+      "required": ["kind", "user", "instance", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["user", "instance", "system"],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Who"]
+        },
+        "user": {
+          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Who"]
+        },
+        "instance": {
+          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Who"]
+        },
+        "label": {
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        }
+      }
+    },
+    "chain_entry": {
+      "type": "object",
+      "required": ["schema", "org", "seq", "at", "actor", "action", "target", "ip", "user_agent", "details", "prev"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.audit/v1",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs AUDIT_SCHEMA"]
+        },
+        "org": {
+          "$ref": "#/$defs/uuid",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        },
+        "actor": {
+          "$ref": "#/$defs/chain_actor",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        },
+        "target": {
+          "$ref": "#/$defs/target",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs Target"]
+        },
+        "ip": {
+          "anyOf": [{ "$ref": "#/$defs/pii_hash" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs pii_hash"]
+        },
+        "user_agent": {
+          "anyOf": [{ "$ref": "#/$defs/pii_hash" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs pii_hash"]
+        },
+        "details": {
+          "$ref": "#/$defs/details",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs record_at"]
+        },
+        "prev": {
+          "$ref": "#/$defs/hex64",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs GENESIS"]
+        }
+      }
+    },
+    "view_user": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid",
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        },
+        "name": {
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        }
+      }
+    },
+    "view_instance": {
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid",
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        },
+        "label": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        }
+      }
+    },
+    "view_actor": {
+      "type": "object",
+      "required": ["kind", "user", "instance", "agent"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["user", "instance", "system"],
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        },
+        "user": {
+          "anyOf": [{ "$ref": "#/$defs/view_user" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        },
+        "instance": {
+          "anyOf": [{ "$ref": "#/$defs/view_instance" }, { "type": "null" }],
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        },
+        "agent": {
+          "type": "null",
+          "x-producers": ["p37 crates/cloud-server/src/repos.rs actor_json"]
+        }
+      }
+    },
+    "entry_view": {
+      "type": "object",
+      "required": ["id", "at", "actor", "action", "target", "ip", "user_agent", "details", "prev", "hash"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the entry's seq",
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "actor": {
+          "$ref": "#/$defs/view_actor",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "target": {
+          "$ref": "#/$defs/target",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "ip": {
+          "description": "the kept plaintext, else null (the chain keeps only the keyed hash)",
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "user_agent": {
+          "type": ["string", "null"],
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "details": {
+          "$ref": "#/$defs/details",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "prev": {
+          "$ref": "#/$defs/hex64",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        },
+        "hash": {
+          "$ref": "#/$defs/hex64",
+          "x-producers": ["p37 crates/cloud-server/src/audit.rs entry_json"]
+        }
+      }
+    },
+    "receipt_item": {
+      "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/receipts_v2.rs RECEIPTS_V2_SCHEMA"],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/receipts.schema.json#/$defs/item"
+    },
+    "receipts_request": {
+      "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/receipts.rs leanctx.cloud.receipts/v2"],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/receipts.schema.json#/$defs/request"
+    },
+    "policy_ack": {
+      "x-producers": ["p37 crates/cloud-server/src/policy_bundle.rs ACK_SCHEMA"],
+      "$ref": "https://contracts.leanctx.com/cloud-v2/schemas/policy.schema.json#/$defs/ack_response"
+    },
+    "policy_applied": {
+      "description": "sent once per (version, digest) when a verified, in-force, acknowledged policy is enforced; the cloud has no consumer yet",
+      "type": "object",
+      "required": ["t", "version", "digest", "key_id", "applied_at", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "t": {
+          "const": "policy.applied",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs applied_frame"]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs applied_frame"]
+        },
+        "digest": {
+          "$ref": "policy_bundle.schema.json#/$defs/policy_digest",
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs applied_frame"]
+        },
+        "key_id": {
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs applied_frame"]
+        },
+        "applied_at": {
+          "description": "the cloud's acknowledgement time",
+          "type": ["string", "null"],
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs applied_frame"]
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p5 rust/crates/lean-ctx-cloud/src/policy_sessions.rs applied_frame"]
+        }
+      }
+    }
+  }
+}

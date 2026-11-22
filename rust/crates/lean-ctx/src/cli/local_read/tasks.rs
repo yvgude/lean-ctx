@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `lean-ctx hive tasks list|show --json`: the vault's tasks through this
-//! Instance, from the same calls as the text `hive tasks list|show` (the
-//! reader never holds a Hive token).
+//! `lean-ctx cloud tasks list|show --json`: the vault's tasks through this
+//! Instance, from the same calls as the text `cloud tasks list|show` (the
+//! reader never holds a Cloud token).
 
 use serde::Serialize;
 
-use lean_ctx_hive::tasks::{ListFilter, TaskView};
-use lean_ctx_protocol::hive::tasks::{
+use lean_ctx_cloud::tasks::{ListFilter, TaskView};
+use lean_ctx_protocol::cloud::tasks::{
     TaskActorV1, TaskListV1, TaskOriginKind, TaskOriginV1, TaskPriority, TaskState, TaskSummaryV1,
     TaskV1,
 };
@@ -18,17 +18,17 @@ pub(crate) struct TasksList {
     pub project_root: String,
     pub vault: String,
     pub tasks: Vec<TaskRow>,
-    /// A Hive answer came back full (100 tasks): older tasks of these
+    /// A Cloud answer came back full (100 tasks): older tasks of these
     /// filters may be missing from `tasks`.
     pub partial: bool,
     /// This project's local tasks that are not brought into the vault and
     /// not closed ("local, not shared"); reached with `lean-ctx tasks …
     /// --local`.
-    pub local_not_shared: Vec<lean_ctx_hive::bring_local::Unsettled>,
-    /// Present when Hive held this Instance's task reads (429) or was not
+    pub local_not_shared: Vec<lean_ctx_cloud::bring_local::Unsettled>,
+    /// Present when Cloud held this Instance's task reads (429) or was not
     /// reachable: `tasks` is the last good list, `age_s` seconds old.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stale: Option<lean_ctx_hive::tasks::reads::Stale>,
+    pub stale: Option<lean_ctx_cloud::tasks::reads::Stale>,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,7 +38,7 @@ pub(crate) struct TasksTask {
     pub task: TaskDetail,
     /// As in [`TasksList::stale`].
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stale: Option<lean_ctx_hive::tasks::reads::Stale>,
+    pub stale: Option<lean_ctx_cloud::tasks::reads::Stale>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -66,7 +66,7 @@ pub(crate) struct TaskRow {
     pub priority: &'static str,
     pub role: Option<String>,
     pub labels: Vec<String>,
-    /// C0 2.2: +1 on every priority or labels write; `null` from a Hive
+    /// C0 2.2: +1 on every priority or labels write; `null` from a Cloud
     /// that sends none.
     pub fields_version: Option<u32>,
     pub claimed_by: Option<ClaimedBy>,
@@ -242,22 +242,28 @@ pub(crate) fn detail(view: &TaskView) -> TaskDetail {
 
 /// `ns/name` of the vault linked to `root`; `no_vault` without one.
 fn linked_address(root: &str) -> Result<String, Failure> {
-    let store = lean_ctx_hive::HiveStore::open()?;
+    let store = lean_ctx_cloud::CloudStore::open()?;
     if store.instance()?.is_none() {
         return Err(Failure::new(
             Code::NotConnected,
-            "this machine is not connected to Hive",
+            "this machine is not connected to LeanCTX Cloud",
         ));
     }
-    lean_ctx_hive::vault::VaultMap::load(store.data_dir())
+    lean_ctx_cloud::vault::VaultMap::load(store.data_dir())
         .for_root(root)
         .map(|r| format!("{}/{}", r.ns, r.name))
-        .ok_or_else(|| Failure::new(Code::NoVault, "this checkout is not linked to a Hive vault"))
+        .ok_or_else(|| {
+            Failure::new(
+                Code::NoVault,
+                "this checkout is not linked to a Cloud vault",
+            )
+        })
 }
 
 /// The refusal of a priority write from a process under an agent host.
-pub(crate) const AGENT_REFUSAL: &str = "priority and labels are set by a person or the Queen; \
-     this process runs under an agent (the Queen sets them with ctx_tasks action=prioritize)";
+pub(crate) const AGENT_REFUSAL: &str = "priority and labels are set by a person or the app's \
+     coordinator session; this process runs under an agent (the coordinator session sets them \
+     with ctx_tasks action=prioritize)";
 
 /// The `change` of a `tasks.ack` (the shape of `lean-ctx tasks … --json`).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -293,22 +299,22 @@ pub(crate) fn runs_under_agent(env: impl Fn(&str) -> Option<String>) -> bool {
 /// [--clear] [--priority P]`. A wrong value is refused before any request.
 pub(crate) fn fields_change(
     args: &[String],
-) -> Result<(u64, lean_ctx_hive::tasks::fields::FieldsChange), Failure> {
-    use lean_ctx_hive::tasks::fields::{FieldsChange, parse_labels, parse_priority};
+) -> Result<(u64, lean_ctx_cloud::tasks::fields::FieldsChange), Failure> {
+    use lean_ctx_cloud::tasks::fields::{FieldsChange, parse_labels, parse_priority};
     let positional = super::positionals(args);
     let verb = positional.first().copied().unwrap_or_default();
     let number = positional
         .get(1)
         .and_then(|n| n.trim_start_matches('#').parse::<u64>().ok())
         .filter(|n| *n > 0)
-        .ok_or_else(|| Failure::invalid(format!("hive tasks {verb} <number> …")))?;
+        .ok_or_else(|| Failure::invalid(format!("cloud tasks {verb} <number> …")))?;
     let value = positional.get(2).copied();
     if positional.len() > 3 {
         return Err(Failure::invalid(format!(
-            "hive tasks {verb}: one value after the number (labels are a,b,c)"
+            "cloud tasks {verb}: one value after the number (labels are a,b,c)"
         )));
     }
-    let invalid = |e: lean_ctx_hive::HiveError| Failure::invalid(e.to_string());
+    let invalid = |e: lean_ctx_cloud::CloudError| Failure::invalid(e.to_string());
     let mut words: Vec<&str> = super::flags(args, "--labels")?;
     let clear_flag = if verb == "labels" {
         "--clear"
@@ -345,7 +351,7 @@ pub(crate) fn fields_change(
     let change = FieldsChange { priority, labels };
     change.validate().map_err(|_| {
         Failure::invalid(format!(
-            "hive tasks {verb} <number>: name high|normal and/or labels"
+            "cloud tasks {verb} <number>: name high|normal and/or labels"
         ))
     })?;
     Ok((number, change))
@@ -355,17 +361,17 @@ pub(crate) fn list_rows(list: &TaskListV1) -> Vec<TaskRow> {
     list.tasks.iter().map(summary_row).collect()
 }
 
-/// `hive tasks list|show <n> --json [--state S] [--role R] [--mine]`.
+/// `cloud tasks list|show <n> --json [--state S] [--role R] [--mine]`.
 pub(crate) fn run(args: &[String]) {
     super::print(&answer_for(args, super::Via::Cli));
 }
 
-/// The document of `hive tasks list|show <n> --json` for the socket.
+/// The document of `cloud tasks list|show <n> --json` for the socket.
 pub(crate) fn answer(args: &[String]) -> super::Answer {
     answer_for(args, super::Via::Socket)
 }
 
-/// The document of `hive tasks list|show <n> --json`, for `via`. Task text
+/// The document of `cloud tasks list|show <n> --json`, for `via`. Task text
 /// (titles, bodies, evidence) is project text: released inside the tool
 /// run of `ctx_tasks` (request scope, redaction, receipt).
 pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
@@ -375,11 +381,21 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
         Ok(root) => root,
         Err(failure) => return super::Answer::failure(&failure),
     };
+    // A person's decision or stop: the document of `tasks decide|stop`
+    // (a linked vault's goes to LeanCTX Cloud as the linked person).
+    if matches!(action, "decide" | "stop") {
+        use crate::cli::tasks_cmd::{Caller, caller, json_answer};
+        let who = match via {
+            super::Via::Cli => caller(),
+            super::Via::Socket => Caller::Person,
+        };
+        return json_answer(args, &who, via);
+    }
     let path = std::path::PathBuf::from(&root);
     // A project linked to no vault answers from its local tasks (vault null).
     // An unreadable link state is an error document, never an exit: the
     // socket builds this answer inside the daemon.
-    let linked = match lean_ctx_hive::tasks::local::linked(&path) {
+    let linked = match lean_ctx_cloud::tasks::local::linked(&path) {
         Ok(linked) => linked,
         Err(message) => {
             return super::Answer::failure(&Failure::new(Code::Unavailable, message));
@@ -427,7 +443,7 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
                 priority: None,
             };
             let vault = linked_address(&root)?;
-            let read = lean_ctx_hive::tasks::list_read(&path, &filter)?;
+            let read = lean_ctx_cloud::tasks::list_read(&path, &filter)?;
             let list = read.value;
             Ok(TasksList {
                 project_root: root.clone(),
@@ -437,7 +453,7 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
                 stale: read.stale,
                 // The vault's list never fails on the local store: an
                 // unreadable one is logged and lists nothing local.
-                local_not_shared: lean_ctx_hive::bring_local::local_not_shared(&path)
+                local_not_shared: lean_ctx_cloud::bring_local::local_not_shared(&path)
                     .unwrap_or_else(|error| {
                         tracing::warn!("local tasks not listed beside the vault's: {error}");
                         Vec::new()
@@ -449,9 +465,9 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
                 .get(1)
                 .and_then(|n| n.trim_start_matches('#').parse::<u64>().ok())
                 .filter(|n| *n > 0)
-                .ok_or_else(|| Failure::invalid("hive tasks show <number> --json"))?;
+                .ok_or_else(|| Failure::invalid("cloud tasks show <number> --json"))?;
             let vault = linked_address(&root)?;
-            let read = lean_ctx_hive::tasks::show_read(&path, number)?;
+            let read = lean_ctx_cloud::tasks::show_read(&path, number)?;
             Ok(TasksTask {
                 project_root: root.clone(),
                 vault,
@@ -466,8 +482,8 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
                 }
                 let (number, change) = fields_change(args)?;
                 let vault = linked_address(&root)?;
-                let ack = lean_ctx_hive::tasks::fields::set_fields(&path, number, &change)?;
-                let task = lean_ctx_hive::tasks::show(&path, number)
+                let ack = lean_ctx_cloud::tasks::fields::set_fields(&path, number, &change)?;
+                let task = lean_ctx_cloud::tasks::show(&path, number)
                     .ok()
                     .map(|view| detail(&view));
                 Ok(FieldsAck {
@@ -484,7 +500,7 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
             })
         }
         other => super::Answer::failure(&Failure::invalid(format!(
-            "hive tasks {other}: --json supports list, show, priority and labels"
+            "cloud tasks {other}: --json supports list, show, decide, stop, priority and labels"
         ))),
     }
 }
@@ -492,7 +508,7 @@ pub(crate) fn answer_for(args: &[String], via: super::Via) -> super::Answer {
 #[cfg(test)]
 mod fields_tests {
     use super::*;
-    use lean_ctx_protocol::hive::tasks::TaskPriority;
+    use lean_ctx_protocol::cloud::tasks::TaskPriority;
 
     fn args(words: &[&str]) -> Vec<String> {
         words.iter().map(|w| (*w).to_owned()).collect()
@@ -596,7 +612,7 @@ mod fields_tests {
     #[test]
     fn a_listing_row_carries_priority_labels_and_fields_version() {
         let list: TaskListV1 = serde_json::from_value(serde_json::json!({
-            "schema": "leanctx.hive.task-list/v1",
+            "schema": "leanctx.cloud.task-list/v1",
             "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
             "tasks": [
                 {"number": 3, "state": "open", "origin": "person", "mine": false,
@@ -626,7 +642,7 @@ mod fields_route_tests {
     #[test]
     fn the_priority_routes_answer_with_the_cli_words_and_are_listed() {
         let route = super::super::routes::all()
-            .find(|r| r.path == "/v1/local/hive/tasks/{n}/priority")
+            .find(|r| r.path == "/v1/local/cloud/tasks/{n}/priority")
             .expect("the priority route");
         assert_eq!(route.kind, "tasks.ack");
         let params: Vec<&str> = route.params.iter().map(|p| p.name).collect();
@@ -661,7 +677,7 @@ mod fields_route_tests {
             Some(vec!["core".to_owned(), "p1".to_owned()])
         );
         let commands = super::super::capabilities::commands_of(&super::super::routes::table_json());
-        let tasks = commands["hive.tasks"].as_array().expect("some");
+        let tasks = commands["cloud.tasks"].as_array().expect("some");
         for verb in ["priority", "labels"] {
             assert!(
                 tasks.contains(&json!({"verb": verb, "via": ["cli", "socket"]})),

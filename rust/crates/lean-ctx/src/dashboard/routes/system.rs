@@ -98,6 +98,39 @@ pub(super) fn handle(
             let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }
+        // Whether LeanCTX Code manages this machine (app-presence v1), so the
+        // Cockpit can show "Managed in LeanCTX Code" on the views it owns.
+        "/api/app" => {
+            let presence = lean_ctx::core::app_presence::detect();
+            let json = lean_ctx::core::app_presence::status_json(presence.as_ref());
+            Some(("200 OK", "application/json", json))
+        }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_app_route_says_whether_leanctx_code_manages_this_machine() {
+        let dir = lean_ctx::core::data_dir::isolated_data_dir();
+        let (status, kind, body) = super::handle("/api/app", "", "GET", "").expect("/api/app");
+        assert_eq!((status, kind), ("200 OK", "application/json"));
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["managed"], false);
+
+        let marker = lean_ctx::core::app_presence::marker_path_in(dir.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(
+            &marker,
+            r#"{"schema":"leanctx.app-presence/v1","app":"leanctx-code","open_url":"leanctx://cockpit"}"#,
+        )
+        .unwrap();
+        let (_, _, body) = super::handle("/api/app", "", "GET", "").expect("/api/app");
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["managed"], true);
+        assert_eq!(value["app"], "LeanCTX Code");
+        assert_eq!(value["open_url"], "leanctx://cockpit");
+        assert!(!body.contains(&dir.path().display().to_string()));
     }
 }

@@ -1,0 +1,14 @@
+{
+  "cases": [
+    {
+      "fixture": "records/snapshot_manifest.json",
+      "key_id": "7bc9f7e9dc1a0621",
+      "signature": "e8b6e10a066f7214216adb51435f3a69a1513f32d764a6ee1972124adb69df27ad7885c819890030315d9846a1f72e7df0c134fdc79ee4ccebc0a5cd1ddb490f",
+      "signing_input": "leanctx.cloud.snapshot.v1\n{\"created_at\":1792800020000,\"epoch\":0,\"id_salt\":\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"key_id\":\"7bc9f7e9dc1a0621\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"rev\":1,\"schema\":\"leanctx.cloud.snapshot/v1\",\"segments\":[{\"count\":18,\"envelope_root\":\"8d650a9912ed7335278691da85f0c3a690c308759ee2c5aa5c640ba2dec389ac\",\"n\":0,\"seq_from\":1,\"seq_to\":18}],\"seq\":18,\"server_time\":1792800020500}"
+    }
+  ],
+  "rules": {
+    "domain": "leanctx.cloud.snapshot.v1\n",
+    "signer": "Cloud key of purpose snapshot (signing.vectors.json cloud_snapshot)"
+  }
+}

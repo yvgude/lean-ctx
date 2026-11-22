@@ -11,7 +11,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use lean_ctx_time::{OffsetDateTime, SecondsFormat, UtcDateTime};
 
 use crate::model::{
     Draft, Event, Kind, MAX_LABEL_BYTES, MAX_ROOT_BYTES, MAX_TARGET_BYTES, MAX_TEXT_BYTES, bound,
@@ -39,7 +39,7 @@ pub struct Filter {
     pub session: Option<String>,
     pub project_root: Option<String>,
     /// Strictly newer than this instant.
-    pub since: Option<DateTime<Utc>>,
+    pub since: Option<UtcDateTime>,
     /// Empty = every kind.
     pub kinds: Vec<Kind>,
     /// Newest `limit` are kept (`DEFAULT_LIMIT` when 0).
@@ -83,7 +83,7 @@ impl Store {
     pub fn append(
         &self,
         draft: Draft,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         redact: &dyn Fn(&str) -> String,
     ) -> std::io::Result<Event> {
         let session_id = label(&draft.session_id);
@@ -227,7 +227,7 @@ fn matches(event: &Event, filter: &Filter) -> bool {
             .is_none_or(|root| &event.project_root == root)
         && (filter.kinds.is_empty() || filter.kinds.contains(&event.kind))
         && filter.since.is_none_or(|since| {
-            DateTime::parse_from_rfc3339(&event.at).is_ok_and(|at| at.with_timezone(&Utc) > since)
+            OffsetDateTime::parse_from_rfc3339(&event.at).is_ok_and(|at| at.to_utc() > since)
         })
 }
 
@@ -295,12 +295,10 @@ fn prune_sessions(dir: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::model::{Outcome, Source};
-    use chrono::TimeZone;
+    use lean_ctx_time::UtcDateTime;
 
-    fn at(second: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 11, 4, 9, 0, second)
-            .single()
-            .unwrap_or_default()
+    fn at(second: u32) -> UtcDateTime {
+        UtcDateTime::with_ymd_and_hms(2026, 11, 4, 9, 0, second).unwrap_or_default()
     }
 
     fn mask(text: &str) -> String {

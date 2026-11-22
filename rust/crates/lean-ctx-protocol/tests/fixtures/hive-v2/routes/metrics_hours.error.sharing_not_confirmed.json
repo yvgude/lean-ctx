@@ -1,6 +1,0 @@
-{
-  "error": {
-    "code": "sharing_not_confirmed",
-    "message": "confirm once that this workspace shares instance metrics (lean-ctx hive metrics confirm)"
-  }
-}

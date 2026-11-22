@@ -1,0 +1,22 @@
+{
+  "count": 2,
+  "key_id": "5d2abe57a3a2c50f",
+  "keys": [
+    {
+      "key_ref": "01M5NKA6W8005000000000W005",
+      "kind": 1
+    },
+    {
+      "key_ref": "s:1",
+      "kind": 4
+    }
+  ],
+  "place_id": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+  "place_key_versions": [],
+  "purge_id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+  "reason": "leaked_secret",
+  "scope": "keys",
+  "shredded_at": 1792800013200,
+  "signature": "89636fc8e36f67926938a3513188141d5985dcd603663b2a134e1d9e57d1525fd059cb5da67fa4a49b9063294280d9b0d985af3226ad5f577795ba4836010708",
+  "v": 1
+}

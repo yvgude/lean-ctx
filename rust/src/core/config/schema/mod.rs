@@ -113,6 +113,12 @@ fn governor_section() -> SectionSchema {
             "LEAN_CTX_GOVERNOR_R4",
             "template collapse of large Bash output",
         ),
+        (
+            "r5",
+            "on",
+            "LEAN_CTX_GOVERNOR_R5",
+            "outline instead of a first whole read of a large code file (Read, `cat <file>`, Code Mode script reads)",
+        ),
     ] {
         keys.insert(
             rule.into(),
@@ -205,7 +211,7 @@ impl ConfigSchema {
         sections_core::build(&mut sections);
         sections_features::build(&mut sections);
         sections_advanced::build(&mut sections);
-        sections.insert("hive".into(), crate::core::config::hive::schema_section());
+        sections.insert("cloud".into(), crate::core::config::cloud::schema_section());
         sections.insert("intelligence_runtime".into(), SectionSchema {
             description: "Global-only optional runtime consent and independent staging pins; project overrides never apply".into(),
             keys: [

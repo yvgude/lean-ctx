@@ -284,11 +284,11 @@ mod tests {
         assert!(tool.input_schema["properties"].get("connector").is_none());
     }
 
-    /// Hive metrics K2: the wire's closed tool table stays in step with the
-    /// registry (moved here from `core::hive::metrics_v2::tests`).
+    /// Cloud metrics K2: the wire's closed tool table stays in step with the
+    /// registry (moved here from `core::cloud::metrics_v2::tests`).
     #[test]
     fn every_registered_tool_is_a_known_wire_tool() {
-        use lean_ctx_protocol::hive::metrics_v2::KNOWN_TOOLS;
+        use lean_ctx_protocol::cloud::metrics_v2::KNOWN_TOOLS;
         let missing: Vec<&str> = build_registry()
             .names()
             .into_iter()

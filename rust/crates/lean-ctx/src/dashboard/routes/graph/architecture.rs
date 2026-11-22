@@ -115,7 +115,7 @@ fn compute_report(
 
     let val = serde_json::json!({
         "project": project,
-        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "generated_at": lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         "file_count": file_count,
         "edge_count": all_edges.len(),
         "community_count": community_count,

@@ -31,7 +31,7 @@ async fn test_logging_spec_compliance() -> anyhow::Result<()> {
                     LoggingLevel::Info,
                     serde_json::json!({
                         "message": "Server initiated message",
-                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "timestamp": lean_ctx_time::UtcDateTime::now().to_rfc3339(),
                     }),
                 )
                 .with_logger("test_server"),
@@ -87,7 +87,7 @@ async fn test_logging_spec_compliance() -> anyhow::Result<()> {
 
         // Verify timestamp
         let timestamp = data["timestamp"].as_str().unwrap();
-        chrono::DateTime::parse_from_rfc3339(timestamp).expect("RFC3339 timestamp");
+        lean_ctx_time::OffsetDateTime::parse_from_rfc3339(timestamp).expect("RFC3339 timestamp");
 
         messages.clear();
     }
@@ -329,7 +329,7 @@ async fn test_logging_optional_fields() -> anyhow::Result<()> {
 
         // Verify timestamp
         let timestamp = data["timestamp"].as_str().unwrap();
-        chrono::DateTime::parse_from_rfc3339(timestamp).expect("RFC3339 timestamp");
+        lean_ctx_time::OffsetDateTime::parse_from_rfc3339(timestamp).expect("RFC3339 timestamp");
 
         messages.clear();
     }

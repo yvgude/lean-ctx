@@ -1,6 +1,6 @@
 //! The portable context-package bundle format (#293).
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::core::session::{Decision, FileTouched, Finding, TaskInfo, TestSnapshot};
@@ -12,7 +12,7 @@ pub(crate) const FORMAT_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPackage {
     pub format_version: u32,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
     pub project_root: String,
     pub session_id: String,
     pub metadata: PackageMetadata,
@@ -52,7 +52,7 @@ pub struct KnowledgeFact {
     pub key: String,
     pub value: String,
     pub confidence: f32,
-    pub created_at: DateTime<Utc>,
+    pub created_at: UtcDateTime,
 }
 
 impl ContextPackage {

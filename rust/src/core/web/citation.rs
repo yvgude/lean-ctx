@@ -24,7 +24,7 @@ impl Citation {
             url: url.to_string(),
             title,
             site: url_guard::validate(url).ok().map(|u| u.host),
-            fetched_at: chrono::Utc::now().to_rfc3339(),
+            fetched_at: lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         }
     }
 

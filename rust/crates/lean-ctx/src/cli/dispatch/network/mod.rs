@@ -578,18 +578,23 @@ pub(super) fn cmd_daemon(rest: &[String]) {
             if let Err(e) = lean_ctx::daemon::stop_daemon() {
                 println!("  (stop: {e})");
             }
-            if lean_ctx::daemon_autostart::is_installed() {
-                lean_ctx::daemon_autostart::start();
-                println!("\x1b[32m✓\x1b[0m Daemon restarted via autostart service.");
-            } else {
-                match lean_ctx::daemon::start_daemon(&rest[1..]) {
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        std::process::exit(1);
-                    }
-                    _ => {
-                        println!("\x1b[32m✓\x1b[0m Daemon restarted.");
-                    }
+            // Exit 0 only once the daemon is up (PID and socket live): the
+            // app rolls a bad update back on a non-zero exit.
+            let via_autostart = lean_ctx::daemon_autostart::is_installed();
+            let started = super::lifecycle::start_daemon_and_wait(
+                || super::lifecycle::start_daemon_via(via_autostart, &rest[1..]),
+                super::lifecycle::daemon_ready,
+                super::lifecycle::DAEMON_READY_TIMEOUT,
+                super::lifecycle::DAEMON_READY_POLL,
+            );
+            match started {
+                Ok(()) if via_autostart => {
+                    println!("\x1b[32m✓\x1b[0m Daemon restarted via autostart service.");
+                }
+                Ok(()) => println!("\x1b[32m✓\x1b[0m Daemon restarted."),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
                 }
             }
         }

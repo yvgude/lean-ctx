@@ -84,6 +84,19 @@ pub(super) fn safe_write(path: &Path, content: &str, dry_run: bool) -> Result<()
     Ok(())
 }
 
+/// Rewrite a rules file only if not in dry-run mode: atomically (temp file +
+/// rename), owner-only, and through a symlink only when it stays within
+/// `$HOME` — the writer setup uses. The caller already took the
+/// `.lean-ctx.bak` copy, which goes once the write succeeded.
+pub(super) fn safe_write_rules(path: &Path, content: &str, dry_run: bool) -> Result<(), String> {
+    if dry_run {
+        return Ok(());
+    }
+    lean_ctx::config_io::write_atomic(path, content)?;
+    cleanup_bak(path);
+    Ok(())
+}
+
 /// Remove `path` only if not in dry-run mode.
 pub(super) fn safe_remove(path: &Path, dry_run: bool) -> Result<(), std::io::Error> {
     if dry_run {
@@ -277,20 +290,27 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 // Marked block removal (for AGENTS.md, SharedMarkdown)
 // ---------------------------------------------------------------------------
 
+/// Remove the block from the `start` marker line through the first `end`
+/// marker line after it. Markers count only as whole lines (GL #1158): a
+/// marker quoted inside user prose is user text, and without an end line
+/// after the start the content is returned unchanged.
 pub(super) fn remove_marked_block(content: &str, start: &str, end: &str) -> String {
-    let s = content.find(start);
-    let e = content.find(end);
-    match (s, e) {
-        (Some(si), Some(ei)) if ei >= si => {
-            let after_end = ei + end.len();
+    use lean_ctx::marked_block::marker_line_span;
+    let span = marker_line_span(content, start).and_then(|(si, after_start)| {
+        marker_line_span(&content[after_start..], end).map(|(_, e)| (si, after_start + e))
+    });
+    match span {
+        Some((si, after_end)) => {
             let before = &content[..si];
             let after = &content[after_end..];
             let mut out = String::new();
-            out.push_str(before.trim_end_matches('\n'));
+            // `\r` too: in a CRLF file a `\n`-only trim stops at the `\r`,
+            // and every install/uninstall cycle would add blank lines.
+            out.push_str(before.trim_end_matches(['\r', '\n']));
             out.push('\n');
             if !after.trim().is_empty() {
                 out.push('\n');
-                out.push_str(after.trim_start_matches('\n'));
+                out.push_str(after.trim_start_matches(['\r', '\n']));
             }
             out
         }
@@ -703,6 +723,166 @@ mod tests {
             assert!(err.contains("nothing was removed"), "{err}");
             assert!(err.contains("lean-ctx uninstall --help"), "{err}");
         }
+    }
+
+    #[test]
+    fn remove_rules_files_cleans_loaded_and_legacy_pi_antigravity_codex_rules() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let _pi = lean_ctx::test_env::EnvVarGuard::set(
+            "PI_CODING_AGENT_DIR",
+            home.join("custom-pi").to_string_lossy().as_ref(),
+        );
+        let _codex = lean_ctx::test_env::EnvVarGuard::set(
+            "CODEX_HOME",
+            home.join(".codex").to_string_lossy().as_ref(),
+        );
+        let block = format!(
+            "{}\nrules\n{}\n",
+            lean_ctx::core::rules_canonical::START_MARK,
+            lean_ctx::core::rules_canonical::END_MARK
+        );
+        let write = |rel: &str, body: &str| {
+            let path = home.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        // Setup ran with the default Pi dir; uninstall sees the override too.
+        write(".pi/agent/AGENTS.md", &format!("# Mine\n\n{block}"));
+        write("custom-pi/AGENTS.md", &block);
+        write(".gemini/AGENTS.md", &block);
+        write(
+            ".gemini/config/rules/lean-ctx.md",
+            &format!("---\ntrigger: always_on\n---\n\n{block}"),
+        );
+        write(".codex/instructions.md", &block);
+        write(".pi/rules/lean-ctx.md", &format!("lean-ctx\n{block}"));
+        write(
+            ".gemini/antigravity/rules/lean-ctx.md",
+            &format!("lean-ctx\n{block}"),
+        );
+
+        assert!(remove_rules_files(home, false));
+
+        let pi = std::fs::read_to_string(home.join(".pi/agent/AGENTS.md")).unwrap();
+        assert_eq!(pi.trim(), "# Mine", "Pi user content survives: {pi}");
+        for gone in [
+            ".gemini/AGENTS.md",
+            "custom-pi/AGENTS.md",
+            ".gemini/config/rules/lean-ctx.md",
+            ".codex/instructions.md",
+            ".pi/rules/lean-ctx.md",
+            ".gemini/antigravity/rules/lean-ctx.md",
+        ] {
+            assert!(!home.join(gone).exists(), "{gone} must be removed");
+        }
+    }
+
+    /// Antigravity's `~/.gemini/AGENTS.md` only ever held a marked block, so
+    /// a pre-v13 heading plus a quoted end marker in the user's own text is
+    /// not a lean-ctx block and stays.
+    #[test]
+    fn marker_only_shared_file_ignores_heading_and_quoted_end_marker() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let path = home.join(".gemini/AGENTS.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mine = format!(
+            "# Context Engineering Layer\nMy notes on lean-ctx: its block ends with `{}`.\n\n## Keep\nthis\n",
+            lean_ctx::core::rules_canonical::END_MARK
+        );
+        std::fs::write(&path, &mine).unwrap();
+
+        remove_rules_files(home, false);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
+    }
+
+    /// A shared file whose lean-ctx block lost its end line keeps every
+    /// byte: the block's extent is unknown, and the user's text after the
+    /// start marker would otherwise go together with the backup.
+    #[test]
+    fn shared_file_with_unterminated_block_is_left_untouched() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let _codex = lean_ctx::test_env::EnvVarGuard::set(
+            "CODEX_HOME",
+            home.join(".codex").to_string_lossy().as_ref(),
+        );
+        let path = home.join(".config/opencode/AGENTS.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mine = format!(
+            "# Mine\nintro\n{}\nold rule\n\nMy own paragraph\nkeep me\n## My heading\ntail\n",
+            lean_ctx::core::rules_canonical::START_MARK
+        );
+        std::fs::write(&path, &mine).unwrap();
+
+        remove_rules_files(home, false);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
+    }
+
+    /// Setup appends the shared block to a CRLF file; uninstall must give
+    /// back the exact bytes, so repeated cycles do not grow blank lines.
+    #[test]
+    fn crlf_shared_file_install_uninstall_round_trip_is_byte_stable() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let _codex = lean_ctx::test_env::EnvVarGuard::set(
+            "CODEX_HOME",
+            home.join(".codex").to_string_lossy().as_ref(),
+        );
+        let path = home.join(".config/opencode/AGENTS.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = "# Mine\r\nnotes\r\n\r\n## After\r\nkeep\r\n";
+        let fresh = lean_ctx::rules_inject::rules_shared_content();
+        std::fs::write(&path, original).unwrap();
+
+        for _ in 0..2 {
+            let current = std::fs::read_to_string(&path).unwrap();
+            let installed =
+                lean_ctx::core::rules_canonical::RulesFile::parse(&current).merged_with(&fresh);
+            std::fs::write(&path, installed).unwrap();
+            remove_rules_files(home, false);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
+    }
+
+    /// A dedicated rules file is deleted only for the lean-ctx marker line;
+    /// the user's notes beside the block survive, and a file that merely
+    /// mentions lean-ctx is not ours.
+    #[test]
+    fn dedicated_rules_file_needs_the_marker_line_and_keeps_user_notes() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = home.join(".cline/rules");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mention = dir.join("lean-ctx.md");
+        std::fs::write(&mention, "# My lean-ctx cheat sheet\n").unwrap();
+        let roo = home.join(".roo/rules/lean-ctx.md");
+        std::fs::create_dir_all(roo.parent().unwrap()).unwrap();
+        std::fs::write(
+            &roo,
+            format!(
+                "# My notes\n\n{}\nrules\n{}\n",
+                lean_ctx::core::rules_canonical::START_MARK,
+                lean_ctx::core::rules_canonical::END_MARK
+            ),
+        )
+        .unwrap();
+
+        remove_rules_files(home, false);
+
+        assert_eq!(
+            std::fs::read_to_string(&mention).unwrap(),
+            "# My lean-ctx cheat sheet\n"
+        );
+        assert_eq!(std::fs::read_to_string(&roo).unwrap(), "# My notes\n");
     }
 
     #[test]

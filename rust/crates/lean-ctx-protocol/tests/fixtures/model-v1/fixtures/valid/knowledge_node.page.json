@@ -1,0 +1,14 @@
+{
+  "id": "p-overview",
+  "items": [
+    {
+      "kind": "prose",
+      "text": "Payments flow."
+    },
+    {
+      "id": "f-1",
+      "kind": "fact"
+    }
+  ],
+  "title": "Overview"
+}

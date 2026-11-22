@@ -11,6 +11,7 @@
 //! fails fast instead of hanging), and enforces a wall-clock timeout.
 
 pub mod clone;
+pub mod decision_history;
 pub mod repo_url;
 pub mod shadow;
 

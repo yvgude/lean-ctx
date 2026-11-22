@@ -13,12 +13,12 @@ fn init_never_replaces_an_existing_config() {
         write_simplified_config().is_ok(),
         "a first config is created"
     );
-    std::fs::write(&path, "[hive]\nenabled = false\n").unwrap();
+    std::fs::write(&path, "[cloud]\nenabled = false\n").unwrap();
     let err = write_simplified_config().unwrap_err();
     assert!(err.contains("stays as it is"), "{err}");
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
-        "[hive]\nenabled = false\n",
+        "[cloud]\nenabled = false\n",
         "the person's tightening survives"
     );
 }

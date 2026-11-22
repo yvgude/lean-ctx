@@ -1,8 +1,8 @@
 use base64::Engine;
-use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};
 use lean_ctx_protocol::DataClassification;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashSet;
@@ -29,8 +29,8 @@ type HmacSha256 = Hmac<Sha256>;
 #[serde(deny_unknown_fields)]
 pub struct RelayHop {
     pub agent_id: String,
-    pub received_at: DateTime<Utc>,
-    pub forwarded_at: Option<DateTime<Utc>>,
+    pub received_at: UtcDateTime,
+    pub forwarded_at: Option<UtcDateTime>,
     pub processing_ms: Option<u64>,
 }
 
@@ -73,7 +73,7 @@ impl RelayChain {
     pub fn add_peer_hop(
         &mut self,
         agent_id: impl Into<String>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
     ) -> Result<(), RelayError> {
         self.add_hop(RelayHop {
             agent_id: agent_id.into(),
@@ -144,7 +144,7 @@ struct RelayOriginView<'a> {
     project_id: &'a str,
     content_type: &'a TransportContentType,
     classification: &'a DataClassification,
-    expires_at: DateTime<Utc>,
+    expires_at: UtcDateTime,
     max_hops: usize,
     origin_hop: &'a RelayHop,
 }
@@ -163,7 +163,7 @@ pub struct RelayRecordV1 {
     pub project_id: String,
     pub content_type: TransportContentType,
     pub classification: DataClassification,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: UtcDateTime,
     pub relay_chain: RelayChain,
     pub origin_signature: String,
     pub hop_signature: String,
@@ -179,9 +179,9 @@ impl RelayRecordV1 {
         project_id: impl Into<String>,
         content_type: TransportContentType,
         classification: DataClassification,
-        expires_at: DateTime<Utc>,
+        expires_at: UtcDateTime,
         max_hops: usize,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         origin_key: &SigningKey,
         channel_key: &str,
         payload: &[u8],
@@ -258,7 +258,7 @@ impl RelayRecordV1 {
         Ok(())
     }
 
-    fn validate_deadline(&self, now: DateTime<Utc>) -> Result<(), RelayError> {
+    fn validate_deadline(&self, now: UtcDateTime) -> Result<(), RelayError> {
         if self.expires_at <= now {
             return Err(RelayError::DeadlineExceeded);
         }
@@ -270,7 +270,7 @@ impl RelayRecordV1 {
 
     pub fn validate_at(
         &self,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         expected_current: &str,
         expected_next: Option<&str>,
         max_hops: usize,
@@ -381,7 +381,7 @@ impl RelayRecordV1 {
     pub fn route_from_origin(
         &mut self,
         next_peer: impl Into<String>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         origin_public_key: &str,
         channel_key: &str,
     ) -> Result<(), RelayError> {
@@ -405,7 +405,7 @@ impl RelayRecordV1 {
         &mut self,
         local_peer: impl Into<String>,
         next_peer: impl Into<String>,
-        now: DateTime<Utc>,
+        now: UtcDateTime,
         hop_key: &str,
     ) -> Result<(), RelayError> {
         self.validate_at(
@@ -734,8 +734,8 @@ pub enum RelayError {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, TimeZone, Utc};
     use lean_ctx_protocol::DataClassification;
+    use lean_ctx_time::{Duration, UtcDateTime};
 
     use super::{
         RelayChain, RelayError, RelayHop, RelayRecordV1, test_origin_key, test_origin_public_key,
@@ -745,7 +745,7 @@ mod tests {
     fn hop(agent_id: &str, processing_ms: Option<u64>) -> RelayHop {
         RelayHop {
             agent_id: agent_id.to_owned(),
-            received_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            received_at: UtcDateTime::from_timestamp_millis(1_700_000_000_000).unwrap(),
             forwarded_at: None,
             processing_ms,
         }
@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn signed_record_has_canonical_reserved_wire_value_and_forwarding_changes_route_only() {
-        let now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let now = UtcDateTime::from_timestamp(1_700_000_000, 0).unwrap();
         let mut record = RelayRecordV1::new_signed(
             "delivery-1",
             "origin",

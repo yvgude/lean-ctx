@@ -17,8 +17,8 @@ import LocalAuthentication
 import Security
 
 let presenceLabel = "ch.thinkery.leanctx.presence"
-let proofDomain = "leanctx.hive.consent_proof.v1\n"
-let bindDomain = "leanctx.hive.presence_bind.v1\n"
+let proofDomain = "leanctx.cloud.consent_proof.v1\n"
+let bindDomain = "leanctx.cloud.presence_bind.v1\n"
 
 /// The subject fields per kind (C0 `enums/consent-kinds.json` without the
 /// swarm kinds retired in 3.12.1); `procedure_confirm` is web only and
@@ -160,7 +160,7 @@ func presence(_ params: JSONValue) throws -> JSONValue {
     context.localizedReason = reason
     context.touchIDAuthenticationAllowableReuseDuration = 0
     guard let key = PresenceKey.find(context: context) else {
-        throw RPCError(code: -32001, message: "no presence key; run lean-ctx hive connect --bind-presence-key")
+        throw RPCError(code: -32001, message: "no presence key; run lean-ctx cloud connect --bind-presence-key")
     }
     let approvedAt = UInt64(Date().timeIntervalSince1970 * 1000)
     let payload = JSONValue.object([
@@ -198,7 +198,7 @@ func bindKey(_ params: JSONValue) throws -> JSONValue {
         "alg": .string("p256_ecdsa_sha256"), "public_key": .string(b64url(spki)),
     ])
     let context = LAContext()
-    context.localizedReason = "LeanCTX: bind this Mac's system confirmation key (\(PresenceKey.keyID(spki))) to your Hive instance?"
+    context.localizedReason = "LeanCTX: bind this Mac's system confirmation key (\(PresenceKey.keyID(spki))) to your Cloud instance?"
     let signing = PresenceKey.find(context: context) ?? key
     let signature = try PresenceKey.sign(signing, Data((bindDomain + statement.canonical()).utf8))
     return .object([

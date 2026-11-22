@@ -1,0 +1,515 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/model-v1/schemas/task.schema.json",
+  "title": "Task: a unit of work in a vault that a person or an agent proposes, claims, submits and verifies",
+  "description": "Union of what the server serves (GET /v1/projects/{vault_id}/tasks...) and what core writes for local tasks. A member one side does not produce yet is optional; each carries its producers.",
+  "x-model-version": "1.0",
+  "x-entity": {
+    "identity": "(vault_id, number)",
+    "views": {
+      "task": "one task",
+      "summary": "one row of a list",
+      "list": "a page of rows",
+      "result_request": "what an agent run submits"
+    }
+  },
+  "$defs": {
+    "state": {
+      "description": "C0 1.9 state every engine reads",
+      "enum": ["proposed", "open", "claimed", "submitted", "done", "rejected", "cancelled", "failed"]
+    },
+    "lifecycle": {
+      "description": "Cloud v5 lifecycle (additive)",
+      "enum": ["queued", "claimed", "running", "submitted", "completed", "failed", "cancelled"]
+    },
+    "origin_kind": {
+      "enum": ["person", "agent", "contradiction", "question"]
+    },
+    "verdict": {
+      "enum": ["accept", "reject"]
+    },
+    "origin": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/origin_kind",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskOrigin.kind", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskOriginV1.kind"]
+        },
+        "facts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskOrigin.facts", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskOriginV1.facts"]
+        },
+        "message": {
+          "description": "core only: the bus message a task came from",
+          "type": "string",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskOriginV1.message"]
+        }
+      }
+    },
+    "update": {
+      "description": "Progress under a claim (kind absent or progress), a verdict (verification) or an amendment",
+      "type": "object",
+      "required": ["by", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskUpdate.by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.by"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskUpdate.at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.at"]
+        },
+        "kind": {
+          "description": "server: verification; core also: progress, amendment",
+          "enum": ["progress", "verification", "amendment"],
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskUpdate.kind", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.kind"]
+        },
+        "verdict": {
+          "$ref": "#/$defs/verdict",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskUpdate.verdict", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.verdict"]
+        },
+        "summary": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskUpdate.summary", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.summary"]
+        },
+        "usage": {
+          "$ref": "common.schema.json#/$defs/usage",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskUpdate.usage", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.usage"]
+        },
+        "amended_from": {
+          "type": "array",
+          "items": { "$ref": "artifact.schema.json#/$defs/evidence_view" },
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.amended_from"]
+        },
+        "amended_to": {
+          "type": "array",
+          "items": { "$ref": "artifact.schema.json#/$defs/evidence_view" },
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskUpdateV1.amended_to"]
+        }
+      }
+    },
+    "merge": {
+      "description": "core only: the merge commit recorded on a result",
+      "type": "object",
+      "required": ["commit", "by", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskMergeV1.commit"]
+        },
+        "by": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskMergeV1.by"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskMergeV1.at"]
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["by", "at", "proposal"],
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.by"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.at"]
+        },
+        "proposal": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.proposal", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.proposal"]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.seq", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.seq"]
+        },
+        "summary": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.summary", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.summary"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "artifact.schema.json#/$defs/evidence_view" },
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.evidence", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.evidence"]
+        },
+        "usage": {
+          "$ref": "common.schema.json#/$defs/usage",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResult.usage", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.usage"]
+        },
+        "merge": {
+          "$ref": "#/$defs/merge",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultV1.merge"]
+        }
+      }
+    },
+    "decided_by": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "label"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "person", "x-producers": ["p37 crates/cloud-wire/src/tasks.rs DecidedBy", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs DecidedByV1"] },
+            "label": { "type": "string", "x-producers": ["p37 crates/cloud-wire/src/tasks.rs DecidedBy", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs DecidedByV1"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "threshold", "x-producers": ["p37 crates/cloud-wire/src/tasks.rs DecidedBy", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs DecidedByV1"] }
+          }
+        }
+      ]
+    },
+    "decision": {
+      "type": "object",
+      "required": ["outcome", "decided_by", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": ["accepted", "declined"],
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskDecision.outcome", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskDecisionV1.outcome"]
+        },
+        "decided_by": {
+          "$ref": "#/$defs/decided_by",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskDecision.decided_by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskDecisionV1.decided_by"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskDecision.at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskDecisionV1.at"]
+        },
+        "reason": {
+          "type": "string",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskDecision.reason", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskDecisionV1.reason"]
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["verdict", "by", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "$ref": "#/$defs/verdict",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskVerification.verdict", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskVerificationV1.verdict"]
+        },
+        "by": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskVerification.by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskVerificationV1.by"]
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskVerification.at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskVerificationV1.at"]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskVerification.reason", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskVerificationV1.reason"]
+        }
+      }
+    },
+    "labels": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "task": {
+      "type": "object",
+      "required": ["schema", "vault_id", "number", "state", "origin", "created_by", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.task/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.schema", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.schema"]
+        },
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/vault_id",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.vault_id", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.vault_id"]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.number", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.number"]
+        },
+        "state": {
+          "$ref": "#/$defs/state",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.state", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.state"]
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.lifecycle", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.lifecycle"]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 180,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.title", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.title"]
+        },
+        "goal": {
+          "type": "string",
+          "maxLength": 2000,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.goal", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.goal"]
+        },
+        "acceptance": {
+          "type": "string",
+          "maxLength": 2000,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.acceptance", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.acceptance"]
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.role", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.role"]
+        },
+        "origin": {
+          "$ref": "#/$defs/origin",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.origin", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.origin"]
+        },
+        "created_by": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.created_by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.created_by"]
+        },
+        "created_at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.created_at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.created_at"]
+        },
+        "approved_by": {
+          "description": "C0 1.9 only; the server creates every task open and sends no approver",
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.approved_by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.approved_by"]
+        },
+        "claim": {
+          "$ref": "agent_run.schema.json#/$defs/claim",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.claim", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.claim"]
+        },
+        "updates": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/update" },
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.updates", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.updates"]
+        },
+        "result": {
+          "$ref": "#/$defs/result",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.result", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.result"]
+        },
+        "decision": {
+          "$ref": "#/$defs/decision",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.decision", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.decision"]
+        },
+        "verified_by": {
+          "$ref": "common.schema.json#/$defs/actor",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.verified_by", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.verified_by"]
+        },
+        "verified_at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.verified_at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.verified_at"]
+        },
+        "verification": {
+          "$ref": "#/$defs/verification",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.verification", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.verification"]
+        },
+        "priority": {
+          "$ref": "common.schema.json#/$defs/priority",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.priority", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.priority"]
+        },
+        "labels": {
+          "$ref": "#/$defs/labels",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.labels", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.labels"]
+        },
+        "fields_version": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.fields_version", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.fields_version"]
+        },
+        "process": {
+          "description": "core only: the process fields of a task, exactly contracts/process-v1/task-process.schema.json (lean-ctx-protocol gate.rs TaskProcessV1)",
+          "$ref": "https://contracts.leanctx.com/process-v1/schemas/task-process.schema.json",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.process"]
+        },
+        "process_gate": {
+          "description": "core only: what G6 needs beyond the process fields (lean-ctx-protocol gate.rs TaskProcessGateV1): for M/H the feature list's locked paths, commands and feature ids at spec_commit (feature-list.schema.json), for S the repo's declared test_command (repo-ci.schema.json), and the newest G6 record Cloud stored",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "locked_paths": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/gate.rs TaskProcessGateV1.locked_paths"]
+            },
+            "test_command": {
+              "type": "string",
+              "minLength": 1,
+              "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/gate.rs TaskProcessGateV1.test_command"]
+            },
+            "e2e_command": {
+              "type": "string",
+              "minLength": 1,
+              "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/gate.rs TaskProcessGateV1.e2e_command"]
+            },
+            "features": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/gate.rs TaskProcessGateV1.features"]
+            },
+            "repo_test_command": {
+              "type": "string",
+              "minLength": 1,
+              "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/gate.rs TaskProcessGateV1.repo_test_command"]
+            },
+            "g6": {
+              "description": "the newest G6 gate record Cloud stored for the task (process-v1 gate-record.schema.json)",
+              "type": "object",
+              "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/gate.rs TaskProcessGateV1.g6"]
+            }
+          },
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskV1.process_gate"]
+        },
+        "idle": {
+          "description": "server only: an active task nobody changed for more than 24 h; sent only when true",
+          "const": true,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs Task.idle"]
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["number", "state", "origin", "updated_at", "mine"],
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.number", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.number"]
+        },
+        "state": {
+          "$ref": "#/$defs/state",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.state", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.state"]
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.lifecycle", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.lifecycle"]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 180,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.title", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.title"]
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.role", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.role"]
+        },
+        "origin": {
+          "$ref": "#/$defs/origin_kind",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.origin", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.origin"]
+        },
+        "updated_at": {
+          "$ref": "common.schema.json#/$defs/time",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.updated_at", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.updated_at"]
+        },
+        "mine": {
+          "type": "boolean",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.mine", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.mine"]
+        },
+        "priority": {
+          "$ref": "common.schema.json#/$defs/priority",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.priority", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.priority"]
+        },
+        "labels": {
+          "$ref": "#/$defs/labels",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.labels", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.labels"]
+        },
+        "fields_version": {
+          "type": "integer",
+          "minimum": 0,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.fields_version", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskSummaryV1.fields_version"]
+        },
+        "idle": {
+          "description": "server only; sent only when true",
+          "const": true,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskSummary.idle"]
+        }
+      }
+    },
+    "list": {
+      "type": "object",
+      "required": ["schema", "vault_id", "tasks"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.task-list/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskList.schema", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskListV1.schema"]
+        },
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/vault_id",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskList.vault_id", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskListV1.vault_id"]
+        },
+        "tasks": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/summary" },
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskList.tasks", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskListV1.tasks"]
+        }
+      }
+    },
+    "result_request": {
+      "description": "POST .../tasks/{number}/result: what an agent run submits under its claim",
+      "type": "object",
+      "required": ["schema", "claim"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.task-result/v1",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.schema", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.schema"]
+        },
+        "claim": {
+          "$ref": "common.schema.json#/$defs/claim_ref",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.claim", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.claim"]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 500,
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.summary", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.summary"]
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "artifact.schema.json#/$defs/evidence" },
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.evidence", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.evidence"]
+        },
+        "draft": {
+          "description": "a knowledge proposal submitted with the result (DraftProposal, leanctx.cloud.draft-proposal/v1)",
+          "type": "object",
+          "required": ["schema"],
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.draft", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.draft"]
+        },
+        "usage": {
+          "$ref": "common.schema.json#/$defs/usage",
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.usage", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.usage"]
+        },
+        "outcome": {
+          "enum": ["completed", "failed"],
+          "x-producers": ["p37 crates/cloud-wire/src/tasks.rs TaskResultRequest.outcome", "p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.outcome"]
+        },
+        "gate_record": {
+          "description": "core only: the G6 gate record (process-v1 gate-record.schema.json)",
+          "type": "object",
+          "x-producers": ["p5 rust/crates/lean-ctx-protocol/src/cloud/tasks.rs TaskResultRequestV1.gate_record"]
+        }
+      }
+    }
+  }
+}

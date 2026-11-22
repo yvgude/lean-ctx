@@ -19,15 +19,15 @@
 //! admitted again (`super::push_repo_fact`). No file content, no diff and
 //! no author identity is read.
 //!
-//! On a machine connected to Hive, `lean-ctx import git` queues the facts it
+//! On a machine connected to Cloud, `lean-ctx import git` queues the facts it
 //! added or changed as import drafts, each sourced `import:git:<sha>`
-//! (the Hive connector's knowledge import drafts).
+//! (the Cloud connector's knowledge import drafts).
 
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use chrono::{DateTime, Utc};
+use lean_ctx_time::{OffsetDateTime, UtcDateTime};
 
 use super::{ImportResult, ImportSource, RepoFact, SourceRefusal, push_repo_fact};
 
@@ -44,7 +44,7 @@ const RECORD: char = '\u{1e}';
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
     pub sha: String,
-    pub time: Option<DateTime<Utc>>,
+    pub time: Option<UtcDateTime>,
     pub subject: String,
     pub body: String,
 }
@@ -197,8 +197,8 @@ pub fn parse_log(log: &str) -> Vec<Commit> {
             }
             let time = fields
                 .next()
-                .and_then(|time| DateTime::parse_from_rfc3339(time.trim()).ok())
-                .map(|time| time.with_timezone(&Utc));
+                .and_then(|time| OffsetDateTime::parse_from_rfc3339(time.trim()).ok())
+                .map(lean_ctx_time::OffsetDateTime::to_utc);
             Some(Commit {
                 sha: sha.to_owned(),
                 time,

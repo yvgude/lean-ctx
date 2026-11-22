@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub struct ContextNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<UtcDateTime>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decay_half_life_days: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -73,7 +73,7 @@ pub struct GraphSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activation_mean: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub freshness: Option<DateTime<Utc>>,
+    pub freshness: Option<UtcDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -141,7 +141,7 @@ impl ContextGraph {
     }
 
     #[cfg(test)]
-    pub(crate) fn apply_temporal_decay(&mut self, now: DateTime<Utc>) {
+    pub(crate) fn apply_temporal_decay(&mut self, now: UtcDateTime) {
         for node in &mut self.nodes {
             let Some(half_life) = node.decay_half_life_days else {
                 continue;
@@ -174,7 +174,7 @@ impl ContextNode {
             activation: 1.0,
             category: Some(category.into()),
             source: None,
-            created_at: Some(Utc::now()),
+            created_at: Some(UtcDateTime::now()),
             decay_half_life_days: Some(90),
             blob_ref: None,
             file_path: None,
@@ -193,7 +193,7 @@ impl ContextNode {
             activation: 1.0,
             category: None,
             source: None,
-            created_at: Some(Utc::now()),
+            created_at: Some(UtcDateTime::now()),
             decay_half_life_days: None,
             blob_ref: None,
             file_path: None,
@@ -274,10 +274,10 @@ mod tests {
         let mut n = ContextNode::fact("n1", "test", "x");
         n.activation = 1.0;
         n.decay_half_life_days = Some(30);
-        n.created_at = Some(Utc::now() - chrono::Duration::days(30));
+        n.created_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::days(30));
         g.add_node(n);
 
-        g.apply_temporal_decay(Utc::now());
+        g.apply_temporal_decay(UtcDateTime::now());
         assert!((g.nodes[0].activation - 0.5).abs() < 0.01);
     }
 
@@ -323,7 +323,7 @@ mod tests {
         n.decay_half_life_days = Some(30);
         n.created_at = None;
         g.add_node(n);
-        g.apply_temporal_decay(Utc::now());
+        g.apply_temporal_decay(UtcDateTime::now());
         assert!((g.nodes[0].activation - 1.0).abs() < 0.001);
     }
 
@@ -333,9 +333,9 @@ mod tests {
         let mut n = ContextNode::fact("n1", "test", "x");
         n.activation = 1.0;
         n.decay_half_life_days = Some(0);
-        n.created_at = Some(Utc::now() - chrono::Duration::days(100));
+        n.created_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::days(100));
         g.add_node(n);
-        g.apply_temporal_decay(Utc::now());
+        g.apply_temporal_decay(UtcDateTime::now());
         assert!((g.nodes[0].activation - 1.0).abs() < 0.001);
     }
 
@@ -345,9 +345,9 @@ mod tests {
         let mut n = ContextNode::fact("n1", "test", "x");
         n.activation = 0.9;
         n.decay_half_life_days = None;
-        n.created_at = Some(Utc::now() - chrono::Duration::days(365));
+        n.created_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::days(365));
         g.add_node(n);
-        g.apply_temporal_decay(Utc::now());
+        g.apply_temporal_decay(UtcDateTime::now());
         assert!((g.nodes[0].activation - 0.9).abs() < 0.001);
     }
 
@@ -357,9 +357,9 @@ mod tests {
         let mut n = ContextNode::fact("n1", "test", "x");
         n.activation = 1.0;
         n.decay_half_life_days = Some(30);
-        n.created_at = Some(Utc::now() - chrono::Duration::days(60));
+        n.created_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::days(60));
         g.add_node(n);
-        g.apply_temporal_decay(Utc::now());
+        g.apply_temporal_decay(UtcDateTime::now());
         assert!((g.nodes[0].activation - 0.25).abs() < 0.01);
     }
 
@@ -396,14 +396,14 @@ mod tests {
     fn summary_freshness_is_most_recent() {
         let mut g = ContextGraph::new();
         let mut n1 = ContextNode::fact("n1", "old", "c");
-        n1.created_at = Some(Utc::now() - chrono::Duration::days(10));
+        n1.created_at = Some(UtcDateTime::now() - lean_ctx_time::Duration::days(10));
         let mut n2 = ContextNode::fact("n2", "new", "c");
-        n2.created_at = Some(Utc::now());
+        n2.created_at = Some(UtcDateTime::now());
         g.add_node(n1);
         g.add_node(n2);
         let s = g.summary();
         let freshness = s.freshness.unwrap();
-        let age_secs = (Utc::now() - freshness).num_seconds().abs();
+        let age_secs = (UtcDateTime::now() - freshness).num_seconds().abs();
         assert!(age_secs < 5);
     }
 

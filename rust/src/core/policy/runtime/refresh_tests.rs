@@ -159,20 +159,20 @@ fn exact_bytes_reuse_compilation_and_changed_bytes_revoke_without_reload() {
     );
 }
 
-/// A changed Hive filter set is a new snapshot, like a changed pack.
+/// A changed Cloud filter set is a new snapshot, like a changed pack.
 #[test]
-fn a_changed_hive_filter_set_is_a_new_snapshot() {
+fn a_changed_cloud_filter_set_is_a_new_snapshot() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
     let (root, path) = project();
     std::fs::write(&path, BASE).unwrap();
     let mut cache = RefreshCache::default();
     let first = cache.refresh(root.path()).unwrap().unwrap();
-    let set = crate::core::policy::hive_filters::filter_set_path().unwrap();
+    let set = crate::core::policy::cloud_filters::filter_set_path().unwrap();
     std::fs::create_dir_all(set.parent().unwrap()).unwrap();
     std::fs::write(&set, "{}").unwrap();
     let changed = cache.refresh(root.path()).unwrap().unwrap();
     assert!(!Arc::ptr_eq(&first, &changed));
-    assert_eq!(changed.hive_rules, 0, "an unreadable set adds no rule");
+    assert_eq!(changed.cloud_rules, 0, "an unreadable set adds no rule");
 }
 
 #[test]

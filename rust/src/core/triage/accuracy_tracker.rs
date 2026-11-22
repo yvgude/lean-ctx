@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use chrono::Utc;
+use lean_ctx_time::UtcDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::{ProfileHypothesis, TaskAnalysisInput};
@@ -64,7 +64,7 @@ pub fn record_comparison(
         agreed: rules_result.profile.intent == semantic_result.profile.intent
             && rules_result.profile.complexity == semantic_result.profile.complexity
             && rules_result.profile.scope == semantic_result.profile.scope,
-        timestamp: Utc::now().to_rfc3339(),
+        timestamp: UtcDateTime::now().to_rfc3339(),
     };
     append(SHADOW_FILE, &record)?;
     append(ACCURACY_FILE, &record)

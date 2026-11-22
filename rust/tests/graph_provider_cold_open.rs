@@ -16,6 +16,9 @@
 
 #[test]
 fn open_or_build_returns_graph_on_first_cold_open() {
+    if !crate::fresh_process::enter() {
+        return;
+    }
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
     std::fs::create_dir_all(root.join("src")).expect("mkdir src");

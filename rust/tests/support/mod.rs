@@ -4,4 +4,4 @@
 //! binaries (`#[path = "support/mod.rs"] mod support;`).
 
 #[cfg(feature = "http-server")]
-pub(crate) mod fake_hive;
+pub(crate) mod fake_cloud;

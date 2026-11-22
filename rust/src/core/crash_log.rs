@@ -56,7 +56,7 @@ fn write_entry_to(dir: &Path, location: &str, thread: &str, payload: &str) -> Op
     let backtrace = std::backtrace::Backtrace::force_capture();
     let entry = format!(
         "=== panic at {} (lean-ctx v{}) ===\nthread: {thread}\nlocation: {location}\npayload: {payload}\nbacktrace:\n{backtrace}\n\n",
-        chrono::Utc::now().to_rfc3339(),
+        lean_ctx_time::UtcDateTime::now().to_rfc3339(),
         env!("CARGO_PKG_VERSION"),
     );
 

@@ -1,0 +1,7 @@
+{
+  "effective_policy": null,
+  "filter_packs": [],
+  "org_policy": "[rules]",
+  "policy_version": 4,
+  "schema": "leanctx.cloud.policy-bundle/v1"
+}

@@ -200,7 +200,7 @@ pub fn observe(
     if show {
         store.hints_shown += 1;
     }
-    store.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    store.updated_at = Some(lean_ctx_time::UtcDateTime::now().to_rfc3339());
     store.save();
     show.then(|| hint_for(detection).to_string())
 }

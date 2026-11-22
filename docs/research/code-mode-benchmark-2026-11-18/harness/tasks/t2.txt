@@ -1,0 +1,1 @@
+In this repository, how many members does the Cargo workspace in rust/Cargo.toml list? And among the last 50 commits (git log), how many have a subject starting with fix? Use shell commands. The last line of your answer must be exactly ANSWER=<members>,<fixcount> with the two numbers.
