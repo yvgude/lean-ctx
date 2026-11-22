@@ -956,16 +956,26 @@ def _surface_references(
     external = re.compile(
         (
             RUST_IDENTIFIER_LEFT
-            + r"extern\s+crate\s+%s"
+            + r"extern\s+crate\s+(?P<target>%s)"
             + RUST_IDENTIFIER_RIGHT
-            + r"(?:\s+as\s+%s)?"
+            + r"(?:\s+as\s+(?P<alias>%s))?"
         )
         % (external_target, RUST_IDENTIFIER)
     )
-    findings.extend(
-        (source.count("\n", 0, match.start()) + 1, match.group(0))
-        for match in external.finditer(code)
-    )
+    alias_end = re.compile(RUST_IDENTIFIER_RIGHT)
+    for match in external.finditer(code):
+        # `extern crate self as lean_ctx_protocol` in the protocol crate binds
+        # its own public name: every path through it is a `lean_ctx_protocol::`
+        # path, which the scans above and the alias scan already check. Any
+        # other alias adds a root name they do not see and stays rejected.
+        if (
+            same_protocol_crate
+            and match.group("target") == "self"
+            and match.group("alias") in ("lean_ctx_protocol", "r#lean_ctx_protocol")
+            and alias_end.match(code, match.end())
+        ):
+            continue
+        findings.append((source.count("\n", 0, match.start()) + 1, match.group(0)))
     return sorted(findings, key=lambda item: (item[0], item[1]))
 
 

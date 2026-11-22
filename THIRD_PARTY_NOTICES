@@ -2,15 +2,15 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:81b899b1dcb3af77d59585d94b4d7a037114357f0128a911dc90641a5b962fc1
+Content-Digest: sha256:b02d731867196f7fb6bed74c471d8399102ac53a3ec57bfdc3d385a874032028
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: b73f5ea5ef9e99091d53a4dd440764bd324197fbb9dd42953d1e72b78dd69a81
-Cargo metadata inventory SHA-256: 556c453c02711d6a8af7ba2cfd316d79b90c181cb6b908051d0a41e0e2ac86c2
-SBOM.cdx.json SHA-256: b9452e346233fb70d65537291f2b4c2a90a8ed9c0557dad43da11240ff701014
+Cargo.lock SHA-256: 7f3380b0c8e9f867f775c5291284a3835dea2a1a0ea2581d56f27bc197c4317e
+Cargo metadata inventory SHA-256: 2c2b319b6d8a70d026a1f20a26b0a6ae847bbee2e2548b88fdcbf3ce0ce700be
+SBOM.cdx.json SHA-256: 3ad2e6aa56e1478eba0d149eb3b7b3da6a5a76007d40c888bb423392c568bddd
 SBOM components: 561
-Asset manifest SHA-256: 4b4bfe42bc97b193cb2395e933185ebd23b03a784030b16f13f3fec9f3b00173
+Asset manifest SHA-256: 791183b7a8ed375a98a35826754b56ba0bd8d3b114594a763214cf7154dd5af2
 npm package-lock.json SHA-256: bc8e29a38ef28bc408567551d1e7cc1469154331f2adaae0f078d55513f2834b
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 627
@@ -2537,7 +2537,7 @@ Targets: quinn_proto[lib]
 Features: __rustls-post-quantum-test, arbitrary, aws-lc-rs, aws-lc-rs-fips, bloom, default, log, platform-verifier, qlog, ring, rustls, rustls-aws-lc-rs, rustls-aws-lc-rs-fips, rustls-log, rustls-ring
 Dependencies: aws-lc-rs, bytes, getrandom, lru-slab, rand, rand_pcg, ring, rustc-hash, rustls, rustls-pki-types, slab, thiserror, tinyvec, tracing, web-time
 
-### quinn-udp 0.5.15
+### quinn-udp 0.5.16
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/quinn-rs/quinn
 SPDX-License-Identifier: MIT OR Apache-2.0
@@ -2817,7 +2817,7 @@ Targets: all[test], rustc_version[lib]
 Features: (none)
 Dependencies: semver
 
-### rustix 1.1.4
+### rustix 1.1.6
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/bytecodealliance/rustix
 SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT

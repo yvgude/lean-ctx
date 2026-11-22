@@ -455,7 +455,7 @@ new_paths = [
   "rust/crates/lean-ctx-server/tests/main.rs",
   "rust/crates/lean-ctx-protocol/tests/main.rs",
   # Tests that need a process of their own, inside those binaries.
-  "rust/tests/fresh_process.rs",
+  "rust/crates/lean-ctx-shell-policy/tests/fresh_process.rs",
   "rust/crates/lean-ctx-shell-policy/tests/main.rs",
   "scripts/check-local-free.py",
   "scripts/tests/test_postmerge_bisect.py",
@@ -758,6 +758,7 @@ new_paths = [
   "rust/crates/lean-ctx-cloud/src/transport.rs",
   "rust/src/core/audit_trail/segments.rs",
   "rust/src/core/audit_trail/v2.rs",
+  "rust/src/core/audit_trail/verify.rs",
   "rust/src/core/audit_trail_tests.rs",
   "rust/src/core/context_admission/receipt_store/retention.rs",
   "rust/src/core/context_admission/receipt_store/retention_tests.rs",

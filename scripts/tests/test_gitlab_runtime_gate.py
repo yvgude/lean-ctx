@@ -1134,9 +1134,18 @@ class WeaveScheduleBisectTests(unittest.TestCase):
         "weave-bisect-main-smoke": "main-smoke",
     }
 
+    # Jobs defined in the private ee/ tree, which the public export omits.
+    PRIVATE_JOBS = ("scope-register",)
+
     def setUp(self):
         self.config = (ROOT / "ci/gitlab-ci.yml").read_text(encoding="utf-8")
-        self.scope = (ROOT / "ee/ci/scope-register.yml").read_text(encoding="utf-8")
+        scope = ROOT / "ee/ci/scope-register.yml"
+        self.scope = scope.read_text(encoding="utf-8") if scope.exists() else ""
+        # In the public export the private jobs are absent, not unflagged.
+        self.bisect_jobs = {
+            name: names for name, names in self.BISECT_JOBS.items()
+            if self.scope or name not in self.PRIVATE_JOBS
+        }
 
     def jobs(self) -> dict[str, str]:
         jobs = {}
@@ -1164,7 +1173,7 @@ class WeaveScheduleBisectTests(unittest.TestCase):
     def test_only_the_named_jobs_run(self):
         jobs = self.jobs()
         for name, text in jobs.items():
-            expected = self.BISECT_JOBS.get(name)
+            expected = self.bisect_jobs.get(name)
             if expected is None:
                 # Merge request jobs, the push/schedule Rust jobs, anything new.
                 self.assertNotIn("WEAVE_BISECT_JOBS", text, name)
@@ -1175,7 +1184,7 @@ class WeaveScheduleBisectTests(unittest.TestCase):
                 body.startswith(bisect_first(expected))
                 or body.startswith("    - if: '$CI_PROJECT_PATH != \"root/lean-ctx\"'\n      when: never\n"
                                    + bisect_first(expected)), (name, body))
-        self.assertEqual(sorted(n for n, t in jobs.items() if "WEAVE_BISECT_JOBS" in t), sorted(self.BISECT_JOBS))
+        self.assertEqual(sorted(n for n, t in jobs.items() if "WEAVE_BISECT_JOBS" in t), sorted(self.bisect_jobs))
         for name in ("lint", "mr-quick", "mr-lint", "v4-runtime", "main-smoke"):
             self.assertIn(name, jobs)
 
@@ -1183,7 +1192,7 @@ class WeaveScheduleBisectTests(unittest.TestCase):
         jobs = self.jobs()
         starts = {name: set(names.strip("()").split("|")) for name, names in self.BISECT_JOBS.items()}
         inherited = {"weave-bisect-v4-runtime": "v4-runtime", "weave-bisect-main-smoke": "main-smoke"}
-        for name in starts:
+        for name in self.bisect_jobs:
             text = jobs[inherited.get(name, name)]
             for need, keys in re.findall(r"(?m)^    - job: ([\w-]+)\n((?:      .*\n)*)", text):
                 if "optional: true" in keys:

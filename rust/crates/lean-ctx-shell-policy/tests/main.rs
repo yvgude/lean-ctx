@@ -8,9 +8,9 @@
 //! as new tests/*.rs files (`autotests = false`).
 //!
 //! gate_unregistered needs a process that never registered the policy: its
-//! test runs in a process of its own (see fresh_process.rs).
+//! test runs in a process of its own (see fresh_process.rs, shared with the
+//! Engine, server and composition-root test binaries).
 
-#[path = "../../../tests/fresh_process.rs"]
 mod fresh_process;
 
 mod attack_scenarios;

@@ -12,7 +12,7 @@
 //!
 //! codex_proxy_554 and issue_326_parallel_knowledge point the whole process
 //! at a throwaway data or config dir, so each of their tests runs in a process
-//! of its own (see rust/tests/fresh_process.rs).
+//! of its own (see rust/crates/lean-ctx-shell-policy/tests/fresh_process.rs).
 
 mod libtest_serial {
     //! These modules mutate the process environment or other process-global
@@ -42,7 +42,7 @@ mod libtest_serial {
     static SERIALIZE_LIBTEST: extern "C" fn() = serialize_libtest;
 }
 
-#[path = "../../../tests/fresh_process.rs"]
+#[path = "../../lean-ctx-shell-policy/tests/fresh_process.rs"]
 mod fresh_process;
 
 mod codex_proxy_554;

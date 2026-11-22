@@ -49,6 +49,7 @@ mod closure_tests;
 mod config_adopt_override;
 mod dropin_install_tests;
 mod evidence_bundle_e2e;
+#[path = "../crates/lean-ctx-shell-policy/tests/fresh_process.rs"]
 mod fresh_process;
 mod gateway_postprocess_e2e;
 mod graph_provider_cold_open;
