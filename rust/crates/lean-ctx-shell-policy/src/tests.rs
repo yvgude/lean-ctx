@@ -14,6 +14,8 @@ mod function_def_tests;
 mod gh2231_tests;
 #[path = "gh2261_tests.rs"]
 mod gh2261_tests;
+#[path = "gh2267_tests.rs"]
+mod gh2267_tests;
 #[path = "inline_script_tests.rs"]
 mod inline_script_tests;
 #[path = "lexer_tests.rs"]

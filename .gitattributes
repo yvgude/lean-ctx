@@ -50,3 +50,7 @@ THIRD_PARTY_NOTICES merge=leanctx-regenerate
 # Vendored upstream sources keep upstream bytes (the vendored digest and the
 # third-party asset record pin them), so `git diff --check` must not ask for a fix.
 rust/crates/vendor/oauth2/UPGRADE.md -whitespace
+
+# Cloud's signed test vector is hashed byte for byte (`plan_events` tests);
+# a CRLF checkout on Windows would change its digest.
+rust/crates/lean-ctx-cloud/tests/fixtures/plan.vector.json -text

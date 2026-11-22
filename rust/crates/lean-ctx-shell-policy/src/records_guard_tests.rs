@@ -580,10 +580,19 @@ fn shell_policy_finds_state_records_in_every_state_directory() {
     let _ = std::fs::create_dir_all(&real);
     #[cfg(unix)]
     let _ = std::os::unix::fs::symlink(&real, &link);
+    // Creating a symlink on Windows needs the privilege or developer mode
+    // (CI runners have it); without it `link` does not exist and resolves
+    // to nothing.
+    #[cfg(windows)]
+    let _ = std::os::windows::fs::symlink_dir(&real, &link);
     let saved = std::env::var_os("LEAN_CTX_STATE_DIR");
     lean_ctx::test_env::set_var("LEAN_CTX_STATE_DIR", link.to_string_lossy().as_ref());
     let dirs = record_dirs();
-    let resolved = std::fs::canonicalize(&real).ok();
+    // Where the link resolves to: the real directory when the link exists.
+    let resolved = std::fs::canonicalize(&link).ok();
+    if resolved.is_none() {
+        eprintln!("no symlink could be created here; only the override itself is checked");
+    }
     match saved {
         Some(value) => {
             lean_ctx::test_env::set_var("LEAN_CTX_STATE_DIR", value.to_string_lossy().as_ref());

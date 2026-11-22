@@ -183,10 +183,12 @@ mod tests {
         fs::create_dir_all(&wt).unwrap();
         fs::write(wt.join(".git"), "gitdir: ../../../.git/worktrees/probe\n").unwrap();
         fs::write(wt.join("FILE.txt"), "a\n").unwrap();
+        // The tools report paths with `/` separators on every OS; on Windows
+        // `join` inserts `\`, so the fixture spells them the way the tools do.
         (
             tmp,
-            repo.to_string_lossy().to_string(),
-            wt.to_string_lossy().to_string(),
+            repo.to_string_lossy().replace('\\', "/"),
+            wt.to_string_lossy().replace('\\', "/"),
         )
     }
 

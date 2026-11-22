@@ -778,10 +778,17 @@ mod tests {
         let unit = parse_unit("./src/lib.rs#fn:parse", ROOT).unwrap();
         assert_eq!(unit.file, "src/lib.rs");
         assert_eq!(unit.symbol.as_deref(), Some("fn:parse"));
+        // An absolute path inside the root is made root-relative. The root is
+        // a real absolute directory: `/work/app` has no drive on Windows.
+        let (dir, root, _) = fresh();
         assert_eq!(
-            parse_unit("/work/app/src/a.rs", ROOT).unwrap().render(),
+            parse_unit(&format!("{root}/src/a.rs"), &root)
+                .unwrap()
+                .render(),
             "src/a.rs"
         );
+        let elsewhere = dir.path().parent().unwrap().join("elsewhere/a.rs");
+        assert!(parse_unit(&elsewhere.to_string_lossy(), &root).is_err());
         assert!(parse_unit("../other/a.rs", ROOT).is_err());
         assert!(parse_unit("/elsewhere/a.rs", ROOT).is_err());
         assert!(parse_unit("src/a.rs#parse", ROOT).is_err());

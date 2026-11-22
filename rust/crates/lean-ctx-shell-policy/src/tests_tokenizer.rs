@@ -1024,8 +1024,18 @@ fn backslashed_builtin_names_are_blocked_by_the_gate() {
         "\\umask '$(e)'",
         "$'decl\\x61re' PIPESTATUS=$'($(e))'",
         "$\"declare\" PIPESTATUS=$'($(e))'",
+        "a=1; sub\\set 'a[$(e)]'",
+        "a=1; ./un/set 'a[$(e)]'",
     ] {
-        assert!(enforce_shell_allowlist(cmd).is_err(), "{cmd}");
+        // Under PowerShell a `\` is also a path separator: such a word is a
+        // program path, never a builtin, whichever way it is read.
+        for powershell in [false, true] {
+            let _host = super::ps_statements::HostGuard::powershell(powershell);
+            assert!(
+                enforce_shell_allowlist(cmd).is_err(),
+                "{cmd} (powershell: {powershell})"
+            );
+        }
     }
     for cmd in ["export FOO=bar; cargo build", "unset A B; cargo test"] {
         assert!(enforce_shell_allowlist(cmd).is_ok(), "{cmd}");

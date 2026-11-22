@@ -144,7 +144,7 @@ fn first_component_below<'a>(path: &'a Path, home: &Path) -> Option<&'a std::ffi
 
 /// The protected zone (e.g. `~/.ssh`) containing `path`, if any. `path` must
 /// already be canonical; `home` is the canonical home directory.
-fn protected_zone_in(path: &Path, home: &Path) -> Option<PathBuf> {
+pub(crate) fn protected_zone_in(path: &Path, home: &Path) -> Option<PathBuf> {
     let first = first_component_below(path, home)?;
     let name = first.to_string_lossy();
     // Windows keeps the user's registry cloud (`NTUSER.DAT*`) directly in home.

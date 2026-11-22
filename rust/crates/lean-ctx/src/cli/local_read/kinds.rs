@@ -173,15 +173,16 @@ mod release_root_tests {
     fn a_named_root_is_resolved_like_a_reads_root() {
         // HOME is process-wide: read it under the lock its writers take.
         let _env = lean_ctx::core::data_dir::test_env_lock();
-        let home = dirs::home_dir()
+        // `~` is joined to the home folder with the platform's separator.
+        let expanded = dirs::home_dir()
             .expect("home")
+            .join("src/x")
             .to_string_lossy()
             .into_owned();
-        let home = home.trim_end_matches('/');
         for via in [Via::Cli, Via::Socket] {
             assert_eq!(
                 release_root(&args("~/src/x"), via).ok(),
-                Some(format!("{home}/src/x"))
+                Some(expanded.clone())
             );
             assert_eq!(
                 release_root(&args("/srv/p"), via).ok(),

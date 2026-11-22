@@ -1283,28 +1283,45 @@ mod tests {
     fn own_wrap_by_binary_path_is_never_wrapped_again() {
         // Default allowlist and mode: no process-wide env override, which would
         // leak into parallel rewrite tests that hold no lock.
+        //
+        // `python parse_elf.py` is the line from #2088. On Windows the gate
+        // reads `lean-ctx.exe` as the listed `lean-ctx` and judges the inner
+        // line, which the default allowlist passes, so that wrap is
+        // allowlisted there. `ssh` is on no default allowlist: its wrap is
+        // refused on every host, so only the own-wrap recognition can keep
+        // the hook from wrapping it again.
         let outcomes: Vec<_> = [
             "C:/Users/User/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe",
             "C:/Users/First Last/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe",
         ]
         .into_iter()
-        .map(|binary| {
-            let once = super::wrap_single_command("python parse_elf.py", binary);
-            (
-                once.clone(),
-                lean_ctx_shell_policy::passes_enforced(&once),
-                rewrite_candidate(&once, binary),
-                super::needs_enforcement_wrap(&once, binary),
-                super::rewrite_skip_reason(&once, binary),
-            )
+        .flat_map(|binary| {
+            [
+                ("python parse_elf.py", false),
+                ("ssh example.com uptime", true),
+            ]
+            .into_iter()
+            .map(move |(inner, refused_everywhere)| {
+                let once = super::wrap_single_command(inner, binary);
+                (
+                    once.clone(),
+                    refused_everywhere,
+                    lean_ctx_shell_policy::passes_enforced(&once),
+                    rewrite_candidate(&once, binary),
+                    super::needs_enforcement_wrap(&once, binary),
+                    super::rewrite_skip_reason(&once, binary),
+                )
+            })
         })
         .collect();
 
-        for (once, allowlisted, rewritten, wrap_again, reason) in outcomes {
-            assert!(
-                !allowlisted,
-                "precondition: the path form itself is not allowlisted: {once}"
-            );
+        for (once, refused_everywhere, allowlisted, rewritten, wrap_again, reason) in outcomes {
+            if refused_everywhere {
+                assert!(
+                    !allowlisted,
+                    "precondition: the path form itself is not allowlisted: {once}"
+                );
+            }
             assert_eq!(rewritten, None, "{once}");
             assert!(!wrap_again, "must not nest another -c layer: {once}");
             assert_eq!(reason, "already a lean-ctx command", "{once}");

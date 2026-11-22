@@ -114,6 +114,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 - **`lean-ctx run [--cloud]`: a coding agent on a task in a fresh worktree.** `lean-ctx run "<task>"` starts Claude Code or Codex (`--agent`) in a new git worktree on branch `leanctx/run/<id>`, with the agent's own login or the LeanCTX balance (`--model-access`); `run list|status|events|stop|fetch` follow it (contract §35). `--cloud` is for a LeanCTX computer, which is not available yet (until LeanCTX Cloud offers computers it ends with `computer_not_available`, "LeanCTX computers are not available yet.", and nothing is started); then the code goes there only over SSH as a git push, never through LeanCTX Cloud. A run is billed from its first minute and starts only from a terminal: without one nothing is sent ("Starting a paid computer needs you at a terminal or in LeanCTX Code."), and without `--yes` (or a yes at the prompt) the command exits with `confirmation_required` and the price. `run stop` and `--max-minutes` kill the agent's process group 10 s after SIGTERM; `run fetch` fast-forwards the run branch; a run whose computer was stopped for an empty balance ends as `stopped` with `stop_reason: balance_empty`.
 
+- **The `lean-ctx-bin` npm package declares `"mcpName": "io.github.yvgude/lean-ctx"` (#2263).** MCP registries that verify npm package identity (such as Agentregistry) can register LeanCTX from the published package.
+
 ### Changed
 
 - **One claims model: explicit `ctx_agent` claims are unit claims.** `claim`/`release` with
@@ -320,6 +322,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `forbidden` or `internal`.
 
 - **`ctx_shell` no longer refuses a `gh api` loop as a program run on lean-ctx's own state when a reassigned variable also appears inside single quotes (#2261).** In `c=""; for p in 1; do gh api -f c="$c" -f q='($c)' …; c=$(echo q); done` the state guard also substituted the literal `$c` inside `'($c)'`, so the run-time value of `c` was read as a path into `~/.config/lean-ctx`. A `$` or backtick inside single quotes is now text, as in the shell. A variable that really expands to the state directory is still refused, and segments that may run a word as shell code later (`trap`, `ssh`, `watch`, a shell or a wrapper, `git`) or use `$'…'` or a here-document keep the old reading.
+
+- **`ctx_shell` no longer refuses a copy to a variable that holds literal text around a `date` substitution as a write to lean-ctx's own state (#2267).** In `backup=".git/backups/x.$(date -u +%Y%m%dT%H%M%SZ).$$.bak" && cp -p f "$backup"` the state guard bound `backup` to `~/.config/lean-ctx` alone and dropped the literal text, an overblock. Where every substitution in the value is a `date +FORMAT` whose output holds no `/` or `.`, and the literal text before it is a relative path inside the working directory, the value now stays literal and the substitution is judged as a glob (`.git/backups/x.*.bak`). Any other run-time value keeps the fail-closed reading, and its refusal now names the words the command wrote (`cp -p f $b`) instead of the state directory.
 
 - **Rules setup and uninstall no longer drop user text around the lean-ctx block.**
   A rules file whose `<!-- /lean-ctx-rules -->` line went missing is now

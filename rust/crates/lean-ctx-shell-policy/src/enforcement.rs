@@ -172,6 +172,19 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
 /// the line is unchanged.
 #[must_use]
 pub fn as_powershell_reads(command: &str) -> std::borrow::Cow<'_, str> {
+    powershell_reading(command, Backslash::AsSlash)
+}
+
+/// How [`powershell_reading`] treats a `\`.
+#[derive(Clone, Copy)]
+enum Backslash {
+    /// Read as `/`, the path separator PowerShell sees.
+    AsSlash,
+    /// Kept as written, for a program that reads it itself (a sed script).
+    Kept,
+}
+
+fn powershell_reading(command: &str, backslash: Backslash) -> std::borrow::Cow<'_, str> {
     use super::ps_statements::{Mode, host_mode};
     const REMAPPED: &[char] = &[
         '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}', '\u{201C}', '\u{201D}', '\u{201E}', '\\',
@@ -185,7 +198,7 @@ pub fn as_powershell_reads(command: &str) -> std::borrow::Cow<'_, str> {
             .map(|c| match c {
                 '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' => '\'',
                 '\u{201C}' | '\u{201D}' | '\u{201E}' => '"',
-                '\\' => '/',
+                '\\' if matches!(backslash, Backslash::AsSlash) => '/',
                 other => other,
             })
             .collect(),
@@ -201,11 +214,50 @@ pub(super) fn enforce_with(
     granted: &[String],
     misses: Option<&MissLog>,
 ) -> Result<(), ShellError> {
-    enforce_line(command, granted, misses)?;
+    refuse_unread_cmd_line(command)?;
+    enforce_readings(command, granted, misses)?;
     match windows_escapes_removed(command) {
-        Some(read) => enforce_line(&read, granted, misses),
+        Some(read) => enforce_readings(&read, granted, misses),
         None => Ok(()),
     }
+}
+
+/// [`enforce_line`] for every reading of `command` its host allows. Under
+/// PowerShell a `\` is a path separator to PowerShell but stays a `\` for
+/// the program that gets it, which may read it itself (a sed script): a line
+/// with `\` passes only when it passes both ways.
+fn enforce_readings(
+    command: &str,
+    granted: &[String],
+    misses: Option<&MissLog>,
+) -> Result<(), ShellError> {
+    use super::ps_statements::{Mode, host_mode};
+    enforce_line(command, granted, misses, Backslash::AsSlash)?;
+    if host_mode() == Mode::PowerShell && command.contains('\\') {
+        enforce_line(command, granted, misses, Backslash::Kept)?;
+    }
+    Ok(())
+}
+
+/// Characters cmd.exe reads differently from the POSIX reading the checks use
+/// for it: `\` is an ordinary character to cmd, `^` is its escape, `!` and
+/// `%` expand variables, and `'` is no quote.
+const CMD_UNREAD: &[char] = &['\\', '^', '!', '%', '\''];
+
+/// Refuses a line for a cmd.exe host that contains a character the checks do
+/// not read as cmd does ([`CMD_UNREAD`]). The raw line is judged, quotes
+/// included, before any escape is removed. Other hosts are unaffected.
+fn refuse_unread_cmd_line(command: &str) -> Result<(), ShellError> {
+    if super::host_dialect() != super::Dialect::Cmd || !command.contains(CMD_UNREAD) {
+        return Ok(());
+    }
+    Err(
+        "[BLOCKED — DO NOT RETRY] cmd.exe runs this command, and the shell gate does not \
+         validate cmd lines that contain `\\`, `^`, `!`, `%` or `'`. Write paths with `/` \
+         (C:/Users/…), or run the command from PowerShell or Git Bash."
+            .to_string()
+            .into(),
+    )
 }
 
 /// `command` as cmd and PowerShell read the escapes in it, when that differs
@@ -260,6 +312,7 @@ fn enforce_line(
     command: &str,
     granted: &[String],
     misses: Option<&MissLog>,
+    backslash: Backslash,
 ) -> Result<(), ShellError> {
     let _line = super::self_config::enter_line();
     // Neither limit refusal echoes the command: it is long or deep by
@@ -284,7 +337,7 @@ fn enforce_line(
     }
     // A PowerShell host reads typographic quotes as quotes and a backslash as
     // an ordinary character; every check below reads the line that way too.
-    let read = as_powershell_reads(command);
+    let read = powershell_reading(command, backslash);
     let normalized = normalize_line_continuations(&read);
     // The one lexer pass behind every strip below (GHSA-rxv5-4c3x-g4q6 E):
     // where the shells disagree on a construct, or a heredoc never ends, no
@@ -3252,6 +3305,13 @@ pub(super) fn is_project_root_binary(token: &str) -> bool {
 
 /// The program token of `segment` as written (path kept), skipping a leading
 /// `{` of a brace group the same way the base-name extraction does.
+/// `true` when `segment` runs the shell builtin `base`: a command word with a
+/// path in it (`./un/set`, `C:\\tools\\set`) runs a file of that name, which
+/// needs an allowlist entry like any other program.
+fn runs_a_builtin(base: &str, segment: &str) -> bool {
+    SHELL_BUILTINS.contains(&base) && !raw_program_token(segment).contains(['/', '\\'])
+}
+
 fn raw_program_token(segment: &str) -> String {
     shell_tokenize(skip_env_assignments(segment.trim()))
         .into_iter()
@@ -3612,7 +3672,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 let Some(body_base) = body_tokens.first().cloned() else {
                     continue;
                 };
-                if SHELL_BUILTINS.contains(&body_base.as_str()) {
+                if runs_a_builtin(&body_base, body_seg) {
                     if DELEGATION_COMMANDS.contains(&body_base.as_str()) {
                         check_interpreter_abuse(body_seg, allowlist)?;
                     }
@@ -3658,7 +3718,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             )
             .into());
         }
-        if SHELL_BUILTINS.contains(&base.as_str()) {
+        if runs_a_builtin(&base, seg) {
             // `command`/`builtin` need no entry themselves, but they run the
             // word after them, which must pass like any delegated command.
             if DELEGATION_COMMANDS.contains(&base.as_str()) {

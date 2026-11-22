@@ -1043,6 +1043,102 @@ fn expand_braces(word: &str) -> Vec<String> {
     out
 }
 
+/// `date` format conversions whose output is digits only (or a sign and
+/// digits), in every locale: no `/`, `.`, `\` or space.
+const BOUNDED_DATE_CONVERSIONS: &str = "YymdHIMSsjuwVGgCz%";
+
+/// Whether `inner` (the text of a `$(…)`) is a `date` call whose output
+/// cannot hold a `/`, `.` or `\`: `date`, optional `-u`/`--utc`, and one
+/// `+FORMAT` of letters, digits, `-`, `_` and the conversions in
+/// [`BOUNDED_DATE_CONVERSIONS`]. Anything else is a run-time value this
+/// check cannot bound.
+fn bounded_date(inner: &str) -> bool {
+    let mut words = inner.split([' ', '\t']).filter(|w| !w.is_empty());
+    if words.next() != Some("date") {
+        return false;
+    }
+    let mut format = None;
+    for word in words {
+        match word {
+            "-u" | "--utc" | "--universal" => {}
+            _ if format.is_none() && word.starts_with('+') => format = Some(&word[1..]),
+            _ => return false,
+        }
+    }
+    let Some(format) = format else {
+        return false;
+    };
+    let mut chars = format.chars();
+    while let Some(c) = chars.next() {
+        let ok = match c {
+            '%' => chars
+                .next()
+                .is_some_and(|k| BOUNDED_DATE_CONVERSIONS.contains(k)),
+            c => c.is_ascii_alphanumeric() || c == '-' || c == '_',
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+/// #2267: an assigned value that keeps its literal text when every command
+/// substitution in it has bounded output (see [`bounded_date`]): the value
+/// with each substitution spelled as `*`, so the later checks judge it as a
+/// relative glob (`.git/backups/x.$(date +%s).bak` → `.git/backups/x.*.bak`).
+/// `None` (the value stays opaque, fail closed) unless the literal text
+/// before the first substitution is a relative path that cannot leave the
+/// working directory: not empty, no leading `/`, `~`, `\`, `-` or drive, no
+/// `..`, no quote, escape, glob, `${…}` or `$NAME` (only `$$`), and the line
+/// redefines no `date` (a function, an alias, `PATH`). A PowerShell host
+/// reads `$(…)` differently and is not followed.
+fn literal_binding(value: &str, tokens: &[String]) -> Option<String> {
+    use crate::ps_statements::{Mode, host_mode};
+    if host_mode() == Mode::PowerShell
+        || !value.contains("$(")
+        || value.starts_with(['/', '~', '\\', '-', '$', '('])
+        || value.as_bytes().get(1) == Some(&b':')
+        || value.contains(['`', '\'', '"', '\\', '*', '?', '[', '{', '\n'])
+        || value.contains("..")
+        || defined_functions(tokens).iter().any(|f| f == "date")
+        || tokens.iter().any(|t| {
+            let t = t.trim_start_matches(['(', '{', ';']);
+            matches!(t, "alias" | "hash" | "enable" | "unalias")
+                || t.split_once('=').is_some_and(|(n, _)| n == "PATH")
+        })
+    {
+        return None;
+    }
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'$' {
+            let next = value[i..].find('$').map_or(value.len(), |k| i + k);
+            out.push_str(&value[i..next]);
+            i = next;
+            continue;
+        }
+        match bytes.get(i + 1) {
+            Some(b'$') => {
+                out.push_str("$$");
+                i += 2;
+            }
+            Some(b'(') if bytes.get(i + 2) != Some(&b'(') => {
+                let close = matching_paren(bytes, i + 1)?;
+                if !bounded_date(&value[i + 2..close]) {
+                    return None;
+                }
+                out.push('*');
+                i = close + 1;
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
 fn bind_into_line(command: &str) {
     let tokens = crate::shell_tokenize(command);
     record_cd_hazard(&tokens);
@@ -1098,6 +1194,8 @@ fn bind_into_line(command: &str) {
                     || value.contains("$(")
                     || value.contains('`')
                     || value.contains("${!"))
+                && (appended.is_some()
+                    || literal_binding(value.trim_end_matches(';'), &tokens).is_none())
             {
                 bind_opaque(&mut bound, name);
             }
@@ -1162,6 +1260,9 @@ fn bind_into_line(command: &str) {
         if !is_identifier(name) || value.starts_with('(') {
             continue;
         }
+        // #2267: literal text around a bounded substitution stays literal.
+        let literal = literal_binding(value, &tokens);
+        let value = literal.as_deref().unwrap_or(value);
         if let Some((_, values)) = bound.iter_mut().find(|(n, _)| n == name) {
             if !values.iter().any(|v| v == value) {
                 values.push(value.to_string());
@@ -1377,7 +1478,8 @@ fn opaque_expansions(token: &str, bound: &[(String, Vec<String>)], opaque: &str)
 /// `tokens` once for every combination of the values of the bound loop
 /// variables they expand (just `tokens` when they expand none); `None`
 /// when there are too many to judge.
-fn bound_variants(tokens: &[String]) -> Option<Vec<(Vec<String>, bool)>> {
+/// Each variant also says whether it holds a run-time value (`runtime`).
+fn bound_variants(tokens: &[String]) -> Option<Vec<(Vec<String>, bool, bool)>> {
     let variants = expanded_variants(tokens)?;
     let marked = opaque_values();
     let below: Vec<String> = marked.iter().map(|v| format!("{v}/")).collect();
@@ -1407,14 +1509,15 @@ fn bound_variants(tokens: &[String]) -> Option<Vec<(Vec<String>, bool)>> {
                     .collect();
                 // A run-time value used as a directory (`"$d/x.db"`) names a
                 // path under it, whatever the program: judged like a literal.
+                let runtime = variant.iter().any(|t| t.contains(OPAQUE_MARK));
                 let opaque = !embedded
-                    && variant.iter().any(|t| t.contains(OPAQUE_MARK))
+                    && runtime
                     && !variant.iter().any(|t| below.iter().any(|b| t.contains(b)));
                 let words = variant
                     .into_iter()
                     .map(|t| unmark_literals(&t.replace(OPAQUE_MARK, "")))
                     .collect();
-                (words, opaque)
+                (words, opaque, runtime)
             })
             .collect(),
     )
@@ -3415,9 +3518,17 @@ pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<
     }
     let mut verdict = match bound_variants(words) {
         // A run-time value counts only where the program writes through it.
-        Some(variants) => variants.iter().find_map(|(variant, opaque)| {
+        Some(variants) => variants.iter().find_map(|(variant, opaque, runtime)| {
             touches_protected(variant, &protected, &homes)
                 .filter(|t| !opaque || t.writes || t.unplaced.is_some())
+                .map(|mut t| {
+                    // #2267: the state directory only stands in for a
+                    // run-time value; name the words the command wrote.
+                    if *runtime {
+                        t.what = unmark_literals(&words.join(" "));
+                    }
+                    t
+                })
         }),
         None => Some(Tampering::new(
             format!(

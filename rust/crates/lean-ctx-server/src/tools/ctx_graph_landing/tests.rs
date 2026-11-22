@@ -100,8 +100,9 @@ fn commit(dir: &Path, msg: &str) {
     git(dir, &["commit", "-q", "-m", msg]);
 }
 
-/// `main` = base; `head` changes `helper`; `other` changes `api` (a caller of
-/// `helper`); `apart` changes only `unrelated`.
+/// `main` = base; `topic` changes `helper`; `other` changes `api` (a caller of
+/// `helper`); `apart` changes only `unrelated`. Not `head`: on a
+/// case-insensitive file system (Windows) git resolves `head` to `HEAD`.
 fn fixture() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().expect("tempdir");
     let d = tmp.path();
@@ -112,7 +113,7 @@ fn fixture() -> tempfile::TempDir {
     write(d, "tests/other_test.rs", OTHER_TEST);
     commit(d, "base");
     for (branch, from, to) in [
-        ("head", "    x + 1\n", "    x + 2\n"),
+        ("topic", "    x + 1\n", "    x + 2\n"),
         ("other", "    helper(x) * 2\n", "    helper(x) * 3\n"),
         ("apart", "    7\n", "    8\n"),
     ] {
@@ -549,7 +550,8 @@ fn module_level_change_after_single_line_import_requires_full_suite() {
 #[test]
 fn caller_cap_requires_full_suite_and_makes_overlap_unknown() {
     let repo = fixture();
-    let report = analyze_capped(repo.path(), "main", "head", Some("apart"), 3, 0).expect("analyze");
+    let report =
+        analyze_capped(repo.path(), "main", "topic", Some("apart"), 3, 0).expect("analyze");
     assert!(!report.head.complete);
     assert!(report.head.full_suite);
     assert!(
@@ -574,7 +576,7 @@ fn caller_cap_requires_full_suite_and_makes_overlap_unknown() {
 
     // Uncapped, the same pair of heads proves `none`.
     let full =
-        analyze_capped(repo.path(), "main", "head", Some("apart"), 3, 5000).expect("analyze");
+        analyze_capped(repo.path(), "main", "topic", Some("apart"), 3, 5000).expect("analyze");
     assert!(full.head.complete && !full.head.full_suite);
     assert!(full.overlap.as_ref().is_some_and(|o| o.complete));
 }
@@ -677,7 +679,7 @@ fn unreadable_security_file_is_selected_whole() {
 #[test]
 fn reports_changed_units_callers_and_affected_tests() {
     let repo = fixture();
-    let report = run(repo.path(), "head", None, 3);
+    let report = run(repo.path(), "topic", None, 3);
     assert_eq!(report["schema"], super::SCHEMA);
     let head = &report["head"];
 
@@ -714,7 +716,7 @@ fn reports_changed_units_callers_and_affected_tests() {
 #[test]
 fn depth_bounds_the_caller_search() {
     let repo = fixture();
-    let head = &run(repo.path(), "head", None, 1)["head"];
+    let head = &run(repo.path(), "topic", None, 1)["head"];
     assert_eq!(reason(head, ":test_api"), None, "{head}");
     assert_eq!(reason(head, ":test_login"), Some("security"), "{head}");
     // Unfollowed dependents make the selection unsafe.
@@ -725,7 +727,7 @@ fn depth_bounds_the_caller_search() {
 #[test]
 fn detects_semantic_overlap_between_two_heads() {
     let repo = fixture();
-    let report = run(repo.path(), "head", Some("other"), 3);
+    let report = run(repo.path(), "topic", Some("other"), 3);
     let overlap = &report["overlap"];
     assert_eq!(overlap["verdict"], "overlap", "{overlap}");
     let pair = overlap["pairs"]
@@ -746,7 +748,7 @@ fn detects_semantic_overlap_between_two_heads() {
     );
     assert_eq!(pair["hops"], 1);
 
-    let apart = run(repo.path(), "head", Some("apart"), 3);
+    let apart = run(repo.path(), "topic", Some("apart"), 3);
     assert_eq!(apart["overlap"]["verdict"], "none", "{}", apart["overlap"]);
 }
 
@@ -757,7 +759,7 @@ fn output_is_deterministic() {
     for format in [Some("json"), None] {
         let a = handle(
             Some("main"),
-            Some("head"),
+            Some("topic"),
             Some("other"),
             None,
             root,
@@ -765,7 +767,7 @@ fn output_is_deterministic() {
         );
         let b = handle(
             Some("main"),
-            Some("head"),
+            Some("topic"),
             Some("other"),
             None,
             root,

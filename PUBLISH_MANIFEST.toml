@@ -67,6 +67,7 @@ new_paths = [
   "rust/crates/lean-ctx-doc/src/state.rs",
   "rust/crates/lean-ctx-doc/src/write.rs",
   "rust/crates/lean-ctx-shell-policy/src/command_word.rs",
+  "rust/crates/lean-ctx-shell-policy/src/gh2267_tests.rs",
   "rust/crates/lean-ctx-shell-policy/src/tests_alias_body.rs",
   "rust/crates/lean-ctx-shell-policy/src/tests_case_arm.rs",
   "rust/crates/lean-ctx-shell-policy/src/records_guard.rs",

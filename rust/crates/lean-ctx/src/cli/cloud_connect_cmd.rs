@@ -1271,18 +1271,21 @@ mod tests {
     }
 
     /// The top-level function `name` of this file, from its `fn` line to
-    /// its closing brace at column 0.
+    /// its closing brace at column 0. Line endings are normalised, as a
+    /// Windows checkout may store this file with CRLF.
     fn source_of(name: &str) -> &'static str {
-        const SOURCE: &str = include_str!("cloud_connect_cmd.rs");
-        let tests = SOURCE
+        static SOURCE: std::sync::LazyLock<String> =
+            std::sync::LazyLock::new(|| include_str!("cloud_connect_cmd.rs").replace("\r\n", "\n"));
+        let source: &'static str = &SOURCE;
+        let tests = source
             .find("#[cfg(test)]\nmod tests")
             .expect("tests module");
         let start = [format!("\nfn {name}("), format!("\npub(super) fn {name}(")]
             .iter()
-            .find_map(|head| SOURCE[..tests].find(head.as_str()))
+            .find_map(|head| source[..tests].find(head.as_str()))
             .unwrap_or_else(|| panic!("fn {name} not found"));
-        let end = SOURCE[start..].find("\n}\n").expect("closing brace") + start;
-        &SOURCE[start..end]
+        let end = source[start..].find("\n}\n").expect("closing brace") + start;
+        &source[start..end]
     }
 
     /// Text that reaches stdout outside `emit`: a print macro (not the

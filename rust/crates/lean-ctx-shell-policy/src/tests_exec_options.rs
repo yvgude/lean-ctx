@@ -781,18 +781,105 @@ fn every_launcher_row_gets_its_verdict() {
 }
 
 /// The state directory is protected wherever it is placed.
+///
+/// A POSIX shell (Git Bash on Windows) reads an unquoted `\` as an escape,
+/// so the line names the directory with `/`, which every Windows shell
+/// accepts; PowerShell keeps `\`, so there the native spelling is refused
+/// too.
 #[test]
 fn state_dir_override_is_protected() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let dir = std::env::temp_dir().join(format!("lean-ctx-state-probe-{}", std::process::id()));
-    let state = dir.display().to_string();
-    let _state = lean_ctx::test_env::VarGuard::set("LEAN_CTX_STATE_DIR", &state);
+    let native = dir.display().to_string();
+    let _state = lean_ctx::test_env::VarGuard::set("LEAN_CTX_STATE_DIR", &native);
+    let state = native.replace('\\', "/");
     for list in MODES {
         assert!(verdict(list, &format!("echo x > {state}/events.jsonl")).is_err());
         assert!(verdict(list, &format!("sed -i d {state}/context_ledger.json")).is_err());
         assert!(verdict(list, &format!("tar -cf {state}/a.tar src")).is_err());
         assert!(verdict(list, &format!("sed -n 1p {state}/events.jsonl")).is_ok());
     }
+    let _host = super::ps_statements::HostGuard::powershell(true);
+    for list in MODES {
+        assert!(verdict(list, &format!("echo x > {native}\\events.jsonl")).is_err());
+        assert!(verdict(list, &format!("sed -i d {native}\\context_ledger.json")).is_err());
+        assert!(verdict(list, &format!("tar -cf {native}\\a.tar src")).is_err());
+    }
+    drop(_host);
+    // cmd keeps `\` as a character; the native spelling is refused there too,
+    // and the `/` spelling still meets the state-directory guard.
+    let _host = super::ps_statements::HostGuard::dialect(super::Dialect::Cmd);
+    for list in MODES {
+        assert!(verdict(list, &format!("echo x > {native}\\events.jsonl")).is_err());
+        assert!(verdict(list, &format!("sed -i d {native}\\context_ledger.json")).is_err());
+        assert!(verdict(list, &format!("tar -cf {native}\\a.tar src")).is_err());
+        assert!(verdict(list, &format!("echo x > {state}/events.jsonl")).is_err());
+    }
+}
+
+/// A cmd.exe host refuses every line with `\`, `^`, `!`, `%` or `'`, whether the
+/// caller names cmd (`ctx_execute` on Windows) or the configured shell is cmd
+/// (`ctx_shell`); a line without them is judged as before.
+#[test]
+fn a_cmd_host_refuses_lines_it_would_read_differently() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let refused = [
+        "echo x > C:\\Users\\me\\.ssh\\config",
+        "sed -n 1p \"C:\\work\\a.txt\"",
+        "se^d -n 1p a.txt",
+        "echo !PATH!",
+        "sed -n 1p %USERPROFILE%/a.txt",
+        "sed -n 1p 'a & b'",
+    ];
+    let check_all = || {
+        for line in refused {
+            let got = verdict(TOOLS, line);
+            assert!(
+                got.as_ref()
+                    .is_err_and(|e| e.message().contains("cmd.exe runs this command")),
+                "{line:?} -> {got:?}"
+            );
+        }
+        assert!(verdict(TOOLS, "sed -n 1p a.txt").is_ok());
+        assert!(verdict(TOOLS, "sed -n 1p C:/work/a.txt").is_ok());
+    };
+    {
+        let _host = super::ps_statements::HostGuard::dialect(super::Dialect::Cmd);
+        check_all();
+    }
+    {
+        let _shell =
+            lean_ctx::test_env::VarGuard::set("LEAN_CTX_SHELL", "C:/Windows/System32/CMD.EXE");
+        check_all();
+    }
+    for dialect in [super::Dialect::Posix, super::Dialect::PowerShell] {
+        let _host = super::ps_statements::HostGuard::dialect(dialect);
+        let got = verdict(TOOLS, "sed -n 1p \"C:\\work\\a.txt\"");
+        assert!(got.is_ok(), "{dialect:?} -> {got:?}");
+    }
+}
+
+/// Under PowerShell a `\` is a path separator, but the program it reaches
+/// reads it as written: every refused probe row with a `\` stays refused there.
+#[test]
+fn a_powershell_host_refuses_every_refused_row_with_a_backslash() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _host = super::ps_statements::HostGuard::powershell(true);
+    let mut wrong = Vec::new();
+    for (expected, cmd) in PROBE_ROWS.iter().filter(|(_, cmd)| cmd.contains('\\')) {
+        for (want, list) in expected.chars().zip(PROBE_MODES) {
+            let got = verdict(list, cmd);
+            if want == 'R' && got.is_ok() {
+                wrong.push(format!("[allowlist {list:?}] {cmd:?} -> Ok"));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
 }
 
 #[test]

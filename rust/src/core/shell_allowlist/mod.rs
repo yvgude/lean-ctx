@@ -35,7 +35,7 @@ pub use heredoc::{
     heredoc_delims, read_heredoc_delim, strip_all_heredoc_bodies, strip_for_analysis,
 };
 pub use mode::ShellSecurity;
-pub use ps_statements::{Dialect, with_dialect};
+pub use ps_statements::{Dialect, host_dialect, with_dialect};
 pub use tokenizer::*;
 
 /// Longest command the gate validates; a longer one is refused in `enforce`

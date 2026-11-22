@@ -41,7 +41,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_NAME_NORMALIZED,
     FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO,
     FileAttributeTagInfo, FileStandardInfo, FlushFileBuffers, GetFileInformationByHandle,
-    GetFileInformationByHandleEx, GetFinalPathNameByHandleW, OPEN_EXISTING, VOLUME_NAME_DOS,
+    GetFileInformationByHandleEx, GetFinalPathNameByHandleW, GetLongPathNameW, OPEN_EXISTING,
+    VOLUME_NAME_DOS,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -1283,7 +1284,7 @@ fn verify_path_identity(file: &std::fs::File, expected: &Path) -> io::Result<()>
         }
         buffer.resize(length.checked_add(1).ok_or_else(invalid_data)?, 0);
     };
-    let expected: Vec<u16> = expected.as_os_str().encode_wide().collect();
+    let expected = normalize_final_path(long_path(expected)?);
     if wide_path_equal(&actual, &expected) {
         Ok(())
     } else {
@@ -1291,6 +1292,33 @@ fn verify_path_identity(file: &std::fs::File, expected: &Path) -> io::Result<()>
             io::ErrorKind::PermissionDenied,
             "opened handle does not identify the requested path",
         ))
+    }
+}
+
+/// The requested path in the form `GetFinalPathNameByHandleW` reports with
+/// `FILE_NAME_NORMALIZED`: each 8.3 short component spelled by its long
+/// name (a temporary folder such as `C:\Users\RUNNER~1\...`). Only names are
+/// expanded; junctions and other reparse points are not resolved, so a path
+/// through one still differs from the opened handle's path and is refused.
+/// Called while the opened handles pin every component.
+fn long_path(path: &Path) -> io::Result<Vec<u16>> {
+    let request: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut buffer = vec![0u16; 512];
+    loop {
+        let capacity = u32::try_from(buffer.len()).map_err(|_| invalid_data())?;
+        // SAFETY: the request is NUL-terminated and the exclusively borrowed
+        // UTF-16 output buffer covers the checked capacity.
+        let length = unsafe { GetLongPathNameW(request.as_ptr(), buffer.as_mut_ptr(), capacity) };
+        if length == 0 {
+            return Err(unsupported("requested path identity could not be verified"));
+        }
+        let length = usize::try_from(length).map_err(|_| invalid_data())?;
+        if length < buffer.len() {
+            buffer.truncate(length);
+            return Ok(buffer);
+        }
+        // Too small: `length` is the size needed, terminating NUL included.
+        buffer.resize(length, 0);
     }
 }
 
@@ -1535,4 +1563,52 @@ fn invalid_data() -> io::Error {
 
 fn unsupported(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::Unsupported, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+
+    fn short_path(path: &Path) -> PathBuf {
+        let request: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let mut buffer = vec![0u16; 1024];
+        // SAFETY: the request is NUL-terminated and the output buffer
+        // covers the passed capacity.
+        let length =
+            unsafe { GetShortPathNameW(request.as_ptr(), buffer.as_mut_ptr(), 1024) } as usize;
+        assert!(length > 0 && length < buffer.len(), "short path");
+        PathBuf::from(OsString::from_wide(&buffer[..length]))
+    }
+
+    /// A folder named by its 8.3 short form (the temporary folder of a
+    /// Windows CI runner is `C:\Users\RUNNER~1\...`) is the folder its handle
+    /// identifies; a junction to it is still refused.
+    #[test]
+    fn a_short_name_identifies_its_folder_and_a_junction_does_not() {
+        let base =
+            std::env::temp_dir().join(format!("leanctx long folder name {}", std::process::id()));
+        std::fs::create_dir_all(&base).expect("base");
+        let folder = base.join("private store");
+        let _ = std::fs::remove_dir(&folder);
+        drop(Directory::create_new(&folder).expect("create"));
+
+        // The temporary folder as the process names it, and its short form.
+        Directory::open(&folder, Privacy::Private).expect("long form");
+        Directory::open(&short_path(&folder), Privacy::Private).expect("short form");
+
+        let junction = base.join("junction");
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&folder)
+            .status()
+            .expect("mklink");
+        assert!(status.success(), "junction");
+        assert!(Directory::open(&junction, Privacy::Private).is_err());
+
+        std::fs::remove_dir(&junction).expect("remove junction");
+        std::fs::remove_dir(&folder).expect("remove folder");
+        std::fs::remove_dir(&base).expect("remove base");
+    }
 }

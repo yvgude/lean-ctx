@@ -371,6 +371,9 @@ mod tests {
     /// licence, account or installed runtime, and nothing reports a paid gate.
     #[test]
     fn personal_rules_preview_apply_and_status_work_without_licence() -> Outcome {
+        // The organisation floor is read from the process-wide data directory,
+        // which other tests repoint: read it under the lock its writers take.
+        let _env = lean_ctx::core::data_dir::test_env_lock();
         let project = tempfile::tempdir()?;
         let root = project.path();
         let rules = root.join("rules.json");

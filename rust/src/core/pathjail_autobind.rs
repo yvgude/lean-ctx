@@ -110,7 +110,13 @@ fn real_dir(path: &Path) -> Option<PathBuf> {
 
 /// The canonical home directory, `None` when it is the filesystem root.
 fn canonical_home() -> Option<PathBuf> {
-    let home = real_dir(&dirs::home_dir()?)?;
+    canonical_home_of(&dirs::home_dir()?)
+}
+
+/// `home` resolved, or `None` when it does not resolve or is the filesystem
+/// root (`HOME=/`, `C:\`).
+fn canonical_home_of(home: &Path) -> Option<PathBuf> {
+    let home = real_dir(home)?;
     home.parent().is_some().then_some(home)
 }
 
@@ -264,12 +270,23 @@ pub fn adopted_write_denial(target: &Path) -> Option<String> {
     ))
 }
 
+/// Compared by components: canonical Windows paths come back as `C:/Windows/…`
+/// (verbatim prefix stripped, `/` separators) while the list spells
+/// `C:\Windows`, so a string prefix never matched there. Windows compares
+/// each component without letter case. `path` is always the output of
+/// `real_dir`, which never keeps a `\\?\` prefix.
 fn under_system_dir(path: &Path, system_dirs: &[&Path]) -> bool {
     system_dirs.iter().any(|dir| {
         #[cfg(windows)]
         {
-            let lower = |p: &Path| p.to_string_lossy().to_ascii_lowercase();
-            lower(path).starts_with(&lower(dir))
+            let mut parts = path.components();
+            dir.components().all(|want| {
+                parts.next().is_some_and(|have| {
+                    have.as_os_str()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&want.as_os_str().to_string_lossy())
+                })
+            })
         }
         #[cfg(not(windows))]
         {
@@ -300,6 +317,15 @@ fn owned_like_home(_dir: &Path, _home: &Path) -> bool {
 /// existing prefix cannot be canonicalized.
 fn resolve_candidate(candidate: &Path) -> Option<PathBuf> {
     let parts: Vec<Component<'_>> = candidate.components().collect();
+    // Windows resolves `missing\..` by its spelling, so such a prefix
+    // "exists" there: refuse a `..` below a missing directory before asking.
+    let mut walked = PathBuf::new();
+    for part in &parts {
+        if matches!(part, Component::ParentDir) && !walked.is_dir() {
+            return None;
+        }
+        walked.push(part);
+    }
     for split in (1..=parts.len()).rev() {
         let prefix: PathBuf = parts[..split].iter().collect();
         if !prefix.exists() {
@@ -327,13 +353,18 @@ fn resolve_candidate(candidate: &Path) -> Option<PathBuf> {
 /// neither adopted nor allowed to swallow the project — and below `/`
 /// outside home.
 pub fn adoptable_root(candidate: &Path) -> Option<PathBuf> {
+    let home = canonical_home()?;
     let system_dirs: Vec<&Path> = SYSTEM_DIRS.iter().map(Path::new).collect();
     let shared_areas: Vec<&Path> = SHARED_AREAS.iter().map(Path::new).collect();
-    adoptable_root_with(candidate, &system_dirs, &shared_areas)
+    adoptable_root_with(candidate, &home, &system_dirs, &shared_areas)
 }
 
+/// [`adoptable_root`] judged against the canonical `home` (from
+/// [`canonical_home`]): every home-relative refusal, protected zones
+/// included, uses this one home.
 fn adoptable_root_with(
     candidate: &Path,
+    home: &Path,
     system_dirs: &[&Path],
     shared_areas: &[&Path],
 ) -> Option<PathBuf> {
@@ -343,14 +374,13 @@ fn adoptable_root_with(
     // Judged where the path lands: a symlink into `~/.ssh`, `dir/../..`, or a
     // case variant of a protected folder all resolve before any check.
     let real = resolve_candidate(candidate)?;
-    let home = canonical_home()?;
     if real == home || home.starts_with(&real) {
         return None;
     }
-    if refused_location(&real, system_dirs) || names_vcs_or_hook(&real) {
+    if refused_location(&real, home, system_dirs) || names_vcs_or_hook(&real) {
         return None;
     }
-    let below_home = real.starts_with(&home);
+    let below_home = real.starts_with(home);
     // Another account's home (a sibling of ours) is never adopted. A home
     // directly below `/` (`/root`) has no sibling directory of homes, and
     // macOS `/Users/Shared` is nobody's home.
@@ -364,23 +394,23 @@ fn adoptable_root_with(
     } else {
         real.parent()?.to_path_buf()
     };
-    let found = project_root_below(&start, below_home.then_some(home.as_path()))?;
+    let found = project_root_below(&start, below_home.then_some(home))?;
     // The walk ran on canonical components, but the root is resolved again so
     // every acceptance check — and the session — sees the real directory.
     let root = real_dir(&found)?;
     let acceptable = root != home
         && !home.starts_with(&root)
         && root.parent().is_some()
-        && (!below_home || root.starts_with(&home))
+        && (!below_home || root.starts_with(home))
         && !crate::core::pathutil::is_suspicious_root(&root)
-        && !refused_location(&root, system_dirs)
-        && owned_like_home(&root, &home);
+        && !refused_location(&root, home, system_dirs)
+        && owned_like_home(&root, home);
     acceptable.then_some(root)
 }
 
-/// A protected home zone, a secret-like path or a system directory.
-fn refused_location(path: &Path, system_dirs: &[&Path]) -> bool {
-    super::pathjail_scope::in_protected_zone(path)
+/// A protected zone of `home`, a secret-like path or a system directory.
+fn refused_location(path: &Path, home: &Path, system_dirs: &[&Path]) -> bool {
+    super::pathjail_scope::protected_zone_in(path, home).is_some()
         || crate::core::io_boundary::is_secret_like(path).is_some()
         || under_system_dir(path, system_dirs)
 }
@@ -505,7 +535,8 @@ mod tests {
         let tmp = adoption_fixture_tempdir();
         let home = tmp.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let home = home.canonicalize().unwrap();
+        // Spelled the way the product resolves paths (verbatim prefix stripped).
+        let home = real_dir(&home).unwrap();
         let home_var = crate::test_env::VarGuard::set("HOME", &home);
         Fixture {
             _home_var: home_var,
@@ -515,23 +546,30 @@ mod tests {
         }
     }
 
+    /// [`adoptable_root`] judged against the fixture's home. On Windows the
+    /// product's home is the profile folder, which ignores `HOME`, and the
+    /// temp directory lies in its protected `AppData` zone; so the fixture
+    /// home is handed in as the profile home would be.
+    fn adopt(f: &Fixture, candidate: &Path) -> Option<PathBuf> {
+        let system_dirs: Vec<&Path> = SYSTEM_DIRS.iter().map(Path::new).collect();
+        let shared_areas: Vec<&Path> = SHARED_AREAS.iter().map(Path::new).collect();
+        adoptable_root_with(candidate, &f.home, &system_dirs, &shared_areas)
+    }
+
     fn git_project(dir: &Path) -> PathBuf {
         std::fs::create_dir_all(dir.join(".git")).unwrap();
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
-        dir.canonicalize().unwrap()
+        real_dir(dir).unwrap()
     }
 
     #[test]
     fn adopts_the_git_project_of_a_file_below_home() {
         let f = fixture();
         let repo = git_project(&f.home.join("code/app"));
-        assert_eq!(
-            adoptable_root(&repo.join("src/main.rs")),
-            Some(repo.clone())
-        );
+        assert_eq!(adopt(&f, &repo.join("src/main.rs")), Some(repo.clone()));
         // A file the agent is about to create adopts its project as well.
-        assert_eq!(adoptable_root(&repo.join("src/new/mod.rs")), Some(repo));
+        assert_eq!(adopt(&f, &repo.join("src/new/mod.rs")), Some(repo));
     }
 
     /// Lead decision 1 (#1437): the outermost marker wins, like
@@ -545,7 +583,7 @@ mod tests {
         std::fs::create_dir_all(sub.join("src")).unwrap();
         std::fs::write(sub.join(".git"), "gitdir: ../../.git/modules/lib\n").unwrap();
         std::fs::write(sub.join("Cargo.toml"), "[package]\n").unwrap();
-        assert_eq!(adoptable_root(&sub.join("src/lib.rs")), Some(repo));
+        assert_eq!(adopt(&f, &sub.join("src/lib.rs")), Some(repo));
     }
 
     /// `HOME=/` (containers, systemd units) leaves nothing to judge against:
@@ -553,11 +591,19 @@ mod tests {
     #[test]
     fn a_root_home_hands_adoption_back_to_the_caller() {
         let f = fixture();
-        assert!(hardened_adoption_available());
-        let repo = git_project(&f.home.join("code/app"));
-        let _root_home = crate::test_env::VarGuard::set("HOME", "/");
-        assert!(!hardened_adoption_available());
-        assert_eq!(adoptable_root(&repo.join("src/main.rs")), None);
+        assert!(canonical_home_of(&f.home).is_some());
+        // A filesystem root is no home on any platform (`/` resolves to the
+        // current drive's root on Windows).
+        assert!(canonical_home_of(Path::new("/")).is_none());
+        // Unix reads the home from `HOME`; Windows' profile folder ignores it.
+        #[cfg(unix)]
+        {
+            assert!(hardened_adoption_available());
+            let repo = git_project(&f.home.join("code/app"));
+            let _root_home = crate::test_env::VarGuard::set("HOME", "/");
+            assert!(!hardened_adoption_available());
+            assert_eq!(adoptable_root(&repo.join("src/main.rs")), None);
+        }
     }
 
     #[test]
@@ -565,22 +611,22 @@ mod tests {
         let f = fixture();
         std::fs::create_dir_all(f.home.join(".git")).unwrap();
         let repo = git_project(&f.home.join("code/app"));
-        assert_eq!(adoptable_root(&repo.join("src/main.rs")), Some(repo));
+        assert_eq!(adopt(&f, &repo.join("src/main.rs")), Some(repo));
         std::fs::create_dir_all(f.home.join("notes")).unwrap();
         std::fs::write(f.home.join("notes/a.md"), "x").unwrap();
-        assert_eq!(adoptable_root(&f.home.join("notes/a.md")), None);
+        assert_eq!(adopt(&f, &f.home.join("notes/a.md")), None);
     }
 
     #[test]
     fn refuses_home_root_and_paths_outside_any_project() {
         let f = fixture();
         std::fs::create_dir_all(f.home.join(".git")).unwrap();
-        assert_eq!(adoptable_root(&f.home), None);
-        assert_eq!(adoptable_root(Path::new("/")), None);
+        assert_eq!(adopt(&f, &f.home), None);
+        assert_eq!(adopt(&f, Path::new("/")), None);
         std::fs::create_dir_all(f.home.join("loose")).unwrap();
         std::fs::write(f.home.join("loose/taxes.txt"), "x").unwrap();
-        assert_eq!(adoptable_root(&f.home.join("loose/taxes.txt")), None);
-        assert_eq!(adoptable_root(Path::new("relative/path.rs")), None);
+        assert_eq!(adopt(&f, &f.home.join("loose/taxes.txt")), None);
+        assert_eq!(adopt(&f, Path::new("relative/path.rs")), None);
     }
 
     /// Review F1: a missing leaf behind `..` used to skip canonicalization, so
@@ -591,18 +637,18 @@ mod tests {
         let f = fixture();
         std::fs::create_dir_all(f.home.join(".git")).unwrap();
         std::fs::create_dir_all(f.home.join("Documents")).unwrap();
-        assert_eq!(adoptable_root(&f.home.join("Documents/../nope.md")), None);
+        assert_eq!(adopt(&f, &f.home.join("Documents/../nope.md")), None);
 
         git_project(&f.home.join(".config"));
         let repo = git_project(&f.home.join("code/app"));
         // Existing directories before the `..`: resolved into `~/.config`.
-        assert_eq!(adoptable_root(&repo.join("../../.config/x")), None);
+        assert_eq!(adopt(&f, &repo.join("../../.config/x")), None);
         // A missing directory before the `..`: refused unresolved.
         assert_eq!(
-            adoptable_root(&f.home.join("code/missing/../../.config/x")),
+            adopt(&f, &f.home.join("code/missing/../../.config/x")),
             None
         );
-        assert_eq!(adoptable_root(&repo.join("missing/../src/main.rs")), None);
+        assert_eq!(adopt(&f, &repo.join("missing/../src/main.rs")), None);
     }
 
     #[test]
@@ -611,7 +657,7 @@ mod tests {
         for zone in [".ssh", ".aws", ".gnupg", "Library/Keychains", ".config"] {
             let repo = git_project(&f.home.join(zone).join("repo"));
             assert_eq!(
-                adoptable_root(&repo.join("src/main.rs")),
+                adopt(&f, &repo.join("src/main.rs")),
                 None,
                 "{zone} must never be adopted"
             );
@@ -625,7 +671,7 @@ mod tests {
         let secret = git_project(&f.home.join(".ssh/keys"));
         let repo = git_project(&f.home.join("code/app"));
         std::os::unix::fs::symlink(&secret, repo.join("link")).unwrap();
-        assert_eq!(adoptable_root(&repo.join("link/src/main.rs")), None);
+        assert_eq!(adopt(&f, &repo.join("link/src/main.rs")), None);
     }
 
     /// Review F1: a symlink followed by a missing leaf, absolute or relative.
@@ -637,9 +683,9 @@ mod tests {
         let repo = git_project(&f.home.join("code/app"));
         std::os::unix::fs::symlink(&secret, repo.join("abs")).unwrap();
         std::os::unix::fs::symlink("../../.ssh/keys", repo.join("rel")).unwrap();
-        assert_eq!(adoptable_root(&repo.join("abs/missing.rs")), None);
-        assert_eq!(adoptable_root(&repo.join("rel/missing.rs")), None);
-        assert_eq!(adoptable_root(&repo.join("rel/new/dir/missing.rs")), None);
+        assert_eq!(adopt(&f, &repo.join("abs/missing.rs")), None);
+        assert_eq!(adopt(&f, &repo.join("rel/missing.rs")), None);
+        assert_eq!(adopt(&f, &repo.join("rel/new/dir/missing.rs")), None);
     }
 
     /// Review F1: on a case-insensitive macOS volume a case variant names the
@@ -654,9 +700,9 @@ mod tests {
         if !variant.exists() {
             return; // a case-sensitive volume: no variant to resolve
         }
-        assert_eq!(adoptable_root(&variant), Some(repo));
-        assert_eq!(adoptable_root(&f.home.join(".SSH/keys/src/main.rs")), None);
-        assert_eq!(adoptable_root(&f.home.join(".SSH/keys/src/new.rs")), None);
+        assert_eq!(adopt(&f, &variant), Some(repo));
+        assert_eq!(adopt(&f, &f.home.join(".SSH/keys/src/main.rs")), None);
+        assert_eq!(adopt(&f, &f.home.join(".SSH/keys/src/new.rs")), None);
     }
 
     #[test]
@@ -666,9 +712,9 @@ mod tests {
         // the directory holding every account's home a project.
         let above = f.home.parent().unwrap();
         std::fs::create_dir_all(above.join(".git")).unwrap();
-        assert_eq!(adoptable_root(above), None);
+        assert_eq!(adopt(&f, above), None);
         let other = git_project(&above.join("other-user/app"));
-        assert_eq!(adoptable_root(&other.join("src/main.rs")), None);
+        assert_eq!(adopt(&f, &other.join("src/main.rs")), None);
     }
 
     /// Review 33452: a shared area beside the homes (macOS `/Users/Shared`)
@@ -680,9 +726,9 @@ mod tests {
         let shared = f.home.parent().unwrap().join("Shared");
         let repo = git_project(&shared.join("team/app"));
         let file = repo.join("src/main.rs");
-        assert_eq!(adoptable_root_with(&file, &[], &[]), None);
+        assert_eq!(adoptable_root_with(&file, &f.home, &[], &[]), None);
         assert_eq!(
-            adoptable_root_with(&file, &[], &[shared.as_path()]),
+            adoptable_root_with(&file, &f.home, &[], &[shared.as_path()]),
             Some(repo)
         );
     }
@@ -718,25 +764,25 @@ mod tests {
         let f = fixture();
         let repo = git_project(&f.home.join("code/app"));
         std::fs::create_dir_all(repo.join(".git/hooks")).unwrap();
-        assert_eq!(adoptable_root(&repo.join(".git/hooks/pre-commit")), None);
-        assert_eq!(adoptable_root(&repo.join(".git/config")), None);
+        assert_eq!(adopt(&f, &repo.join(".git/hooks/pre-commit")), None);
+        assert_eq!(adopt(&f, &repo.join(".git/config")), None);
 
         let documents = f.home.join("Documents");
         std::fs::create_dir_all(&documents).unwrap();
         std::fs::write(documents.join("package.json"), "{}").unwrap();
         std::fs::write(documents.join("notes.md"), "x").unwrap();
-        assert_eq!(adoptable_root(&documents.join("notes.md")), None);
+        assert_eq!(adopt(&f, &documents.join("notes.md")), None);
         let inner = git_project(&documents.join("site"));
-        assert_eq!(adoptable_root(&inner.join("src/main.rs")), Some(inner));
+        assert_eq!(adopt(&f, &inner.join("src/main.rs")), Some(inner));
 
         // Review r2 S3: a personal container's direct child is a root only
         // as a git repository too.
         let work = documents.join("Work");
         std::fs::create_dir_all(&work).unwrap();
         std::fs::write(work.join("package.json"), "{}").unwrap();
-        assert_eq!(adoptable_root(&work.join("package.json")), None);
+        assert_eq!(adopt(&f, &work.join("package.json")), None);
         let work = git_project(&work);
-        assert_eq!(adoptable_root(&work.join("package.json")), Some(work));
+        assert_eq!(adopt(&f, &work.join("package.json")), Some(work));
     }
 
     /// Review r2 R2-2 (one step): a first path that is an execution hook
@@ -756,12 +802,9 @@ mod tests {
             ".GIT/hooks/pre-commit",
             ".Husky/pre-push",
         ] {
-            assert_eq!(adoptable_root(&repo.join(hook)), None, "{hook}");
+            assert_eq!(adopt(&f, &repo.join(hook)), None, "{hook}");
         }
-        assert_eq!(
-            adoptable_root(&repo.join(".vscode/settings.json")),
-            Some(repo)
-        );
+        assert_eq!(adopt(&f, &repo.join(".vscode/settings.json")), Some(repo));
     }
 
     /// Review r2 R2-1/R2-5: an adoption is audited as `x-project_adopted`
@@ -810,19 +853,43 @@ mod tests {
     }
 
     /// The system-directory check on a project that carries a marker, so the
-    /// marker walk would accept it: only the system list refuses it.
+    /// marker walk would accept it: only the system list refuses it. The
+    /// system directory is spelled with native separators like
+    /// [`SYSTEM_DIRS`] (`C:\Windows`), while canonical paths come back with
+    /// `/` on Windows: a string-prefix comparison never matched there.
     #[test]
     fn refuses_projects_in_system_directories() {
         let f = fixture();
         let outside = adoption_fixture_tempdir();
-        let system = outside.path().canonicalize().unwrap().join("sysroot");
+        let system = PathBuf::from(
+            real_dir(outside.path())
+                .unwrap()
+                .join("sysroot")
+                .to_string_lossy()
+                .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
         let repo = git_project(&system.join("share/app"));
         let file = repo.join("src/main.rs");
-        assert_eq!(adoptable_root_with(&file, &[], &[]), Some(repo.clone()));
-        assert_eq!(adoptable_root_with(&file, &[system.as_path()], &[]), None);
+        assert_eq!(
+            adoptable_root_with(&file, &f.home, &[], &[]),
+            Some(repo.clone())
+        );
+        assert_eq!(
+            adoptable_root_with(&file, &f.home, &[system.as_path()], &[]),
+            None
+        );
+        #[cfg(windows)]
+        {
+            // Windows paths ignore letter case: `c:\windows` is `C:\Windows`.
+            let upper = PathBuf::from(system.to_string_lossy().to_uppercase());
+            assert_eq!(
+                adoptable_root_with(&file, &f.home, &[upper.as_path()], &[]),
+                None
+            );
+        }
         let file_in_home = git_project(&f.home.join("code/app")).join("src/main.rs");
         assert_eq!(
-            adoptable_root_with(&file_in_home, &[f.home.as_path()], &[]),
+            adoptable_root_with(&file_in_home, &f.home, &[f.home.as_path()], &[]),
             None
         );
         #[cfg(unix)]
