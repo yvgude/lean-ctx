@@ -220,6 +220,7 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `hook write-guard` with an unquoted binary, so PowerShell split paths such as
   `…/Author Software/…/lean-ctx.exe` and every Write failed its PreToolUse hook. It is now
   quoted like every other hook; `lean-ctx init` or `update` repairs existing settings.
+- **`lean-ctx -c` enforces the shell timeout when stdout is a regular file (#2268).**
 - **GitHub Copilot CLI shows why lean-ctx denied a tool call (#2254).** The deny output now
   carries `permissionDecisionReason` beside the decision instead of "No reason provided".
 - **Nullable type annotations are no longer redacted (#2255).** `private var token: Session? =
