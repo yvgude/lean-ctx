@@ -445,6 +445,9 @@ pub fn complete_enrollment(
             .and_then(|url| super::config::normalize_origin(url).ok()),
         enrolled_at: stamp(local_now),
     };
+    // Local Cloud data of another server or team goes before anything of
+    // this enrolment reads it (3.12.8 account scope).
+    store.scope_to_enrollment(&record)?;
     super::worker::prepare_enrollment(store)?;
     store.write_config(INSTANCE_FILE, &record)?;
     // A new enrolment starts a new sharing period (Cloud' `since`): an
@@ -467,6 +470,8 @@ impl Session {
     /// Load and re-verify the local enrollment. `root` is the root key of the
     /// origin the instance is enrolled with.
     pub fn load(store: CloudStore, root: [u8; 32]) -> Result<Self, CloudError> {
+        // Scoped: local data of another account is gone before a session
+        // reads or sends any of it (3.12.8 account scope).
         let instance = store.instance()?.ok_or(CloudError::NotConnected)?;
         // A revoked instance fails closed here, before any Cloud call.
         if let Some(revoked) = super::revoked::recorded(&store, &instance) {

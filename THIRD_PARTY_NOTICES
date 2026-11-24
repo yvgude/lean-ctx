@@ -2,16 +2,16 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:b02d731867196f7fb6bed74c471d8399102ac53a3ec57bfdc3d385a874032028
+Content-Digest: sha256:95526a50b7440beb3b1ad77a5597872e60ab24564b8a3fa92359ab3e3bf4a15d
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: 7f3380b0c8e9f867f775c5291284a3835dea2a1a0ea2581d56f27bc197c4317e
-Cargo metadata inventory SHA-256: 2c2b319b6d8a70d026a1f20a26b0a6ae847bbee2e2548b88fdcbf3ce0ce700be
-SBOM.cdx.json SHA-256: 3ad2e6aa56e1478eba0d149eb3b7b3da6a5a76007d40c888bb423392c568bddd
+Cargo.lock SHA-256: a6e3898572347bd59561f42ab1c79d1e1d7284420102d0ef5f06ee2c40882c64
+Cargo metadata inventory SHA-256: b038d9af959de716dd576b5573071d372015ad001935ab89e06601bbcc3581a0
+SBOM.cdx.json SHA-256: 08de3cbb32cdfd5488db0388bc66717f9f2707f4cd4d2909345378df0d045ff1
 SBOM components: 561
-Asset manifest SHA-256: 791183b7a8ed375a98a35826754b56ba0bd8d3b114594a763214cf7154dd5af2
-npm package-lock.json SHA-256: bc8e29a38ef28bc408567551d1e7cc1469154331f2adaae0f078d55513f2834b
+Asset manifest SHA-256: c993f7123bec8229b76e66cb1aa881e14729cede55e366a511e07685ff1845e8
+npm package-lock.json SHA-256: 4bc16f1494a6656a4dff1814edb74efd7900672253ffac346347d4367847a7d4
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 627
 Third-party Cargo packages: 601
@@ -601,7 +601,7 @@ Targets: bench[bench], bench_generic[bench], build-script-build[custom-build], c
 Features: default, std
 Dependencies: rustversion
 
-### cookie 0.18.2
+### cookie 0.18.3
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/SergioBenitez/cookie-rs
 SPDX-License-Identifier: MIT OR Apache-2.0

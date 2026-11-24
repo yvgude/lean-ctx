@@ -261,6 +261,11 @@ lint:
     # (`new_paths`); blocking, Python only, under a second. The full export
     # audit stays in v4-provenance (main, schedules).
     - python3 -I scripts/derivations.py write-publish-manifest --check
+    # The delivery evidence pins the digests of release.yml and the other
+    # publish sources; blocking, Python only, milliseconds. Run here too so
+    # a workflow change refreshes the pin in its own MR, not first in the
+    # post-merge v4-provenance or the tagged release run (3.12.8, !568).
+    - python3 -I scripts/verify-delivery-evidence.py docs/contracts/delivery-evidence-v1.json --root .
     - |
       # public-api and change-class: informational, they never block (both
       # jobs are allow_failure on branches), so a failure here is a warning
@@ -307,7 +312,7 @@ rust-fmt:
   # Scheduled pipelines (.schedule-only; v4-runtime needs it there). Merge
   # requests: part of `lint`.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(rust-fmt|v4-runtime)(,|$)/'
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(rust-fmt|v4-runtime|v4-runtime-2)(,|$)/'
       interruptible: false
     - !reference [.schedule-only, rules]
   needs: []
@@ -1001,6 +1006,28 @@ v4-runtime:
         fi
       fi
       unset -f weave_check weave_val
+      # nextest partitions (owner 23.11., lean-ctx-e8): the suite is split in
+      # two by test-name hash over two parallel jobs on the lane's two slots.
+      # v4-runtime runs part 1 plus everything else (clippy, doctests, the
+      # checks, rustdoc, the warm-farm publish); v4-runtime-2 runs part 2 of
+      # nextest only. Set here from the job name, unconditionally, so no
+      # pipeline variable can preset it; every other job that keeps this
+      # script (none but the bisect copies today) runs the whole suite.
+      # V4_NEXTEST_SPLIT=0 switches the split off: v4-runtime runs the whole
+      # suite again and v4-runtime-2 is not created (see its rules).
+      V4_NEXTEST_PARTITION=""
+      V4_TESTS_ONLY=0
+      case "${CI_JOB_NAME:-}" in
+        v4-runtime-2 | weave-bisect-v4-runtime-2) V4_TESTS_ONLY=1 ;;
+      esac
+      if test "${V4_NEXTEST_SPLIT:-1}" = 1; then
+        case "${CI_JOB_NAME:-}" in
+          v4-runtime | weave-bisect-v4-runtime) V4_NEXTEST_PARTITION=hash:1/2 ;;
+          v4-runtime-2 | weave-bisect-v4-runtime-2) V4_NEXTEST_PARTITION=hash:2/2 ;;
+        esac
+      fi
+      export V4_NEXTEST_PARTITION V4_TESTS_ONLY
+      echo "nextest partition: ${V4_NEXTEST_PARTITION:-none (whole suite)}; tests-only=$V4_TESTS_ONLY" | tee "$CI_PROJECT_DIR/runtime-evidence/partition.txt"
     - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
@@ -1029,10 +1056,14 @@ v4-runtime:
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
         cd "$CI_PROJECT_DIR/rust"
         # Format is the rust-fmt job; no gate runs twice in one pipeline (W1-08).
-        cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
-        # Test, bench and example targets too (task 173): the same lints, except
-        # unwrap and length, which tests may use (AGENTS.md quality gate).
-        cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
+        # v4-runtime-2 (V4_TESTS_ONLY=1) runs nextest part 2 only; every other
+        # check below stays in v4-runtime, once per pipeline.
+        if test "$V4_TESTS_ONLY" != 1; then
+          cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+          # Test, bench and example targets too (task 173): the same lints, except
+          # unwrap and length, which tests may use (AGENTS.md quality gate).
+          cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
+        fi
         # One test pass with every feature except no-jail (owner 08.11.: the
         # second full pass doubled the run for little extra signal). no-jail
         # compiles PathJail and its tests out, so it is type-checked by clippy
@@ -1081,21 +1112,27 @@ v4-runtime:
             fi ;;
           *) WEAVE_NEXTEST_SCOPE=full ;;
         esac
+        # The partition (root section above) applies to every scope: each job
+        # runs its hash half of the selected tests. Both jobs build every
+        # test binary; only the runs are split.
         if test "$WEAVE_NEXTEST_SCOPE" = security; then
           # Weave verdict (see above): this tree passed the full set in the
           # merge queue; only the security set runs again. Same profile, no
           # retries, same flake gate below (it reruns only the failed tests).
           echo "$security_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/test-filter.txt"
-          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast -E "$security_filter" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast ${V4_NEXTEST_PARTITION:+--partition "$V4_NEXTEST_PARTITION"} -E "$security_filter" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
         elif test "$WEAVE_NEXTEST_SCOPE" = remainder; then
           # Weave verdict, scope=affected: Weave ran its stored selection on
           # this tree green; the rest runs here. Same profile and flake gate.
           echo "$remainder_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/test-filter.txt"
-          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast -E "$remainder_filter" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast ${V4_NEXTEST_PARTITION:+--partition "$V4_NEXTEST_PARTITION"} -E "$remainder_filter" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
         else
-          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+          mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast ${V4_NEXTEST_PARTITION:+--partition "$V4_NEXTEST_PARTITION"} 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
         fi
         if test -f "$CI_PROJECT_DIR/rust/target/nextest/ci/junit.xml"; then cp "$CI_PROJECT_DIR/rust/target/nextest/ci/junit.xml" "$CI_PROJECT_DIR/runtime-evidence/junit.xml"; fi
+        # The flake gate reruns exactly the failed tests (-E, no partition)
+        # under the job name v4-runtime in both parts: one suite, one
+        # quarantine list.
         if test "$nextest_rc" != 0; then
           flake_rc=0
           python3 -I -u "$CI_PROJECT_DIR/scripts/ci/flake_gate.py" --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml" --rerun-junit "$CI_PROJECT_DIR/rust/target/nextest/ci/junit.xml" --quarantine "$CI_PROJECT_DIR/ci/flaky-quarantine.json" --job v4-runtime --evidence "$CI_PROJECT_DIR/runtime-evidence" -- mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/flake-gate.log" || flake_rc=$?
@@ -1103,32 +1140,35 @@ v4-runtime:
         fi
         # nextest does not run doctests.
         doc_rc=0
-        mold -run cargo +stable test --locked --doc --workspace --features "$test_features" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/doctests.log" || doc_rc=$?
-        # Default features, library and binaries only: the cheapest proof that
-        # what users install compiles, on the warm incremental target.
-        cargo +stable check --locked --workspace 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"
-        # Fast MR mode: mr-lint runs this exact check, and check fingerprints
-        # are not clippy ones, so without it a warm-farm hit still re-checked
-        # every workspace crate (20-24 crates even with no Rust change, traces
-        # 21.11.). Built here, the published generation carries them.
-        # Kill switch: CI_WARM_FARM_LINT_CHECK=0.
-        if test "${P5_FAST_MR:-0}" = 1 && test "${CI_WARM_FARM_LINT_CHECK:-1}" = 1; then
-          cargo +stable check --locked --workspace --all-features --all-targets 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-all-targets.log"
+        if test "$V4_TESTS_ONLY" != 1; then
+          mold -run cargo +stable test --locked --doc --workspace --features "$test_features" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/doctests.log" || doc_rc=$?
+          # Default features, library and binaries only: the cheapest proof that
+          # what users install compiles, on the warm incremental target.
+          cargo +stable check --locked --workspace 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"
+          # Fast MR mode: mr-lint runs this exact check, and check fingerprints
+          # are not clippy ones, so without it a warm-farm hit still re-checked
+          # every workspace crate (20-24 crates even with no Rust change, traces
+          # 21.11.). Built here, the published generation carries them.
+          # Kill switch: CI_WARM_FARM_LINT_CHECK=0.
+          if test "${P5_FAST_MR:-0}" = 1 && test "${CI_WARM_FARM_LINT_CHECK:-1}" = 1; then
+            cargo +stable check --locked --workspace --all-features --all-targets 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-all-targets.log"
+          fi
+          # Rustdoc and the generated reference (owner 19.11., light hooks): the
+          # local hooks no longer run them on every push, so the post-merge run
+          # catches a broken doc link, stale generated docs or a stale registry
+          # snapshot before the GitHub sync does. Same commands as
+          # scripts/preflight.sh and mr-docs.
+          RUSTDOCFLAGS="-D warnings" cargo +stable doc --locked --no-deps --all-features 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/rustdoc.log"
+          mold -run cargo +stable run --locked -p lean-ctx-server --quiet --example gen_docs --features dev-tools -- --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/gen-docs.log"
+          mold -run cargo +stable run --locked -p lean-ctx-engine --quiet --example gen_registry --features dev-tools -- --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/gen-registry.log"
         fi
-        # Rustdoc and the generated reference (owner 19.11., light hooks): the
-        # local hooks no longer run them on every push, so the post-merge run
-        # catches a broken doc link, stale generated docs or a stale registry
-        # snapshot before the GitHub sync does. Same commands as
-        # scripts/preflight.sh and mr-docs.
-        RUSTDOCFLAGS="-D warnings" cargo +stable doc --locked --no-deps --all-features 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/rustdoc.log"
-        mold -run cargo +stable run --locked -p lean-ctx-server --quiet --example gen_docs --features dev-tools -- --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/gen-docs.log"
-        mold -run cargo +stable run --locked -p lean-ctx-engine --quiet --example gen_registry --features dev-tools -- --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/gen-registry.log"
         # Remainder dry run (see above): list, on the build the full run just
         # used, how many tests the remainder filter would have run. Evidence
-        # only; it never changes this job verdict.
+        # only; it never changes this job verdict. Within the partition of
+        # this job, so the count compares with the junit total of this job.
         if test "${WEAVE_REMAINDER_DRY:-}" = 1 && test "$WEAVE_NEXTEST_SCOPE" = full && test -n "${WEAVE_SELECTION:-}" && test -n "$security_words"; then
           remainder_total="$(sed -n "s/.*<testsuites[^>]* tests=\"\\([0-9]*\\)\".*/\\1/p" "$CI_PROJECT_DIR/runtime-evidence/junit.xml" 2>/dev/null | head -n 1)" || remainder_total=""
-          if mold -run cargo +stable nextest list --locked --workspace --features "$test_features" --message-format oneline -E "$remainder_filter" > "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.txt" 2> "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.err"; then
+          if mold -run cargo +stable nextest list --locked --workspace --features "$test_features" --message-format oneline ${V4_NEXTEST_PARTITION:+--partition "$V4_NEXTEST_PARTITION"} -E "$remainder_filter" > "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.txt" 2> "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.err"; then
             remainder_n="$(grep -c . "$CI_PROJECT_DIR/runtime-evidence/weave-remainder-list.txt")" || remainder_n=0
             echo "weave-verdict: remainder dry run: would run $remainder_n of ${remainder_total:-?} tests; filter: $remainder_filter" | tee "$CI_PROJECT_DIR/runtime-evidence/weave-remainder.txt"
           else
@@ -1168,7 +1208,11 @@ v4-runtime:
         case "$ci_farm_min_age" in ''|*[!0-9]*|?????*) ci_farm_min_age=60;; esac
         ci_farm_mibps="${CI_WARM_FARM_MAX_MIBPS:-100}"
         case "$ci_farm_mibps" in ''|*[!0-9]*|?????*) ci_farm_mibps=100;; esac
-        if mount -o remount,bind,rw "$ci_farm"; then
+        if test "${V4_TESTS_ONLY:-0}" = 1; then
+          # v4-runtime-2 builds the same target but never publishes it: one
+          # writer per pipeline (v4-runtime, which also ran the checks).
+          echo "warm-farm: v4-runtime-2 does not publish; v4-runtime does"
+        elif mount -o remount,bind,rw "$ci_farm"; then
           python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" publish --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --stamp "$(cat -- "$ci_target_parent/target.stamp")" --project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$CI_TARGET_DIR" --target "$CI_TARGET_DIR" --commit "$CI_COMMIT_SHA" --base "$ci_farm_base" --started-file "$ci_target_parent/target.stamp" --pipeline "${CI_PIPELINE_ID:-}" --min-age-minutes "$ci_farm_min_age" --max-mib-per-s "$ci_farm_mibps" \
             || echo "warm-farm: publish failed; the previous generation stays" >&2
         else
@@ -1207,6 +1251,27 @@ v4-runtime:
     # nextest's JUnit report (profile ci), shown in the MR and pipeline.
     reports:
       junit: runtime-evidence/junit.xml
+
+# Second nextest partition of the full suite (owner 23.11., lean-ctx-e8:
+# v4-runtime was alone on the main critical path, nextest 297-316 s for
+# 17'557 tests). Same image, lane, rules, needs, superseded check, Weave
+# verdict scope and flake gate as v4-runtime, whose script it keeps; the
+# script sees the job name and runs nextest --partition hash:2/2 only
+# (V4_TESTS_ONLY), never clippy, doctests, checks, rustdoc or the warm-farm
+# publish. Its own queue, so it runs beside v4-runtime on the lane's second
+# slot. It only reads the shared caches. V4_NEXTEST_SPLIT=0 drops it and
+# v4-runtime runs the whole suite.
+v4-runtime-2:
+  extends: v4-runtime
+  resource_group: v4-rust-2-$CI_COMMIT_REF_SLUG
+  rules:
+    - if: '$V4_NEXTEST_SPLIT == "0"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)'
+    - !reference [.fast-mr-main, rules]
+  variables:
+    V4_CACHE_POLICY: pull
+    V4_TIP_CACHE_POLICY: pull
 
 # Fast merge-request gate (owner 08.11., target <= 10 minutes on a warm cache):
 # format, the same clippy run as v4-runtime, a build of every workspace test
@@ -1609,7 +1674,7 @@ v4-provenance:
   # and Weave runs these checks on the merge result before it lands), where
   # v4-runtime needs it.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(v4-provenance|v4-runtime)(,|$)/'
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)(v4-provenance|v4-runtime|v4-runtime-2)(,|$)/'
       interruptible: false
     - !reference [.schedule-only, rules]
   needs: []
@@ -1774,9 +1839,9 @@ change-class:
     paths:
       - change-class/
 
-# Weave schedule bisect copies of the two Rust jobs with a resource group
+# Weave schedule bisect copies of the Rust jobs with a resource group
 # (see "Weave schedule bisect pipelines"): WEAVE_BISECT_JOBS names them
-# v4-runtime and main-smoke. Everything but the queue, the cache and the
+# v4-runtime, v4-runtime-2 and main-smoke. Everything but the queue, the cache and the
 # rules comes from the job itself.
 .weave-bisect-rust:
   resource_group: weave-bisect
@@ -1800,6 +1865,14 @@ weave-bisect-v4-runtime:
     - .weave-bisect-rust
   rules:
     - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)v4-runtime(,|$)/'
+      interruptible: false
+
+weave-bisect-v4-runtime-2:
+  extends:
+    - v4-runtime-2
+    - .weave-bisect-rust
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api" && $WEAVE_SCHEDULE_BISECT == "1" && $CI_COMMIT_BRANCH =~ /^weave-bisect\// && $WEAVE_BISECT_JOBS =~ /(^|,)v4-runtime-2(,|$)/'
       interruptible: false
 
 weave-bisect-main-smoke:

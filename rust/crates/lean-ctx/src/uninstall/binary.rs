@@ -153,7 +153,7 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
                                  Delete it after this process exits."
                             );
                         } else {
-                            tracing::warn!("Failed to remove binary {}: {e}", path.display());
+                            leftover!("Failed to remove binary {}: {e}", path.display());
                         }
                     }
                 }
@@ -228,7 +228,7 @@ fn remove_shims_in_dirs(dirs: &[PathBuf], home: &Path, dry_run: bool) -> bool {
                     println!("  ✓ Shim removed ({short})");
                     removed = true;
                 }
-                Err(e) => tracing::warn!("Failed to remove shim {}: {e}", shim.display()),
+                Err(e) => leftover!("Failed to remove shim {}: {e}", shim.display()),
             }
         }
     }

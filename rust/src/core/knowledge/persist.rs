@@ -517,9 +517,14 @@ impl ProjectKnowledge {
         project_root: &str,
         f: impl FnOnce() -> T,
     ) -> Result<T, String> {
+        Self::with_store_lock_checked(&hash_project_root(project_root), f)
+    }
+
+    /// [`with_project_lock_checked`](Self::with_project_lock_checked) for
+    /// the store under `hash`.
+    fn with_store_lock_checked<T>(hash: &str, f: impl FnOnce() -> T) -> Result<T, String> {
         use fs2::FileExt;
-        let hash = hash_project_root(project_root);
-        let dir = knowledge_dir(&hash)?;
+        let dir = knowledge_dir(hash)?;
         // Parallel writers of this process queue in arrival order and wait
         // only while the queue stands still; the polled locks below then
         // bound just the embedding path and other processes. Polled alone,
@@ -527,7 +532,7 @@ impl ProjectKnowledge {
         let _turn =
             crate::core::file_lock::take_turn(&dir.join(".knowledge.lock"), KNOWLEDGE_LOCK_WAIT)
                 .ok_or("knowledge lock unavailable")?;
-        let lock = knowledge_lock(&hash);
+        let lock = knowledge_lock(hash);
         let deadline = std::time::Instant::now() + KNOWLEDGE_LOCK_WAIT;
         let _guard = loop {
             match lock.try_lock() {
@@ -633,6 +638,113 @@ impl ProjectKnowledge {
             }
             knowledge.save_with_admission(admission)?;
             Ok((knowledge.admit_sources(), out))
+        })?
+    }
+
+    /// Removes the facts `remove` selects from `project_root`'s store, under
+    /// the project's locks. Returns how many.
+    ///
+    /// Only a removal: nothing is added or rewritten, so no policy can be
+    /// violated and none is consulted. That keeps it working where an admitted
+    /// write cannot — a checkout deleted since, or a root other than the
+    /// project an MCP request is bound to — so a fail-closed cleanup (e.g.
+    /// Cloud's account scope) does not get stuck on them. A missing store
+    /// removes nothing. Every store is tried: one that cannot be read or
+    /// written (a damaged `knowledge.json`) is named in the error, by its
+    /// file, after the others were cleaned.
+    pub fn remove_facts_locked(
+        project_root: &str,
+        remove: impl Fn(&KnowledgeFact) -> bool,
+    ) -> Result<usize, String> {
+        let mut removed = 0;
+        let mut failed = Vec::new();
+        for hash in Self::stores_of(project_root)? {
+            match Self::remove_from_store(&hash, project_root, &remove) {
+                Ok(n) => removed += n,
+                Err(error) => failed.push(match knowledge_dir(&hash) {
+                    Ok(dir) => format!("{} ({error})", dir.join("knowledge.json").display()),
+                    Err(_) => error,
+                }),
+            }
+        }
+        if failed.is_empty() {
+            Ok(removed)
+        } else {
+            Err(failed.join("; "))
+        }
+    }
+
+    /// The hashes of the stores that hold `project_root`'s knowledge. For an
+    /// existing checkout its own hash. A deleted one no longer hashes to its
+    /// store (the hash folds in the resolved path and the project identity,
+    /// both gone with the folder), so the stores are found by the root they
+    /// record — a clone at the same place later would otherwise get them back.
+    fn stores_of(project_root: &str) -> Result<Vec<String>, String> {
+        let own = hash_project_root(project_root);
+        if Path::new(project_root).is_dir() {
+            return Ok(vec![own]);
+        }
+        let base = crate::core::data_dir::lean_ctx_data_dir()?.join("knowledge");
+        let entries = match std::fs::read_dir(&base) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(_) => return Err("knowledge directory unavailable".into()),
+        };
+        let wanted = crate::core::pathutil::normalize_tool_path(project_root);
+        let mut hashes = vec![own];
+        for entry in entries {
+            let entry = entry.map_err(|_| "knowledge directory unavailable")?;
+            let Some(hash) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            let Ok(store) = parse_store_cached(&entry.path().join("knowledge.json")) else {
+                continue;
+            };
+            if crate::core::pathutil::normalize_tool_path(&store.project_root) == wanted {
+                hashes.push(hash);
+            }
+        }
+        hashes.sort();
+        hashes.dedup();
+        Ok(hashes)
+    }
+
+    fn remove_from_store(
+        hash: &str,
+        project_root: &str,
+        remove: &impl Fn(&KnowledgeFact) -> bool,
+    ) -> Result<usize, String> {
+        let dir = knowledge_dir(hash)?;
+        let path = dir.join("knowledge.json");
+        match std::fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(_) => return Err("knowledge input metadata unavailable".into()),
+            Ok(_) => {}
+        }
+        Self::with_store_lock_checked(hash, || {
+            let mut knowledge = parse_store_cached(&path)?;
+            let canonical = |root: &str| {
+                crate::core::pathutil::safe_canonicalize_bounded(Path::new(root), 2000)
+            };
+            if canonical(&knowledge.project_root) != canonical(project_root) {
+                return Err("knowledge input belongs to a different project".into());
+            }
+            let before = knowledge.facts.clone();
+            knowledge.facts.retain(|f| !remove(f));
+            let removed = before.len() - knowledge.facts.len();
+            if removed == 0 {
+                return Ok(0);
+            }
+            hash.clone_into(&mut knowledge.project_hash);
+            knowledge.rebuild_index();
+            let json = serde_json::to_string_pretty(&knowledge).map_err(|e| e.to_string())?;
+            write_json_atomic(&path, &json)?;
+            super::journal::append(
+                &dir,
+                &super::journal::diff(&before, &knowledge.facts),
+                &UtcDateTime::now().to_rfc3339(),
+            );
+            Ok(removed)
         })?
     }
 

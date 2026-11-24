@@ -36,21 +36,57 @@ use lean_ctx_cloud::{CloudConfig, CloudError, CloudStore};
 use lean_ctx_protocol::cloud::enroll::{DeviceCodeV1, MAX_INSTANCE_LABEL_CHARS, TrialPlan};
 use lean_ctx_protocol::cloud::lease::CloudLeaseV1;
 
+/// The label this machine gets when `--label` names none: the computer
+/// name people see (macOS: `scutil --get ComputerName`), else the short
+/// host name. Sent with the device code, so the approval page names it.
 fn default_label() -> String {
-    let host = gethostname::gethostname()
-        .to_string_lossy()
-        .trim()
-        .to_string();
-    let host: String = host
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(MAX_INSTANCE_LABEL_CHARS)
-        .collect();
-    if host.trim().is_empty() {
-        "lean-ctx".into()
+    #[cfg(target_os = "macos")]
+    let computer = std::process::Command::new("scutil")
+        .args(["--get", "ComputerName"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned());
+    #[cfg(not(target_os = "macos"))]
+    let computer: Option<String> = None;
+    label_from(
+        computer.as_deref(),
+        &gethostname::gethostname().to_string_lossy(),
+    )
+}
+
+/// The computer name when there is one, else the host name up to its
+/// first dot; control characters out, at most the protocol's length.
+fn label_from(computer: Option<&str>, host: &str) -> String {
+    let clean = |name: &str| -> String {
+        name.chars()
+            .filter(|c| !c.is_control())
+            .take(MAX_INSTANCE_LABEL_CHARS)
+            .collect::<String>()
+            .trim()
+            .to_string()
+    };
+    let short = host.trim().split('.').next().unwrap_or_default();
+    [computer.map(clean), Some(clean(short))]
+        .into_iter()
+        .flatten()
+        .find(|name| !name.is_empty())
+        .unwrap_or_else(|| "lean-ctx".into())
+}
+
+/// `url` as a terminal hyperlink (OSC 8) when stdout is a terminal, plain
+/// otherwise. A URL with control characters is never wrapped.
+fn link(url: &str, tty: bool) -> String {
+    if tty && !url.chars().any(char::is_control) {
+        format!("\x1b]8;;{url}\x1b\\{url}\x1b]8;;\x1b\\")
     } else {
-        host
+        url.to_string()
     }
+}
+
+fn stdout_tty() -> bool {
+    std::io::IsTerminal::is_terminal(&std::io::stdout())
 }
 
 /// A key set another root signed (Cloud task lean-ctx #2): say which root
@@ -181,13 +217,19 @@ fn code_event(code: &DeviceCodeV1) -> Value {
 }
 
 /// `cloud connect --json`, event `connected`: the plan's wire name and
-/// when a running trial ends (`null` without one).
-fn connected_event(lease: &CloudLeaseV1) -> Value {
-    json!({
+/// when a running trial ends (`null` without one). `runtime` (only when
+/// this connect installed the runtime the plan includes) says how that
+/// ended; a failed install never turns `connected` into `error`.
+fn connected_event(lease: &CloudLeaseV1, runtime: Option<Value>) -> Value {
+    let mut event = json!({
         "event": "connected",
         "plan": lease.plan,
         "trial_ends_at": lean_ctx_cloud::status::trial_ends_at(lease),
-    })
+    });
+    if let Some(runtime) = runtime {
+        event["runtime"] = runtime;
+    }
+    event
 }
 
 /// `cloud connect --json`, event `error` (the command exits 1).
@@ -275,7 +317,7 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     }
     let chosen: Option<String> = flag_value(args, "--label")?
         .map(|label| label.chars().take(MAX_INSTANCE_LABEL_CHARS).collect());
-    let label = chosen.clone().unwrap_or_else(default_label);
+    let label = chosen.unwrap_or_else(default_label);
     let client = CloudClient::new(&origin)?;
     println!("LeanCTX Cloud — connect this machine");
     // A self-hosted Cloud is trusted when LeanCTX vouched for its root.
@@ -291,14 +333,14 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     let (early, named, announced, enrolled) = if let Some(token) = &token {
         // A pre-issued enrollment token (MDM, unattended hosts): no device
         // code, no browser; the team is the one the token was issued for.
-        println!("\nStep 1 of 3 · Enroll this machine with your team's enrollment token");
+        println!("\nEnroll this machine with your team's enrollment token");
         print!("  Enrolling…");
         let _ = std::io::stdout().flush();
         let enrolled = enroll_with_token(&store, &client, token, &label, &root)
             .map_err(|error| unreachable(error, &origin));
         (None, None, false, enrolled)
     } else {
-        let code = start_device_flow_for(&client, chosen.as_deref(), trial)
+        let code = start_device_flow_for(&client, Some(label.as_str()), trial)
             .map_err(|error| unreachable(error, &origin))?;
         // C0 2.1: the approval page also asks "Share this project" (one code).
         // The folder name and git remote reach Cloud only after the person's
@@ -314,17 +356,20 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
         let named = here.as_deref().filter(|_| early == Some(true));
         let announced =
             announce_setup(&client, &code, &setup_announcement(&announce_config, named));
-        println!("\nStep 1 of 3 · Approve this machine in your browser");
+        println!("\nApprove this machine in your browser");
         if args.iter().any(|a| a == "--no-browser")
             || std::env::var_os("LEAN_CTX_NO_BROWSER").is_some()
         {
             println!(
                 "  Open this link on any device: {}",
-                code.verification_uri_complete
+                link(&code.verification_uri_complete, stdout_tty())
             );
         } else {
             let _ = open_browser(&code.verification_uri_complete);
-            println!("  We opened: {}", code.verification_uri_complete);
+            println!(
+                "  We opened: {}",
+                link(&code.verification_uri_complete, stdout_tty())
+            );
         }
         println!(
             "  Check the code  {}  in the browser: it must be the same (valid {} minutes).",
@@ -384,7 +429,7 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     // Prove the instance key works before reporting success.
     session.client()?;
     println!(
-        "\nStep 2 of 3 · Connected {} to {} ({} plan).",
+        "\nConnected {} to {} ({} plan).",
         instance.label,
         instance.workspace_label(),
         plan_name(&session.lease.lease.plan)
@@ -440,24 +485,121 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     }
     print_done(&instance, &outcome);
     engine_metrics_notice(&config, &session, &instance);
-    if session
-        .lease
-        .lease
-        .grants(lean_ctx_protocol::cloud::lease::CloudRight::Runtime)
-        && !config.runtime_consent
-    {
-        // Asked only at a terminal; nothing is installed without a yes.
-        if lean_ctx::core::host_env::stdin_is_terminal()
-            && super::prompt::confirm(RUNTIME_QUESTION, false)
-        {
-            return install_runtime(true);
-        }
-        println!(
-            "  Optional: `lean-ctx cloud runtime install` adds the LeanCTX Intelligence runtime your plan includes; it enforces {}'s policies on this machine.",
-            instance.org_name
-        );
+    // Owner decision 23.11.2026: installed without a question (consent comes
+    // from the terms accepted at sign-up); a failure never fails the connect.
+    if let Some(runtime) = included_runtime(&config, &session) {
+        println!("{}", runtime_line(&runtime));
     }
     Ok(())
+}
+
+/// What connect did with the runtime the plan includes.
+#[derive(Debug)]
+enum IncludedRuntime {
+    /// Switched off with `setup runtime deactivate` (also before the first
+    /// install): left off.
+    KeptOff,
+    /// Installed through the signed channel, or why not.
+    Installed(Result<String, lean_ctx::core::intelligence_runtime::InstallError>),
+}
+
+/// What connect does with the runtime the plan includes: nothing when the
+/// lease does not grant it or this machine installed it already; left off
+/// when it was switched off (only `setup runtime install` turns it on).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeStep {
+    Install,
+    KeepOff,
+}
+
+fn runtime_step(granted: bool, installed_before: bool, deactivated: bool) -> Option<RuntimeStep> {
+    if !granted || installed_before {
+        None
+    } else if deactivated {
+        Some(RuntimeStep::KeepOff)
+    } else {
+        Some(RuntimeStep::Install)
+    }
+}
+
+/// The runtime the plan includes, installed through the signed channel
+/// when the lease grants it, this machine has not installed it yet and it
+/// was not switched off. Prints nothing (`--json` writes events only).
+fn included_runtime(config: &CloudConfig, session: &Session) -> Option<IncludedRuntime> {
+    let granted = session
+        .lease
+        .lease
+        .grants(lean_ctx_protocol::cloud::lease::CloudRight::Runtime);
+    match runtime_step(granted, config.runtime_consent, runtime_deactivated())? {
+        RuntimeStep::KeepOff => Some(IncludedRuntime::KeptOff),
+        RuntimeStep::Install => Some(IncludedRuntime::Installed(install_included_runtime())),
+    }
+}
+
+/// `SetupRuntime::deactivated()` from the configuration, the same as every
+/// setup entry point. An unreadable configuration installs nothing either.
+fn runtime_deactivated() -> bool {
+    lean_ctx::core::config::Config::try_load_global().map_or(true, |config| {
+        config
+            .intelligence_runtime
+            .with_recorded_decline()
+            .deactivated()
+    })
+}
+
+/// Said when connect leaves a switched-off runtime off.
+const RUNTIME_KEPT_OFF: &str = "Runtime switched off on this computer; left off. Switch it on with: lean-ctx setup runtime install";
+
+/// Install through the signed channel; recorded only once it worked, so
+/// the next connect tries again after a failure.
+fn install_included_runtime() -> Result<String, lean_ctx::core::intelligence_runtime::InstallError>
+{
+    let installed = lean_ctx::core::intelligence_runtime::run(&[
+        "sync-configured".to_string(),
+        "--accept-proprietary".to_string(),
+    ])?;
+    if let Err(error) =
+        lean_ctx::core::config::Config::update_global(|config| config.cloud.runtime_consent = true)
+    {
+        tracing::info!("record the runtime install: {error}");
+    }
+    Ok(installed)
+}
+
+/// One plain line for the terminal.
+fn runtime_line(runtime: &IncludedRuntime) -> String {
+    use lean_ctx::core::intelligence_runtime::InstallError;
+    let installed = match runtime {
+        IncludedRuntime::KeptOff => return RUNTIME_KEPT_OFF.into(),
+        IncludedRuntime::Installed(installed) => installed,
+    };
+    match installed {
+        Ok(_) => "LeanCTX Intelligence runtime installed.".into(),
+        Err(InstallError::PlatformUnavailable) => {
+            format!("{}.", InstallError::PlatformUnavailable)
+        }
+        Err(error) => format!(
+            "Runtime not installed: {error}. This computer is connected; retry with `lean-ctx cloud runtime install`."
+        ),
+    }
+}
+
+/// The `runtime` member of the `connected` event.
+fn runtime_member(runtime: &IncludedRuntime) -> Value {
+    use lean_ctx::core::intelligence_runtime::InstallError;
+    let installed = match runtime {
+        IncludedRuntime::KeptOff => {
+            return json!({ "state": "switched_off", "message": RUNTIME_KEPT_OFF });
+        }
+        IncludedRuntime::Installed(installed) => installed,
+    };
+    match installed {
+        Ok(_) => json!({ "state": "installed" }),
+        Err(error @ InstallError::PlatformUnavailable) => {
+            json!({ "state": "unavailable", "message": error.to_string() })
+        }
+        Err(error) => json!({ "state": "failed", "message": error.to_string() }),
+    }
 }
 
 /// E44 at connect (SPEC-ENGINE §3.6) and the effective policy: neither
@@ -503,20 +645,20 @@ fn run_json(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     if store.instance()?.is_some() {
         let current = report(&store, config, UtcDateTime::now());
         if let (true, Some(lease)) = (current.connected(), &current.lease) {
-            emit(&connected_event(lease));
+            emit(&connected_event(lease, None));
             return Ok(());
         }
     }
     let chosen: Option<String> = flag_value(args, "--label")?
         .map(|label| label.chars().take(MAX_INSTANCE_LABEL_CHARS).collect());
-    let label = chosen.clone().unwrap_or_else(default_label);
+    let label = chosen.unwrap_or_else(default_label);
     let client = CloudClient::new(&origin)?;
     let trust = lean_ctx_cloud::root_cert::for_connect(&client, config, &origin)?;
     let root = trust.root;
     let enrolled = if let Some(token) = &token {
         enroll_with_token(&store, &client, token, &label, &root)
     } else {
-        let code = start_device_flow_for(&client, chosen.as_deref(), trial)?;
+        let code = start_device_flow_for(&client, Some(label.as_str()), trial)?;
         emit(&code_event(&code));
         if !args.iter().any(|a| a == "--no-browser") {
             let _ = open_browser(&code.verification_uri_complete);
@@ -524,7 +666,7 @@ fn run_json(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
         finish_device_flow(&store, &client, &code, &label, &root, &std::thread::sleep)
             .map_err(|error| trial_aware(error, trial))
     };
-    enrolled
+    let (instance, _) = enrolled
         .map_err(|error| name_the_root(error, &trust, &origin))
         .map_err(|error| {
             lean_ctx_cloud::throttle::note(
@@ -544,7 +686,10 @@ fn run_json(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     // The supervision line is for people; stdout carries events only.
     let _ = lean_ctx::daemon_autostart::ensure_supervised(true);
     announce_and_pull(&session);
-    emit(&connected_event(&session.lease.lease));
+    // Default on, as in the terminal; the outcome is not an event.
+    let _ = confirm_metrics(config, &session, &instance);
+    let runtime = included_runtime(config, &session).map(|runtime| runtime_member(&runtime));
+    emit(&connected_event(&session.lease.lease, runtime));
     Ok(())
 }
 
@@ -574,39 +719,147 @@ enum Outcome {
     Retry(String),
 }
 
-/// The engine-metrics notice (telemetry SPEC §4, K4): once at connect, in
-/// this terminal only, once engine metrics are released. On Personal nothing is shared until the person says yes here (or later with
-/// `cloud metrics confirm`); `--yes` does not answer it.
+/// Usage metrics at connect (telemetry SPEC §4, K4; owner decision
+/// 23.11.2026: no onboarding question, default on, off in Settings). Only
+/// the unset plan default is confirmed; one plain line says how to switch
+/// them off whenever they are shared or connect switched them on.
 fn engine_metrics_notice(config: &CloudConfig, session: &Session, instance: &InstanceRecord) {
-    use lean_ctx_cloud::metrics_v2::{self, gate, upload};
-    if !upload::released(&instance.url) || !config.metrics_upload {
-        return;
-    }
     let workspace = instance.workspace_label();
-    let web_url = instance
-        .web_url
-        .clone()
-        .unwrap_or_else(|| instance.url.clone());
-    let lease = &session.lease.lease;
-    let sharing = gate::decide(&session.store, config, instance, lease, UtcDateTime::now());
-    // Before the release nothing is shared, so nothing is asked either.
-    let needs =
-        gate::needs_confirmation(lease.plan) && !sharing.is_on() && upload::released(&instance.url);
-    println!(
-        "\n{}",
-        metrics_v2::disclosure(&workspace, &web_url, &sharing, needs)
-    );
-    let terminal = lean_ctx::core::host_env::stdin_is_terminal()
-        && std::io::IsTerminal::is_terminal(&std::io::stdout());
-    if needs
-        && terminal
-        && super::prompt::confirm("Share instance metrics with this workspace?", false)
-    {
-        match upload::confirm(session) {
-            Ok(_) => println!("Instance metrics confirmed for {workspace}."),
-            Err(error) => eprintln!("cloud: instance metrics not confirmed: {error}"),
+    match confirm_metrics(config, session, instance) {
+        None => {}
+        Some(Ok(metrics)) => {
+            if let Some(line) = metrics_line(&workspace, metrics) {
+                println!("\n{line}");
+            }
         }
+        Some(Err(error)) => eprintln!("cloud: usage metrics not switched on: {error}"),
     }
+}
+
+/// What connect knows about usage metrics afterwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Metrics {
+    /// The workspace said they are shared.
+    Shared,
+    /// The workspace could not be asked; the last known state says shared.
+    LastKnownShared,
+    /// Connect confirmed the plan default; the workspace does not share
+    /// them yet (for example while its policy is still being set up).
+    SwitchedOn,
+    /// Off in Settings, by an admin, the lease or policy: left off.
+    Off,
+}
+
+/// Whether connect may confirm usage metrics on this machine: released,
+/// `cloud.metrics_upload` on, and no `DO_NOT_TRACK=1` or
+/// `LEAN_CTX_TELEMETRY=off` in the environment. The environment only keeps
+/// connect from switching sharing on; the upload gate is the workspace's
+/// state and `cloud.metrics_upload`, so a workspace that already shares is
+/// still named as shared.
+fn metrics_allowed(
+    released: bool,
+    metrics_upload: bool,
+    do_not_track: Option<&str>,
+    telemetry: Option<&str>,
+) -> bool {
+    released
+        && metrics_upload
+        && !lean_ctx::core::config::TelemetryConfig::environment_disables(do_not_track, telemetry)
+}
+
+/// Switch usage metrics on where the workspace still waits for a first
+/// confirmation. `None` before the release or when this machine (config
+/// or environment) switched them off. Prints nothing (`--json` writes
+/// events only).
+fn confirm_metrics(
+    config: &CloudConfig,
+    session: &Session,
+    instance: &InstanceRecord,
+) -> Option<Result<Metrics, CloudError>> {
+    use lean_ctx::core::host_env::var;
+    use lean_ctx_cloud::metrics_v2::{gate, upload};
+    let lease = &session.lease.lease;
+    let released = upload::released(&instance.url);
+    settle_metrics(
+        released && config.metrics_upload,
+        metrics_allowed(
+            released,
+            config.metrics_upload,
+            var("DO_NOT_TRACK").as_deref(),
+            var("LEAN_CTX_TELEMETRY").as_deref(),
+        ),
+        || upload::refresh_sharing(session).map(|_| ()),
+        || gate::decide(&session.store, config, instance, lease, UtcDateTime::now()),
+        || upload::confirm(session).map(|_| ()),
+    )
+}
+
+/// The connect decision about usage metrics, apart from the network:
+/// `fetch` asks the workspace for its current state, `decide` is the gate
+/// on what is known, `confirm` switches the plan default on.
+///
+/// - Off on this machine (or not released): `None`, nothing is sent.
+/// - `may_confirm` false (`DO_NOT_TRACK=1`, `LEAN_CTX_TELEMETRY=off`):
+///   nothing is confirmed; a workspace that already shares is said to.
+/// - Not confirmed yet (the unset default, as the workspace just said):
+///   confirmed; shared, or switched on and shared once the workspace
+///   allows it.
+/// - Any other off (Settings, an admin, the lease, policy): stays off, and
+///   no line says it is shared.
+/// - The workspace could not be asked: nothing is confirmed.
+fn settle_metrics(
+    allowed: bool,
+    may_confirm: bool,
+    fetch: impl FnOnce() -> Result<(), CloudError>,
+    decide: impl Fn() -> lean_ctx_cloud::metrics_v2::gate::Sharing,
+    confirm: impl FnOnce() -> Result<(), CloudError>,
+) -> Option<Result<Metrics, CloudError>> {
+    use lean_ctx_cloud::metrics_v2::gate::{OffReason, Sharing};
+    if !allowed {
+        return None;
+    }
+    if let Err(error) = fetch() {
+        return Some(if decide().is_on() {
+            Ok(Metrics::LastKnownShared)
+        } else {
+            Err(error)
+        });
+    }
+    match decide() {
+        Sharing::On { .. } => Some(Ok(Metrics::Shared)),
+        Sharing::Off {
+            reason: OffReason::NotConfirmed,
+            ..
+        } if !may_confirm => Some(Ok(Metrics::Off)),
+        Sharing::Off {
+            reason: OffReason::NotConfirmed,
+            ..
+        } => Some(confirm().map(|()| {
+            if decide().is_on() {
+                Metrics::Shared
+            } else {
+                Metrics::SwitchedOn
+            }
+        })),
+        Sharing::Off { .. } => Some(Ok(Metrics::Off)),
+    }
+}
+
+/// The one line connect prints about usage metrics; none when they are
+/// off.
+fn metrics_line(workspace: &str, metrics: Metrics) -> Option<String> {
+    let what = "pseudonymous counts (including full re-fetches) and the names of unregulated programs; never file content, prompts or secrets. Switch them off in Settings or with `lean-ctx config set cloud.metrics_upload false`.";
+    let head = match metrics {
+        Metrics::Shared => format!("Usage metrics are shared with {workspace}"),
+        Metrics::LastKnownShared => format!(
+            "Usage metrics were last known to be shared with {workspace} (the workspace could not be asked just now)"
+        ),
+        Metrics::SwitchedOn => format!(
+            "Usage metrics are switched on for {workspace} and are shared once the workspace allows it"
+        ),
+        Metrics::Off => return None,
+    };
+    Some(format!("{head}: {what}"))
 }
 
 /// Steps 2 and 3 for a connected machine.
@@ -717,48 +970,47 @@ fn print_done(instance: &InstanceRecord, outcome: &Outcome) {
         .web_url
         .clone()
         .unwrap_or_else(|| instance.url.clone());
-    let web = web.trim_end_matches('/');
     let cwd = std::env::current_dir().unwrap_or_default();
     let root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
     let project = project_name(Path::new(&root));
-    let org = &instance.org_name;
     println!();
+    for line in done_lines(outcome, &instance.org_name, &web, &project, stdout_tty()) {
+        println!("{line}");
+    }
+}
+
+/// The lines of the closing block.
+fn done_lines(outcome: &Outcome, org: &str, web: &str, project: &str, tty: bool) -> Vec<String> {
+    let web = web.trim_end_matches('/');
+    let app = format!("  Open:  {}", link(&format!("{web}/app/"), tty));
     match outcome {
-        Outcome::Shared { ns, name } => {
-            println!(
+        Outcome::Shared { ns, name } => vec![
+            format!(
                 "Done. Your agents now share what they learn about {project} with your team in {org}."
-            );
-            println!("  Open:  {web}/o/{ns}/v/{name}/");
-            println!("  Next:  Keep working as usual; LeanCTX syncs in the background.");
-            println!("         Another project? Run `lean-ctx cloud connect` there.");
-        }
-        Outcome::NoProject => {
-            println!(
-                "Done. This machine is connected to {org}. This folder is not a project LeanCTX can share (it has no git remote)."
-            );
-            println!("  Open:  {web}/app/");
-            println!("  Next:  Run `lean-ctx cloud connect` inside a project to share it.");
-        }
-        Outcome::KeptLocal(why) => {
-            println!("Done. {project} stays on this machine: {why}.");
-            println!("  Your agents still use {org}'s knowledge and policies.");
-            println!("  Open:  {web}/app/");
-            println!(
-                "  Changed your mind? Run `lean-ctx cloud connect` here again in your own terminal: it asks again."
-            );
-        }
-        Outcome::Waiting => {
-            println!(
+            ),
+            format!("  Open:  {}", link(&format!("{web}/o/{ns}/v/{name}/"), tty)),
+            "  Next:  Keep working as usual; LeanCTX syncs in the background.".into(),
+            "         Another project? Run `lean-ctx cloud connect` there.".into(),
+        ],
+        Outcome::NoProject => vec![format!("Done. This computer is connected to {org}."), app],
+        Outcome::KeptLocal(why) => vec![
+            format!("Done. {project} stays on this machine: {why}."),
+            format!("  Your agents still use {org}'s knowledge and policies."),
+            app,
+            "  Changed your mind? Run `lean-ctx cloud connect` here again in your own terminal: it asks again.".into(),
+        ],
+        Outcome::Waiting => vec![
+            format!(
                 "Almost done. {project} stays on this machine until you confirm it yourself: run `lean-ctx cloud connect` here, in your own terminal (agents cannot confirm it)."
-            );
-            println!("  Open:  {web}/app/");
-        }
-        Outcome::Retry(why) => {
-            println!(
+            ),
+            app,
+        ],
+        Outcome::Retry(why) => vec![
+            format!(
                 "Connected, but {project} is not set up yet: {why}. LeanCTX tries again in the background; nothing leaves this machine before that."
-            );
-            println!("  Open:  {web}/app/");
-        }
+            ),
+            app,
+        ],
     }
 }
 
@@ -818,7 +1070,7 @@ fn confirm_sharing(
     args: &[String],
     announced: bool,
 ) -> Result<Option<bool>, CloudError> {
-    println!("\nStep 3 of 3 · Share this project");
+    println!("\nShare this project");
     if let Some(decided) = steps::decision(store, &instance.org_id) {
         println!("  {}", decided_line(&decided, &instance.org_name));
         let terminal = lean_ctx::core::host_env::stdin_is_terminal();
@@ -1002,22 +1254,12 @@ fn answer_on_device_page(
     }
 }
 
-const RUNTIME_QUESTION: &str = "Your plan includes the LeanCTX Intelligence runtime (proprietary, from the signed LeanCTX channel); it enforces your workspace's policy on this machine. Install it now?";
-
-/// Record the consent, then install through the signed runtime channel.
-pub(super) fn install_runtime(consented: bool) -> Result<(), CloudError> {
-    if !super::prompt::confirm(RUNTIME_QUESTION, consented) {
-        return Err(CloudError::Config(
-            "the runtime was not installed: no consent".into(),
-        ));
-    }
-    lean_ctx::core::config::Config::update_global(|config| config.cloud.runtime_consent = true)
-        .map_err(|e| CloudError::Local(format!("record the consent: {e}")))?;
-    let result = lean_ctx::core::intelligence_runtime::run(&[
-        "sync-configured".to_string(),
-        "--accept-proprietary".to_string(),
-    ])
-    .map_err(|e| CloudError::Local(format!("runtime install: {e}")))?;
+/// `cloud runtime install`: install through the signed runtime channel
+/// without a question (owner decision 23.11.2026: consent comes from the
+/// terms accepted at sign-up). Asked for by name, so a failure fails it.
+pub(super) fn install_runtime() -> Result<(), CloudError> {
+    let result = install_included_runtime()
+        .map_err(|e| CloudError::Local(format!("runtime install: {e}")))?;
     println!("{result}");
     Ok(())
 }
@@ -1235,11 +1477,11 @@ mod tests {
         assert!(!event.to_string().contains("secret-device-code"));
         assert!(!event.to_string().contains('\n'));
 
-        let trial = connected_event(&lease(Some("2026-12-02T10:00:00Z")));
+        let trial = connected_event(&lease(Some("2026-12-02T10:00:00Z")), None);
         assert_eq!(trial["event"], "connected");
         assert_eq!(trial["trial_ends_at"], "2026-12-02T10:00:00Z");
         assert!(trial["plan"].is_string());
-        let plain = connected_event(&lease(None));
+        let plain = connected_event(&lease(None), None);
         assert_eq!(plain["trial_ends_at"], Value::Null);
         assert_eq!(
             plain.as_object().unwrap().keys().collect::<Vec<_>>(),
@@ -1369,6 +1611,299 @@ mod tests {
         assert!(stdout_writes(run).contains(&"println!"));
         assert!(stdout_writes("let _ = writeln!(std::io::stdout(), \"x\");").len() >= 2);
         assert!(stdout_writes("eprintln!(\"to stderr\");").is_empty());
+    }
+
+    /// Owner decisions 23.11.2026 for the onboarding (3.12.8): connect
+    /// asks nothing about metrics or the runtime, a runtime that cannot be
+    /// installed never fails it and says why in one distinct line, the
+    /// output has no step counter, names this computer, links on a
+    /// terminal, and `setup runtime install` works without flags.
+    #[test]
+    fn onboarding_connects_without_questions_and_says_it_plainly() {
+        use lean_ctx::core::intelligence_runtime::{
+            InstallError, USAGE, error_message, plain_install,
+        };
+        // Metrics: no question, one line naming the off switch.
+        let connect = include_str!("cloud_connect_cmd.rs").replace("\r\n", "\n");
+        let code = &connect[..connect.find("#[cfg(test)]\nmod tests").unwrap()];
+        assert!(!code.contains("Share instance metrics with this workspace?"));
+        let shared = metrics_line("Acme", Metrics::Shared).unwrap();
+        assert!(shared.contains("`lean-ctx config set cloud.metrics_upload false`"));
+        assert!(shared.contains("Settings"));
+        // Runtime: no question; failures are plain, distinct and not fatal.
+        assert!(!code.contains("RUNTIME_QUESTION"));
+        let expired = InstallError::ChannelExpired.to_string();
+        let mismatch = InstallError::ChannelMismatch.to_string();
+        let manifest = InstallError::Manifest.to_string();
+        assert!(expired.contains("expired") && mismatch.contains("channel"));
+        assert!(manifest.contains("package manifest"));
+        assert!(expired != mismatch && mismatch != manifest && expired != manifest);
+        assert_eq!(
+            runtime_line(&IncludedRuntime::Installed(Err(
+                InstallError::PlatformUnavailable
+            ))),
+            "Runtime for this platform is not available yet."
+        );
+        assert!(
+            runtime_line(&IncludedRuntime::Installed(Err(
+                InstallError::ChannelExpired
+            )))
+            .contains("connected")
+        );
+        let event = connected_event(
+            &lease(None),
+            Some(runtime_member(&IncludedRuntime::Installed(Err(
+                InstallError::ChannelExpired,
+            )))),
+        );
+        assert_eq!(event["event"], "connected");
+        assert_eq!(event["runtime"]["state"], "failed");
+        assert_eq!(
+            runtime_member(&IncludedRuntime::Installed(Err(
+                InstallError::PlatformUnavailable
+            )))["state"],
+            "unavailable"
+        );
+        assert_eq!(
+            runtime_member(&IncludedRuntime::Installed(Ok(String::new())))["state"],
+            "installed"
+        );
+        for name in [
+            "confirm_metrics",
+            "settle_metrics",
+            "included_runtime",
+            "runtime_step",
+            "runtime_deactivated",
+            "install_included_runtime",
+            "runtime_member",
+            "label_from",
+        ] {
+            assert!(
+                stdout_writes(source_of(name)).is_empty(),
+                "fn {name} prints"
+            );
+        }
+        // Log level: user-facing commands log errors only.
+        assert_eq!(lean_ctx::core::logging::default_level(false), "error");
+        assert_eq!(lean_ctx::core::logging::default_level(true), "warn");
+        // No step counter.
+        assert!(!code.contains(" of 3 ·"));
+        // Label: computer name first, else the short host name; always sent.
+        assert_eq!(
+            label_from(Some("Sam's MacBook\n"), "mbp.local"),
+            "Sam's MacBook"
+        );
+        assert_eq!(label_from(None, "mbp.fritz.box"), "mbp");
+        assert_eq!(label_from(Some(" "), ""), "lean-ctx");
+        assert!(!code.contains("start_device_flow_for(&client, chosen.as_deref()"));
+        // No project: connected, and the link; nothing about git remotes.
+        let done = done_lines(
+            &Outcome::NoProject,
+            "Acme",
+            "https://cloud.leanctx.com/",
+            "tmp",
+            false,
+        );
+        assert_eq!(
+            done,
+            [
+                "Done. This computer is connected to Acme.",
+                "  Open:  https://cloud.leanctx.com/app/"
+            ]
+        );
+        // Links: OSC 8 on a terminal, plain otherwise.
+        assert_eq!(
+            link("https://x.test/a", true),
+            "\x1b]8;;https://x.test/a\x1b\\https://x.test/a\x1b]8;;\x1b\\"
+        );
+        assert_eq!(link("https://x.test/a", false), "https://x.test/a");
+        assert_eq!(link("https://x.test/\x1b", true), "https://x.test/\x1b");
+        // `setup runtime install` without flags is the signed channel; a
+        // usage error shows the valid forms.
+        let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(
+            plain_install(&args(&["install"])),
+            Some([
+                "sync-configured".to_string(),
+                "--accept-proprietary".to_string()
+            ])
+        );
+        assert_eq!(plain_install(&args(&["install", "--staging"])), None);
+        assert!(matches!(
+            lean_ctx::core::intelligence_runtime::run(&args(&["bogus"])),
+            Err(InstallError::Usage)
+        ));
+        let usage = error_message(&InstallError::Usage);
+        assert!(usage.contains("lean-ctx setup runtime install ") && usage.ends_with(USAGE));
+    }
+
+    /// MR !569 review (note 36077): connect honours a switched-off
+    /// runtime, also one declined before the first install, and says so in
+    /// one line and as the `runtime` member of `--json`.
+    #[test]
+    fn connect_keeps_a_switched_off_runtime_off() {
+        use lean_ctx::core::config::IntelligenceRuntimeConfig;
+        let mut declined = IntelligenceRuntimeConfig::default();
+        declined.switch_off();
+        assert_eq!(
+            runtime_step(true, false, declined.deactivated()),
+            Some(RuntimeStep::KeepOff)
+        );
+        let after_deactivate = IntelligenceRuntimeConfig {
+            accept_proprietary: true,
+            ..IntelligenceRuntimeConfig::default()
+        };
+        assert_eq!(
+            runtime_step(true, false, after_deactivate.deactivated()),
+            Some(RuntimeStep::KeepOff)
+        );
+        assert_eq!(runtime_step(true, false, false), Some(RuntimeStep::Install));
+        assert_eq!(runtime_step(false, false, false), None);
+        assert_eq!(runtime_step(true, true, true), None);
+        let line = runtime_line(&IncludedRuntime::KeptOff);
+        assert_eq!(line.lines().count(), 1);
+        assert!(line.contains("lean-ctx setup runtime install"), "{line}");
+        let event = connected_event(
+            &lease(None),
+            Some(runtime_member(&IncludedRuntime::KeptOff)),
+        );
+        assert_eq!(event["runtime"]["state"], "switched_off");
+        assert_eq!(event["runtime"]["message"], line);
+    }
+
+    /// MR !569 review: connect confirms only the unset plan default. An
+    /// off from Settings, an admin, the lease or policy stays off, and the
+    /// "shared" line is printed only when usage metrics are shared.
+    #[test]
+    fn connect_metrics_keep_an_off_from_cloud_and_say_shared_only_when_shared() {
+        use lean_ctx_cloud::metrics_v2::gate::{OffReason, Sharing};
+        use lean_ctx_protocol::cloud::metrics_v2::PolicyLevel;
+        use std::cell::Cell;
+        use std::collections::BTreeSet;
+
+        let on = || Sharing::On {
+            vaults_off: BTreeSet::new(),
+            unattributed: false,
+            policy_version: 1,
+            since: None,
+            level: None,
+        };
+        let off = |reason| Sharing::Off {
+            reason,
+            level: Some(PolicyLevel::Instance),
+        };
+        // Runs the decision against a fake workspace; returns the result
+        // and whether connect confirmed.
+        let run_with =
+            |allowed: bool, may_confirm: bool, fetched: bool, before: Sharing, after: Sharing| {
+                let confirmed = Cell::new(false);
+                let result = settle_metrics(
+                    allowed,
+                    may_confirm,
+                    || {
+                        if fetched {
+                            Ok(())
+                        } else {
+                            Err(CloudError::Refused("unreachable".into()))
+                        }
+                    },
+                    || {
+                        if confirmed.get() {
+                            after.clone()
+                        } else {
+                            before.clone()
+                        }
+                    },
+                    || {
+                        confirmed.set(true);
+                        Ok(())
+                    },
+                );
+                (result, confirmed.get())
+            };
+        let run = |allowed: bool, fetched: bool, before: Sharing, after: Sharing| {
+            run_with(allowed, allowed, fetched, before, after)
+        };
+
+        // Off in Settings (or by an admin, the lease, the workspace):
+        // never confirmed, no "shared" line.
+        for reason in [
+            OffReason::Policy,
+            OffReason::Workspace,
+            OffReason::Lease,
+            OffReason::PolicyUnavailable,
+            OffReason::Revoked,
+        ] {
+            let (result, confirmed) = run(true, true, off(reason), on());
+            assert!(!confirmed, "{reason:?} was switched back on");
+            assert!(matches!(result, Some(Ok(Metrics::Off))), "{reason:?}");
+        }
+        // The unset default: confirmed, then shared.
+        let (result, confirmed) = run(true, true, off(OffReason::NotConfirmed), on());
+        assert!(confirmed);
+        assert!(matches!(result, Some(Ok(Metrics::Shared))));
+        // Confirmed but the workspace does not share yet (a fresh
+        // registration without policy): a line still says they are on and
+        // how to switch them off, but not that they are shared.
+        let (result, confirmed) = run(
+            true,
+            true,
+            off(OffReason::NotConfirmed),
+            off(OffReason::PolicyUnavailable),
+        );
+        assert!(confirmed);
+        assert!(matches!(result, Some(Ok(Metrics::SwitchedOn))));
+        let pending = metrics_line("Acme", Metrics::SwitchedOn).unwrap();
+        assert!(pending.contains("switched on") && !pending.contains("are shared with"));
+        assert!(pending.contains("cloud.metrics_upload false"));
+        // Already on: shared, nothing to confirm.
+        let (result, confirmed) = run(true, true, on(), on());
+        assert!(!confirmed);
+        assert!(matches!(result, Some(Ok(Metrics::Shared))));
+        // `cloud.metrics_upload = false` (or not released): `None`.
+        let (result, confirmed) = run(false, true, off(OffReason::NotConfirmed), on());
+        assert!(!confirmed);
+        assert!(result.is_none());
+        // The workspace could not be asked: nothing is confirmed.
+        let (result, confirmed) = run(true, false, off(OffReason::NotConfirmed), on());
+        assert!(!confirmed);
+        assert!(matches!(result, Some(Err(_))));
+        // ... and a cached "on" is only the last known state.
+        let (result, confirmed) = run(true, false, on(), on());
+        assert!(!confirmed);
+        assert!(matches!(result, Some(Ok(Metrics::LastKnownShared))));
+        assert!(
+            metrics_line("Acme", Metrics::LastKnownShared)
+                .unwrap()
+                .contains("last known")
+        );
+        assert_eq!(metrics_line("Acme", Metrics::Off), None);
+        // DO_NOT_TRACK=1 and LEAN_CTX_TELEMETRY=off keep connect from
+        // confirming, like `cloud.metrics_upload = false`.
+        assert!(metrics_allowed(true, true, None, None));
+        assert!(!metrics_allowed(true, true, Some("1"), None));
+        assert!(!metrics_allowed(true, true, None, Some("off")));
+        assert!(!metrics_allowed(true, false, None, None));
+        assert!(!metrics_allowed(false, true, None, None));
+        // MR !569 review (note 36077): under DO_NOT_TRACK=1 a workspace that
+        // already shares keeps sharing (the upload gate is its state and
+        // `cloud.metrics_upload`), so the line says so; nothing new is
+        // switched on.
+        let (result, confirmed) = run_with(true, false, true, on(), on());
+        assert!(!confirmed);
+        assert!(matches!(result, Some(Ok(Metrics::Shared))), "{result:?}");
+        let (result, confirmed) = run_with(true, false, true, off(OffReason::NotConfirmed), on());
+        assert!(!confirmed);
+        assert!(matches!(result, Some(Ok(Metrics::Off))), "{result:?}");
+
+        // The line: plain words, no banned product words.
+        let line = metrics_line("Acme", Metrics::Shared).unwrap();
+        assert!(line.starts_with("Usage metrics are shared with Acme"));
+        assert!(line.contains("pseudonymous counts"));
+        assert!(line.contains("the names of unregulated programs"));
+        for banned in ["Instance", "instance", "engine", "Engine"] {
+            assert!(!line.contains(banned), "{banned}");
+        }
     }
 
     /// A `--trial` code that ran out points to the plans page (an older

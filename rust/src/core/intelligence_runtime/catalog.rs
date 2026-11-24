@@ -73,7 +73,8 @@ fn host_target() -> Result<&'static str> {
     } else {
         ""
     };
-    package_target(std::env::consts::ARCH, std::env::consts::OS, env).ok_or(InstallError::Archive)
+    package_target(std::env::consts::ARCH, std::env::consts::OS, env)
+        .ok_or(InstallError::PlatformUnavailable)
 }
 
 /// The package target a host of this architecture, OS and C environment
@@ -114,7 +115,8 @@ fn authenticated(
             b"leanctx-runtime-channel-v1\0"
         },
     )?;
-    let catalog: Catalog = serde_json::from_slice(raw).map_err(|_| InstallError::Manifest)?;
+    let catalog: Catalog =
+        serde_json::from_slice(raw).map_err(|_| InstallError::ChannelMismatch)?;
     if catalog.schema
         != if production {
             "leanctx.runtime-channel/v2"
@@ -127,7 +129,7 @@ fn authenticated(
         || catalog.releases.is_empty()
         || catalog.releases.len() > 8
     {
-        return Err(InstallError::Manifest);
+        return Err(InstallError::ChannelMismatch);
     }
     let mut targets = std::collections::BTreeSet::new();
     if catalog.releases.iter().any(|release| {
@@ -135,7 +137,7 @@ fn authenticated(
             || !super::is_digest(&release.manifest_sha256, 64)
             || !super::is_digest(&release.artifact_key_hex, 64)
     }) {
-        return Err(InstallError::Manifest);
+        return Err(InstallError::ChannelMismatch);
     }
     Ok(catalog)
 }
@@ -230,24 +232,50 @@ pub(super) fn now_ms() -> Result<u64> {
     u64::try_from(elapsed.as_millis()).map_err(|_| InstallError::State)
 }
 
+/// Whether a sync also loads the companion files of a v4 package (its
+/// model set, hundreds of megabytes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Companions {
+    /// In the same call (an explicit install).
+    Inline,
+    /// Not in this call: setup installs the runtime only and the
+    /// companions load later in the background ([`load_companions`]).
+    Later,
+}
+
+/// `semantic_models_reason` of a sync that left the companions for later.
+pub(super) const COMPANIONS_LATER: &str = "companions_later";
+
 pub(super) fn sync(
     urls: [&str; 2],
     key: &[u8; 32],
     root: &std::path::Path,
     expected: &str,
+    companions: Companions,
 ) -> Result<serde_json::Value> {
-    sync_kind(super::RuntimeKind::Intelligence, urls, key, root, expected)
+    sync_kind(
+        super::RuntimeKind::Intelligence,
+        urls,
+        key,
+        root,
+        expected,
+        companions,
+    )
 }
 
-/// Install the release of this host's target from the catalog of `kind`;
-/// the package must authenticate as exactly that kind.
-pub(super) fn sync_kind(
-    kind: super::RuntimeKind,
+/// The channel's catalog, authenticated and fresh.
+fn fetch_catalog(
     urls: [&str; 2],
     key: &[u8; 32],
     root: &std::path::Path,
     expected: &str,
-) -> Result<serde_json::Value> {
+) -> Result<(
+    Vec<u8>,
+    Vec<u8>,
+    super::rotation::TrustedRoot,
+    Catalog,
+    bool,
+)> {
     channel::validate_urls(&urls)?;
     let production = super::bootstrap::production_key(root)?;
     if production.is_some_and(|anchor| anchor != *key) {
@@ -260,16 +288,64 @@ pub(super) fn sync_kind(
     let remaining = catalog
         .expires_unix_ms
         .checked_sub(now_ms()?)
-        .ok_or(InstallError::Manifest)?;
-    if remaining == 0 || remaining > 7 * 24 * 60 * 60 * 1000 {
-        return Err(InstallError::Manifest);
+        .ok_or(InstallError::ChannelExpired)?;
+    if remaining == 0 {
+        return Err(InstallError::ChannelExpired);
     }
+    if remaining > 7 * 24 * 60 * 60 * 1000 {
+        return Err(InstallError::ChannelMismatch);
+    }
+    Ok((raw, signature, trusted, catalog, production.is_some()))
+}
+
+/// This host target's release in `catalog`.
+fn host_release(catalog: &Catalog) -> Result<&Release> {
     let target = host_target()?;
-    let release = catalog
+    catalog
         .releases
         .iter()
         .find(|release| release.target == target)
-        .ok_or(InstallError::Archive)?;
+        .ok_or(InstallError::PlatformUnavailable)
+}
+
+/// Load the companions of the active package that setup left for later,
+/// from the location the authenticated catalog names for it. `Ok(false)`
+/// when the channel no longer names this package (the next install
+/// updates it) or names no companion location.
+pub(super) fn load_companions(
+    urls: [&str; 2],
+    key: &[u8; 32],
+    root: &std::path::Path,
+    active: &super::VerifiedPackage,
+    wanted: &dyn Fn() -> bool,
+) -> Result<bool> {
+    let selected = active.receipt.manifest_sha256.as_str();
+    let (_, _, _, catalog, _) = fetch_catalog(urls, key, root, selected)?;
+    let release = host_release(&catalog)?;
+    if release.manifest_sha256 != selected {
+        return Ok(false);
+    }
+    install::install_channel_companions_while(
+        root,
+        active,
+        release.semantic_models_url.as_deref(),
+        wanted,
+    )
+}
+
+/// Install the release of this host's target from the catalog of `kind`;
+/// the package must authenticate as exactly that kind.
+pub(super) fn sync_kind(
+    kind: super::RuntimeKind,
+    urls: [&str; 2],
+    key: &[u8; 32],
+    root: &std::path::Path,
+    expected: &str,
+    companions: Companions,
+) -> Result<serde_json::Value> {
+    let (raw, signature, trusted, catalog, production) = fetch_catalog(urls, key, root, expected)?;
+    let production = production.then_some(());
+    let release = host_release(&catalog)?;
     let receipt = receipt(&catalog, &raw, &trusted.key);
     receipt.admit(None, &trusted, true, false)?;
     let artifact_key = trust_key(&release.artifact_key_hex)?;
@@ -314,7 +390,10 @@ pub(super) fn sync_kind(
         &data.signature,
         Some(&admission),
     )?;
-    if package.semantic.is_some() {
+    if package.semantic.is_some() && companions == Companions::Later {
+        result["semantic_models"] = "set_not_present".into();
+        result["semantic_models_reason"] = COMPANIONS_LATER.into();
+    } else if package.semantic.is_some() {
         // The package is installed and selected. Its model set is a separate
         // step that can only add semantic detectors: a companion that cannot
         // be fetched or does not verify leaves the package as "set not
@@ -367,7 +446,7 @@ pub(super) fn import_kind(
         .releases
         .iter()
         .find(|release| release.target == target)
-        .ok_or(InstallError::Archive)?;
+        .ok_or(InstallError::PlatformUnavailable)?;
     let receipt = receipt(&catalog, &bundle.catalog, &trusted.key);
     receipt.admit(None, &trusted, false, false)?;
     let artifact_key = trust_key(&release.artifact_key_hex)?;

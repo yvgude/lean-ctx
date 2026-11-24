@@ -2294,7 +2294,7 @@
     },
     {
       "author": "Sergio Benitez <sb@sergio.bz>, Alex Crichton <alex@alexcrichton.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.2",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.3",
       "description": "HTTP cookie parsing and cookie jar management. Supports signed and private (encrypted, authenticated) jars. ",
       "externalReferences": [
         {
@@ -2309,7 +2309,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+          "content": "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a"
         }
       ],
       "licenses": [
@@ -2318,10 +2318,10 @@
         }
       ],
       "name": "cookie",
-      "purl": "pkg:cargo/cookie@0.18.2",
+      "purl": "pkg:cargo/cookie@0.18.3",
       "scope": "required",
       "type": "library",
-      "version": "0.18.2"
+      "version": "0.18.3"
     },
     {
       "author": "Patrick Fernie <patrick.fernie@gmail.com>",
@@ -17039,7 +17039,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
-      "ref": "path+file://./rust#lean-ctx-engine@3.12.7"
+      "ref": "path+file://./rust#lean-ctx-engine@3.12.8"
     },
     {
       "dependsOn": [
@@ -17635,11 +17635,11 @@
         "registry+https://github.com/rust-lang/crates.io-index#time@0.3.55",
         "registry+https://github.com/rust-lang/crates.io-index#version_check@0.9.5"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.2"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.3"
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.2",
+        "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.3",
         "registry+https://github.com/rust-lang/crates.io-index#document-features@0.2.12",
         "registry+https://github.com/rust-lang/crates.io-index#idna@1.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#log@0.4.33",
@@ -19244,7 +19244,7 @@
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
         "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
-        "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.2",
+        "registry+https://github.com/rust-lang/crates.io-index#cookie@0.18.3",
         "registry+https://github.com/rust-lang/crates.io-index#cookie_store@0.22.0",
         "registry+https://github.com/rust-lang/crates.io-index#futures-core@0.3.33",
         "registry+https://github.com/rust-lang/crates.io-index#futures-util@0.3.33",
@@ -20944,14 +20944,14 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.7",
+      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.8",
       "components": [
         {
-          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.7 bin-target-0",
+          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.8 bin-target-0",
           "name": "lean_ctx",
-          "purl": "pkg:cargo/lean-ctx-engine@3.12.7?download_url=file://.#src/lib.rs",
+          "purl": "pkg:cargo/lean-ctx-engine@3.12.8?download_url=file://.#src/lib.rs",
           "type": "library",
-          "version": "3.12.7"
+          "version": "3.12.8"
         }
       ],
       "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations.",
@@ -20971,10 +20971,10 @@
         }
       ],
       "name": "lean-ctx-engine",
-      "purl": "pkg:cargo/lean-ctx-engine@3.12.7?download_url=file://.",
+      "purl": "pkg:cargo/lean-ctx-engine@3.12.8?download_url=file://.",
       "scope": "required",
       "type": "library",
-      "version": "3.12.7"
+      "version": "3.12.8"
     },
     "properties": [
       {
@@ -20983,7 +20983,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "7f3380b0c8e9f867f775c5291284a3835dea2a1a0ea2581d56f27bc197c4317e"
+        "value": "a6e3898572347bd59561f42ab1c79d1e1d7284420102d0ef5f06ee2c40882c64"
       }
     ],
     "tools": [

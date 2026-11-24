@@ -828,6 +828,12 @@ fn write_companion(
     Ok(())
 }
 
+/// Companions streamed into a private temporary directory, not published yet.
+#[cfg(not(windows))]
+type StagedCompanions = tempfile::TempDir;
+#[cfg(windows)]
+type StagedCompanions = Temporary;
+
 /// Install the companions of `package` from `source` as `parent/semantic`.
 /// Every file is streamed into a private temporary directory beside its
 /// destination and compared with the signed manifest while it is written;
@@ -838,6 +844,17 @@ fn install_companions(
     source: &CompanionSource,
     package: &VerifiedPackage,
 ) -> Result<()> {
+    let staged = stage_companions(parent, source, package)?;
+    publish_companions(parent, staged, package)
+}
+
+/// Stream and verify every companion into a private temporary directory
+/// beside `parent/semantic`; nothing is published.
+fn stage_companions(
+    parent: &Path,
+    source: &CompanionSource,
+    package: &VerifiedPackage,
+) -> Result<StagedCompanions> {
     let semantic = package.semantic.as_ref().ok_or(InstallError::Manifest)?;
     if let CompanionSource::Directory(directory) = source {
         let metadata = std::fs::symlink_metadata(directory)?;
@@ -862,6 +879,19 @@ fn install_companions(
     for companion in semantic.companions.all() {
         stream_companion(source, &staged.path().join(&companion.name), companion)?;
     }
+    Ok(staged)
+}
+
+/// Check the staged set against the signed manifest once more and rename it
+/// into place as `parent/semantic`. Taken by value: the staged directory is
+/// used up (Windows publishes it through its handle).
+#[cfg_attr(not(windows), allow(clippy::needless_pass_by_value))]
+fn publish_companions(
+    parent: &Path,
+    staged: StagedCompanions,
+    package: &VerifiedPackage,
+) -> Result<()> {
+    let semantic = package.semantic.as_ref().ok_or(InstallError::Manifest)?;
     bound_semantic_directory(staged.path(), &semantic.companions, &package.description)?;
     let destination = parent.join(SEMANTIC_DIRECTORY);
     #[cfg(windows)]
@@ -873,6 +903,24 @@ fn install_companions(
         File::open(parent)?.sync_all()?;
     }
     Ok(())
+}
+
+/// Held by `setup runtime load-companions` for its whole run, so a second
+/// background load never downloads the same set again.
+pub(super) fn companions_guard(root: &Path) -> Result<File> {
+    prepare_root(root)?;
+    lock_file(&root.join("companions.lock"))
+}
+
+/// Whether `package` is a v4 package whose signed model set is not
+/// installed.
+pub(super) fn companions_missing(root: &Path, package: &VerifiedPackage) -> Result<bool> {
+    if package.semantic.is_none() {
+        return Ok(false);
+    }
+    let store = Store::open(root)?;
+    let directory = store.package_dir(&package.receipt.manifest_sha256)?;
+    Ok(!present(&directory.join(SEMANTIC_DIRECTORY))?)
 }
 
 /// After a channel install of a v4 package: give the installed package its
@@ -889,6 +937,18 @@ pub(super) fn install_channel_companions(
     root: &Path,
     package: &VerifiedPackage,
     base: Option<&str>,
+) -> Result<bool> {
+    install_channel_companions_while(root, package, base, &|| true)
+}
+
+/// [`install_channel_companions`] that publishes a downloaded set only while
+/// `wanted()` still holds afterwards (a `setup runtime deactivate` during
+/// the download leaves the set unpublished: `Ok(false)`).
+pub(super) fn install_channel_companions_while(
+    root: &Path,
+    package: &VerifiedPackage,
+    base: Option<&str>,
+    wanted: &dyn Fn() -> bool,
 ) -> Result<bool> {
     let Some(semantic) = package.semantic.as_ref() else {
         return Ok(false);
@@ -919,7 +979,26 @@ pub(super) fn install_channel_companions(
     let Some(base) = base else {
         return Ok(false);
     };
-    install_companions(&directory, &CompanionSource::Channel(base), package)?;
+    // The download (several hundred MB) runs without install.lock, so
+    // `status` and the runtime keep verifying the active package meanwhile;
+    // the lock is taken again only to check and rename the verified set.
+    drop(store);
+    let staged = stage_companions(&directory, &CompanionSource::Channel(base), package)?;
+    let store = Store::open(root)?;
+    let state = store.load(None)?;
+    let retained = [&state.active, &state.previous]
+        .into_iter()
+        .flatten()
+        .any(|retained| retained.manifest_sha256 == selected);
+    if !retained || !wanted() {
+        return Ok(false);
+    }
+    if present(&destination)? {
+        bound_semantic_directory(&destination, &semantic.companions, &package.description)?;
+        return Ok(true);
+    }
+    publish_companions(&directory, staged, package)?;
+    drop(store);
     Ok(true)
 }
 

@@ -433,6 +433,7 @@ new_paths = [
   "rust/src/core/work_graph_delegation/tests.rs",
   "rust/src/core/workflow/gate.rs",
   "rust/src/core/updater/rewire.rs",
+  "rust/tests/suite/mcp_stateless_root_rc349.rs",
   "rust/tests/suite/setup_dry_run.rs",
   "rust/src/shell/containment/gate.rs",
   "rust/src/shell/containment/guard.rs",
@@ -479,6 +480,9 @@ new_paths = [
   "scripts/publish-pins.py",
   # Release prebuild reuse (release.yml): own code, Apache-2.0 SPDX-headed.
   "scripts/release-prebuild.py",
+  # 3.12.8 F57: macOS Homebrew bottles (release.yml update-homebrew): own code, Apache-2.0 SPDX-headed.
+  "scripts/homebrew-bottles.py",
+  "tests/build/test_homebrew_bottles.py",
   "scripts/scan-release-artifacts.py",
   "scripts/source-export-manifest.py",
   "scripts/sync-capabilities.py",

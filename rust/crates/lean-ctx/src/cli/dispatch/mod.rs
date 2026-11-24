@@ -91,7 +91,11 @@ pub fn run() {
 
     let enters_mcp = args.len() == 1 || args.get(1).is_some_and(|a| a == "mcp");
     if !enters_mcp {
-        lean_ctx::core::logging::init_logging();
+        if is_server_mode(&args) {
+            lean_ctx::core::logging::init_logging();
+        } else {
+            lean_ctx::core::logging::init_cli_logging();
+        }
     }
     // `<command> --help` only prints usage (#1906): no notice and no counter,
     // so asking for help never creates telemetry state on disk.
@@ -1052,7 +1056,9 @@ pub fn run() {
                 }
                 match uninstall::parse_args(&rest) {
                     Ok((dry_run, keep_config, keep_binary)) => {
-                        uninstall::run(dry_run, keep_config, keep_binary);
+                        if !uninstall::run(dry_run, keep_config, keep_binary) {
+                            std::process::exit(1);
+                        }
                     }
                     Err(e) => {
                         eprintln!("{e}");

@@ -261,3 +261,27 @@ fn no_cockpit_opt_out_and_a_source_build_install_nothing() {
     // A test build carries no Cockpit channel: nothing to install from.
     assert!(!install_if_missing(true));
 }
+
+/// #2270: a failed download was reported as "not installed" and named the
+/// very install command that had just failed.
+#[test]
+fn a_failed_download_is_not_reported_as_not_installed() {
+    let reason = install_failure(&InstallError::Download);
+    assert_eq!(reason, CockpitUnavailable::DownloadFailed);
+    assert_eq!(reason.as_str(), "download_failed");
+    let message = reason.message();
+    assert!(!message.contains("not installed"), "{message}");
+    assert!(message.contains("download failed"), "{message}");
+    assert!(
+        message.contains("lean-ctx cockpit install --from"),
+        "{message}"
+    );
+    assert_eq!(
+        install_failure(&InstallError::Signature),
+        CockpitUnavailable::VerificationFailed
+    );
+    assert_eq!(
+        install_failure(&InstallError::Policy),
+        CockpitUnavailable::NotInstalled
+    );
+}

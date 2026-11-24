@@ -120,6 +120,9 @@ pub struct LeanCtxServer {
     /// The user's answers to shell approval prompts in this session.
     pub(crate) shell_approvals: Arc<crate::server::shell_approval::ShellApprovalState>,
     pub(crate) has_client_roots: Arc<std::sync::atomic::AtomicBool>,
+    /// Set once the client handshake ran: by `initialize`, or from the first
+    /// request of a stateless client that sends none (rc3-49).
+    pub(crate) handshake: Arc<tokio::sync::OnceCell<()>>,
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
     /// Failed `roots/list` attempts (GH #694): transient failures re-arm
     /// `roots_resolved` until a small budget is exhausted.

@@ -196,7 +196,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
                 continue
             # The merge request jobs and the scheduled full suite.
             # test-coverage-map: scheduled pipelines only, see its own test.
-            if "!reference [.schedule-only, rules]" in job or name in ("v4-runtime", "mr-quick", "mr-lint", "lint",
+            if "!reference [.schedule-only, rules]" in job or name in ("v4-runtime", "v4-runtime-2", "mr-quick", "mr-lint", "lint",
                                                                           "test-coverage-map"):
                 continue
             on_push.append(name)
@@ -292,7 +292,8 @@ class GitLabRuntimeGateTests(unittest.TestCase):
             self.job,
         )
         nextest = ('cargo +stable nextest run --locked --workspace --features "$test_features"'
-                   ' --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log"'
+                   ' --profile ci --no-fail-fast ${V4_NEXTEST_PARTITION:+--partition "$V4_NEXTEST_PARTITION"}'
+                   ' 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log"'
                    ' || nextest_rc=$?')
         self.assertIn(nextest, self.job)
         self.assertNotIn("cargo +stable test --locked --workspace", self.job)
@@ -355,7 +356,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
                       ' | tee "$CI_PROJECT_DIR/runtime-evidence/check-all-targets.log"')
         self.assertIn(lint_check, self.lint)
         gate = 'if test "${P5_FAST_MR:-0}" = 1 && test "${CI_WARM_FARM_LINT_CHECK:-1}" = 1; then\n'
-        self.assertIn(gate + "          " + lint_check + "\n        fi\n", self.job)
+        self.assertIn(gate + "            " + lint_check + "\n          fi\n", self.job)
         # Built before the farm publish step copies the target.
         self.assertLess(self.job.index(lint_check), self.job.index('ci_farm_min_age="${CI_WARM_FARM_MIN_AGE_MIN:-60}"'))
 
@@ -532,7 +533,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # (Weave runs these checks on the merge result before it lands);
         # scheduled pipelines only, where v4-runtime needs it.
         # (and in Weave bisect pipelines that name it or v4-runtime).
-        self.assertIn("  rules:\n" + bisect_first("(v4-provenance|v4-runtime)")
+        self.assertIn("  rules:\n" + bisect_first("(v4-provenance|v4-runtime|v4-runtime-2)")
                       + "    - !reference [.schedule-only, rules]\n  needs: []\n", provenance)
         self.assertEqual(job_text(self.config, ".not-on-mr").rstrip("\n") + "\n", NOT_ON_MR_RULES)
         self.assertEqual(job_text(self.config, ".schedule-only").rstrip("\n") + "\n", SCHEDULE_ONLY_RULES)
@@ -581,7 +582,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # only; public-api also on pushes (test_api_snapshot_...).
         # Weave bisect pipelines run them when named (rust-fmt also for
         # v4-runtime, which needs it).
-        for name, bisect in (("rust-fmt", "(rust-fmt|v4-runtime)"), ("change-class", "change-class")):
+        for name, bisect in (("rust-fmt", "(rust-fmt|v4-runtime|v4-runtime-2)"), ("change-class", "change-class")):
             self.assertIn("  rules:\n" + bisect_first(bisect) + "    - !reference [.schedule-only, rules]\n",
                           job_text(self.config, name), name)
         ip = job_text(self.config, "ip-boundary-skill-installed")
@@ -620,6 +621,14 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertGreater(lint.index("scripts/public-api-snapshot"), lint.index("!reference [scope-register, script]"))
         self.assertIn("lint: public-api failed (informational, does not block)", lint)
         self.assertIn("lint: change-class failed (informational, does not block)", lint)
+
+    def test_lint_checks_the_pinned_publish_digests_on_every_merge_request(self):
+        # 3.12.8, !568: a release.yml change passed its merge request and broke
+        # the pinned release.yml digest only in the post-merge v4-provenance;
+        # the tagged release run checks the same pin.
+        lint = job_text(self.config, "lint")
+        self.assertIn("    - python3 -I scripts/verify-delivery-evidence.py"
+                      " docs/contracts/delivery-evidence-v1.json --root .\n", lint)
 
     def test_lint_runs_automatically_on_rust_merge_requests_only(self):
         # Rust inputs only, automatic and blocking (owner 20.11.); no branch
@@ -1114,6 +1123,118 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertLess(engine.index("release_commit(&env)"), engine.index("if git_stamp_off()"))
 
 
+
+
+class InnerShellQuotingTests(unittest.TestCase):
+    """The Rust jobs run their body as `/bin/bash -c '...'`. A single quote
+    inside that body, even in a comment, ends the string early: the rest
+    runs in the outer shell, where the exit codes are unset (p5 main
+    pipeline 14402, 23.11.: "tests failed: nextest exit , doctests exit ").
+    """
+
+    def test_no_single_quote_inside_a_bash_c_body(self):
+        config = (ROOT / "ci/gitlab-ci.yml").read_text(encoding="utf-8")
+        opener = "/bin/bash -c '"
+        bodies = 0
+        for match in re.finditer(re.escape(opener), config):
+            rest = config[match.end():]
+            close = rest.index("'")
+            body = rest[:close]
+            bodies += 1
+            # The closing quote ends the line or precedes the outer fallback.
+            after = rest[close + 1:].split("\n", 1)[0]
+            self.assertRegex(after, r"^( \|\| \{.*| 9>&-.*|)$",
+                             f"a single quote ends the bash -c body early at: {body[-80:]!r}")
+        self.assertGreaterEqual(bodies, 3)
+
+class NextestPartitionTests(unittest.TestCase):
+    """The full suite in two nextest partitions (owner 23.11., lean-ctx-e8):
+    v4-runtime runs hash:1/2 plus every other check and the warm-farm
+    publish, v4-runtime-2 hash:2/2 only, beside it on the lane's second slot.
+    """
+
+    PARTITION_START = "      V4_NEXTEST_PARTITION=\"\"\n"
+    PARTITION_END = "      export V4_NEXTEST_PARTITION V4_TESTS_ONLY\n"
+
+    def setUp(self):
+        self.config = (ROOT / "ci/gitlab-ci.yml").read_text(encoding="utf-8")
+        self.job = job_text(self.config, "v4-runtime")
+        self.second = job_text(self.config, "v4-runtime-2")
+
+    def partition(self, job_name, split=None):
+        start = self.config.index(self.PARTITION_START)
+        end = self.config.index(self.PARTITION_END, start) + len(self.PARTITION_END)
+        snippet = "\n".join(line[6:] for line in self.config[start:end].splitlines())
+        env = {"PATH": "/usr/bin:/bin", "CI_JOB_NAME": job_name}
+        if split is not None:
+            env["V4_NEXTEST_SPLIT"] = split
+        out = subprocess.run(["sh", "-c", snippet + '\nprintf "%s|%s" "$V4_NEXTEST_PARTITION" "$V4_TESTS_ONLY"\n'],
+                             env=env, capture_output=True, text=True, check=True).stdout
+        return tuple(out.split("|"))
+
+    def test_the_job_name_picks_the_partition(self):
+        self.assertEqual(self.partition("v4-runtime"), ("hash:1/2", "0"))
+        self.assertEqual(self.partition("v4-runtime-2"), ("hash:2/2", "1"))
+        self.assertEqual(self.partition("weave-bisect-v4-runtime"), ("hash:1/2", "0"))
+        self.assertEqual(self.partition("weave-bisect-v4-runtime-2"), ("hash:2/2", "1"))
+        # Every other job that keeps the script runs the whole suite.
+        for other in ("mr-quick", "main-smoke", "test-coverage-map", "v4-runtime-3", ""):
+            self.assertEqual(self.partition(other), ("", "0"), other)
+        # The kill switch: v4-runtime runs the whole suite again.
+        self.assertEqual(self.partition("v4-runtime", "0"), ("", "0"))
+        self.assertEqual(self.partition("v4-runtime", "1"), ("hash:1/2", "0"))
+        # A preset pipeline variable never survives: set unconditionally.
+        self.assertEqual(self.config.count(self.PARTITION_START), 1)
+        self.assertIn("V4_TESTS_ONLY=0\n", self.config[self.config.index(self.PARTITION_START):])
+
+    def test_every_nextest_run_takes_the_partition_and_the_rerun_does_not(self):
+        flag = '${V4_NEXTEST_PARTITION:+--partition "$V4_NEXTEST_PARTITION"}'
+        runs = [line for line in self.job.splitlines() if "cargo +stable nextest run" in line]
+        self.assertEqual(len(runs), 4, runs)
+        gate = [line for line in runs if "flake_gate.py" in line]
+        self.assertEqual(len(gate), 1)
+        # The flake gate reruns exactly the failed tests, under one job name.
+        self.assertNotIn("--partition", gate[0])
+        self.assertIn("--job v4-runtime --evidence", gate[0])
+        for line in runs:
+            if line not in gate:
+                self.assertIn(flag, line)
+        listing = [line for line in self.job.splitlines() if "cargo +stable nextest list" in line]
+        self.assertEqual(len(listing), 1)
+        self.assertIn(flag, listing[0])
+
+    def test_the_second_part_runs_tests_only(self):
+        guard = 'if test "$V4_TESTS_ONLY" != 1; then\n'
+        self.assertEqual(self.job.count(guard), 2)
+        clippy, rest = self.job.split(guard, 1)[1].split("        fi\n", 1)
+        self.assertEqual(clippy.count("cargo +stable clippy"), 2)
+        checks = rest.split(guard, 1)[1].split("\n        fi\n", 1)[0]
+        for command in ("cargo +stable test --locked --doc", "cargo +stable check --locked --workspace 2>&1",
+                        "cargo +stable doc --locked", "--example gen_docs", "--example gen_registry"):
+            self.assertIn(command, checks)
+            self.assertEqual(self.job.count(command), 1, command)
+        # doc_rc stays 0 when the doctests are skipped, so the verdict holds.
+        self.assertLess(self.job.index("doc_rc=0"), self.job.index(guard + "          mold -run cargo +stable test --locked --doc"))
+        # Only v4-runtime publishes the warm farm.
+        skip = 'if test "${V4_TESTS_ONLY:-0}" = 1; then\n'
+        self.assertIn(skip, self.job)
+        self.assertLess(self.job.index(skip), self.job.index("warm_farm.py\" publish"))
+        self.assertIn('elif mount -o remount,bind,rw "$ci_farm"; then', self.job)
+
+    def test_the_second_job_runs_beside_the_first(self):
+        self.assertIn("  extends: v4-runtime\n", self.second)
+        self.assertIn("  resource_group: v4-rust-2-$CI_COMMIT_REF_SLUG\n", self.second)
+        self.assertNotIn("script:", self.second)
+        self.assertNotIn("needs:", self.second)
+        self.assertEqual(rule_blocks(self.second)[0], "'$V4_NEXTEST_SPLIT == \"0\"'\n      when: never\n")
+        self.assertEqual(rule_blocks(self.job)[0], rule_blocks(self.second)[1])
+        self.assertTrue(self.second.split("  rules:\n", 1)[1].split("  variables:", 1)[0].endswith(FAST_MAIN_REF))
+        # Reads the shared caches only; v4-runtime stays their writer.
+        self.assertIn("    V4_CACHE_POLICY: pull\n    V4_TIP_CACHE_POLICY: pull\n", self.second)
+        # The bisect copy keeps the probe semantics: the same job, its own name.
+        self.assertIn("  extends:\n    - v4-runtime-2\n    - .weave-bisect-rust\n",
+                      job_text(self.config, "weave-bisect-v4-runtime-2"))
+
 class WeaveScheduleBisectTests(unittest.TestCase):
     """Weave schedule bisect (owner 20.11.): an API pipeline on weave-bisect/*
     with WEAVE_SCHEDULE_BISECT=1 runs exactly the jobs WEAVE_BISECT_JOBS names
@@ -1124,13 +1245,14 @@ class WeaveScheduleBisectTests(unittest.TestCase):
     # mandatory needs of its job, or GitLab rejects the pipeline. v4-runtime
     # and main-smoke run as fixed copies (weave-bisect-<job>).
     BISECT_JOBS = {
-        "rust-fmt": "(rust-fmt|v4-runtime)",
+        "rust-fmt": "(rust-fmt|v4-runtime|v4-runtime-2)",
         "ip-boundary-skill-installed": "ip-boundary-skill-installed",
         "scope-register": "scope-register",
-        "v4-provenance": "(v4-provenance|v4-runtime)",
+        "v4-provenance": "(v4-provenance|v4-runtime|v4-runtime-2)",
         "public-api": "(public-api|change-class)",
         "change-class": "change-class",
         "weave-bisect-v4-runtime": "v4-runtime",
+        "weave-bisect-v4-runtime-2": "v4-runtime-2",
         "weave-bisect-main-smoke": "main-smoke",
     }
 
@@ -1191,7 +1313,8 @@ class WeaveScheduleBisectTests(unittest.TestCase):
     def test_mandatory_needs_come_along(self):
         jobs = self.jobs()
         starts = {name: set(names.strip("()").split("|")) for name, names in self.BISECT_JOBS.items()}
-        inherited = {"weave-bisect-v4-runtime": "v4-runtime", "weave-bisect-main-smoke": "main-smoke"}
+        inherited = {"weave-bisect-v4-runtime": "v4-runtime", "weave-bisect-v4-runtime-2": "v4-runtime-2",
+                     "weave-bisect-main-smoke": "main-smoke"}
         for name in self.bisect_jobs:
             text = jobs[inherited.get(name, name)]
             for need, keys in re.findall(r"(?m)^    - job: ([\w-]+)\n((?:      .*\n)*)", text):
@@ -1209,7 +1332,7 @@ class WeaveScheduleBisectTests(unittest.TestCase):
         self.assertTrue(base.startswith("  resource_group: weave-bisect\n  cache:\n"), base)
         self.assertEqual(re.findall(r"(?m)^      policy: (.*)$", base), ["pull"])
         self.assertNotIn("$", base.replace("${CI_PROJECT_ID}", ""))
-        for job in ("v4-runtime", "main-smoke"):
+        for job in ("v4-runtime", "v4-runtime-2", "main-smoke"):
             text = job_text(self.config, f"weave-bisect-{job}")
             self.assertEqual(text.rstrip("\n") + "\n", f"  extends:\n    - {job}\n    - .weave-bisect-rust\n"
                                    f"  rules:\n{bisect_first(job)}")
@@ -1295,7 +1418,12 @@ class PipelineExpansionTests(unittest.TestCase):
         self.assertEqual(self.summary(self.run_pipeline("push", "main", extra={"P5_FAST_MR": "0"})), lean_main)
         sched = self.summary(self.run_pipeline("schedule", "main"))
         self.assertEqual(sched["v4-runtime"], (main_lane, "v4-rust-main", ["pull-push", "push"]))
-        self.assertEqual(sorted(sched), sorted(["change-class", "public-api", "rust-fmt", "v4-provenance", "v4-runtime"]
+        # Second nextest partition (owner 23.11.): beside it, its own queue,
+        # reading the caches only; V4_NEXTEST_SPLIT=0 drops it.
+        self.assertEqual(sched["v4-runtime-2"], (main_lane, "v4-rust-2-main", ["pull", "pull"]))
+        unsplit = self.summary(self.run_pipeline("schedule", "main", extra={"V4_NEXTEST_SPLIT": "0"}))
+        self.assertEqual(unsplit, {k: v for k, v in sched.items() if k != "v4-runtime-2"})
+        self.assertEqual(sorted(sched), sorted(["change-class", "public-api", "rust-fmt", "v4-provenance", "v4-runtime", "v4-runtime-2"]
                                                + (["ip-boundary-skill-installed", "scope-register"] if self.private else [])))
         # Fast MR mode (default on, owner 20.11.2026): every main push runs the
         # scheduled pipeline's full suite and gates, plus main-smoke.
@@ -1314,6 +1442,7 @@ class PipelineExpansionTests(unittest.TestCase):
     def test_bisect_pipelines_run_the_named_jobs_in_weave_bisect(self):
         expected = {
             "v4-runtime": {"rust-fmt", "v4-provenance", "weave-bisect-v4-runtime"},
+            "v4-runtime-2": {"rust-fmt", "v4-provenance", "weave-bisect-v4-runtime-2"},
             "rust-fmt,public-api": {"rust-fmt", "public-api"},
             "main-smoke,v4-runtime": {"rust-fmt", "v4-provenance", "weave-bisect-v4-runtime", "weave-bisect-main-smoke"},
             "change-class": {"change-class", "public-api"},

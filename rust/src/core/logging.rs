@@ -5,12 +5,27 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-/// Initialize the tracing subscriber for CLI usage.
+/// Initialize the tracing subscriber for a server-like command (daemon,
+/// proxy, serve, …) that is not the stdio MCP server.
 ///
 /// Respects `LEAN_CTX_LOG` and `RUST_LOG` environment variables for filter control.
-/// Defaults to `warn` level — keeps CLI output clean.
+/// Defaults to `warn` level.
 pub fn init_logging() {
-    init_with_default("warn");
+    init_with_default(default_level(true));
+}
+
+/// Initialize the tracing subscriber for a user-facing command. Defaults
+/// to `error`: what a person needs to know is printed as a plain line by
+/// the command itself, not as a `WARN` log record. `LEAN_CTX_LOG` /
+/// `RUST_LOG` still raise it.
+pub fn init_cli_logging() {
+    init_with_default(default_level(false));
+}
+
+/// The default filter when neither `LEAN_CTX_LOG` nor `RUST_LOG` is set:
+/// `warn` for server-like processes, `error` for user-facing commands.
+pub fn default_level(server_mode: bool) -> &'static str {
+    if server_mode { "warn" } else { "error" }
 }
 
 /// Initialize logging for daemon/MCP mode (stderr, defaults to `info`).

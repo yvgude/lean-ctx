@@ -80,6 +80,7 @@ mod mcp_preinit_method_not_found_1454;
 mod mcp_process;
 #[cfg(unix)]
 mod mcp_pty_startup_1595;
+mod mcp_stateless_root_rc349;
 mod metrics_contract;
 mod ocla_capability_path_benchmark;
 mod ocla_contract_suite_v1;

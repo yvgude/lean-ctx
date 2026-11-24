@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "07f269f37037683bbc583fba860dc4fcef60363e3ae3339a250c4824fb9faac1"
+approved_content_sha256 = "cef08eb89919a194409ec035223f550fcea0c290cc0474c1586bec311db80408"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for release 3.12.7 after the dependency patch updates rustix 1.1.4 -> 1.1.6 (RUSTSEC-2026-0486) and quinn-udp 0.5.15 -> 0.5.16 (RUSTSEC-2026-0538); no third-party package added or removed, no license changed. Pending variant file sha256 abeafdfcf3de72dbc319752ce839fa4ca4929540c5cdf366e33e615b85a8fe1e (Content-Digest sha256:684630a70bfdbe673a311d4b7abbd7b8a9a5ddcecd36234575adc934aec26831), approved variant file sha256 07f269f37037683bbc583fba860dc4fcef60363e3ae3339a250c4824fb9faac1. Owner approval in the release session on 2026-11-22 (answer \"Freigeben\")."
-approved_at = "2026-11-22"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for release 3.12.8 after the dependency patch update cookie 0.18.2 -> 0.18.3 (RUSTSEC-2026-0594); no third-party package added or removed, no license changed. Pending variant file sha256 5ecd5f7e83cd314668e1cd17a17c263f38f975f7a072f9514f48de14e551bb67 (Content-Digest sha256:ccf515b8495ff2466633be6c3939eb718c2f7441c459289cb9e7121a94c2c4df), approved variant file sha256 cef08eb89919a194409ec035223f550fcea0c290cc0474c1586bec311db80408. Owner approval in the release session on 2026-11-23 (answer \"Freigeben\")."
+approved_at = "2026-11-23"

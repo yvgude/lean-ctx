@@ -513,6 +513,23 @@ pub fn remove_pulled(project_root: &str, ns: &str, name: &str) -> Result<usize, 
     Ok(removed)
 }
 
+/// Remove every fact copied in from any Cloud vault (3.12.8 account scope):
+/// on disconnect nothing pulled for one account stays in the project
+/// knowledge another account would recall. Returns how many.
+///
+/// A pure removal by the store's own lock, without a policy admission: it
+/// also works for a checkout deleted since and for a root other than the
+/// project an MCP request is bound to, so the fail-closed account scope
+/// never gets stuck on one of them.
+pub fn remove_all_pulled(project_root: &str) -> Result<usize, String> {
+    ProjectKnowledge::remove_facts_locked(project_root, |f| {
+        f.imported_from
+            .as_deref()
+            .and_then(import_tag_source)
+            .is_some()
+    })
+}
+
 /// Replace this repo's facts in the project knowledge store with `doc`.
 /// Returns `(loaded, removed)`. A vault served by a replica only loses its
 /// old copies (its knowledge is delivered from the replica, §3.5).

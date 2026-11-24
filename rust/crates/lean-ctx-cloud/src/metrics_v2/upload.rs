@@ -621,6 +621,24 @@ pub fn run(
     })
 }
 
+/// Ask the workspace for its sharing state now and keep it for
+/// `gate::decide` (connect: an off set in Settings must be known before
+/// anything is confirmed, also right after a new enrollment).
+pub fn refresh_sharing(session: &Session) -> Result<SharingStateV2, CloudError> {
+    let sharing = fetch_sharing(session)?;
+    let cloud = session.store.data_dir();
+    let mut state = State::load(cloud);
+    if state.org_id != session.instance.org_id {
+        state = State {
+            org_id: session.instance.org_id.clone(),
+            ..State::default()
+        };
+    }
+    state.sharing = Some(sharing.clone());
+    state.store(cloud)?;
+    Ok(sharing)
+}
+
 /// `cloud metrics confirm`: the person agrees (Personal). Callers
 /// make sure a person answered in a terminal; MCP tools never call this.
 pub fn confirm(session: &Session) -> Result<SharingStateV2, CloudError> {

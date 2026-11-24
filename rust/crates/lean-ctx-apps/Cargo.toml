@@ -6,7 +6,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-apps"
-version = "3.12.7"
+version = "3.12.8"
 edition = "2024"
 license = "Apache-2.0"
 description = "LeanCTX | OSS apps on top of the Engine: the cockpit analysis (dashboard_pro)."
@@ -26,7 +26,7 @@ default = []
 test-support = ["lean-ctx-engine/test-support"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false }
+lean-ctx-engine = { path = "../..", version = "=3.12.8", default-features = false }
 base64 = "0.22"
 blake3 = "1.8"
 lean-ctx-time = { path = "../lean-ctx-time", version = "0.1.0" }
@@ -44,7 +44,7 @@ zstd = "0.14.3"
 [dev-dependencies]
 # The Engine's test helpers (test_env, the data sandbox; see core::data_dir
 # UNIT_TEST_HARNESSES) for the moved unit tests.
-lean-ctx-engine = { path = "../..", version = "=3.12.7", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.8", default-features = false, features = ["test-support"] }
 
 [lints]
 workspace = true

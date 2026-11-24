@@ -70,6 +70,10 @@ pub(crate) struct SyncDoc {
     pub running: bool,
     pub interval_s: u64,
     pub last_pass_at: Option<String>,
+    /// What leaves with this machine's Cloud data on a sign out (3.12.8):
+    /// session drafts in the outbox (queued or failed) plus every vault's
+    /// signed events still waiting for Cloud (`vaults[].pending`).
+    pub unsent_drafts: u64,
     pub vaults: Vec<VaultRow>,
 }
 
@@ -83,15 +87,18 @@ pub(crate) struct VaultRow {
 }
 
 /// The `cloud.sync` body of `status` at `now`; `rejected` gives a vault's
-/// rejected facts still waiting for a fix.
+/// rejected facts still waiting for a fix, `outbox` the session drafts not
+/// yet sent.
 pub(crate) fn sync_doc(
     status: SyncStatus,
     now: lean_ctx_time::UtcDateTime,
     rejected: &dyn Fn(&str) -> Vec<RejectedFact>,
+    outbox: u64,
 ) -> SyncDoc {
     SyncDoc {
         running: status.running_at(now),
         interval_s: status.interval_s,
+        unsent_drafts: outbox + status.vaults.iter().map(|v| v.pending).sum::<u64>(),
         last_pass_at: status.last_pass_at,
         vaults: status
             .vaults
@@ -102,6 +109,13 @@ pub(crate) fn sync_doc(
             })
             .collect(),
     }
+}
+
+/// Session drafts in the knowledge outbox, queued or failed.
+fn outbox_drafts(cloud_data: &std::path::Path) -> u64 {
+    use lean_ctx_cloud::outbox::{CHANNEL_KNOWLEDGE, Outbox};
+    let depth = Outbox::at(cloud_data).depth(CHANNEL_KNOWLEDGE);
+    (depth.pending + depth.failed) as u64
 }
 
 /// The rejected facts of the vault `vault_id` (a place id) on this machine.
@@ -347,8 +361,13 @@ pub(crate) fn sessions_doc(
     }
 }
 
+/// The Cloud store, its data scoped to the enrolled account first (3.12.8):
+/// sync status, drafts and session evidence of another account are removed
+/// before they are read.
 fn store() -> Result<CloudStore, Failure> {
-    CloudStore::open().map_err(Failure::from)
+    let store = CloudStore::open().map_err(Failure::from)?;
+    store.instance().map_err(Failure::from)?;
+    Ok(store)
 }
 
 /// The session a `policy session` request names: `--session ID`, or the
@@ -382,6 +401,7 @@ pub(crate) fn answer(kind: &str, args: &[String], via: Via) -> Answer {
                 lean_ctx_cloud::sync::auto::load_status(store.data_dir()),
                 now,
                 &|vault| rejected_of(store.data_dir(), vault),
+                outbox_drafts(store.data_dir()),
             ))
         }),
         "policy.sessions" => super::answer_released("ctx_policy", NO_PROJECT, kind, via, || {
@@ -441,9 +461,10 @@ mod tests {
             }],
             ..SyncStatus::default()
         };
-        let doc = sync_doc(status, now, &|_| Vec::new());
+        let doc = sync_doc(status, now, &|_| Vec::new(), 2);
         assert!(!doc.running);
         assert_eq!(doc.vaults[0].status.pending, 4);
+        assert_eq!(doc.unsent_drafts, 6, "2 outbox drafts + 4 vault events");
         let text = super::super::document("cloud.sync", &doc);
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["contract"], "local-read/1");
@@ -471,7 +492,7 @@ mod tests {
             }],
             ..SyncStatus::default()
         };
-        let doc = sync_doc(status, now, &|_| Vec::new());
+        let doc = sync_doc(status, now, &|_| Vec::new(), 2);
         let text = super::super::document("cloud.sync", &doc);
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["vaults"][0]["code"], "rate_limited", "{text}");

@@ -4,13 +4,58 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::core::config::{Config, IntelligenceRuntimeConfig};
+use crate::core::config::Config;
 
 use super::{
     InstallError, Result, RuntimeKind, install, manifest::MAX_ARCHIVE, read_regular, verify_kind,
 };
 
+/// `setup runtime install` with no flags: the configured, signed channel,
+/// exactly as `sync-configured --accept-proprietary` (owner decision
+/// 23.11.2026: the runtime is installed without a question; consent comes
+/// from the terms accepted at sign-up). `None` for every other call, whose
+/// arguments stay as they are.
+pub fn plain_install(args: &[String]) -> Option<[String; 2]> {
+    (args == ["install"] || args == ["install", "--accept-proprietary"])
+        .then(|| ["sync-configured".into(), "--accept-proprietary".into()])
+}
+
+/// The valid forms, printed under every usage error. The staging forms
+/// keep their explicit pins (trust boundary); only the reference names them.
+pub const USAGE: &str = "Usage:
+  lean-ctx setup runtime install        install the runtime from the signed LeanCTX channel
+  lean-ctx setup runtime status         show what is installed (JSON)
+  lean-ctx setup runtime deactivate     switch the runtime off
+  lean-ctx setup runtime load-companions  load the model set setup left for later
+  lean-ctx setup runtime sync-configured|activate-configured|rollback-configured --accept-proprietary
+  Staging packages (install|verify|download|sync|rollback|health --staging --accept-proprietary
+  with explicit --archive/--manifest/--signature or channel pins): docs/contracts/intelligence-runtime-install-v1.md";
+
+/// What the command prints for a failed call: a usage error is followed
+/// by the valid forms; every other error is its message.
+pub fn error_message(error: &InstallError) -> String {
+    match error {
+        InstallError::Usage => format!("{error}\n{USAGE}"),
+        other => other.to_string(),
+    }
+}
+
+/// A line for a person reading `status` in a terminal (stderr; the JSON
+/// document stays byte-for-byte the same for its consumers).
+pub fn human_note(args: &[String]) -> Option<&'static str> {
+    (args.first().map(String::as_str) == Some("status")).then_some(
+        "Note: \"release_approved\": false is a fixed field of every runtime document: build provenance never claims publication approval by itself. It does not mean the installed runtime is unverified; \"status\" and the signature checks say that.",
+    )
+}
+
 pub fn run(args: &[String]) -> Result<String> {
+    if let Some(configured) = plain_install(args) {
+        return run(&configured);
+    }
+    if args == ["load-companions"] {
+        let result = super::configuration::load_companions()?;
+        return serde_json::to_string_pretty(&result).map_err(|_| InstallError::State);
+    }
     let operation = args
         .first()
         .map(String::as_str)
@@ -112,12 +157,12 @@ pub fn run(args: &[String]) -> Result<String> {
         let observed = Config::try_load_global()
             .map_err(|_| InstallError::Configuration)?
             .intelligence_runtime;
-        let configured = if observed == IntelligenceRuntimeConfig::default() {
+        let configured = if observed.is_unset() {
             super::bootstrap::config()?
         } else {
             observed
         };
-        if configured != IntelligenceRuntimeConfig::default()
+        if !configured.is_unset()
             && (configured.staging != staging || !super::bootstrap::permits_config(&configured))
         {
             return Err(InstallError::Usage);
@@ -157,6 +202,7 @@ pub fn run(args: &[String]) -> Result<String> {
             &super::trust_key(get("--trust-key-hex")?)?,
             Path::new(get("--root")?),
             get("--expected-active")?,
+            super::catalog::Companions::Inline,
         )?;
         return serde_json::to_string_pretty(&result).map_err(|_| InstallError::State);
     }
