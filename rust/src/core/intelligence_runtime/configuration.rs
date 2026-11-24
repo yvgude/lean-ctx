@@ -146,7 +146,7 @@ impl SetupRuntime {
     /// a terminal; the companions of a v4 package (hundreds of megabytes)
     /// are left for [`load_companions`] in the background. The result's
     /// `installation.semantic_models_reason` is then
-    /// [`COMPANIONS_LATER`](super::catalog::COMPANIONS_LATER).
+    /// [`COMPANIONS_LATER`].
     pub fn install_runtime_and_enable(&self) -> Result<serde_json::Value> {
         self.install_and_enable_with(super::catalog::Companions::Later)
     }
