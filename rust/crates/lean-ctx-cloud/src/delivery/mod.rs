@@ -298,6 +298,8 @@ fn folded(store: &crate::CloudStore, vault_id: &str) -> Option<(Graph, knowledge
 /// checkout is not bound or has no replica yet (nothing is created here).
 pub fn for_project(project_root: &str, query: &str) -> Option<String> {
     let store = crate::CloudStore::open().ok()?;
+    // Nothing while not connected, nothing of another account (3.12.8).
+    store.instance().ok()??;
     let root = std::path::Path::new(project_root);
     let stable =
         lean_ctx_protocol::cloud::vault::stable_identity(&crate::vault::project_identity(root)?);

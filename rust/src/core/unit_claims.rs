@@ -783,6 +783,9 @@ mod tests {
 
     #[test]
     fn second_agent_on_the_same_unit_is_warned_refused_then_clear() {
+        // The lease store lives in the data dir: hold an isolated one, which
+        // also takes the test env lock, so no other test swaps it mid-test.
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().to_string_lossy().into_owned();
         let file = dir.path().join("x.rs");
@@ -933,6 +936,9 @@ mod tests {
 
     #[test]
     fn explicit_kind_name_claim_is_seen_by_the_edit_gate() {
+        // The lease store lives in the data dir: hold an isolated one, which
+        // also takes the test env lock, so no other test swaps it mid-test.
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().to_string_lossy().into_owned();
         let file = dir.path().join("x.rs");
@@ -974,6 +980,9 @@ mod tests {
     /// second lease and without handing the unit to anyone else.
     #[test]
     fn explicit_claim_at_max_ttl_is_renewed_by_a_reclaim() {
+        // The lease store lives in the data dir: hold an isolated one, which
+        // also takes the test env lock, so no other test swaps it mid-test.
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().to_string_lossy().into_owned();
         let scope = repo_scope(&root);

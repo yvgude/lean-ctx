@@ -737,7 +737,7 @@ fn ensure_bash_login_sources_bashrc() {
             }
         }
         Err(e) => {
-            tracing::warn!("could not update {}: {e}", target.display());
+            eprintln!("lean-ctx: could not update {}: {e}", target.display());
         }
     }
 }
@@ -808,7 +808,7 @@ fi
                 eprintln!("  env.sh: {}", env_sh.display());
             }
         }
-        Err(e) => tracing::warn!("could not write {}: {e}", env_sh.display()),
+        Err(e) => eprintln!("lean-ctx: could not write {}: {e}", env_sh.display()),
     }
 }
 

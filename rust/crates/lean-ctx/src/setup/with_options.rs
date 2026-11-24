@@ -91,7 +91,7 @@ pub fn run_setup_with_options(opts: &SetupOptions) -> Result<SetupReport, String
     }
 
     steps.extend([
-        super::intelligence::report(),
+        super::intelligence::report(!opts.refresh_only),
         build_tool_profile_step(),
         build_proxy_step(opts, &home),
         build_doctor_compact_step(),

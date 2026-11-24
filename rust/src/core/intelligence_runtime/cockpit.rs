@@ -93,6 +93,9 @@ pub enum CockpitUnavailable {
     /// A source build: no Cockpit channel is compiled in and none is
     /// installed. The Cockpit ships with the official installs.
     SourceBuild,
+    /// The install could not download the Cockpit: a network error or a
+    /// timeout. Nothing was installed; a retry or a local bundle helps.
+    DownloadFailed,
 }
 
 impl CockpitUnavailable {
@@ -103,6 +106,7 @@ impl CockpitUnavailable {
             Self::StartFailed => "start_failed",
             Self::Disabled => "disabled",
             Self::SourceBuild => "source_build",
+            Self::DownloadFailed => "download_failed",
         }
     }
 
@@ -125,6 +129,9 @@ impl CockpitUnavailable {
             }
             Self::SourceBuild => {
                 "Source build: the Cockpit ships with official installs (install.sh, Homebrew, npm, AUR)"
+            }
+            Self::DownloadFailed => {
+                "The Cockpit download failed (network error or timeout). Try again with: lean-ctx cockpit install, or install a local bundle with: lean-ctx cockpit install --from <bundle>"
             }
         }
     }
@@ -410,6 +417,7 @@ fn install_configured(staging: Option<bool>) -> Result<serde_json::Value> {
         &channel.key,
         &root,
         &expected,
+        super::catalog::Companions::Inline,
     )?;
     activate_installation(&root, &installation, "channel")
 }
@@ -439,15 +447,26 @@ fn activate_installation(
 /// `setup runtime sync-configured --kind cockpit`. The caller has the
 /// user's request to install; this downloads from the bundled channel.
 pub fn install_cockpit() -> std::result::Result<serde_json::Value, CockpitUnavailable> {
-    install_configured(None).map_err(|error| match error {
+    install_configured(None).map_err(|error| install_failure(&error))
+}
+
+/// What a failed install-on-demand tells the user.
+fn install_failure(error: &InstallError) -> CockpitUnavailable {
+    match error {
         InstallError::Manifest
+        | InstallError::ChannelExpired
+        | InstallError::ChannelMismatch
+        | InstallError::PlatformUnavailable
         | InstallError::Signature
         | InstallError::Archive
         | InstallError::Size
         | InstallError::State
         | InstallError::Downgrade => CockpitUnavailable::VerificationFailed,
+        // #2270: a failed download is not "not installed"; that line named
+        // the very command that had just failed.
+        InstallError::Download => CockpitUnavailable::DownloadFailed,
         _ => CockpitUnavailable::NotInstalled,
-    })
+    }
 }
 
 /// Whether a Cockpit could be started now, decided exactly as a start

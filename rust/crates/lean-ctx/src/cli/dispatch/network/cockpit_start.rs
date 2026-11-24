@@ -232,6 +232,7 @@ pub(crate) fn unavailable_reason(page: &str) -> Option<CockpitUnavailable> {
         CockpitUnavailable::StartFailed,
         CockpitUnavailable::Disabled,
         CockpitUnavailable::SourceBuild,
+        CockpitUnavailable::DownloadFailed,
     ]
     .into_iter()
     .find(|reason| reason.as_str() == code)
@@ -371,6 +372,7 @@ mod tests {
             CockpitUnavailable::NotInstalled,
             CockpitUnavailable::StartFailed,
             CockpitUnavailable::SourceBuild,
+            CockpitUnavailable::DownloadFailed,
         ] {
             let page = crate::dashboard::cockpit::unavailable_page(reason);
             assert_eq!(unavailable_reason(&page), Some(reason));
@@ -395,12 +397,13 @@ mod tests {
         assert!(unavailable_line(CockpitUnavailable::Disabled).contains("cockpit install"));
     }
 
-    const ALL: [CockpitUnavailable; 5] = [
+    const ALL: [CockpitUnavailable; 6] = [
         CockpitUnavailable::NotInstalled,
         CockpitUnavailable::VerificationFailed,
         CockpitUnavailable::StartFailed,
         CockpitUnavailable::Disabled,
         CockpitUnavailable::SourceBuild,
+        CockpitUnavailable::DownloadFailed,
     ];
 
     /// #2203: `lean-ctx cockpit` printed "…; in the terminal: lean-ctx gain"

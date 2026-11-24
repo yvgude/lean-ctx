@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
+
+/// Something uninstall could not remove or clean: one plain line on
+/// stderr (the CLI logs only errors), and counted so the summary never
+/// claims a clean removal.
+macro_rules! leftover {
+    ($($arg:tt)*) => {
+        $crate::uninstall::report_leftover(&format!($($arg)*))
+    };
+}
+
 mod agents;
 mod binary;
 mod parsers;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use agents::{
     remove_hook_files, remove_mcp_configs, remove_plan_mode_settings, remove_project_agent_files,
@@ -23,6 +34,14 @@ pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
             let _ = lean_ctx::config_io::write_backup_nofollow(path, &bak, &bytes);
         }
     }
+}
+
+/// What this run left in place (see [`leftover!`]).
+static LEFTOVERS: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn report_leftover(message: &str) {
+    LEFTOVERS.fetch_add(1, Ordering::Relaxed);
+    eprintln!("  ! {message}");
 }
 
 pub fn bak_path_for(path: &Path) -> PathBuf {
@@ -173,11 +192,17 @@ pub fn parse_args(rest: &[String]) -> Result<(bool, bool, bool), String> {
 // Main entry
 // ---------------------------------------------------------------------------
 
-pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
+/// Returns whether the uninstall finished: `false` when items were left
+/// (or the home directory is unknown), so the command exits non-zero.
+#[must_use]
+pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) -> bool {
     let Some(home) = dirs::home_dir() else {
-        tracing::warn!("Could not determine home directory");
-        return;
+        eprintln!(
+            "lean-ctx uninstall: could not determine the home directory; nothing was removed."
+        );
+        return false;
     };
+    LEFTOVERS.store(0, Ordering::Relaxed);
 
     let mode_label = if keep_config {
         "uninstall --keep-config"
@@ -235,6 +260,8 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
         // autostart entry from daemon/proxy. Without this it survives uninstall and
         // keeps relaunching the now-deleted binary every 6h. remove_schedule() is the
         // same idempotent routine used elsewhere (macOS/Linux/Windows aware).
+        // Another instance's schedule (the default install's) is left
+        // alone on purpose: not a leftover of this uninstall.
         let had_schedule = lean_ctx::core::update_scheduler::schedule_status().enabled;
         match lean_ctx::core::update_scheduler::remove_schedule() {
             Ok(()) if had_schedule => {
@@ -242,7 +269,13 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
                 removed_any = true;
             }
             Ok(()) => {}
-            Err(e) => tracing::warn!("Failed to remove auto-update schedule: {e}"),
+            Err(_) if !lean_ctx::daemon_autostart::controls_user_services() => {
+                println!(
+                    "  · Auto-update schedule: {}",
+                    lean_ctx::daemon_autostart::not_this_instance_message()
+                );
+            }
+            Err(e) => leftover!("Failed to remove auto-update schedule: {e}"),
         }
     }
 
@@ -264,26 +297,56 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 
     println!();
 
-    if removed_any {
-        println!("  ──────────────────────────────────");
-        if dry_run {
-            println!(
-                "  The above changes WOULD be applied.\n  Run `lean-ctx {mode_label}` to execute.\n"
-            );
-        } else if keep_config {
-            println!(
-                "  Runtime data removed. MCP configs preserved for reinstall.\n  \
-                 Reinstall with: cargo install lean-ctx\n"
-            );
-        } else {
-            println!(
-                "  lean-ctx fully removed. Restart your shell to drop stale aliases.\n  \
-                 Verify with: command -v lean-ctx   # should print nothing\n"
-            );
-        }
-    } else {
-        println!("  Nothing to remove — lean-ctx was not configured.\n");
+    let leftovers = LEFTOVERS.swap(0, Ordering::Relaxed);
+    for line in summary_lines(removed_any, leftovers, dry_run, keep_config, mode_label) {
+        println!("{line}");
     }
+    finished(leftovers, dry_run)
+}
+
+/// A preview always finishes; a real run only when nothing was left.
+fn finished(leftovers: usize, dry_run: bool) -> bool {
+    dry_run || leftovers == 0
+}
+
+/// The closing block. Any leftover (a file it could not clean or remove)
+/// replaces the success words: uninstall never claims a clean removal it
+/// did not do.
+fn summary_lines(
+    removed_any: bool,
+    leftovers: usize,
+    dry_run: bool,
+    keep_config: bool,
+    mode_label: &str,
+) -> Vec<String> {
+    let rule = "  ──────────────────────────────────".to_string();
+    if !dry_run && leftovers > 0 {
+        let what = if leftovers == 1 { "item" } else { "items" };
+        return vec![
+            rule,
+            format!(
+                "  lean-ctx was NOT fully removed: {leftovers} {what} could not be cleaned (listed above).\n  \
+                 Fix them (permissions, open files) and run `lean-ctx {mode_label}` again.\n"
+            ),
+        ];
+    }
+    if !removed_any {
+        return vec!["  Nothing to remove — lean-ctx was not configured.\n".into()];
+    }
+    let done = if dry_run {
+        format!(
+            "  The above changes WOULD be applied.\n  Run `lean-ctx {mode_label}` to execute.\n"
+        )
+    } else if keep_config {
+        "  Runtime data removed. MCP configs preserved for reinstall.\n  \
+         Reinstall with: cargo install lean-ctx\n"
+            .into()
+    } else {
+        "  lean-ctx fully removed. Restart your shell to drop stale aliases.\n  \
+         Verify with: command -v lean-ctx   # should print nothing\n"
+            .into()
+    };
+    vec![rule, done]
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +427,7 @@ fn remove_skill_dirs(home: &Path, dry_run: bool) -> bool {
             println!("  Would remove {name} skill directory");
             removed = true;
         } else if let Err(e) = fs::remove_dir_all(dir) {
-            tracing::warn!("Failed to remove {name} skill dir: {e}");
+            leftover!("Failed to remove {name} skill dir: {e}");
         } else {
             println!("  ✓ {name} skill directory removed");
             removed = true;
@@ -441,7 +504,7 @@ fn remove_data_dir(home: &Path, dry_run: bool) -> bool {
                 println!("  ✓ Data directory removed ({short})");
                 removed = true;
             }
-            Err(e) => tracing::warn!("Failed to remove {short}: {e}"),
+            Err(e) => leftover!("Failed to remove {short}: {e}"),
         }
     }
 
@@ -708,6 +771,47 @@ mod tests {
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// MR !569 review: the CLI logs only errors, so a file uninstall could
+    /// not clean is a plain line and the summary never claims success.
+    #[test]
+    fn uninstall_with_leftovers_does_not_claim_a_full_removal() {
+        let clean = summary_lines(true, 0, false, false, "uninstall").join("\n");
+        assert!(clean.contains("lean-ctx fully removed"));
+        let left = summary_lines(true, 2, false, false, "uninstall").join("\n");
+        assert!(!left.contains("lean-ctx fully removed"), "{left}");
+        assert!(left.contains("NOT fully removed: 2 items"), "{left}");
+        let kept = summary_lines(true, 1, false, true, "uninstall --keep-config").join("\n");
+        assert!(!kept.contains("Runtime data removed"), "{kept}");
+        assert!(kept.contains("1 item could not"), "{kept}");
+        // Nothing removed but something left: still not "nothing to remove".
+        let none = summary_lines(false, 1, false, false, "uninstall").join("\n");
+        assert!(!none.contains("Nothing to remove"), "{none}");
+        // The uninstall sources report failures through `leftover!`, not
+        // through a WARN log record the CLI level hides.
+        for (name, source) in [
+            ("agents.rs", include_str!("agents.rs").replace("\r\n", "\n")),
+            ("binary.rs", include_str!("binary.rs").replace("\r\n", "\n")),
+            (
+                "shell_init.rs",
+                include_str!("../cli/shell_init.rs").replace("\r\n", "\n"),
+            ),
+        ] {
+            assert!(!source.contains("tracing::warn!"), "{name}");
+        }
+        // Items left: the command exits non-zero after the summary.
+        assert!(finished(0, false));
+        assert!(!finished(2, false));
+        assert!(finished(2, true));
+        let dispatch = include_str!("../cli/dispatch/mod.rs").replace("\r\n", "\n");
+        assert!(
+            dispatch.contains("if !uninstall::run(dry_run, keep_config, keep_binary) {\n                            std::process::exit(1);"),
+            "uninstall exits 0 with items left"
+        );
+        let before = LEFTOVERS.load(Ordering::Relaxed);
+        report_leftover("test leftover");
+        assert!(LEFTOVERS.load(Ordering::Relaxed) > before);
     }
 
     #[test]

@@ -72,37 +72,28 @@ fn engine_server_info() -> Implementation {
         .with_website_url("https://leanctx.com")
 }
 
-impl ServerHandler for LeanCtxServer {
-    fn get_info(&self) -> ServerConfig {
-        let capabilities = server_capabilities(true, true);
-
-        let instructions = lean_ctx::instructions::build_instructions(CrpMode::effective());
-
-        InitializeResult::new(capabilities)
-            .with_server_info(engine_server_info())
-            .with_instructions(instructions)
-    }
-
-    async fn initialize(
+impl LeanCtxServer {
+    /// The client handshake: who connected, which roots and capabilities this
+    /// session uses. `initialize` runs it; a client on the stateless protocol
+    /// (2026-07-28, e.g. Claude Code >= 2.1.330) sends no `initialize`, so the
+    /// first request runs it from the client info in its `_meta` instead
+    /// (rc3-49: without it the session kept no project root and every store
+    /// was keyed by the empty root).
+    async fn apply_handshake(
         &self,
-        request: InitializeRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<InitializeResult, ErrorData> {
-        // #2197: kept apart from tool completions in the request ledger.
-        let ledger_entry = lean_ctx::core::request_ledger::begin("initialize");
-        ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Handler);
-        let name = request.client_info.name.clone();
+        name: &str,
+        version: &str,
+        has_roots: bool,
+        peer: rmcp::service::Peer<RoleServer>,
+    ) -> lean_ctx::core::client_capabilities::ClientMcpCapabilities {
         tracing::info!("MCP client connected: {:?}", name);
-        *self.client_name.write().await = name.clone();
-        *self.peer.write().await = Some(context.peer.clone());
+        *self.client_name.write().await = name.to_string();
+        *self.peer.write().await = Some(peer);
         // Attribute this connection's bus presence to its host, recorded
         // before any registration below reads it. A shared server serves
         // several clients from one process, so it names no single host.
         if self.session_mode != crate::tools::SessionMode::Shared {
-            let handshake = lean_ctx::core::client_capabilities::record_handshake(
-                &name,
-                &request.client_info.version,
-            );
+            let handshake = lean_ctx::core::client_capabilities::record_handshake(name, version);
             crate::server::client_sessions::started(&handshake.host);
         }
         // Per-agent savings attribution: a personal server serves exactly one
@@ -110,7 +101,7 @@ impl ServerHandler for LeanCtxServer {
         // shared (multi-client) mode keeps the process-level fallback.
         if self.session_mode != crate::tools::SessionMode::Shared {
             let bus_id = self.presence_agent_id.read().await.clone();
-            lean_ctx::core::agent_identity::set_session_attribution(&name, bus_id.as_deref());
+            lean_ctx::core::agent_identity::set_session_attribution(name, bus_id.as_deref());
         }
 
         if self.session_mode != crate::tools::SessionMode::Shared {
@@ -123,7 +114,6 @@ impl ServerHandler for LeanCtxServer {
             }
         }
 
-        let has_roots = request.capabilities.roots.is_some();
         self.has_client_roots
             .store(has_roots, std::sync::atomic::Ordering::Relaxed);
         if has_roots {
@@ -261,7 +251,7 @@ impl ServerHandler for LeanCtxServer {
         // ctx_read/ctx_shell/ctx_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
-        let agent_name = name.clone();
+        let agent_name = name.to_string();
         // A shared session's clients register on its own root, not the
         // serving process's (AP04-G5).
         let agent_root = if process_roots_apply {
@@ -368,7 +358,7 @@ impl ServerHandler for LeanCtxServer {
             }
         });
 
-        let client_caps = lean_ctx::core::client_capabilities::ClientMcpCapabilities::detect(&name);
+        let client_caps = lean_ctx::core::client_capabilities::ClientMcpCapabilities::detect(name);
         tracing::info!("Client capabilities: {}", client_caps.format_summary());
 
         {
@@ -392,9 +382,47 @@ impl ServerHandler for LeanCtxServer {
         }
 
         lean_ctx::core::client_capabilities::set_detected(&client_caps);
+        client_caps
+    }
 
+    /// Runs the handshake once for a stateless client, which never sends
+    /// `initialize`. A request on a protocol with `initialize` (a legacy
+    /// client probing `server/discover` before it falls back) and every
+    /// request after the handshake do nothing here.
+    pub(crate) async fn ensure_handshake(&self, context: &RequestContext<RoleServer>) {
+        if self.handshake.initialized() {
+            return;
+        }
+        let stateless = context
+            .meta
+            .protocol_version()
+            .is_some_and(|v| !v.has_initialize());
+        if !stateless {
+            return;
+        }
+        self.handshake
+            .get_or_init(|| async {
+                let (name, version) = context.meta.client_info().map_or_else(
+                    || ("unknown".to_string(), String::new()),
+                    |i| (i.name, i.version),
+                );
+                tracing::info!("No initialize from {name:?} — handshake from request metadata");
+                // A stateless client cannot answer a server-sent `roots/list`
+                // (has_roots = false); its project comes from the host env
+                // and the working directory.
+                self.apply_handshake(&name, &version, false, context.peer.clone())
+                    .await;
+            })
+            .await;
+    }
+
+    /// The handshake answer: capabilities and instructions for this client.
+    async fn handshake_result(
+        &self,
+        name: &str,
+        client_caps: &lean_ctx::core::client_capabilities::ClientMcpCapabilities,
+    ) -> InitializeResult {
         let session = self.session.read().await.clone();
-
         let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
 
         let result = InitializeResult::new(capabilities).with_server_info(engine_server_info());
@@ -408,25 +436,84 @@ impl ServerHandler for LeanCtxServer {
         // The initialize `instructions` field is that same steering block
         // delivered over a different channel, so the central policy predicate
         // must govern this surface too.
-        let result = if suppress_initialize_instructions(client_caps.client_id.as_str()) {
+        if suppress_initialize_instructions(client_caps.client_id.as_str()) {
             result
         } else {
             let instructions = lean_ctx::instructions::build_instructions_with_client_and_session(
                 CrpMode::effective(),
-                &name,
+                name,
                 &session,
             );
             result.with_instructions(instructions)
-        };
+        }
+    }
+}
+
+impl ServerHandler for LeanCtxServer {
+    fn get_info(&self) -> ServerConfig {
+        let capabilities = server_capabilities(true, true);
+
+        let instructions = lean_ctx::instructions::build_instructions(CrpMode::effective());
+
+        InitializeResult::new(capabilities)
+            .with_server_info(engine_server_info())
+            .with_instructions(instructions)
+    }
+
+    async fn initialize(
+        &self,
+        request: InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<InitializeResult, ErrorData> {
+        // #2197: kept apart from tool completions in the request ledger.
+        let ledger_entry = lean_ctx::core::request_ledger::begin("initialize");
+        ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Handler);
+        let name = request.client_info.name.clone();
+        let has_roots = request.capabilities.roots.is_some();
+        let client_caps = self
+            .apply_handshake(
+                &name,
+                &request.client_info.version,
+                has_roots,
+                context.peer.clone(),
+            )
+            .await;
+        // A later request must not run it again from its `_meta`.
+        let _ = self.handshake.set(());
+        let result = self.handshake_result(&name, &client_caps).await;
         ledger_entry.finish(lean_ctx::core::request_ledger::Outcome::Completed);
         Ok(result)
+    }
+
+    async fn discover(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::DiscoverResult, ErrorData> {
+        self.ensure_handshake(&context).await;
+        let name = self.client_name.read().await.clone();
+        let client_caps = lean_ctx::core::client_capabilities::ClientMcpCapabilities::detect(&name);
+        let info = self.handshake_result(&name, &client_caps).await;
+        Ok(rmcp::model::DiscoverResult::from_server_info(
+            self.supported_protocol_versions().into_owned(),
+            info,
+        ))
+    }
+
+    /// Acknowledge `subscriptions/listen` (2026-07-28) with an empty filter
+    /// instead of -32601: the stream stays open and delivers nothing.
+    fn accepted_subscription_filter(
+        &self,
+        _requested: &rmcp::model::SubscriptionFilter,
+    ) -> Option<rmcp::model::SubscriptionFilter> {
+        Some(rmcp::model::SubscriptionFilter::new())
     }
 
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        self.ensure_handshake(&context).await;
         use crate::server::tool_visibility::CandidateSet;
         // Panic guard (mirrors call_tool): a panic while filtering the registry /
         // touching the dynamic-tools mutex must not kill the rmcp request task.
@@ -715,8 +802,9 @@ impl ServerHandler for LeanCtxServer {
     async fn read_resource(
         &self,
         request: rmcp::model::ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ReadResourceResponse, rmcp::ErrorData> {
+        self.ensure_handshake(&context).await;
         let ledger = self.ledger.read().await;
         if let Some(contents) = resources::read_resource(&request.uri, &ledger) {
             return Ok(rmcp::model::ReadResourceResult::new(contents).into());
@@ -745,6 +833,7 @@ impl ServerHandler for LeanCtxServer {
     ) -> Result<rmcp::model::CallToolResponse, ErrorData> {
         use std::panic::AssertUnwindSafe;
 
+        self.ensure_handshake(&context).await;
         // In flight until this call returns — the idle policy never releases
         // or exits under a running call.
         let _activity = crate::server::mcp_idle::begin_call();

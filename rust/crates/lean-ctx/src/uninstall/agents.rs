@@ -31,7 +31,7 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
         if cleaned != content {
             backup_before_modify(&agents, dry_run);
             if let Err(e) = safe_write(&agents, &cleaned, dry_run) {
-                tracing::warn!("Failed to update project AGENTS.md: {e}");
+                leftover!("Failed to update project AGENTS.md: {e}");
             } else {
                 let verb = if dry_run { "Would remove" } else { "✓" };
                 println!("  {verb} Project: removed lean-ctx block from AGENTS.md");
@@ -46,7 +46,7 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
         && content.contains(OWNED)
     {
         if let Err(e) = safe_remove(&lean_ctx_md, dry_run) {
-            tracing::warn!("Failed to remove project LEAN-CTX.md: {e}");
+            leftover!("Failed to remove project LEAN-CTX.md: {e}");
         } else {
             let verb = if dry_run { "Would remove" } else { "✓" };
             println!("  {verb} Project: removed LEAN-CTX.md");
@@ -260,7 +260,7 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
                 let _ = fs::copy(rc, &bak);
             }
             if let Err(e) = safe_write(rc, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {}: {}", rc.display(), e);
+                leftover!("Failed to update {}: {}", rc.display(), e);
             } else {
                 let short = shorten(rc, home);
                 let verb = if dry_run { "Would remove" } else { "✓" };
@@ -467,7 +467,7 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         if let Some(cleaned) = cleaned {
             backup_before_modify(path, dry_run);
             if let Err(e) = safe_write(path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {} config: {}", name, e);
+                leftover!("Failed to update {} config: {}", name, e);
             } else {
                 let verb = if dry_run { "Would update" } else { "✓" };
                 println!("  {verb} MCP config removed from {name}");
@@ -485,7 +485,7 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         backup_before_modify(&zed_path, dry_run);
         if let Some(cleaned) = remove_lean_ctx_from_json(&content) {
             if let Err(e) = safe_write(&zed_path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update Zed config: {e}");
+                leftover!("Failed to update Zed config: {e}");
             } else {
                 let verb = if dry_run { "Would update" } else { "✓" };
                 println!("  {verb} MCP config removed from Zed");
@@ -511,7 +511,7 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         {
             backup_before_modify(&vscode_path, dry_run);
             if let Err(e) = safe_write(&vscode_path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {label} config: {e}");
+                leftover!("Failed to update {label} config: {e}");
             } else {
                 let verb = if dry_run { "Would update" } else { "✓" };
                 println!("  {verb} MCP config removed from {label}");
@@ -752,7 +752,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
                         println!("  {verb} Rules removed from {name} (user content preserved)");
                         removed = true;
                     }
-                    Err(e) => tracing::warn!("Failed to clean {name} rules: {e}"),
+                    Err(e) => leftover!("Failed to clean {name} rules: {e}"),
                 }
                 continue;
             }
@@ -764,7 +764,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             continue;
         }
         if let Err(e) = safe_remove(path, dry_run) {
-            tracing::warn!("Failed to remove {name} rules: {e}");
+            leftover!("Failed to remove {name} rules: {e}");
         } else {
             let verb = if dry_run { "Would remove" } else { "✓" };
             println!("  {verb} Rules removed from {name}");
@@ -818,7 +818,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             backup_before_modify(path, dry_run);
             let cleaned = lean_ctx::marked_block::with_line_endings_of(&content, cleaned);
             if let Err(e) = safe_write_rules(path, &cleaned, dry_run) {
-                tracing::warn!("Failed to clean {name} rules: {e}");
+                leftover!("Failed to clean {name} rules: {e}");
                 continue;
             }
             let verb = if dry_run { "Would clean" } else { "✓" };
@@ -888,7 +888,7 @@ fn clean_hermes_rules(path: &Path, label: &str, dry_run: bool) -> bool {
             true
         }
         Err(e) => {
-            tracing::warn!("Failed to clean {label} rules: {e}");
+            leftover!("Failed to clean {label} rules: {e}");
             false
         }
     }
@@ -950,7 +950,7 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
     match remove_lean_ctx_from_hooks_json(content) {
         HookCleanupResult::Cleaned(cleaned) => {
             if let Err(e) = safe_write(path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {label}: {e}");
+                leftover!("Failed to update {label}: {e}");
                 return false;
             }
             println!("  {verb} {label} cleaned (user settings preserved)");
@@ -958,7 +958,7 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
         }
         HookCleanupResult::EntirelyLeanCtx => {
             if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove {label}: {e}");
+                leftover!("Failed to remove {label}: {e}");
                 return false;
             }
             println!("  {verb} {label} removed");
@@ -966,7 +966,7 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
         }
         HookCleanupResult::Unchanged => false,
         HookCleanupResult::ParseError => {
-            tracing::warn!("Could not parse {label}, leaving untouched");
+            leftover!("Could not parse {label}, leaving untouched");
             false
         }
     }
@@ -1008,7 +1008,7 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
     for path in &hook_files {
         if path.exists() {
             if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove hook {}: {e}", path.display());
+                leftover!("Failed to remove hook {}: {e}", path.display());
             } else {
                 removed = true;
             }

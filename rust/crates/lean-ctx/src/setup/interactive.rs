@@ -63,12 +63,14 @@ pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>)
             ..Default::default()
         };
         match run_setup_with_options(&opts) {
+            // Plain lines, not log records: the CLI logs only errors by
+            // default, and these are for the person reading the output.
             Ok(report) => {
                 for w in &report.warnings {
-                    tracing::warn!("{w}");
+                    eprintln!("Warning: {w}");
                 }
             }
-            Err(e) => tracing::error!("Setup error: {e}"),
+            Err(e) => eprintln!("Setup error: {e}"),
         }
         return;
     }
@@ -323,7 +325,9 @@ pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>)
                 if let Err(e) = lean_ctx::core::config::Config::update_global(|c| {
                     c.proxy_enabled = Some(answer);
                 }) {
-                    tracing::warn!("could not persist proxy choice: {e}");
+                    terminal_ui::print_status_warn(&format!(
+                        "could not save the proxy choice: {e}"
+                    ));
                 }
                 if answer {
                     lean_ctx::proxy_autostart::install(proxy_port, false);
@@ -376,7 +380,9 @@ pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>)
                 if let Err(e) = lean_ctx::core::config::Config::update_global(|c| {
                     c.allow_ide_config_dirs = Some(answer);
                 }) {
-                    tracing::warn!("could not persist IDE-config-access choice: {e}");
+                    terminal_ui::print_status_warn(&format!(
+                        "could not save the IDE-config-access choice: {e}"
+                    ));
                 }
                 if answer {
                     terminal_ui::print_status_new("IDE config access enabled");
@@ -594,7 +600,7 @@ pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>)
         }
     }
 
-    terminal_ui::print_step_header(14, 14, "Intelligence Runtime (optional)");
+    terminal_ui::print_step_header(14, 14, "Intelligence Runtime");
     super::intelligence::configure_runtime();
 
     println!();

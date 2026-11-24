@@ -178,7 +178,14 @@ pub(crate) fn cmd_engine(args: &[String]) {
             run: Box::new(|| lean_ctx::core::intelligence_runtime::run(&args[1..])),
         };
         let delivered = deliver_engine_document(operation, call, &mut std::io::stdout());
-        exit_unless_delivered("engine runtime", delivered, |error| error.to_string());
+        exit_unless_delivered("engine runtime", delivered, |error| {
+            lean_ctx::core::intelligence_runtime::error_message(&error)
+        });
+        if std::io::IsTerminal::is_terminal(&std::io::stdout())
+            && let Some(note) = lean_ctx::core::intelligence_runtime::human_note(&args[1..])
+        {
+            eprintln!("{note}");
+        }
         return;
     }
     // The stdin lock ends with this statement: an operation that reads its

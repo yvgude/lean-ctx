@@ -142,6 +142,11 @@ fn announce_report(
                 }
                 line
             }
+            // Unlinked: no worker by design (SPEC-ENGINE §3.7.3).
+            None if !linked(&agent.project_root) => format!(
+                "  agent {} ({shown_role}) in {} — not on a bus: its checkout is not linked to a LeanCTX Cloud vault",
+                agent.agent_id, agent.project_root
+            ),
             None => format!(
                 "  agent {} ({shown_role}) in {}: not announced, its worker could not be registered: {}",
                 agent.agent_id,
@@ -272,13 +277,49 @@ fn presence_update(
     update
 }
 
-/// Active local agents in linked vaults, and the subscriptions they make.
-fn local_view(map: &VaultMap) -> (Vec<AgentEntry>, Vec<String>) {
+/// The agents whose project is a root of a linked vault (SPEC-ENGINE
+/// §3.7.3: presence only where a session is bound). An agent in a project
+/// that is not shared is neither registered as a worker nor announced.
+fn in_linked_vaults<'a>(map: &VaultMap, agents: Vec<&'a AgentEntry>) -> Vec<&'a AgentEntry> {
+    agents
+        .into_iter()
+        .filter(|agent| relay_v2::record_for(map, &agent.project_root).is_some())
+        .collect()
+}
+
+/// What the relay sees of this machine's local bus.
+struct LocalView {
+    /// Active agents in linked vaults: the only ones that get a worker,
+    /// presence or any other outgoing payload.
+    agents: Vec<AgentEntry>,
+    /// Active agents in checkouts no vault links. Local only: they appear
+    /// in the relay's own report (`cloud bus relay`, `bus/announced.txt`,
+    /// #252) with the reason they are on no bus, never in a frame.
+    unlinked: Vec<AgentEntry>,
+    subscribe: Vec<String>,
+}
+
+/// Active local agents, split by whether a linked vault holds their
+/// checkout, and the subscriptions the linked ones make.
+fn local_view(map: &VaultMap) -> LocalView {
     let registry = AgentRegistry::load_or_create();
-    let active: Vec<&AgentEntry> = registry.list_active(None);
+    view_of(map, registry.list_active(None))
+}
+
+fn view_of(map: &VaultMap, all: Vec<&AgentEntry>) -> LocalView {
+    let active = in_linked_vaults(map, all.clone());
+    let unlinked = all
+        .into_iter()
+        .filter(|agent| relay_v2::record_for(map, &agent.project_root).is_none())
+        .cloned()
+        .collect();
     let subscribe = relay_v2::subscriptions(map, &active);
     let agents = active.into_iter().cloned().collect();
-    (agents, subscribe)
+    LocalView {
+        agents,
+        unlinked,
+        subscribe,
+    }
 }
 
 /// Code of the frames that say this instance was revoked (Cloud'
@@ -353,7 +394,11 @@ pub(super) async fn session_once(
     // the presence while a claim was on its way (Weave, !386).
     let _ = super::super::presence::take_announce(&data);
     let mut map = crate::resolution::current_view(&data);
-    let (agents, subscribe) = local_view(&map);
+    let LocalView {
+        agents,
+        unlinked,
+        subscribe,
+    } = local_view(&map);
     // Only a cursor of the place its address resolves to now is sent.
     let places = relay_v2::local_places(&map);
     if relay_v2::drop_moved_cursors(&mut state, &places) {
@@ -574,10 +619,14 @@ pub(super) async fn session_once(
                             refused.push(line);
                         }
                         // What Cloud now shows of this machine (#252).
+                        // The report is local only: unlinked agents
+                        // appear here, never in a frame.
+                        let local: Vec<AgentEntry> =
+                            agents.iter().chain(&unlinked).cloned().collect();
                         let lines = announce_report(
                             &subscribe,
                             &announced,
-                            &agents,
+                            &local,
                             &workers,
                             &failed,
                             |root| relay_v2::record_for(&map, root).is_some(),
@@ -813,7 +862,11 @@ pub(super) async fn session_once(
                     return Ok(SessionEnd::Closed);
                 }
                 map = crate::resolution::current_view(&data);
-                let (fresh_agents, fresh_subscribe) = local_view(&map);
+                let LocalView {
+                    agents: fresh_agents,
+                    subscribe: fresh_subscribe,
+                    ..
+                } = local_view(&map);
                 // A new agent, or one that registered again with another
                 // role, attaches to another worker: announce it afresh.
                 if fresh_subscribe != subscribe || !attached_alike(&fresh_agents, &agents) {
@@ -915,6 +968,93 @@ mod tests {
         assert!(!revocation_in(&frame(
             &json!({"t": "hello.ack", "denied": []})
         )));
+    }
+
+    /// E2E 0.5.0: every active agent of the machine was announced and
+    /// registered as a worker, also those in projects no vault links.
+    #[test]
+    fn only_agents_in_linked_vaults_are_announced_or_registered() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let shared = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let shared_root = shared.path().to_string_lossy().into_owned();
+        let private_root = private.path().to_string_lossy().into_owned();
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "s".repeat(64),
+            crate::vault::VaultRecord {
+                vault_id: "vlt_shared".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![shared_root.clone()],
+            },
+        );
+        let mut registry = AgentRegistry::new();
+        registry
+            .register("claude", Some("coder"), &shared_root, None)
+            .unwrap();
+        // One registration per process: the second agent is the same
+        // entry in a project no vault links.
+        let mut other = registry.agents[0].clone();
+        other.agent_id = "codex-private".into();
+        other.project_root = private_root.clone();
+        registry.agents.push(other);
+        let all: Vec<&AgentEntry> = registry.agents.iter().collect();
+        assert_eq!(all.len(), 2);
+
+        let bound = in_linked_vaults(&map, all);
+        let roots: Vec<&str> = bound.iter().map(|a| a.project_root.as_str()).collect();
+        assert_eq!(roots, vec![shared_root.as_str()], "only the shared project");
+        let none = in_linked_vaults(&VaultMap::default(), registry.agents.iter().collect());
+        assert!(none.is_empty(), "no linked vault, no presence");
+
+        // The relay's own report still says why the private agent is on no
+        // bus (#252) — and nothing that leaves the machine names it.
+        let view = view_of(&map, registry.agents.iter().collect());
+        assert_eq!(view.agents.len(), 1);
+        assert_eq!(view.unlinked.len(), 1);
+        let mut workers = BTreeMap::new();
+        for agent in &view.agents {
+            workers.insert(agent.agent_id.clone(), coder_worker());
+        }
+        let instance = instance_labelled("dev-box");
+        let state = StateV2::default();
+        let entries = presence(&state, &view.agents, &workers, &instance);
+        let names = identities(true, &view.agents, &workers, &instance);
+        let outgoing = [
+            relay_v2::hello(&view.subscribe, &state, &entries).to_string(),
+            serde_json::to_string(&entries).unwrap(),
+            serde_json::to_string(&names).unwrap(),
+            view.subscribe.join(","),
+        ];
+        assert_eq!(entries.len(), 1, "the shared agent is present");
+        for frame in &outgoing {
+            assert!(!frame.contains("codex-private"), "{frame}");
+            assert!(!frame.contains(&private_root), "{frame}");
+        }
+        let local: Vec<AgentEntry> = view.agents.iter().chain(&view.unlinked).cloned().collect();
+        let lines = announce_report(
+            &view.subscribe,
+            &entries,
+            &local,
+            &workers,
+            &BTreeMap::new(),
+            |root| relay_v2::record_for(&map, root).is_some(),
+            &[],
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("codex-private")
+                && line
+                    .contains("not on a bus: its checkout is not linked to a LeanCTX Cloud vault")),
+            "{lines:?}"
+        );
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("could not be registered")),
+            "{lines:?}"
+        );
     }
 
     /// Walk 02.11.: the MCP connection registers as `coder`, then

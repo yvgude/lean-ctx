@@ -1829,3 +1829,18 @@ fn runtime_input_rejects_linked_and_dangling_leaves() {
         Err(super::InstallError::Input)
     ));
 }
+
+/// #2270: a Cockpit archive of up to `MAX_ARCHIVE` was cut off after two
+/// minutes on a link slower than about 9 Mbit/s. Only the archive gets the
+/// long bound; the manifest and its signature keep the short one.
+#[test]
+fn the_archive_download_gets_its_own_transfer_bound() {
+    use std::time::Duration;
+    let [archive, manifest, signature] = super::channel::DOWNLOAD_TRANSFER;
+    assert_eq!(archive, Duration::from_mins(30));
+    assert_eq!(manifest, Duration::from_mins(2));
+    assert_eq!(signature, Duration::from_mins(2));
+    // 128 MiB within the bound needs well under 1 Mbit/s.
+    let bits = super::manifest::MAX_ARCHIVE as u64 * 8;
+    assert!(bits / archive.as_secs() < 1_000_000);
+}

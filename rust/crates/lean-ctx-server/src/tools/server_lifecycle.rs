@@ -399,6 +399,7 @@ impl LeanCtxServer {
             peer: Arc::new(tokio::sync::RwLock::new(None)),
             shell_approvals: Arc::default(),
             has_client_roots: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            handshake: Arc::new(tokio::sync::OnceCell::new()),
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_list_attempts: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             bm25_cache,

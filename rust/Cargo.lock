@@ -662,9 +662,9 @@ dependencies = [
 
 [[package]]
 name = "cookie"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+checksum = "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a"
 dependencies = [
  "percent-encoding",
  "time",
@@ -2175,7 +2175,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -2256,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-apps"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2276,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-cloud"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2358,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2477,7 +2477,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hooks"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "blake3",
  "dirs",
@@ -2541,7 +2541,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2581,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2630,7 +2630,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-shell-policy"
-version = "3.12.7"
+version = "3.12.8"
 dependencies = [
  "dirs",
  "lean-ctx-engine",

@@ -200,11 +200,11 @@ def pipeline(cfg, env):
     return {'jobs': jobs, 'errors': errors, 'workflow': wf}
 
 ALL = ['rust-fmt', 'ip-boundary-skill-installed', 'scope-register', 'v4-provenance', 'v4-runtime',
-       'change-class', 'public-api', 'main-smoke', 'lint', 'mr-quick', 'mr-lint']
+       'v4-runtime-2', 'change-class', 'public-api', 'main-smoke', 'lint', 'mr-quick', 'mr-lint']
 SOURCES = ['push', 'merge_request_event', 'schedule', 'api', 'web', 'trigger', 'pipeline']
 BRANCHES = ['main', 'integration/x', 'feature/x', 'weave-bisect/x', 'weave-bisect', 'xweave-bisect/x', 'TAG']
 FLAGS = [None, '1', '0', 'true']
-JOBSETS = [None, 'v4-runtime', 'rust-fmt,public-api', 'rust-fmt, public-api', 'v4-runtime ,rust-fmt',
+JOBSETS = [None, 'v4-runtime', 'v4-runtime-2', 'rust-fmt,public-api', 'rust-fmt, public-api', 'v4-runtime ,rust-fmt',
            'lint,mr-quick,mr-lint', ','.join(ALL), 'no-such']
 
 def scenarios():

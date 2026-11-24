@@ -2004,6 +2004,7 @@ matches on). They are different strings for the same vault: do not join the two 
   "running": true,
   "interval_s": 300,
   "last_pass_at": "2026-11-09T10:00:00Z",
+  "unsent_drafts": 0,
   "vaults": [
     {
       "vault_id": "p_3f2a…",
@@ -2033,6 +2034,8 @@ matches on). They are different strings for the same vault: do not join the two 
 - `running`: a live sync thread wrote the status within the last 120 s (its heartbeat).
 - `interval_s`: the periodic sync interval; `last_pass_at`: the last pass over all vaults
   (`null`: none yet).
+- `unsent_drafts` (3.12.8): what a sign out removes unsent: session drafts in the outbox
+  (queued or failed) plus the sum of `vaults[].pending`.
 - `vaults[]`, in the order of the status file. `vault_id`: place id (see above); `vault`:
   `@ns/name`; `last_sync_at` / `last_ok_at`: the last attempt / the last success;
   `last_trigger`: `local` | `bus` | `periodic` | `manual`; `pending`: signed events waiting in

@@ -270,8 +270,9 @@ fn connect_status_disconnect_round_trip() {
     assert_eq!(fake.seats_used(), 1);
     // Outside a project (no git remote) sharing is not asked and nothing is
     // recorded; the `[cloud]` settings apply as before (E2E 27.10. E3).
+    // Connect says only that this computer is connected (MR !569).
     assert!(
-        text(&again.stdout).contains("not a project LeanCTX can share"),
+        text(&again.stdout).contains("Done. This computer is connected to Acme AG."),
         "{again:?}"
     );
     assert!(!text(&again.stdout).contains("not shared"), "{again:?}");
@@ -279,7 +280,10 @@ fn connect_status_disconnect_round_trip() {
 
     let output = machine.run(&["disconnect"]);
     assert!(output.status.success(), "{output:?}");
-    assert!(text(&output.stdout).contains("the seat is free"));
+    assert!(
+        text(&output.stdout).contains("no longer counts as connected"),
+        "{output:?}"
+    );
     assert_eq!(fake.seats_used(), 0);
     let status = machine.status_json();
     assert!(!status.connected && status.instance.is_none());
@@ -2148,12 +2152,23 @@ fn engine_metrics_go_signed_per_vault_hour_and_stop_when_policy_turns_them_off()
     );
 }
 
+/// Requests to `/v1/metrics` so far. Connect itself asks the workspace for
+/// the sharing state and confirms the unset default (MR !569); a later
+/// command is checked against the count after connect.
+fn metrics_requests(fake: &FakeCloud) -> usize {
+    fake.requests()
+        .iter()
+        .filter(|r| r.path.starts_with("/v1/metrics"))
+        .count()
+}
+
 /// `cloud metrics confirm` is a person's act: never from a pipe or an agent.
 #[test]
 fn engine_metrics_confirmation_needs_a_terminal() {
     let fake = FakeCloud::start();
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
+    let after_connect = metrics_requests(&fake);
     let home = machine.home.path();
     let confirm = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(home)
@@ -2179,10 +2194,9 @@ fn engine_metrics_confirmation_needs_a_terminal() {
     let out = text(&preview.stdout);
     assert!(out.contains("Instance metrics."), "{out}");
     assert!(out.contains("/privacy/instance-metrics"), "{out}");
-    assert!(
-        fake.requests()
-            .iter()
-            .all(|r| !r.path.starts_with("/v1/metrics")),
+    assert_eq!(
+        metrics_requests(&fake),
+        after_connect,
         "preview and confirm send nothing"
     );
 }
@@ -2197,6 +2211,7 @@ fn engine_metrics_preview_shows_a_sample_hour_and_sends_nothing() {
     let fake = FakeCloud::start();
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
+    let after_connect = metrics_requests(&fake);
     let project = machine.home.path().join("payments");
     std::fs::create_dir_all(project.join(".git")).unwrap();
     let canonical = lean_ctx::core::pathutil::safe_canonicalize(&project).unwrap();
@@ -2286,10 +2301,9 @@ fn engine_metrics_preview_shows_a_sample_hour_and_sends_nothing() {
     assert!(json.status.success(), "{json:?}");
     let body: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(body["schema"], "leanctx.cloud.instance-metrics/v2");
-    assert!(
-        fake.requests()
-            .iter()
-            .all(|r| !r.path.starts_with("/v1/metrics")),
+    assert_eq!(
+        metrics_requests(&fake),
+        after_connect,
         "the preview sends nothing"
     );
 }

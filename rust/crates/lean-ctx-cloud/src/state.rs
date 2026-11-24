@@ -29,6 +29,8 @@ pub(crate) const SHARING_FILE: &str = "sharing.json";
 /// When the enrolled Cloud last answered that it has no match route
 /// (`super::mapping`).
 pub(crate) const MATCH_FILE: &str = "vault-match.json";
+/// Who `<data>/cloud` belongs to (3.12.8 account scope, [`DataScope`]).
+pub(crate) const SCOPE_FILE: &str = "scope.json";
 
 /// The enrolled instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,10 +174,6 @@ impl CloudStore {
         remove_optional(&self.config.join(name))
     }
 
-    pub fn instance(&self) -> Result<Option<InstanceRecord>, CloudError> {
-        self.read_config(INSTANCE_FILE)
-    }
-
     pub fn activity(&self) -> ActivityRecord {
         read_json(&self.data.join(ACTIVITY_FILE))
             .ok()
@@ -263,10 +261,181 @@ impl CloudStore {
         )
     }
 
+    /// Who `<data>/cloud` belongs to, when stamped (3.12.8 account scope).
+    #[cfg(test)]
+    fn scope(&self) -> Option<DataScope> {
+        self.read_scope().ok().flatten()
+    }
+
+    /// The stamp of `<data>/cloud`; `Err` when it cannot be read, which
+    /// counts as another account's.
+    fn read_scope(&self) -> Result<Option<DataScope>, ()> {
+        read_json(&self.data.join(SCOPE_FILE)).map_err(|_| ())
+    }
+
+    fn stamp_scope(&self, instance: &InstanceRecord) -> Result<(), CloudError> {
+        write_private(&self.data, SCOPE_FILE, &to_json(&DataScope::of(instance))?)
+    }
+
+    /// Remove `<data>/cloud` in one step: renamed aside first, so no reader
+    /// sees half of it, then deleted. The replica master key lives in the
+    /// config directory and stays.
+    fn wipe_data(&self) -> Result<(), CloudError> {
+        if !self.data.exists() {
+            return Ok(());
+        }
+        let name = self
+            .data
+            .file_name()
+            .map_or_else(|| "cloud".into(), |n| n.to_string_lossy().into_owned());
+        let aside = self
+            .data
+            .with_file_name(format!("{name}.wiped-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&aside);
+        std::fs::rename(&self.data, &aside)
+            .map_err(|e| CloudError::Local(format!("move {} aside: {e}", self.data.display())))?;
+        std::fs::remove_dir_all(&aside)
+            .map_err(|e| CloudError::Local(format!("remove {}: {e}", aside.display())))?;
+        self.sweep_wiped(&name);
+        Ok(())
+    }
+
+    /// Copies an earlier removal moved aside but did not finish deleting
+    /// (killed process); best effort.
+    fn sweep_wiped(&self, name: &str) {
+        let Some(parent) = self.data.parent() else {
+            return;
+        };
+        let prefix = format!("{name}.wiped-");
+        let Ok(entries) = std::fs::read_dir(parent) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let is_copy = entry.file_name().to_string_lossy().starts_with(&prefix);
+            let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
+            if is_copy && is_dir {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+
+    /// Remove another account's local Cloud data: first the knowledge
+    /// pulled from it into project knowledge (the vault map that finds the
+    /// checkouts goes with the data), then `<data>/cloud`. Both fail
+    /// closed: nothing is removed half while its knowledge stays findable.
+    fn purge_data(&self) -> Result<(), CloudError> {
+        self.remove_pulled_knowledge().map_err(|failed| {
+            CloudError::Local(format!(
+                "the knowledge pulled from LeanCTX Cloud could not be removed from {failed}. Until it is, nothing of LeanCTX Cloud is used on this computer. Try again; if it keeps failing, run `lean-ctx cloud disconnect` in a terminal."
+            ))
+        })?;
+        self.wipe_data()
+    }
+
+    /// The lock that orders scope decisions (wipe and stamp) between
+    /// processes; held in the config directory, which a wipe leaves alone.
+    fn lock_scope(&self) -> Result<StateLock, CloudError> {
+        lock_state(&self.config, SCOPE_FILE)
+    }
+
+    /// Before a new enrolment is stored: the local Cloud data of another
+    /// server or team goes (fail closed, 3.12.8 cross-account leak); data
+    /// of the same server and team stays (a reconnect kept with
+    /// `--keep-local`). Data without a stamp is of an unknown account and
+    /// goes as well.
+    pub(crate) fn scope_to_enrollment(&self, next: &InstanceRecord) -> Result<(), CloudError> {
+        let _lock = self.lock_scope()?;
+        let keep = matches!(
+            self.read_scope(),
+            Ok(Some(s)) if s.server == next.url && s.org_id == next.org_id
+        );
+        if !keep {
+            self.purge_data()?;
+        }
+        self.stamp_scope(next)
+    }
+
+    /// The enrolled instance. `<data>/cloud` is made to belong to it first
+    /// (3.12.8 account scope): every reader of local Cloud data (replicas,
+    /// vault map, drafts, docs, tasks, status) asks here, so data stamped
+    /// for another server or team is removed before anything of it is read.
+    /// Another instance of the same server and team (a reconnect, whose
+    /// enrolment already decided what stays) only moves the stamp, so a
+    /// reader racing an enrolment never removes kept data. Data from before
+    /// the stamp existed is adopted by the connected instance.
+    pub fn instance(&self) -> Result<Option<InstanceRecord>, CloudError> {
+        let Some(instance) = self.read_config::<InstanceRecord>(INSTANCE_FILE)? else {
+            return Ok(None);
+        };
+        let now = DataScope::of(&instance);
+        if matches!(self.read_scope(), Ok(Some(ref scope)) if *scope == now) {
+            return Ok(Some(instance));
+        }
+        // Decided again under the lock: an enrolment or another reader may
+        // have moved the stamp meanwhile. Only the removal fails closed; a
+        // stamp that cannot be written (a read-only data directory) is
+        // written by the next reader.
+        let _lock = self.lock_scope()?;
+        match self.read_scope() {
+            Ok(Some(scope)) if scope == now => {}
+            Ok(Some(scope)) if scope.server == now.server && scope.org_id == now.org_id => {
+                let _ = self.stamp_scope(&instance);
+            }
+            Ok(None) if !self.data.exists() => {}
+            Ok(None) => {
+                let _ = self.stamp_scope(&instance);
+            }
+            Ok(Some(_)) | Err(()) => {
+                self.purge_data()?;
+                let _ = self.stamp_scope(&instance);
+            }
+        }
+        Ok(Some(instance))
+    }
+
+    /// Facts pulled from Cloud into the project knowledge of every checkout
+    /// the vault map knows. Every checkout and every store is tried; the
+    /// ones that failed are returned, each with its folder and store file.
+    fn remove_pulled_knowledge(&self) -> Result<(), String> {
+        let map = super::vault::VaultMap::load(&self.data);
+        let mut roots: Vec<&String> = map.vaults.values().flat_map(|r| &r.roots).collect();
+        roots.sort();
+        roots.dedup();
+        let failed: Vec<String> = roots
+            .into_iter()
+            .filter_map(|root| {
+                super::knowledge::learn::remove_all_pulled(root)
+                    .err()
+                    .map(|e| format!("the folder {root}: {e}"))
+            })
+            .collect();
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed.join("; "))
+        }
+    }
+
+    /// The enrolled instance as stored, without the account-scope check of
+    /// [`instance`](Self::instance). Only for a disconnect, which must work
+    /// when that check cannot remove another account's pulled knowledge
+    /// (a damaged store): it ends the enrolment it names.
+    pub fn enrolled_instance(&self) -> Result<Option<InstanceRecord>, CloudError> {
+        self.read_config::<InstanceRecord>(INSTANCE_FILE)
+    }
+
     /// Remove credentials, lease and keys; with `keep_local` the data
-    /// directory (pulled knowledge, outbox, activity) stays, but nothing
-    /// keeps recording for Cloud (metrics, signals, receipts).
+    /// directory (outbox, replicas, activity) stays, but nothing keeps
+    /// recording for Cloud (metrics, signals, receipts). Knowledge pulled
+    /// into project knowledge always goes (3.12.8 account scope), from every
+    /// store that can be cleaned; a store that cannot (damaged) is named
+    /// after everything else is removed.
     pub fn forget(&self, keep_local: bool) -> Result<(), CloudError> {
+        let knowledge = self.remove_pulled_knowledge().map_err(|failed| {
+            CloudError::Local(format!(
+                "LeanCTX Cloud is disconnected on this computer, but the knowledge pulled from it could not be removed from {failed}. Delete that knowledge.json (it holds that folder's local knowledge; a damaged one cannot be read anyway), then connect again."
+            ))
+        });
         super::receipts::stop_local_recording(&self.data);
         for name in [
             TOKEN_FILE,
@@ -286,7 +455,26 @@ impl CloudStore {
             std::fs::remove_dir_all(&self.data)
                 .map_err(|e| CloudError::Local(format!("remove {}: {e}", self.data.display())))?;
         }
-        Ok(())
+        knowledge
+    }
+}
+
+/// `<data>/cloud/scope.json`: the server, team and instance the local Cloud
+/// data was made for (3.12.8 account scope).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct DataScope {
+    server: String,
+    org_id: String,
+    instance_id: String,
+}
+
+impl DataScope {
+    fn of(instance: &InstanceRecord) -> Self {
+        Self {
+            server: instance.url.clone(),
+            org_id: instance.org_id.clone(),
+            instance_id: instance.instance_id.clone(),
+        }
     }
 }
 
@@ -578,5 +766,361 @@ mod tests {
         );
         store.forget(false).unwrap();
         assert!(store.activity().last_seen.is_none());
+    }
+}
+
+/// 3.12.8 cross-account leak: `<data>/cloud` belongs to one server and team.
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    fn instance(server: &str, org: &str, id: &str) -> InstanceRecord {
+        InstanceRecord {
+            instance_id: id.into(),
+            org_id: org.into(),
+            org_name: org.into(),
+            label: "mbp".into(),
+            url: server.into(),
+            org_salt_id: "s".into(),
+            enrolled_at: "2026-11-23T10:00:00Z".into(),
+            web_url: None,
+            org_kind: None,
+            company_name: None,
+        }
+    }
+
+    /// A's vault map and an unsent draft of A.
+    fn data_of_a(store: &CloudStore) {
+        write_private(store.data_dir(), "projects.json", b"{\"projects\":{}}").unwrap();
+        let drafts = store.data_dir().join("outbox").join("knowledge");
+        std::fs::create_dir_all(&drafts).unwrap();
+        std::fs::write(drafts.join("d1.json"), b"{}").unwrap();
+    }
+
+    fn has_data_of_a(store: &CloudStore) -> bool {
+        store.data_dir().join("projects.json").exists()
+            && store.data_dir().join("outbox/knowledge/d1.json").exists()
+    }
+
+    fn connect(store: &CloudStore, record: &InstanceRecord) {
+        store.write_config(INSTANCE_FILE, record).unwrap();
+    }
+
+    #[test]
+    fn enrolling_another_team_or_server_removes_the_local_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        let a = instance("https://cloud.example", "org_a", "inst_1");
+        store.scope_to_enrollment(&a).unwrap();
+        data_of_a(&store);
+
+        // A reconnect to the same server and team (kept with --keep-local)
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_a", "inst_2"))
+            .unwrap();
+        assert!(has_data_of_a(&store), "same team keeps its drafts");
+        assert_eq!(store.scope().unwrap().instance_id, "inst_2");
+
+        // B: another team on the same server
+        let b = instance("https://cloud.example", "org_b", "inst_3");
+        store.scope_to_enrollment(&b).unwrap();
+        assert!(!has_data_of_a(&store), "nothing of A stays for B");
+        assert_eq!(store.scope(), Some(DataScope::of(&b)));
+
+        // the same team id on another server is another account too
+        data_of_a(&store);
+        store
+            .scope_to_enrollment(&instance("https://staging.example", "org_b", "inst_4"))
+            .unwrap();
+        assert!(!has_data_of_a(&store));
+    }
+
+    #[test]
+    fn data_without_a_stamp_is_removed_at_enrolment() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        data_of_a(&store); // left by an older version with --keep-local
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_1"))
+            .unwrap();
+        assert!(!has_data_of_a(&store));
+    }
+
+    #[test]
+    fn readers_get_nothing_while_disconnected_or_of_another_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        let a = instance("https://cloud.example", "org_a", "inst_1");
+        store.scope_to_enrollment(&a).unwrap();
+        data_of_a(&store);
+
+        // not connected (disconnect --keep-local): no instance, nothing read
+        assert_eq!(store.instance().unwrap(), None);
+        assert!(has_data_of_a(&store), "kept for a reconnect, not read");
+
+        // connected to the stamped instance: read as before
+        connect(&store, &a);
+        assert_eq!(store.instance().unwrap(), Some(a.clone()));
+        assert!(has_data_of_a(&store));
+
+        // another instance of the same team only moves the stamp
+        let a2 = instance("https://cloud.example", "org_a", "inst_2");
+        connect(&store, &a2);
+        assert_eq!(store.instance().unwrap(), Some(a2.clone()));
+        assert!(has_data_of_a(&store));
+        assert_eq!(store.scope(), Some(DataScope::of(&a2)));
+
+        // an instance of another team the enrolment did not scope: A's data
+        // is removed before anything reads it
+        let b = instance("https://cloud.example", "org_b", "inst_3");
+        connect(&store, &b);
+        assert_eq!(store.instance().unwrap(), Some(b.clone()));
+        assert!(!has_data_of_a(&store));
+        assert_eq!(store.scope(), Some(DataScope::of(&b)));
+    }
+
+    #[test]
+    fn data_from_before_the_stamp_is_adopted_by_the_connected_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        let a = instance("https://cloud.example", "org_a", "inst_1");
+        data_of_a(&store);
+        connect(&store, &a);
+        assert_eq!(store.instance().unwrap(), Some(a.clone()));
+        assert!(has_data_of_a(&store), "an upgrade keeps the drafts");
+        assert_eq!(store.scope(), Some(DataScope::of(&a)));
+    }
+
+    /// A checkout of team A with one fact pulled from A and one own fact,
+    /// found through A's vault map in `store`.
+    fn knowledge_of_a(store: &CloudStore, root: &str) {
+        use lean_ctx::core::knowledge::ProjectKnowledge;
+        use lean_ctx_protocol::cloud::knowledge::{FactV1, ResearchContextDocumentV1};
+        let doc = ResearchContextDocumentV1 {
+            facts: vec![FactV1 {
+                id: "f1".into(),
+                statement: "Team A pulled claim here.".into(),
+                kind: "observation".into(),
+                applies_to: vec![],
+                sources: vec![],
+                from_contributions: vec![],
+                anchors: vec![],
+            }],
+            ..ResearchContextDocumentV1::default()
+        };
+        super::super::knowledge::learn::sync_into_knowledge(root, "acme", "pay", 1, &doc).unwrap();
+        let policy = lean_ctx::core::memory_policy::MemoryPolicy::default();
+        ProjectKnowledge::mutate_locked(root, |k| {
+            k.remember("arch", "own", "My own claim stays here.", "s", 0.9, &policy);
+        })
+        .unwrap();
+        let mut map = super::super::vault::VaultMap::default();
+        map.vaults.insert(
+            "stable".into(),
+            super::super::vault::VaultRecord {
+                vault_id: "v1".into(),
+                ns: "acme".into(),
+                name: "pay".into(),
+                sealed: false,
+                roots: vec![root.to_string()],
+            },
+        );
+        map.save(store.data_dir()).unwrap();
+    }
+
+    /// (pulled fact of A still there, own fact still there)
+    fn knowledge_left(root: &str) -> (bool, bool) {
+        let values: Vec<String> = lean_ctx::core::knowledge::ProjectKnowledge::load(root)
+            .unwrap()
+            .facts
+            .iter()
+            .map(|f| f.value.clone())
+            .collect();
+        (
+            values.iter().any(|v| v.contains("Team A pulled")),
+            values.iter().any(|v| v.contains("My own claim")),
+        )
+    }
+
+    /// Disconnect always removes the facts pulled into project knowledge,
+    /// also with --keep-local; the person's own facts stay.
+    #[test]
+    fn forget_removes_pulled_knowledge_also_when_keeping_local_data() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path().to_string_lossy().into_owned();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        let a = instance("https://cloud.example", "org_a", "inst_1");
+        store.scope_to_enrollment(&a).unwrap();
+        connect(&store, &a);
+        knowledge_of_a(&store, &root);
+
+        store.forget(true).unwrap();
+        assert_eq!(knowledge_left(&root), (false, true));
+        assert!(
+            store.data_dir().join("projects.json").exists(),
+            "--keep-local"
+        );
+        assert_eq!(store.instance().unwrap(), None);
+    }
+
+    /// 3.12.7 disconnect --keep-local left A's pulled facts behind; enrolling
+    /// B removes them with A's data, or B's agents would recall them.
+    #[test]
+    fn enrolling_another_team_removes_the_knowledge_pulled_from_the_old_one() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path().to_string_lossy().into_owned();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        knowledge_of_a(&store, &root); // unstamped, as 3.12.7 left it
+
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_2"))
+            .unwrap();
+        assert_eq!(knowledge_left(&root), (false, true));
+        assert!(!store.data_dir().join("projects.json").exists());
+    }
+
+    /// The same for a reader that finds data stamped for another team.
+    #[test]
+    fn a_reader_removes_the_knowledge_pulled_from_another_team() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path().to_string_lossy().into_owned();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_a", "inst_1"))
+            .unwrap();
+        knowledge_of_a(&store, &root);
+
+        connect(
+            &store,
+            &instance("https://cloud.example", "org_b", "inst_2"),
+        );
+        assert!(store.instance().unwrap().is_some());
+        assert_eq!(knowledge_left(&root), (false, true));
+    }
+
+    #[test]
+    fn a_damaged_stamp_counts_as_another_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        let a = instance("https://cloud.example", "org_a", "inst_1");
+        store.scope_to_enrollment(&a).unwrap();
+        data_of_a(&store);
+        std::fs::write(store.data_dir().join(SCOPE_FILE), b"{not json").unwrap();
+        connect(&store, &a);
+        assert_eq!(store.instance().unwrap(), Some(a.clone()));
+        assert!(!has_data_of_a(&store));
+        assert_eq!(store.scope(), Some(DataScope::of(&a)));
+
+        // also at enrolment of the same team
+        data_of_a(&store);
+        std::fs::write(store.data_dir().join(SCOPE_FILE), b"{not json").unwrap();
+        store.scope_to_enrollment(&a).unwrap();
+        assert!(!has_data_of_a(&store));
+    }
+
+    #[test]
+    fn copies_left_by_an_interrupted_removal_are_swept() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        let left = dir.path().join("data.wiped-4242");
+        std::fs::create_dir_all(left.join("outbox")).unwrap();
+        std::fs::write(left.join("outbox/d.json"), b"{}").unwrap();
+        data_of_a(&store);
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_1"))
+            .unwrap();
+        assert!(!left.exists());
+        assert!(!has_data_of_a(&store));
+    }
+
+    /// A checkout removed since (a deleted worktree) does not block the
+    /// enrolment of another team: its pulled knowledge goes all the same.
+    #[test]
+    fn a_removed_checkout_does_not_block_enrolling_another_team() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path().to_string_lossy().into_owned();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        knowledge_of_a(&store, &root);
+        let store_dir = lean_ctx::core::knowledge::knowledge_dir_of(&root).unwrap();
+        drop(repo);
+        assert!(!std::path::Path::new(&root).exists());
+
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_2"))
+            .unwrap();
+        let stored = std::fs::read_to_string(store_dir.join("knowledge.json")).unwrap();
+        assert!(!stored.contains("Team A pulled"), "{stored}");
+        assert!(stored.contains("My own claim"), "{stored}");
+    }
+
+    /// An MCP request bound to another project still removes the knowledge
+    /// pulled into every checkout (a removal needs no policy admission).
+    #[test]
+    fn a_request_bound_to_another_project_still_removes_pulled_knowledge() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let root = repo.path().to_string_lossy().into_owned();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        knowledge_of_a(&store, &root);
+
+        let (config, data) = (dir.path().join("config"), dir.path().join("data"));
+        lean_ctx::core::policy::runtime::spawn_for_project(other.path().to_path_buf(), move || {
+            CloudStore::at(config, data)
+                .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_2"))
+                .unwrap();
+        })
+        .join()
+        .unwrap();
+        assert_eq!(knowledge_left(&root), (false, true));
+    }
+
+    /// A damaged store keeps readers out (fail closed), but a disconnect
+    /// still gets out: it cleans every readable store, ends the enrolment
+    /// and names the damaged store's file.
+    #[test]
+    fn a_damaged_store_never_locks_the_disconnect_out() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let (healthy, damaged) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let healthy = healthy.path().to_string_lossy().into_owned();
+        let damaged_root = damaged.path().to_string_lossy().into_owned();
+        let store = CloudStore::at(dir.path().join("config"), dir.path().join("data"));
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_a", "inst_1"))
+            .unwrap();
+        knowledge_of_a(&store, &damaged_root);
+        knowledge_of_a(&store, &healthy);
+        let mut map = super::super::vault::VaultMap::load(store.data_dir());
+        for record in map.vaults.values_mut() {
+            record.roots = vec![healthy.clone(), damaged_root.clone()];
+        }
+        map.save(store.data_dir()).unwrap();
+        let broken = lean_ctx::core::knowledge::knowledge_dir_of(&damaged_root)
+            .unwrap()
+            .join("knowledge.json");
+        std::fs::write(&broken, b"{ damaged").unwrap();
+
+        // connected to team B now: A's knowledge cannot all go, nothing is read
+        let b = instance("https://cloud.example", "org_b", "inst_2");
+        connect(&store, &b);
+        assert!(store.instance().is_err());
+        assert_eq!(store.enrolled_instance().unwrap(), Some(b));
+
+        // the disconnect's local side
+        let error = store.forget(false).unwrap_err().to_string();
+        assert!(error.contains(&broken.display().to_string()), "{error}");
+        assert_eq!(knowledge_left(&healthy), (false, true));
+        assert_eq!(store.enrolled_instance().unwrap(), None);
+        assert_eq!(store.instance().unwrap(), None);
     }
 }

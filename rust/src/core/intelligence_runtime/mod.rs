@@ -63,7 +63,9 @@ pub(crate) fn sign_document(
 #[path = "company_journey_tests.rs"]
 pub mod company_journey_support;
 mod semantic_worker;
-pub use configuration::{DISCLOSURE, inspect_setup};
+pub use configuration::{
+    COMPANIONS_LATER, DISCLOSURE, SetupRuntime, inspect_setup, load_companions,
+};
 mod health;
 mod install;
 mod license;
@@ -82,7 +84,7 @@ pub(crate) mod tests;
 use std::io::Read;
 use std::path::Path;
 
-pub use cli::run;
+pub use cli::{USAGE, error_message, human_note, plain_install, run};
 use manifest::{VerifiedPackage, verify, verify_kind};
 
 // The signed archive member stays platform-neutral; only materialized files vary.
@@ -135,8 +137,20 @@ pub enum InstallError {
     Size,
     #[error("runtime input is not a regular, non-symlink file")]
     Input,
-    #[error("runtime manifest is not independently selected or compatible")]
+    /// The package manifest of one release (not the channel catalog).
+    #[error("runtime package manifest is not independently selected or compatible")]
     Manifest,
+    /// The signed channel catalog is past its window: nothing new can be
+    /// selected from it until the channel publishes a fresh one.
+    #[error("runtime channel catalog has expired; try again later or update lean-ctx")]
+    ChannelExpired,
+    /// The signed channel catalog is not one this LeanCTX accepts (schema,
+    /// channel name, window or release list).
+    #[error("runtime channel catalog does not match the channel this LeanCTX version accepts")]
+    ChannelMismatch,
+    /// The channel carries no package for this operating system and CPU.
+    #[error("Runtime for this platform is not available yet")]
+    PlatformUnavailable,
     #[error("runtime signature does not match the independent trust key")]
     Signature,
     #[error("runtime archive is invalid or incompatible with this host")]

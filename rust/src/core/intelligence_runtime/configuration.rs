@@ -7,7 +7,7 @@ use crate::core::config::{Config, IntelligenceRuntimeConfig};
 
 use super::{InstallError, Result, health};
 
-pub const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX Cloud or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
+pub const DISCLOSURE: &str = "Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX Cloud or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
 
 /// Verified setup snapshot: discovery never starts proprietary code or grants consent.
 pub struct SetupRuntime {
@@ -27,6 +27,41 @@ impl SetupRuntime {
 
     pub fn enabled(&self) -> bool {
         self.available() && self.config.enabled && self.config.accept_proprietary
+    }
+
+    /// Accepted once, then switched off with `setup runtime deactivate`:
+    /// setup leaves it off. From the configuration only, so a package that
+    /// no longer verifies never turns a switched-off runtime back on.
+    pub fn deactivated(&self) -> bool {
+        self.config.deactivated()
+    }
+
+    /// What setup finds for `config` when nothing verifies (no version):
+    /// for planning only; it installs nothing.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn not_installed(config: IntelligenceRuntimeConfig) -> Self {
+        Self {
+            observed_config: config.clone(),
+            config,
+            version: None,
+        }
+    }
+
+    /// Enabled and verified, but the signed model set of its package is not
+    /// installed (left for later, or a background load that failed). Never
+    /// downloads; any error reads as "nothing pending".
+    pub fn companions_pending(&self) -> bool {
+        if !self.enabled() {
+            return false;
+        }
+        let root = Path::new(&self.config.root);
+        super::trust_key(&self.config.trust_key_hex)
+            .and_then(|key| {
+                super::install::verified_active(root, &self.config.manifest_sha256, &key)
+            })
+            .and_then(|package| super::install::companions_missing(root, &package))
+            .unwrap_or(false)
     }
 
     pub fn status(&self) -> &'static str {
@@ -103,6 +138,23 @@ impl SetupRuntime {
 
     /// Called only after explicit consent; discovery itself never uses the network.
     pub fn install_and_enable(&self) -> Result<serde_json::Value> {
+        self.install_and_enable_with(super::catalog::Companions::Inline)
+    }
+
+    /// As [`Self::install_and_enable`] for setup (owner decision
+    /// 23.11.2026): the runtime only, so setup stays fast with or without
+    /// a terminal; the companions of a v4 package (hundreds of megabytes)
+    /// are left for [`load_companions`] in the background. The result's
+    /// `installation.semantic_models_reason` is then
+    /// [`COMPANIONS_LATER`](super::catalog::COMPANIONS_LATER).
+    pub fn install_runtime_and_enable(&self) -> Result<serde_json::Value> {
+        self.install_and_enable_with(super::catalog::Companions::Later)
+    }
+
+    fn install_and_enable_with(
+        &self,
+        companions: super::catalog::Companions,
+    ) -> Result<serde_json::Value> {
         if !self.channel_available() {
             return Err(InstallError::Policy);
         }
@@ -123,6 +175,7 @@ impl SetupRuntime {
             &super::trust_key(&self.config.channel_root_key_hex)?,
             root,
             &expected,
+            companions,
         )?;
         let selected = result["receipt"]["manifest_sha256"]
             .as_str()
@@ -163,15 +216,64 @@ impl SetupRuntime {
     }
 }
 
+/// `semantic_models_reason` of an install that left the companions for
+/// [`load_companions`].
+pub const COMPANIONS_LATER: &str = super::catalog::COMPANIONS_LATER;
+
+/// Load the companions setup left for later (`setup runtime
+/// load-companions`, started in the background by setup): only for the
+/// enabled, verified runtime, from the location its signed channel names.
+pub fn load_companions() -> Result<serde_json::Value> {
+    let candidate = inspect_setup()?;
+    if !candidate.enabled() {
+        return Err(InstallError::State);
+    }
+    let config = &candidate.config;
+    let root = Path::new(&config.root);
+    // One background load at a time: a second one ends here (`Busy`).
+    let _loading = super::install::companions_guard(root)?;
+    let package = {
+        let _guard = super::install::configuration_guard(root)?;
+        if global_runtime()? != candidate.observed_config {
+            return Err(InstallError::Configuration);
+        }
+        super::install::verified_active(
+            root,
+            &config.manifest_sha256,
+            &super::trust_key(&config.trust_key_hex)?,
+        )?
+    };
+    // No lock is held across the download: install_channel_companions takes
+    // install.lock only to check and rename the verified set, and publishes
+    // nothing when the runtime was switched off (or changed) meanwhile.
+    let unchanged = || global_runtime().is_ok_and(|now| now == candidate.observed_config);
+    let loaded = super::catalog::load_companions(
+        [&config.channel_url, &config.channel_signature_url],
+        &super::trust_key(&config.channel_root_key_hex)?,
+        root,
+        &package,
+        &unchanged,
+    )?;
+    Ok(serde_json::json!({
+        "status": if loaded { "companions_installed" } else { "companions_not_present" },
+        "release_approved": false
+    }))
+}
+
 pub fn inspect_setup() -> Result<SetupRuntime> {
     // Never merge project configuration, search PATH, download or start a child.
     let observed_config = global_runtime()?;
-    let config = if observed_config == IntelligenceRuntimeConfig::default() {
-        super::bootstrap::config()?
+    // A runtime switched off before its first install is still the
+    // bundled channel, kept off.
+    let config = if observed_config.is_unset() {
+        IntelligenceRuntimeConfig {
+            declined: observed_config.declined,
+            ..super::bootstrap::config()?
+        }
     } else {
         observed_config.clone()
     };
-    let version = if config == IntelligenceRuntimeConfig::default() {
+    let version = if config.is_unset() {
         None
     } else {
         if !super::bootstrap::permits_config(&config) {
@@ -214,10 +316,24 @@ pub fn inspect_setup() -> Result<SetupRuntime> {
     })
 }
 
+/// The user-global runtime configuration, with the decline recorded next
+/// to `config.toml` merged in.
 fn global_runtime() -> Result<IntelligenceRuntimeConfig> {
     Config::try_load_global()
-        .map(|config| config.intelligence_runtime)
+        .map(|config| config.intelligence_runtime.with_recorded_decline())
         .map_err(|_| InstallError::Configuration)
+}
+
+/// `config` as `global_runtime` reads it, without touching the marker: the
+/// decline of `observed` stands for it.
+fn same_as_observed(
+    config: &IntelligenceRuntimeConfig,
+    observed: &IntelligenceRuntimeConfig,
+) -> bool {
+    IntelligenceRuntimeConfig {
+        declined: observed.declined,
+        ..config.clone()
+    } == *observed
 }
 
 pub(super) fn activate(root: &Path, selected: &str, encoded: &str) -> Result<serde_json::Value> {
@@ -270,29 +386,27 @@ fn activate_checked(
     };
     let root = root.to_str().ok_or(InstallError::Directory)?.to_owned();
     Config::try_update_global(|config| {
-        if config.intelligence_runtime != observed {
+        if !same_as_observed(&config.intelligence_runtime, &observed) {
             return Err(crate::core::error::LeanCtxError::Config(
                 "runtime setup configuration changed".into(),
             ));
         }
-        config.intelligence_runtime = IntelligenceRuntimeConfig {
-            enabled: true,
-            accept_proprietary: true,
-            staging,
-            root,
-            manifest_sha256: selected.to_owned(),
-            trust_key_hex: encoded.to_owned(),
-            ..previous
-        };
+        config.intelligence_runtime =
+            IntelligenceRuntimeConfig::activated(previous, staging, root, selected, encoded);
         Ok(())
     })
     .map_err(|_| InstallError::Configuration)?;
+    // An explicit install switches it on again: the decline goes too.
+    crate::core::config::record_decline(false).map_err(|_| InstallError::Configuration)?;
     Ok(serde_json::json!({"status": "activated", "health": checked,
         "staging_only": staging, "release_approved": false}))
 }
 
 pub(super) fn deactivate() -> Result<serde_json::Value> {
-    Config::update_global(|config| config.intelligence_runtime.enabled = false)
+    // The decline first (next to config.toml, where 3.12.7 never looks), so
+    // an interrupted deactivate never leaves the runtime to be switched on.
+    crate::core::config::record_decline(true).map_err(|_| InstallError::Configuration)?;
+    Config::update_global(|config| config.intelligence_runtime.switch_off())
         .map_err(|_| InstallError::Configuration)?;
     Ok(serde_json::json!({"status": "disabled", "release_approved": false}))
 }

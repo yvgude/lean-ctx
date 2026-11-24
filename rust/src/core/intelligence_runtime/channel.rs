@@ -17,11 +17,11 @@ pub(super) fn download(urls: [&str; 3], selected: &str, key: &[u8; 32]) -> Resul
         return Err(InstallError::Manifest);
     }
     validate_urls(&urls)?;
-    let manifest = fetch(urls[1], 65_536)?;
-    let signature = fetch(urls[2], 64)?;
+    let manifest = fetch_within(urls[1], 65_536, DOWNLOAD_TRANSFER[1])?;
+    let signature = fetch_within(urls[2], 64, DOWNLOAD_TRANSFER[2])?;
     manifest::verify_manifest(&manifest, &signature, selected, key)?;
     // An unauthenticated manifest cannot cause an archive download or disk write.
-    let archive = fetch(urls[0], manifest::MAX_ARCHIVE)?;
+    let archive = fetch_within(urls[0], manifest::MAX_ARCHIVE, DOWNLOAD_TRANSFER[0])?;
     Ok(Download {
         archive,
         manifest,
@@ -58,9 +58,24 @@ pub(super) fn validate_urls(urls: &[&str]) -> Result<()> {
 /// of one file gets this bound instead of the two minutes of an artefact.
 const COMPANION_TRANSFER: Duration = Duration::from_mins(30);
 
+/// The whole transfer of a small artefact: a manifest, a signature, a channel.
+const ARTEFACT_TRANSFER: Duration = Duration::from_mins(2);
+
+/// An archive may be up to [`manifest::MAX_ARCHIVE`]; two minutes would cut
+/// off any link slower than about 9 Mbit/s (#2270).
+const ARCHIVE_TRANSFER: Duration = Duration::from_mins(30);
+
+/// The transfer bound of each of `download`'s URLs: archive, manifest, signature.
+pub(super) const DOWNLOAD_TRANSFER: [Duration; 3] =
+    [ARCHIVE_TRANSFER, ARTEFACT_TRANSFER, ARTEFACT_TRANSFER];
+
 pub(super) fn fetch(url: &str, limit: usize) -> Result<Vec<u8>> {
+    fetch_within(url, limit, ARTEFACT_TRANSFER)
+}
+
+fn fetch_within(url: &str, limit: usize, transfer: Duration) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    open(url, Duration::from_mins(2))?
+    open(url, transfer)?
         .take(limit as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| InstallError::Download)?;

@@ -39,6 +39,8 @@ pub fn linked(root: &Path) -> Result<bool, String> {
         format!("the LeanCTX Cloud link of this project cannot be read: {e}")
     };
     let store = CloudStore::open().map_err(|e| unavailable(&e))?;
+    // Another account's vault map goes first (3.12.8 account scope).
+    store.instance().map_err(|e| unavailable(&e))?;
     let path = store
         .data_dir()
         .join(lean_ctx::core::vault_map::VAULTS_FILE);

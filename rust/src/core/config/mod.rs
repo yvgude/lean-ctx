@@ -65,7 +65,10 @@ pub use enums::{
     CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
     ResponseVerbosity, RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
 };
-pub use intelligence::IntelligenceRuntimeConfig;
+pub use intelligence::{
+    DECLINED_MARKER, IntelligenceRuntimeConfig, decline_recorded_at, declined_marker,
+    record_decline, record_decline_at,
+};
 pub use loader::ConfigLoadFailure;
 pub use loader::global_string_list;
 pub use loader::last_config_parse_error;

@@ -295,7 +295,7 @@ pub(crate) fn cmd_cloud(args: &[String]) {
         "bus" => bus(&config, rest),
         "link" => link_project(rest),
         "runtime" if rest.first().map(String::as_str) == Some("install") => {
-            super::cloud_connect_cmd::install_runtime(super::prompt::wants_yes(rest))
+            super::cloud_connect_cmd::install_runtime()
         }
         "worker" => worker(&config, rest),
         "graph" if rest.first().map(String::as_str) == Some("publish") => publish_graph(&config),
@@ -702,7 +702,15 @@ fn print_report(current: &CloudStatusReport) {
 fn disconnect(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     let keep_local = args.iter().any(|a| a == "--keep-local");
     let store = CloudStore::open()?;
-    let Some(instance) = store.instance()? else {
+    // The account-scope check may be unable to remove another account's
+    // pulled knowledge (a damaged store) and keeps every reader out; the
+    // disconnect still ends the stored enrolment, cleans what it can and
+    // names the rest, so there is always a way out.
+    let (instance, scope_failed) = match store.instance() {
+        Ok(instance) => (instance, false),
+        Err(_) => (store.enrolled_instance()?, true),
+    };
+    let Some(instance) = instance else {
         // A connect that failed after enrolment may have left its key
         // (Cloud task #1); Cloud refuses that key a second time.
         if lean_ctx_cloud::instance_key::InstanceKeys::load(&store).is_ok() {
@@ -715,12 +723,36 @@ fn disconnect(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
         }
         return Ok(());
     };
+    if scope_failed {
+        // Cloud cannot be asked: every session passes the check that just
+        // failed. The local side goes now, the seat is freed by hand.
+        let seat = format!(
+            "LeanCTX Cloud could not be asked to end this instance, so remove the instance \"{}\" in LeanCTX Cloud to free its seat.",
+            instance.label
+        );
+        return match store.forget(keep_local) {
+            Ok(()) => {
+                println!("Disconnected {} on this computer. {seat}", instance.label);
+                Ok(())
+            }
+            Err(CloudError::Local(failed)) => Err(CloudError::Local(format!("{failed} {seat}"))),
+            Err(other) => Err(other),
+        };
+    }
     // Cloud first; the local data goes only once Cloud ended the instance.
     use lean_ctx_cloud::disconnect::{self, Told};
     match disconnect::tell_cloud(&store, config, &instance) {
+        // Connected now and registered are two counts (rc3-81a): a Personal
+        // workspace keeps the computer registered for 7 days.
         Told::Revoked => println!(
-            "Disconnected {} from {}: LeanCTX Cloud revoked this instance and the seat is free.",
-            instance.label, instance.org_name
+            "Disconnected {} from {}: LeanCTX Cloud revoked this instance; it no longer counts as connected.{}",
+            instance.label,
+            instance.org_name,
+            if instance.org_kind.as_deref() == Some("personal") {
+                " It stays registered for 7 days, then its slot is free."
+            } else {
+                ""
+            }
         ),
         Told::AlreadyGone => println!(
             "Disconnected {} from {}: LeanCTX Cloud had already ended this instance.",
@@ -748,12 +780,10 @@ fn disconnect(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     store.forget(keep_local)?;
     if keep_local {
         println!(
-            "The local LeanCTX Cloud data (drafts, pulled knowledge, policy) stays on this machine."
+            "Removed the knowledge pulled from LeanCTX Cloud; the other local LeanCTX Cloud data (drafts, policy) stays on this machine for a reconnect to the same team."
         );
     } else {
-        println!(
-            "Removed the local LeanCTX Cloud data; knowledge already in project knowledge stays."
-        );
+        println!("Removed the local LeanCTX Cloud data and the knowledge pulled from it.");
     }
     Ok(())
 }
@@ -982,22 +1012,25 @@ fn metrics(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
         // Before the release there is nothing to confirm: say so, ask nothing.
         if !upload::released(&instance.url) {
             println!(
-                "Instance metrics are not released yet: nothing is shared with {workspace}, so there is nothing to confirm."
+                "Usage metrics are not released yet: nothing is shared with {workspace}, so there is nothing to confirm."
             );
             return Ok(());
         }
-        // A person, at a terminal: never an agent or a script (`--yes` does
-        // not count here, owner decision).
+        // Connect switches metrics on without asking (owner decision
+        // 23.11.2026: no onboarding question, default on, off in Settings);
+        // this command stays for a person, at a terminal, who switched them
+        // off and wants them back: never an agent or a script (`--yes` does
+        // not count here).
         if !lean_ctx::core::host_env::stdin_is_terminal()
             || !std::io::IsTerminal::is_terminal(&std::io::stdout())
         {
             return Err(CloudError::Refused(
-                "instance metrics are confirmed by a person in a terminal: run `lean-ctx cloud metrics confirm` there".into(),
+                "usage metrics are confirmed by a person in a terminal: run `lean-ctx cloud metrics confirm` there".into(),
             ));
         }
         if !gate::needs_confirmation(lease.plan) {
             println!(
-                "{workspace} shares instance metrics by default on its plan; its admins control it with the policy rule \"Share instance metrics\"."
+                "{workspace} shares usage metrics by default on its plan; its admins control it with the policy rule \"Share instance metrics\"."
             );
             return Ok(());
         }
@@ -1006,12 +1039,12 @@ fn metrics(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
             "{}",
             metrics_v2::disclosure(&workspace, &web_url, &sharing, true)
         );
-        if super::prompt::confirm("Share instance metrics with this workspace?", false) {
+        if super::prompt::confirm("Share usage metrics with this workspace?", false) {
             upload::confirm(&session)?;
             let now = gate::decide(&store, config, &instance, lease, UtcDateTime::now());
-            println!("Instance metrics for {workspace}: {}.", now.describe());
+            println!("Usage metrics for {workspace}: {}.", now.describe());
         } else {
-            println!("Nothing changed: instance metrics stay off for {workspace}.");
+            println!("Nothing changed: usage metrics stay off for {workspace}.");
         }
         return Ok(());
     }

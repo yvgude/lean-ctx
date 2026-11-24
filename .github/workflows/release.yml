@@ -1624,7 +1624,13 @@ jobs:
     needs: publish-release
     if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach the macOS bottles to the published release
     steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+
       - name: Download checksums and extract platform hashes
         id: checksums
         run: |
@@ -1660,6 +1666,43 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      # Without a bottle for the running macOS, `brew install` takes the
+      # build-from-source path and refuses outdated Command Line Tools before
+      # the formula only copies the prebuilt binary (Air test F57). The bottles
+      # hold exactly the keg of the checked release archives and are attached
+      # to the release before the formula points at them.
+      - name: Build and attach the macOS bottles
+        id: bottles
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.checksums.outputs.version }}"
+          DIST="${RUNNER_TEMP}/bottle-inputs"
+          OUT="${RUNNER_TEMP}/bottles"
+          mkdir -p "$DIST" "$OUT"
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            gh release download "${GITHUB_REF_NAME}" --repo yvgude/lean-ctx --dir "$DIST" \
+              --pattern "lean-ctx-${target}.tar.gz" --pattern "lean-ctx-cockpit-${target}.tar.gz"
+          done
+          cp SHA256SUMS COCKPIT_SHA256SUMS "$DIST/"
+          (cd "$DIST" \
+            && grep -E '  lean-ctx-(aarch64|x86_64)-apple-darwin\.tar\.gz$' SHA256SUMS > engine.sums \
+            && grep -E '  lean-ctx-cockpit-(aarch64|x86_64)-apple-darwin\.tar\.gz$' COCKPIT_SHA256SUMS > cockpit.sums \
+            && test "$(wc -l < engine.sums)" -eq 2 && test "$(wc -l < cockpit.sums)" -eq 2 \
+            && sha256sum --check --strict engine.sums cockpit.sums)
+          python3 scripts/homebrew-bottles.py --version "$VERSION" --dist "$DIST" --out "$OUT" \
+            --block "${RUNNER_TEMP}/bottle-block.rb"
+          gh release upload "${GITHUB_REF_NAME}" --repo yvgude/lean-ctx --clobber "$OUT"/*.bottle.tar.gz
+          # Read every bottle back from the URL Homebrew will use.
+          for bottle in "$OUT"/*.bottle.tar.gz; do
+            name="$(basename "$bottle")"
+            curl -fsSL --retry 5 --retry-all-errors -o "${RUNNER_TEMP}/readback" \
+              "https://github.com/yvgude/lean-ctx/releases/download/${GITHUB_REF_NAME}/${name}"
+            cmp "$bottle" "${RUNNER_TEMP}/readback" \
+              || { echo "::error::${name} on the release differs from the built bottle"; exit 1; }
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Clone and generate binary formula
         env:
           HOMEBREW_SSH_KEY: ${{ secrets.HOMEBREW_SSH_KEY }}
@@ -1675,6 +1718,11 @@ jobs:
           COCKPIT_AARCH64_LINUX_SHA="${{ steps.checksums.outputs.cockpit_aarch64_unknown_linux_gnu_sha }}"
           COCKPIT_X86_64_LINUX_SHA="${{ steps.checksums.outputs.cockpit_x86_64_unknown_linux_gnu_sha }}"
           RELEASE_URL="https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}"
+          # Written by the bottles step after the bottles were read back.
+          BOTTLE_BLOCK="$(cat "${RUNNER_TEMP}/bottle-block.rb")"
+          if ! grep -q ' arm64_big_sur: ' <<< "$BOTTLE_BLOCK" || ! grep -q ' big_sur: ' <<< "$BOTTLE_BLOCK"; then
+            echo "::error::the macOS bottle block is missing"; exit 1
+          fi
 
           KEY_DIR="${RUNNER_TEMP}/homebrew-ssh"
           install -d -m 700 "${KEY_DIR}"
@@ -1694,6 +1742,8 @@ jobs:
             # Engine: Apache-2.0. Bundled LeanCTX Cockpit binary: LeanCTX Cockpit
             # EULA (LicenseRef-LeanCTX-Cockpit-EULA), which SPDX cannot express.
             license all_of: ["Apache-2.0", :cannot_represent]
+
+          ${BOTTLE_BLOCK}
 
             # Semantic search (ctx_semantic_search / embeddings) loads
             # libonnxruntime at runtime; the engine resolves it from the
