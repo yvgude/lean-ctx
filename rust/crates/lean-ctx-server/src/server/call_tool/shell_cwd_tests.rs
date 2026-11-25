@@ -348,6 +348,12 @@ async fn a_worktree_cwd_notes_where_relative_paths_resolve() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_missing_root_is_learned_from_the_start_dir_not_a_calls_cwd() {
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    // The default `projects` scope also admits, for reading, any project below
+    // `$HOME`. Where the checkout lies below `$HOME` (GitHub runners:
+    // `/home/runner/work/…`) it would admit `other` without the learned root,
+    // so pin the scope to the project boundary this test is about. Held under
+    // the env lock `_data` took, restored on drop.
+    let _scope = lean_ctx::test_env::VarGuard::set("LEAN_CTX_PATH_JAIL_SCOPE", "project");
     let f = fixture();
     let server = server_for(&f);
     {
@@ -358,7 +364,8 @@ async fn a_missing_root_is_learned_from_the_start_dir_not_a_calls_cwd() {
     let expected = lean_ctx::core::protocol::detect_project_root(&f.root.to_string_lossy());
     assert!(expected.is_some());
     // Another agent's checkout: a directory of a different repository that the
-    // rootless jail admits (it lies under the process cwd, this crate).
+    // rootless jail admits (it lies under the process cwd, this crate), and
+    // only through that: the scope is pinned above.
     let other = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
     assert_ne!(
         lean_ctx::core::protocol::detect_project_root(other),

@@ -425,7 +425,7 @@ pub const CHAT_KEY_CLEARED: &str =
 pub const CHAT_KEY_TOKEN_ENROLLMENT: &str = "This computer was connected with an enrollment token; pairing the chat key needs a connect from LeanCTX Code.";
 
 /// The answers of a chat key re-pair that name why it was refused, kept by
-/// [`CloudError::from_response`] as `Server { code }` (this protocol
+/// `CloudError::from_response` as `Server { code }` (this protocol
 /// version does not name them).
 pub const CHAT_KEY_REPAIR_REASONS: &[&str] =
     &["chat_key_bound", "chat_key_cleared", "token_enrollment"];
