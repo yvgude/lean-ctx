@@ -340,6 +340,8 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
     let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {
         let tool_names = tool_kind::responses_tool_names(input);
+        // The shell command of each call (`compress::with_tool_command`).
+        let tool_commands = tool_kind::responses_tool_commands(input);
         for item in input.iter_mut() {
             if compress_shared::classify_tool_kind(item) != ToolKind::ToolResult {
                 continue;
@@ -356,8 +358,13 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
                 continue;
             }
             let kind = compress_shared::tool_result_kind(name);
+            let command = call_id
+                .and_then(|id| tool_commands.get(id))
+                .map(String::as_str);
             if let Some(output) = item.get_mut("output") {
-                modified |= compress_output_field(output, name, kind);
+                modified |= super::compress::with_tool_command(command, || {
+                    compress_output_field(output, name, kind)
+                });
             }
         }
     }
@@ -640,7 +647,7 @@ mod tests {
         let mut s = String::from(
             "$ git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n",
         );
-        for i in 0..80 {
+        for i in 0..200 {
             s.push_str(&format!("\tmodified:   src/module_{i}/file_{i}.rs\n"));
         }
         s.push_str("\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n");
@@ -1163,6 +1170,44 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<Value>(&out).unwrap()["reasoning"]["effort"],
             "low"
+        );
+    }
+
+    /// A filtered result past the size floor (>60 lines, >4 KiB, <16 KiB) that
+    /// the shell compressors would otherwise shorten.
+    fn filtered_grep_output() -> String {
+        (1..=300)
+            .map(|i| format!("build.log:{i}:[info] processed item {i:04} ok"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn a_shell_grep_result_keeps_its_filtered_output_whole() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let output = filtered_grep_output();
+        let result = |arguments: &str| {
+            let body = serde_json::json!({
+                "model": "gpt-5",
+                "input": [
+                    {"type": "function_call", "call_id": "call_g", "name": "shell", "arguments": arguments},
+                    {"type": "function_call_output", "call_id": "call_g", "output": output}
+                ]
+            });
+            let bytes = serde_json::to_vec(&body).unwrap();
+            let (out, _, _) = compress_request_body(body, bytes.len());
+            let parsed: Value = serde_json::from_slice(&out).unwrap();
+            parsed["input"][1]["output"].as_str().unwrap().to_string()
+        };
+
+        // Codex `shell`: an argv that runs a script names that script.
+        let filtered = result(r#"{"command":["bash","-lc","grep -n processed build.log"]}"#);
+        assert_eq!(filtered, output, "the grep call keeps its result whole");
+        assert_ne!(
+            result(r#"{"command":["bash","-lc","make build"]}"#),
+            output,
+            "an unfiltered command is still compressed"
         );
     }
 }

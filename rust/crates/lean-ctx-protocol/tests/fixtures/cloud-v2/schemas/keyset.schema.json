@@ -170,7 +170,7 @@
       }
     },
     "enrollment_for_2x": {
-      "description": "POST /v1/device/token answer (EnrollmentV1, leanctx.cloud.enrollment/v1) to a Cloud-Protocol 2.1+ request: keys is the key set v3 of GET /v1/keys and lease is a 2.x lease envelope whose kid is the key_id of its key with purpose policy; below 2.1 the answer keeps the C0 1.x key set v1 and a v1 lease kid. org.company (a team of a company) and sharing (C0 2.1 device setup) are sent only when they apply",
+      "description": "POST /v1/device/token answer (EnrollmentV1, leanctx.cloud.enrollment/v1) to a Cloud-Protocol 2.1+ request: keys is the key set v3 of GET /v1/keys and lease is a 2.x lease envelope whose kid is the key_id of its key with purpose policy; below 2.1 the answer keeps the C0 1.x key set v1 and a v1 lease kid. org.company (a team of a company) and sharing (C0 2.1 device setup) are sent only when they apply; instance_label (additive, rc4-1) is the name the cloud stored for this computer, the one typed on the approval page or else the engine's own, sent when it is a valid label and absent from older servers",
       "type": "object",
       "required": [
         "schema",
@@ -241,6 +241,13 @@
         "web_url": {
           "type": "string",
           "pattern": "^https?://"
+        },
+        "instance_label": {
+          "description": "the computer's name as stored by the cloud (cloud_wire::engine::instance_label, vectors/instance_label.vectors.json): 1-64 characters on one line, trimmed (no whitespace at either end), not only whitespace, no control, line/paragraph separator, bidi or invisible format characters; the joiners U+200C/U+200D and U+FE00-FE0F stay. Beyond the pattern (which names BMP characters only) the server also refuses the astral blocks U+13430-1343F (Egyptian hieroglyph format controls), U+1BCA0-1BCA3 (shorthand format controls), U+1D173-1D17A (musical notation format controls), U+E0000-E007F (tags) and U+E0100-E01EF (variation selectors supplement); display only, an engine re-checks it and falls back to its host name",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!\\s)[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u17b4\\u17b5\\u180e\\u200b\\u200e\\u200f\\u2028-\\u202e\\u2060-\\u206f\\u3164\\ufeff\\uffa0\\ufff9-\\ufffb]+(?<!\\s)(?![\\s\\S])"
         },
         "sharing": {
           "$ref": "device.schema.json#/$defs/enrollment_sharing"

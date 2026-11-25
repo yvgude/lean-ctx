@@ -1,0 +1,14 @@
+{
+  "case": "enrollment_instance_label_leading_space",
+  "base": "routes/enrollment.for_2x.response.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/instance_label",
+      "value": " Ada's Mac"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

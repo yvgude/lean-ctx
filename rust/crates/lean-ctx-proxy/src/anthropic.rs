@@ -415,6 +415,9 @@ fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usi
         // Resolve tool-call id → tool name so file/source reads can be protected
         // from lossy compression that would force the model to re-read mid-task.
         let tool_names = tool_kind::anthropic_tool_names(messages);
+        // The shell command of each call, for the filtered-output exemption
+        // (`compress::with_tool_command`).
+        let tool_commands = tool_kind::anthropic_tool_commands(messages);
 
         // Prune at a frozen, cache-aware boundary by default: Anthropic's
         // prompt cache matches exact prefixes, so the boundary must not move
@@ -461,6 +464,9 @@ fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usi
                         .and_then(|id| tool_names.get(id))
                         .map(String::as_str);
                     let kind = compress_shared::tool_result_kind(name);
+                    let command = call_id
+                        .and_then(|id| tool_commands.get(id))
+                        .map(String::as_str);
 
                     // #481: skip live compression when globally off or when the
                     // originating tool is on the exclusion list (Serena default).
@@ -470,7 +476,9 @@ fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usi
                         && !excluded
                         && let Some(inner_content) = block.get_mut("content")
                     {
-                        modified |= compress_content_field(inner_content, name, kind);
+                        modified |= super::compress::with_tool_command(command, || {
+                            compress_content_field(inner_content, name, kind)
+                        });
                     }
                 }
             }

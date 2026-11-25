@@ -805,6 +805,94 @@
       ]
     },
     {
+      "case": "landing_rules",
+      "effective": {
+        "context": {},
+        "landing": {
+          "max_parallel": 4,
+          "require_approval": true,
+          "required_checks": [
+            "build",
+            "lint",
+            "test"
+          ],
+          "revert_on_regression": true
+        },
+        "schema": "leanctx.cloud.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:8de0d686a4bac9f6ec4aa671d3ca9e388351ef9b989723b61a1014d136924208",
+      "levels": [
+        {
+          "document": {
+            "landing": {
+              "max_parallel": 8,
+              "require_approval": true,
+              "required_checks": [
+                "test",
+                "lint"
+              ],
+              "revert_on_regression": false
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "landing": {
+              "max_parallel": 4,
+              "require_approval": false,
+              "required_checks": [
+                "build",
+                "test"
+              ],
+              "revert_on_regression": true
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "landing_max_parallel_out_of_range_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "landing.max_parallel"
+      },
+      "levels": [
+        {
+          "document": {
+            "landing": {
+              "max_parallel": 0
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "landing_unknown_member_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "landing.land_on_friday"
+      },
+      "levels": [
+        {
+          "document": {
+            "landing": {
+              "land_on_friday": true
+            },
+            "schema": "leanctx.cloud.policy/v1"
+          },
+          "level": "org"
+        }
+      ]
+    },
+    {
       "case": "bundle_chain",
       "effective": {
         "context": {

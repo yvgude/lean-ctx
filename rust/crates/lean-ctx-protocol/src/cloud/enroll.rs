@@ -369,9 +369,34 @@ pub struct EnrollmentV1 {
     /// 1.3: origin of the LeanCTX Cloud web app (its "Open" link); may equal the API origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_url: Option<String>,
+    /// The name the person gave this computer on the approval page, as the
+    /// Cloud stored it (rc4-1). Additive: an older Cloud omits it and the
+    /// engine keeps the label it sent in [`DeviceTokenRequestV1`]. Display
+    /// only; a value that fails [`EnrollmentV1::chosen_label`] is ignored,
+    /// never a reason to refuse the enrollment. `null` reads as absent. The
+    /// rule is the Cloud's (`keyset.schema.json` `enrollment_for_2x`
+    /// pattern, `vectors/instance_label.vectors.json`): no whitespace at the
+    /// start or end (a space, a no-break space or any other Unicode
+    /// whitespace), 1–64 characters, no control or [`super::invisible`]
+    /// character.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_label: Option<String>,
 }
 
 impl EnrollmentV1 {
+    /// The name chosen on the approval page when it is 1–64 characters of
+    /// printable text without whitespace at either end; `None` when absent
+    /// or unusable, so the engine keeps the name it sent.
+    pub fn chosen_label(&self) -> Option<&str> {
+        let label = self.instance_label.as_deref()?;
+        if label.trim() != label {
+            return None;
+        }
+        validate_text(label, MAX_INSTANCE_LABEL_CHARS, "instance_label", false)
+            .ok()
+            .map(|()| label)
+    }
+
     /// Structural checks; signature checks are the engine's
     /// (`keys` against the root key, then `lease` against `keys`).
     pub fn validate(&self) -> Result<(), ValidationError> {
@@ -671,6 +696,130 @@ mod tests {
             .unwrap()
             .remove("key_id");
         assert!(serde_json::from_value::<EnrollmentV1>(broken).is_err());
+    }
+
+    fn fixture(rel: &str) -> serde_json::Value {
+        let path = format!(
+            "{}/tests/fixtures/cloud-v2/{rel}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+    }
+
+    fn enrollment_from(answer: serde_json::Value) -> EnrollmentV1 {
+        let enrollment: EnrollmentV1 = serde_json::from_value(answer).unwrap();
+        enrollment.validate().unwrap();
+        enrollment
+    }
+
+    /// rc4-1: the name typed on the approval page comes back as
+    /// `instance_label` (`routes/enrollment.for_2x.response.json`); a Cloud
+    /// that stored none sends no member (`….unlabelled.response.json`) or,
+    /// tolerated, `null`.
+    #[test]
+    fn an_enrollment_names_the_label_chosen_on_the_approval_page() {
+        let labelled = fixture("routes/enrollment.for_2x.response.json");
+        let enrollment = enrollment_from(labelled.clone());
+        assert_eq!(enrollment.chosen_label(), Some("Ada's MacBook Air"));
+        assert_eq!(serde_json::to_value(&enrollment).unwrap(), labelled);
+
+        let unlabelled = fixture("routes/enrollment.for_2x.unlabelled.response.json");
+        let enrollment = enrollment_from(unlabelled.clone());
+        assert_eq!(enrollment.instance_label, None);
+        assert_eq!(enrollment.chosen_label(), None);
+        assert_eq!(serde_json::to_value(&enrollment).unwrap(), unlabelled);
+
+        let mut null = labelled;
+        null["instance_label"] = serde_json::Value::Null;
+        assert_eq!(enrollment_from(null).chosen_label(), None);
+    }
+
+    /// `vectors/instance_label.vectors.json`: the engine takes a name exactly
+    /// as the Cloud does (1–64 characters, no control or invisible
+    /// character), and a refused one leaves the enrollment valid.
+    #[test]
+    fn the_chosen_label_follows_the_instance_label_vectors() {
+        let vectors = fixture("vectors/instance_label.vectors.json");
+        assert_eq!(vectors["max_chars"], MAX_INSTANCE_LABEL_CHARS);
+        let base = fixture("routes/enrollment.for_2x.unlabelled.response.json");
+        let cases = vectors["cases"].as_array().unwrap();
+        assert!(cases.len() >= 40, "only {} vectors", cases.len());
+        for case in cases {
+            let input = case["input"].as_str().unwrap();
+            // The vectors trim what a person types; the stored name the
+            // enrollment answer carries has no whitespace at either end
+            // (keyset.schema.json pattern), so the engine refuses one.
+            let name = if input.trim() == input {
+                case["name"].as_str()
+            } else {
+                None
+            };
+            let mut answer = base.clone();
+            answer["instance_label"] = case["input"].clone();
+            let enrollment = enrollment_from(answer);
+            assert_eq!(
+                enrollment.chosen_label(),
+                name,
+                "{}: {:?}",
+                case["why"],
+                case["input"]
+            );
+        }
+    }
+
+    /// p37 !290: whitespace at the start or end, a space or a no-break space,
+    /// is refused rather than trimmed.
+    #[test]
+    fn a_label_with_whitespace_at_either_end_is_ignored() {
+        let base = fixture("routes/enrollment.for_2x.unlabelled.response.json");
+        let chosen = |label: &str| {
+            let mut answer = base.clone();
+            answer["instance_label"] = serde_json::Value::from(label);
+            enrollment_from(answer).chosen_label().map(str::to_string)
+        };
+        assert_eq!(chosen("Ada").as_deref(), Some("Ada"));
+        assert_eq!(chosen("Ada\u{a0}Mac").as_deref(), Some("Ada\u{a0}Mac"));
+        for bad in [
+            " Ada",
+            "Ada ",
+            "\u{a0}Ada",
+            "Ada\u{a0}",
+            "\u{3000}Ada",
+            "Ada\u{2003}",
+        ] {
+            assert_eq!(chosen(bad), None, "{bad:?}");
+        }
+    }
+
+    /// The Cloud's schema refuses the `routes/invalid/enrollment_instance_label_*`
+    /// answers; the engine reads each as an enrollment without a chosen name
+    /// rather than failing the connect.
+    #[test]
+    fn an_invalid_instance_label_is_ignored_not_fatal() {
+        let dir = format!(
+            "{}/tests/fixtures/cloud-v2/routes/invalid",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+            if !name.starts_with("enrollment_instance_label_") {
+                continue;
+            }
+            let case = fixture(&format!("routes/invalid/{name}"));
+            let mut answer = fixture(case["base"].as_str().unwrap());
+            for op in case["patch"].as_array().unwrap() {
+                assert_eq!(op["op"], "replace", "{name}");
+                let member = op["path"].as_str().unwrap().strip_prefix('/').unwrap();
+                answer[member] = op["value"].clone();
+            }
+            assert_eq!(enrollment_from(answer).chosen_label(), None, "{name}");
+            checked += 1;
+        }
+        assert!(
+            checked >= 9,
+            "only {checked} invalid instance_label fixtures"
+        );
     }
 
     #[test]

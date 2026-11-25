@@ -67,7 +67,9 @@ same arguments (the document and a final `\n`), `Content-Type: application/json`
 | POST | `/v1/local/cloud/lease/refresh` | `cloud.lease.refresh` | `cloud lease refresh --json` |
 | GET | `/v1/local/cloud/decisions` | `decisions.list` | `cloud decisions list --json` |
 | POST | `/v1/local/cloud/decisions/create` | `decisions.create` | `cloud decisions create --json` |
-| POST | `/v1/local/cloud/decisions/send` | `decisions.send` | (none: app-only, `x-leanctx-app-key`) |
+| POST | `/v1/local/cloud/decisions/send` | `decisions.send` | (none: app-only, `x-leanctx-app-key`; optional `updated_at`) |
+| POST | `/v1/local/cloud/decisions/supersede` | `decisions.supersede` | (none: app-only, `x-leanctx-app-key`) |
+| POST | `/v1/local/cloud/decisions/revoke` | `decisions.revoke` | (none: app-only, `x-leanctx-app-key`) |
 | GET | `/v1/local/cloud/members` | `cloud.members.list` | `cloud members list --json` |
 | POST | `/v1/local/cloud/billing/checkout` | `cloud.billing.checkout` | `cloud billing checkout --json` |
 | POST | `/v1/local/cloud/billing/portal` | `cloud.billing.portal` | `cloud billing portal --json` |
@@ -176,7 +178,9 @@ and `/v1/local/tasks` are kept for the project's local docs and tasks.
   → 503; `not_offered` → 501; `internal` → 500; `balance_empty` → 402;
   `no_computer` → 404; `computer_exists`, `computer_busy` → 409;
   `computer_provider_unavailable` → 503; `computer_not_available` → 503;
-  `confirmation_required` → 428; `app_only` → 403.
+  `confirmation_required` → 428; `app_only` → 403;
+  `chat_key_missing`, `signature_invalid`, `signature_required` → 403;
+  `frame_expired`, `frame_unknown` → 409.
   `plan_required`, `invalid_state` and `invalid_field` (3.12.3) are LeanCTX
   Cloud's own refusals, kept for the reader (team chat, local-read-v1 §28);
   so is `sso_required` (3.12.3, team billing, local-read-v1 §27),

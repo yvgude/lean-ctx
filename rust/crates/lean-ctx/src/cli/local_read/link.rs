@@ -178,18 +178,31 @@ impl Share {
             message,
         }
     }
+
+    /// Cloud said no for good (`refused`) or the address is on another
+    /// Cloud (`other_cloud`): the link must not stay written.
+    pub(crate) fn unlinks(&self) -> bool {
+        matches!(self.state, "refused" | "other_cloud")
+    }
 }
 
 /// The vault `value` names: an address `<ws>/<vault>[@<server>]`, else the
-/// id or name of a vault this Instance shared with.
+/// id or name of a vault this Instance shared with. An address without
+/// `@<server>` is on the Cloud this machine is connected to (rc4-56: a
+/// machine connected to a self-hosted Cloud links there, not to the hosted
+/// one).
 pub(crate) fn target(
     value: &str,
     map: &VaultMap,
     instance: Option<&InstanceRecord>,
 ) -> Result<VaultAddress, Failure> {
     if value.contains('/') {
-        return VaultAddress::parse(value)
-            .map_err(|why| Failure::invalid(format!("--vault {value}: {why}")));
+        let mut address = VaultAddress::parse(value)
+            .map_err(|why| Failure::invalid(format!("--vault {value}: {why}")))?;
+        if !value.contains('@') {
+            address.server = instance.and_then(|i| server_of(&i.url));
+        }
+        return Ok(address);
     }
     let mut found: Vec<&VaultRecord> = map
         .vaults
@@ -276,6 +289,8 @@ pub(crate) fn previous_vault(
 }
 
 /// Link `root` to `address`; `share` maps it afterwards (not on a dry run).
+/// A link Cloud refuses, or one for another Cloud, is undone: the checkout
+/// keeps no link file (or its previous one) and no new identity (rc4-56).
 pub(crate) fn link_with(
     root: &Path,
     address: &VaultAddress,
@@ -289,11 +304,18 @@ pub(crate) fn link_with(
         let missing = lean_ctx::core::project_hash::project_identity(&root_str).is_none();
         (missing, Share::state("not_checked", None))
     } else {
+        let prior = link::prior_link(root);
         let outcome = link::link(root, &address.to_string()).map_err(|e| match e {
             CloudError::Config(why) => Failure::invalid(why),
             other => Failure::from(other),
         })?;
-        (outcome.created_identity, share())
+        let share = share();
+        if share.unlinks() {
+            link::undo(root, &outcome, prior.as_deref()).map_err(Failure::from)?;
+            (false, share)
+        } else {
+            (outcome.created_identity, share)
+        }
     };
     Ok(LinkDoc {
         project_root: root.to_string_lossy().into_owned(),
@@ -337,17 +359,23 @@ pub(crate) fn share_now(
     address: &VaultAddress,
 ) -> Share {
     let origin = instance.url.trim_end_matches('/').to_ascii_lowercase();
-    if !lean_ctx_protocol::cloud::same_cloud_origin(&address.origin(), &origin) {
+    // An address names its Cloud by host only (`ws/vault@host`); one on the
+    // connected Cloud's host is that Cloud, whatever its scheme (a
+    // self-hosted or test Cloud may answer on http).
+    let here = address.server.as_deref().map(str::to_ascii_lowercase) == server_of(&origin);
+    if !here && !lean_ctx_protocol::cloud::same_cloud_origin(&address.origin(), &origin) {
         return Share::state(
             "other_cloud",
             Some(format!(
-                "this link is for {}; this machine is connected to {origin}",
+                "{address} is on {}, but this computer is connected to {origin}; \
+                 nothing was linked. Leave out @<server> to link a vault of {origin}",
                 address.origin()
             )),
         );
     }
     let config = lean_ctx::core::config::Config::load().cloud.clone();
     let mut map = VaultMap::load(store.data_dir());
+    let before = map.clone();
     if forget_other_vault(&mut map, &root.to_string_lossy(), address)
         && let Err(e) = map.save(store.data_dir())
     {
@@ -355,12 +383,27 @@ pub(crate) fn share_now(
     }
     let session = lean_ctx_cloud::root_cert::trust_root(store, &config, &instance.url)
         .and_then(|cert| lean_ctx_cloud::auth::Session::load(store.clone(), cert));
-    match session {
-        Ok(session) => share_state(lean_ctx_cloud::knowledge::pull::resolve_project(
-            &session, &config, root,
-        )),
+    let share = match session {
+        Ok(session) => {
+            match lean_ctx_cloud::knowledge::pull::resolve_project(&session, &config, root) {
+                Err(MapError::Cloud(CloudError::Forbidden)) => Share::state(
+                    "refused",
+                    Some(lean_ctx_cloud::knowledge::pull::foreign_vault_refusal(
+                        &format!("{}/{}", address.ws, address.vault),
+                    )),
+                ),
+                result => share_state(result),
+            }
+        }
         Err(error) => cloud_state(&error),
+    };
+    // A refused link leaves this machine's vault records as they were too.
+    if share.unlinks()
+        && let Err(e) = before.save(store.data_dir())
+    {
+        tracing::warn!("cloud link: vault records not restored: {e}");
     }
+    share
 }
 
 pub(crate) fn run(args: &[String]) {
@@ -533,6 +576,97 @@ mod tests {
                 "bring_local": null,
             })
         );
+    }
+
+    /// rc4-56: an address without `@<server>` is on the Cloud this machine
+    /// is connected to (a staging connection links there, never to the
+    /// hosted Cloud); a server the person names stays.
+    #[test]
+    fn an_address_without_a_server_is_on_the_connected_cloud() {
+        let known = VaultMap::default();
+        let staging = instance("https://staging.example.com");
+        let by = |v: &str, i: Option<&InstanceRecord>| target(v, &known, i).unwrap().to_string();
+        assert_eq!(
+            by("acme/notes", Some(&staging)),
+            "acme/notes@staging.example.com"
+        );
+        assert_eq!(by("acme/notes", None), "acme/notes");
+        assert_eq!(
+            by("acme/notes@cloud.leanctx.com", Some(&staging)),
+            "acme/notes"
+        );
+        assert_eq!(
+            by("acme/notes@other.example.com", Some(&staging)),
+            "acme/notes@other.example.com"
+        );
+    }
+
+    /// rc4-56: a vault Cloud refuses leaves the checkout as it was: no link
+    /// file and no new identity, or the previous link and identity back.
+    #[test]
+    fn a_refused_link_leaves_nothing_behind() {
+        let refused = || {
+            Share::state(
+                "refused",
+                Some(lean_ctx_cloud::knowledge::pull::foreign_vault_refusal(
+                    "acme/notes",
+                )),
+            )
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let doc = link_with(dir.path(), &address("acme/notes"), None, false, || {
+            assert!(link::has_link_file(dir.path()), "linked before mapping");
+            refused()
+        })
+        .unwrap();
+        assert_eq!(doc.share.state, "refused");
+        assert!(!doc.created_identity);
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "nothing left"
+        );
+
+        link::link(dir.path(), "platform/web").unwrap();
+        let link_before = std::fs::read(dir.path().join(link::LINK_FILE)).unwrap();
+        let id_before = std::fs::read(dir.path().join(".lean-ctx-id")).unwrap();
+        for state in ["refused", "other_cloud"] {
+            link_with(dir.path(), &address("acme/notes"), None, false, || {
+                Share::state(state, None)
+            })
+            .unwrap();
+            assert_eq!(
+                std::fs::read(dir.path().join(link::LINK_FILE)).unwrap(),
+                link_before,
+                "{state}"
+            );
+            assert_eq!(
+                std::fs::read(dir.path().join(".lean-ctx-id")).unwrap(),
+                id_before
+            );
+        }
+    }
+
+    /// rc4-57: the refusal names the vault and the way forward, in the
+    /// person's words (never "lease" or "instance").
+    #[test]
+    fn a_foreign_vault_refusal_says_whose_vault_it_is() {
+        let text = lean_ctx_cloud::knowledge::pull::foreign_vault_refusal("acme/notes");
+        assert!(
+            text.starts_with("your account may not use acme/notes: it belongs to another account,"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Personal plan") && text.contains("Team plan"),
+            "{text}"
+        );
+        let generic = CloudError::Forbidden.to_string();
+        for said in [&text, &generic] {
+            assert!(
+                !said.contains("lease") && !said.contains("instance"),
+                "{said}"
+            );
+        }
     }
 
     /// Local pages are brought only into a shared vault; before that, and on

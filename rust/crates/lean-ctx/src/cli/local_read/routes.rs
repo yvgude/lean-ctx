@@ -26,6 +26,8 @@ pub(crate) enum Shape {
     Switch,
     /// `--flag <JSON>`: an object input (or its JSON text) as compact JSON.
     Json,
+    /// `--flag true|false`: a bool passed either way (`false` is kept).
+    Bool,
 }
 
 /// One input of a route.
@@ -503,6 +505,10 @@ pub(crate) const ROUTES: &[Route] = &[
             value("request_id", "--request-id"),
             // No `kind`, no `as`: a socket post is the person's (QN0).
             value("task_id", "--task-id"),
+            // rc4-32: the app-signed form (`chat.prepare` first).
+            super::chat_part::FRAME_B64,
+            super::chat_part::PRESENCE_SIGNATURE,
+            super::chat_part::KEY_ID,
         ],
         project: Project::Required,
         names: None,
@@ -820,6 +826,10 @@ pub(crate) fn args_of(
                     args.push(param.flag.into());
                 }
             }
+            Shape::Bool => {
+                args.push(param.flag.into());
+                args.push(switch(key, value)?.to_string());
+            }
             Shape::Json => {
                 let raw = match value {
                     Value::String(text) => text.clone(),
@@ -934,7 +944,12 @@ fn command_of(route: &Route) -> Option<(String, &'static str)> {
 /// command verb names it (`command`, `verb`): the capabilities builder
 /// marks those verbs `socket` in `commands`.
 pub(crate) fn table_json() -> Value {
-    let mut routes: Vec<&Route> = all().collect();
+    // `chat.prepare` is listed only when the whole signed path is in
+    // place: a chat key bound to the connected instance (rc4-32).
+    let prepare = super::chat_sign::offered();
+    let mut routes: Vec<&Route> = all()
+        .filter(|r| prepare || r.kind != super::chat_sign::PREPARE)
+        .collect();
     routes.sort_by_key(|r| (r.path, r.method.as_str()));
     Value::Array(
         routes
@@ -951,6 +966,9 @@ pub(crate) fn table_json() -> Value {
                 if let Some((command, verb)) = command_of(r) {
                     row["command"] = command.into();
                     row["verb"] = verb.into();
+                }
+                if r.kind == super::chat_sign::PREPARE {
+                    row["kinds"] = super::chat_sign::PREPARE_KINDS.into();
                 }
                 row
             })

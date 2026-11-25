@@ -56,12 +56,12 @@ pub fn disclosure(
          was fetched back in full, protection and policy-block counts by rule, the names of \
          known programs and agent host families no enforcing rule covers (git, docker, \
          cursor, …), calls to MCP servers no rule covers (the server name only when your \
-         workspace's policy names it), sessions, agents used, and model \
+         team's policy names it), sessions, agents used, and model \
          spend where it is measured. It never \
          sends file content, file paths, prompts, model output, secrets or command lines. \
          Connecting also sends this machine's name and each project's folder name as default \
          labels (`lean-ctx cloud connect --label <name>` sets another machine label). Field \
-         list: {}{FIELDS_PATH}. Your workspace controls this with the policy rule \"Share engine \
+         list: {}{FIELDS_PATH}. Your team controls this with the policy rule \"Share instance \
          metrics\" (now: {}).{confirm} To stop it for this instance only: \
          `lean-ctx config set cloud.metrics_upload false`.",
         web_url.trim_end_matches('/'),

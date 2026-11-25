@@ -90,7 +90,7 @@ impl McpTool for CtxTasksTool {
         tool_def(
             "ctx_tasks",
             "Tasks of this project: LeanCTX Cloud's when linked to a vault, else local.\n\
-            list|show, claim, update (one-line summary), submit with evidence (outcome=failed if it failed),\n\
+            list|show, claim, update (needs summary), submit (summary + evidence; outcome=failed if failed),\n\
             release, propose; verify another agent's result: accept, or reject with findings (it reopens).\n\
             amend: the submitter corrects a result, no claim (submitted: evidence, summary; done: merge_commit\n\
             once, by submitter or coordinator session, never the reviewer); history keeps both. Vault: refused.\n\
@@ -106,7 +106,7 @@ impl McpTool for CtxTasksTool {
                     "role": {"type": "string", "description": "list filter / propose: agent role slug"},
                     "mine": {"type": "boolean", "description": "list: only tasks of this instance"},
                     "minutes": {"type": "integer", "minimum": 5, "maximum": 240, "description": "claim length: LeanCTX Cloud 5-15 (default 10, renewed while the session runs); local 5-240 (default 60, renewed by update)"},
-                    "summary": {"type": "string", "description": "update|submit|amend: one line, no prompts"},
+                    "summary": {"type": "string", "description": "REQUIRED for update and submit (optional for amend): one plain line on what changed or was done, e.g. \"tests pass, docs next\"; no prompts"},
                     "outcome": {"type": "string", "enum": ["completed", "failed"], "description": "submit: failed ends the task as failed (default completed)"},
                     "evidence": {
                         "type": "array",
@@ -115,7 +115,7 @@ impl McpTool for CtxTasksTool {
                             "type": "object",
                             "properties": {
                                 "kind": {"type": "string", "enum": ["commit", "receipt", "ci_run", "file_anchor", "url", "fact"]},
-                                "reference": {"type": "string", "description": "file_anchor: path or path::symbol in this project"}
+                                "reference": {"type": "string", "description": "commit: SHA (7-64 hex); receipt: 64-hex id; ci_run|url: https:// URL; fact: knowledge fact id ([A-Za-z0-9._:-], no sentence); file_anchor: path or path::symbol relative to this project"}
                             },
                             "required": ["kind", "reference"],
                             "additionalProperties": false
@@ -284,7 +284,8 @@ impl McpTool for CtxTasksTool {
                 )
             }
             "update" => {
-                let (agent, number, summary) = (registered()?, number()?, text("summary")?);
+                let (agent, number, summary) =
+                    (registered()?, number()?, required_summary(args, &action)?);
                 cache::queue(
                     root,
                     CloudRight::TasksWork,
@@ -308,7 +309,8 @@ impl McpTool for CtxTasksTool {
                         ));
                     }
                 };
-                let (agent, number, summary) = (registered()?, number()?, text("summary")?);
+                let (agent, number, summary) =
+                    (registered()?, number()?, required_summary(args, &action)?);
                 cache::queue(
                     root,
                     CloudRight::TasksWork,
@@ -457,8 +459,32 @@ fn evidence_arg(args: &Map<String, Value>) -> Result<Vec<EvidenceInput>, ErrorDa
         .cloned()
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|_| ErrorData::invalid_params("evidence is a list of {kind, reference}", None))
+        .map_err(|_| {
+            ErrorData::invalid_params(
+                r#"evidence is a list of {kind, reference}, for example [{"kind": "commit", "reference": "abc1234"}, {"kind": "file_anchor", "reference": "README.md"}]"#,
+                None,
+            )
+        })
         .map(Option::unwrap_or_default)
+}
+
+/// `update|submit`: the one-line summary; a missing one is refused with
+/// what to send (rc4-103: the first call of an agent failed on it).
+fn required_summary(args: &Map<String, Value>, action: &str) -> Result<String, ErrorData> {
+    get_str(args, "summary")
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| ErrorData::invalid_params(summary_missing(action), None))
+}
+
+fn summary_missing(action: &str) -> String {
+    let (what, example) = if action == "submit" {
+        ("what was done", "fixed the login timeout; tests pass")
+    } else {
+        ("what changed", "tests pass, docs next")
+    };
+    format!(
+        r#"{action} needs a summary: one plain line on {what}, for example summary="{example}""#
+    )
 }
 
 /// `verify`: the findings of the check; required on reject.
@@ -583,7 +609,7 @@ fn local_answer(
             })
         }
         "update" => {
-            let (n, by, summary) = (number()?, actor()?, text("summary")?);
+            let (n, by, summary) = (number()?, actor()?, required_summary(args, action)?);
             local::write(root, |board, now| {
                 board.update(n, &by, &summary, usage, now)
             })
@@ -601,7 +627,7 @@ fn local_answer(
                     ));
                 }
             };
-            let (n, by, summary) = (number()?, actor()?, text("summary")?);
+            let (n, by, summary) = (number()?, actor()?, required_summary(args, action)?);
             local::evidence(root, inputs).and_then(|evidence| {
                 let submission = Submission {
                     summary,
@@ -676,6 +702,31 @@ mod tests {
 
     fn call(value: &Value) -> Map<String, Value> {
         value.as_object().cloned().expect("an object")
+    }
+
+    /// rc4-103: the schema declares `summary` and a missing one is refused
+    /// with what to send.
+    #[test]
+    fn a_missing_summary_says_what_to_send() {
+        let def = serde_json::to_value(CtxTasksTool.tool_def()).expect("schema");
+        let summary = def["inputSchema"]["properties"]["summary"]["description"]
+            .as_str()
+            .expect("summary declared");
+        assert!(
+            summary.contains("REQUIRED for update and submit"),
+            "{summary}"
+        );
+        let refused = required_summary(&call(&json!({"action": "update"})), "update")
+            .expect_err("no summary");
+        assert!(
+            refused.message.contains("update needs a summary"),
+            "{refused:?}"
+        );
+        assert!(required_summary(&call(&json!({"summary": " "})), "submit").is_err());
+        assert_eq!(
+            required_summary(&call(&json!({"summary": "done"})), "submit").expect("given"),
+            "done"
+        );
     }
 
     #[test]

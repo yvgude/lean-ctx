@@ -1,0 +1,23 @@
+{
+  "cursors": {
+    "#acme/payments": 41
+  },
+  "features": [
+    "person_publish",
+    "policy_advanced",
+    "presence_names"
+  ],
+  "metrics_sharing": false,
+  "presence": [
+    {
+      "role": "backend",
+      "state": "active",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    }
+  ],
+  "protocol": "2.0",
+  "subscribe": [
+    "#acme/payments"
+  ],
+  "t": "hello"
+}

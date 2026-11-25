@@ -189,16 +189,27 @@ fn shell_home(
 /// in PowerShell, where `cat` is `Get-Content` and `~` is the home. A path a
 /// double quote cannot carry literally falls back to the `ctx_expand` name.
 fn locator_in(path: &std::path::Path, home: Option<&std::ffi::OsStr>) -> String {
-    if let Some(home) = home
-        && let Ok(rest) = path.strip_prefix(home)
-        && let Some(rest) = home_relative(rest)
-    {
-        return format!("cat ~/{rest}");
+    if let Some(location) = home.and_then(|home| home_location_in(path, home)) {
+        return format!("cat {location}");
     }
     let name = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     format!("ctx_expand(id=\"{name}\") (LeanCTX state directory, tee/{name})")
+}
+
+/// `path` as one shell word under the home the host shell expands `~` to,
+/// `~/…` without the account name, or `None` outside the home or where the
+/// rest cannot be written unambiguously ([`locator_in`] has the rules). Also
+/// the location the compressed-result hint names (`compress::tee_hint`).
+pub(crate) fn home_location(path: &std::path::Path) -> Option<String> {
+    let home = shell_home(|key| std::env::var_os(key), cfg!(windows))?;
+    home_location_in(path, &home)
+}
+
+fn home_location_in(path: &std::path::Path, home: &std::ffi::OsStr) -> Option<String> {
+    let rest = path.strip_prefix(home).ok()?;
+    home_relative(rest).map(|rest| format!("~/{rest}"))
 }
 
 /// `rest` as the shell-ready text after `~/`, or `None` when it cannot be

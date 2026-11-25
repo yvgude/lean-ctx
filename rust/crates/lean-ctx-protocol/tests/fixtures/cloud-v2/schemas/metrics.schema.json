@@ -1473,14 +1473,15 @@
             "on",
             "off",
             "needs_confirmation"
-          ]
+          ],
+          "description": "on unless a policy level sets sharing.share_instance_metrics false (off); every plan shares by default, so Cloud no longer sends needs_confirmation (only an older Cloud did; a host treats it as not sharing)"
         },
         "plan_default": {
           "enum": [
             "on",
             "off"
           ],
-          "description": "Team and Business: on; Community and Pro: off until the person confirms once"
+          "description": "on for every plan (Personal included, no confirmation step); off only from an older Cloud"
         },
         "policy": {
           "anyOf": [

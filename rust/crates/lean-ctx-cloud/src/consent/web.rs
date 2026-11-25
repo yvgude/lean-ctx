@@ -259,6 +259,82 @@ impl WebRun<'_> {
     }
 }
 
+/// The longest a browser-bound request waits (Cloud caps it at 15 min).
+pub const BROWSER_TTL_MS: u64 = 16 * 60 * 1000;
+
+/// The E35 create body of a request the person answers on a Cloud page
+/// opened by an app (`consent_create.browser_binding.request.json`): no
+/// pairing code; the page asks for the account's second factor, or its
+/// password or a mailed link without one.
+pub fn browser_body(record: &Record) -> Value {
+    json!({
+        "binding": "browser",
+        "consent_id": record.consent_id,
+        "kind": record.kind,
+        "subject": record.subject,
+        "subject_digest": record.subject_digest,
+        "expires_at": record.expires_at,
+    })
+}
+
+/// The poll interval Cloud names (`interval_s`), kept within 1–30 s.
+pub fn browser_interval(created: &Value) -> Duration {
+    Duration::from_secs(created["interval_s"].as_u64().unwrap_or(5).clamp(1, 30))
+}
+
+impl WebRun<'_> {
+    /// A first share answered in the browser for an app (rc3-70): create
+    /// the browser-bound request, hand Cloud's answer (`url`,
+    /// `expires_at`, `interval_s`) to `opened` once, then poll until the
+    /// person answered or the request expired. A Cloud without the browser
+    /// binding (`400 invalid_request` naming `binding`) ends it as
+    /// [`ConsentError::BrowserUnsupported`].
+    pub fn run_browser(
+        &self,
+        client: &CloudClient,
+        consent_id: &str,
+        opened: &mut dyn FnMut(&Value),
+    ) -> Result<Record, ConsentError> {
+        let record = self.broker.get(consent_id)?;
+        if record.state != State::Pending || record.expires_at <= (self.now)() {
+            return Err(ConsentError::InvalidState);
+        }
+        if record.kind != Kind::LinkVault {
+            return Err(ConsentError::Local(
+                "only a first share is answered in the browser for an app".into(),
+            ));
+        }
+        let path = format!("/consents/{consent_id}");
+        let (status, created) =
+            exchange(client, "POST", "/consents", Some(&browser_body(&record)))?;
+        if binding_refused(status, &created) {
+            return Err(ConsentError::BrowserUnsupported);
+        }
+        let created = judge(status, created)?;
+        if created["url"].as_str().is_none_or(str::is_empty) {
+            return Err(ConsentError::Local(
+                "LeanCTX Cloud answered without a consent URL".into(),
+            ));
+        }
+        opened(&created);
+        let every = browser_interval(&created);
+        let started = (self.now)();
+        loop {
+            (self.sleep)(every);
+            match parse_state(&send(client, "GET", &path, None)?)? {
+                Polled::Answered(statement) => {
+                    return self.broker.record_web(consent_id, statement, (self.now)());
+                }
+                Polled::Expired => return Err(ConsentError::Expired),
+                Polled::Pending => {}
+            }
+            if (self.now)().saturating_sub(started) >= BROWSER_TTL_MS {
+                return Err(ConsentError::WebTimeout);
+            }
+        }
+    }
+}
+
 /// Withdraw a relayed request that no longer needs an answer (C0 2.1
 /// `DELETE /v1/consents/{id}`), so no page lists it as waiting. Best
 /// effort: a Cloud without the route or without the request ignores it.
@@ -268,6 +344,15 @@ pub fn withdraw_relayed(client: &CloudClient, consent_id: &str) {
     }
 }
 
+/// A Cloud from before rc3-70 refuses the browser binding as an unknown
+/// value (`400 invalid_request` with `field: "binding"`, the consent
+/// route's `bad("enum", "binding")`); any other refusal stays what it is.
+fn binding_refused(status: u16, answer: &Value) -> bool {
+    status == 400
+        && answer["error"]["code"] == "invalid_request"
+        && answer["error"]["field"] == "binding"
+}
+
 /// One E35 call; a 1.x Cloud has no consent relay (`404`).
 fn send(
     client: &CloudClient,
@@ -275,9 +360,24 @@ fn send(
     path: &str,
     body: Option<&Value>,
 ) -> Result<Value, ConsentError> {
-    let (status, answer) = client
+    let (status, answer) = exchange(client, method, path, body)?;
+    judge(status, answer)
+}
+
+/// One E35 call, its status and answer as sent.
+fn exchange(
+    client: &CloudClient,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> Result<(u16, Value), ConsentError> {
+    client
         .send_answer(method, path, body, MAX_ANSWER)
-        .map_err(|e| ConsentError::Local(e.to_string()))?;
+        .map_err(|e| ConsentError::Local(e.to_string()))
+}
+
+/// An E35 answer: the body on success, otherwise the refusal.
+fn judge(status: u16, answer: Value) -> Result<Value, ConsentError> {
     match status {
         200..=299 => Ok(answer),
         404 => Err(ConsentError::Local(

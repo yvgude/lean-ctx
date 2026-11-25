@@ -1,5 +1,7 @@
 {
   "state": "denied",
+  "expires_at": "2026-10-25T08:00:00Z",
+  "interval_s": 5,
   "statement": {
     "answer": "deny",
     "answered_at": 1792800180000,

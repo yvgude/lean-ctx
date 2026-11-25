@@ -244,6 +244,9 @@ pub fn start_on_port(port: u16) -> bool {
             if !release_proxy_port(port, false) {
                 return false;
             }
+            // Same layout as the CLI that (re)starts it, not the one that
+            // installed it: a stale `LEAN_CTX_*_DIR` pin is replaced.
+            crate::daemon_autostart::repin_launchagent(&plist_path);
             return crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path);
         }
         false
@@ -416,13 +419,18 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
         .join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
 
-    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
-    // so the proxy (a TCC-standalone process) can never trip the privacy prompt.
+    // rc2-2: the binary itself is ProgramArguments[0], so Login Items name
+    // LeanCTX, not sandbox-exec. The proxy applies the #356 deny-~/Documents
+    // seatbelt to itself at start-up (`reexec_under_seatbelt_if_needed`).
     let port_arg = format!("--port={port}");
     let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
-        &crate::core::tcc_guard_sandbox::wrap_launchd_args(binary, &["proxy", "start", &port_arg]),
+        &crate::core::tcc_guard_sandbox::launchd_program_args(
+            binary,
+            &["proxy", "start", &port_arg],
+        ),
         "        ",
     );
+    let bundle_ids = crate::core::tcc_guard_sandbox::associated_bundle_ids_xml("    ");
 
     // #449: pin the directory layout. A launchd-spawned proxy inherits only
     // launchd's minimal environment (no HOME, no XDG vars), so it resolves a
@@ -443,7 +451,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
     <array>
 {program_args}
     </array>
-{env_vars}    <key>RunAtLoad</key>
+{bundle_ids}{env_vars}    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>

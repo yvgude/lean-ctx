@@ -147,6 +147,7 @@ fn only_vault_addressed_posts_become_publishes() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, [status.clone(), question.clone()]);
@@ -174,7 +175,8 @@ fn only_vault_addressed_posts_become_publishes() {
             &mut state,
             &mut screen(),
             &worker,
-            &Records::default()
+            &Records::default(),
+            None
         )
         .is_empty()
     );
@@ -183,12 +185,9 @@ fn only_vault_addressed_posts_become_publishes() {
     assert!(state.was_decided(&status));
 }
 
-#[test]
-fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
-    let mut s = setup();
+fn person_post(s: &mut Setup) -> String {
     let root = s.dir.path().to_string_lossy().into_owned();
-    let id = s
-        .registry
+    s.registry
         .post_message_keyed(
             Some(&root),
             PERSON_SENDER,
@@ -200,7 +199,20 @@ fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
             None,
             None,
         )
-        .unwrap();
+        .unwrap()
+}
+
+/// The ed25519 test presence key of the C0 `person_publish` vector.
+fn person_signer() -> crate::consent::person_sign::test_signer::Ed25519Signer {
+    let vectors = fixture("vectors/person_publish.vectors.json");
+    crate::consent::person_sign::test_signer::Ed25519Signer::of_vector(&vectors["cases"][0])
+}
+
+#[test]
+fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
+    let mut s = setup();
+    let id = person_post(&mut s);
+    let signer = person_signer();
     let worker = |_: &AgentEntry| Some(WORKER.to_string());
     let mut state = StateV2::default();
     assert!(
@@ -210,7 +222,8 @@ fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
             &mut state,
             &mut screen(),
             &worker,
-            &Records::default()
+            &Records::default(),
+            Some(&signer),
         )
         .is_empty()
     );
@@ -223,6 +236,7 @@ fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
         &mut screen(),
         &worker,
         &Records::default(),
+        Some(&signer),
     );
     assert_eq!(out.len(), 1);
     // The flag of an earlier connection, saved and loaded again: a new
@@ -242,7 +256,8 @@ fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
             &mut reloaded,
             &mut screen(),
             &worker,
-            &Records::default()
+            &Records::default(),
+            Some(&signer),
         )
         .is_empty(),
         "a new connection waits for its own hello.ack"
@@ -252,6 +267,70 @@ fn a_person_post_waits_until_the_cloud_accepts_it_and_names_no_worker() {
     assert!(frame.get("worker_id").is_none(), "{frame}");
     assert_eq!(frame["to"], "#acme/payments");
     assert_eq!(frame["body"]["text"], "Who owns the E14 rollout?");
+}
+
+#[test]
+fn a_person_post_is_signed_by_the_presence_key_and_never_names_the_instance() {
+    use crate::consent::person_sign::{SIGNATURE_FIELD, signing_input};
+    use base64::Engine as _;
+    use ed25519_dalek::Verifier as _;
+    let mut s = setup();
+    person_post(&mut s);
+    let signer = person_signer();
+    let mut state = StateV2 {
+        person_publish: true,
+        ..StateV2::default()
+    };
+    let out = outgoing(
+        &s.registry,
+        &s.map,
+        &mut state,
+        &mut screen(),
+        &|_: &AgentEntry| None,
+        &Records::default(),
+        Some(&signer),
+    );
+    assert_eq!(out.len(), 1);
+    let frame = &out[0].frame;
+    assert_eq!(frame["t"], "place.publish");
+    assert!(frame.get("instance_id").is_none(), "{frame}");
+    let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(frame[SIGNATURE_FIELD].as_str().unwrap())
+        .unwrap();
+    // What the Cloud checks: the frame as received, `t` included.
+    let input = signing_input(PERSON_PUBLISH_DOMAIN, frame, &signer.instance_id).unwrap();
+    signer
+        .key
+        .verifying_key()
+        .verify(
+            &input,
+            &ed25519_dalek::Signature::from_slice(&signature).unwrap(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn without_a_signer_a_person_post_waits_and_is_never_sent_unsigned() {
+    let mut s = setup();
+    let id = person_post(&mut s);
+    // Even an ack naming the feature (an older hello) sends nothing.
+    let mut state = StateV2 {
+        person_publish: true,
+        ..StateV2::default()
+    };
+    let out = outgoing(
+        &s.registry,
+        &s.map,
+        &mut state,
+        &mut screen(),
+        &|_: &AgentEntry| None,
+        &Records::default(),
+        None,
+    );
+    assert!(out.is_empty(), "{out:?}");
+    assert!(!state.was_decided(&id), "waits, never dropped");
+    assert!(state.in_flight.is_empty());
+    assert_eq!(state.withheld, 0);
 }
 
 #[test]
@@ -267,7 +346,8 @@ fn an_unregistered_or_held_worker_waits() {
             &mut state,
             &mut screen(),
             &none,
-            &Records::default()
+            &Records::default(),
+            None
         )
         .is_empty()
     );
@@ -285,7 +365,8 @@ fn an_unregistered_or_held_worker_waits() {
             &mut state,
             &mut screen(),
             &reviewer,
-            &Records::default()
+            &Records::default(),
+            None
         )
         .is_empty(),
         "hold wins over post"
@@ -298,7 +379,8 @@ fn an_unregistered_or_held_worker_waits() {
             &mut state,
             &mut screen(),
             &worker,
-            &Records::default()
+            &Records::default(),
+            None
         )
         .len(),
         1,
@@ -403,7 +485,8 @@ fn deliveries_land_once_never_as_a_local_agent_and_never_forwarded() {
             &mut state,
             &mut screen(),
             &worker,
-            &Records::default()
+            &Records::default(),
+            None
         )
         .is_empty(),
         "never forwarded"
@@ -502,7 +585,7 @@ fn a_message_for_one_worker_reaches_only_its_local_agents() {
 fn the_hello_matches_the_contract_shape() {
     let s = setup();
     let agents = s.registry.list_active(None);
-    let subscribe = subscriptions(&s.map, &agents);
+    let subscribe = subscriptions(&s.map);
     assert_eq!(subscribe, ["#acme/payments"]);
     let mut state = StateV2::default();
     state.cursors.insert("#acme/payments".into(), 41);
@@ -515,7 +598,7 @@ fn the_hello_matches_the_contract_shape() {
         instance_id: Some("ins_a".into()),
         instance_name: Some("Laptop".into()),
     }];
-    let frame = hello(&subscribe, &state, &presence);
+    let frame = hello(&subscribe, &state, &presence, false);
     assert_eq!(
         frame,
         json!({"t": "hello", "protocol": "2.0", "subscribe": ["#acme/payments"],
@@ -530,6 +613,15 @@ fn the_hello_matches_the_contract_shape() {
         &frame,
         super::super::plan_events::PLAN_UPDATES
     ));
+    // A person's publish is named only where it can be signed: named
+    // without a signature, the Cloud would refuse every person's post.
+    assert!(!acks_person_publish(&frame));
+    let signing = hello(&subscribe, &state, &presence, true);
+    assert!(acks_person_publish(&signing));
+    assert_eq!(
+        signing["features"].as_array().unwrap().len(),
+        HELLO_FEATURES.len() + 1
+    );
     // Team presence names (h7b) never ride in the hello: Cloud has not yet
     // said it shows them to the team only.
     let hello_presence = frame["presence"][0].as_object().unwrap();
@@ -546,8 +638,92 @@ fn the_hello_matches_the_contract_shape() {
             .collect::<BTreeSet<_>>()
     };
     assert_eq!(keys(&frame), keys(&sample));
-    // No linked session, no subscription.
-    assert!(subscriptions(&VaultMap::default(), &agents).is_empty());
+    // No linked vault, no subscription.
+    assert!(subscriptions(&VaultMap::default()).is_empty());
+    assert!(!agents.is_empty());
+}
+
+/// F29: the hello names `metrics_sharing` (= `[cloud] metrics_upload`) only
+/// for an enrolled Cloud that announced `instance_metrics_sharing`; for any
+/// other the hello is byte-identical to the one without the member.
+#[test]
+fn the_hello_names_metrics_sharing_only_for_a_cloud_with_the_capability() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = crate::CloudStore::at(dir.path().join("config"), dir.path().join("cloud"));
+    let on = crate::config::CloudConfig::default();
+    assert!(on.metrics_upload, "sharing is on by default");
+    let off = crate::config::CloudConfig {
+        metrics_upload: false,
+        ..crate::config::CloudConfig::default()
+    };
+    let base = hello(
+        &["#acme/payments".to_string()],
+        &StateV2::default(),
+        &[],
+        false,
+    );
+    let sent = |store: &crate::CloudStore, config| {
+        with_metrics_sharing(base.clone(), metrics_sharing(store, config)).to_string()
+    };
+    // Not enrolled, never asked: nothing is named.
+    assert_eq!(sent(&store, &off), base.to_string());
+    let instance: crate::state::InstanceRecord = serde_json::from_value(json!({
+        "instance_id": "inst_1", "org_id": "org_acme", "org_name": "Platform",
+        "label": "laptop", "url": "https://cloud.example", "org_salt_id": "salt",
+        "enrolled_at": "2026-11-16T12:00:00Z"
+    }))
+    .unwrap();
+    store
+        .write_config(crate::state::INSTANCE_FILE, &instance)
+        .unwrap();
+    assert_eq!(sent(&store, &on), base.to_string(), "never asked");
+    // An older Cloud, or another server's answer: byte-identical hello.
+    crate::session_ref::record(&store, "https://cloud.example", vec!["session_ref".into()])
+        .unwrap();
+    assert_eq!(sent(&store, &on), base.to_string(), "an older Cloud");
+    assert_eq!(sent(&store, &off), base.to_string(), "an older Cloud");
+    crate::session_ref::record(
+        &store,
+        "https://other.example",
+        vec![FEATURE_METRICS_SHARING.into()],
+    )
+    .unwrap();
+    assert_eq!(sent(&store, &off), base.to_string(), "another server");
+    // The enrolled Cloud announced it: the member follows the config.
+    crate::session_ref::record(
+        &store,
+        "https://cloud.example",
+        vec![FEATURE_METRICS_SHARING.into()],
+    )
+    .unwrap();
+    let mut expected = base.clone();
+    expected["metrics_sharing"] = json!(true);
+    assert_eq!(sent(&store, &on), expected.to_string());
+    expected["metrics_sharing"] = json!(false);
+    assert_eq!(sent(&store, &off), expected.to_string());
+    // Only the new top-level member; everything else stays as it was.
+    let frame: Value = serde_json::from_str(&sent(&store, &off)).unwrap();
+    let mut without = frame.as_object().unwrap().clone();
+    assert_eq!(without.remove("metrics_sharing"), Some(json!(false)));
+    assert_eq!(Value::Object(without), base);
+}
+
+/// rc4-82: a linked vault with no agent running still receives its chat.
+#[test]
+fn a_linked_vault_without_an_agent_is_subscribed() {
+    let s = setup();
+    let mut map = s.map.clone();
+    map.vaults.insert(
+        "q".repeat(64),
+        VaultRecord {
+            vault_id: "vlt_quiet".into(),
+            ns: "acme".into(),
+            name: "quiet".into(),
+            sealed: false,
+            roots: vec!["/nowhere/quiet".into()],
+        },
+    );
+    assert_eq!(subscriptions(&map), ["#acme/payments", "#acme/quiet"]);
 }
 
 #[test]
@@ -563,6 +739,7 @@ fn a_resent_post_keeps_its_client_msg_id() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     // A new socket clears what was in flight; the post goes again.
     state.in_flight.clear();
@@ -573,6 +750,7 @@ fn a_resent_post_keeps_its_client_msg_id() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     assert_eq!(
         first[0].frame["client_msg_id"],
@@ -802,7 +980,7 @@ fn a_quiet_bus_keeps_the_ack_start_as_its_cursor_across_reconnects() {
     assert!(!next.cursors.contains_key("#acme/gone"));
     assert!(!next.cursors.contains_key("#acme/other"));
     assert_eq!(
-        hello(&subscribe, &next, &[])["cursors"],
+        hello(&subscribe, &next, &[], false)["cursors"],
         json!({"#acme/payments": 17})
     );
 }
@@ -842,7 +1020,7 @@ fn connect_with(
 ) -> (Vec<Option<u64>>, Vec<u64>) {
     let mut sent = Vec::new();
     for _ in 0..3 {
-        let cursor = hello(&payments(), state, &[])["cursors"]["#acme/payments"].as_u64();
+        let cursor = hello(&payments(), state, &[], false)["cursors"]["#acme/payments"].as_u64();
         sent.push(cursor);
         let (start, frames) = cloud_replay(cursor, head);
         if adopt_ack_cursors(state, &payments(), &placed_ack(place, epoch, start)).resubscribe {
@@ -932,7 +1110,7 @@ fn a_recreated_vault_resets_the_cursor_to_0_and_resubscribes() {
     );
     assert_eq!(state.bound["#acme/payments"].place, PLACE_B);
     assert_eq!(
-        hello(&payments(), &state, &[])["cursors"],
+        hello(&payments(), &state, &[], false)["cursors"],
         json!({"#acme/payments": 0})
     );
 
@@ -973,7 +1151,7 @@ fn a_cursor_of_a_place_the_vault_map_left_becomes_0() {
     assert!(drop_moved_cursors(&mut state, &local));
     assert!(state.bound.is_empty());
     assert_eq!(
-        hello(&payments(), &state, &[])["cursors"],
+        hello(&payments(), &state, &[], false)["cursors"],
         json!({"#acme/payments": 0})
     );
     let adopted = adopt_ack_cursors(&mut state, &payments(), &placed_ack(PLACE_B, 0, 0));
@@ -1065,7 +1243,7 @@ fn an_old_state_file_binds_its_cursor_at_the_first_placed_ack() {
     assert_eq!(state.cursors["#acme/payments"], 30);
     assert!(state.bound.is_empty());
     assert_eq!(
-        hello(&payments(), &state, &[])["cursors"],
+        hello(&payments(), &state, &[], false)["cursors"],
         json!({"#acme/payments": 30})
     );
     let mut first = state.clone();
@@ -1381,6 +1559,7 @@ fn a_post_passing_on_a_refused_action_stays_local() {
         &mut screen(),
         &worker,
         &records,
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, [fine, report]);
@@ -1416,6 +1595,7 @@ fn an_unreadable_ledger_makes_a_question_wait() {
         &mut screen(),
         &worker,
         &unreadable,
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, [status]);
@@ -1427,6 +1607,7 @@ fn an_unreadable_ledger_makes_a_question_wait() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].entry_id, question);
@@ -1523,6 +1704,7 @@ fn only_the_registered_queen_speaks_on_the_vault_bus() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, [ordinary, coordinate, tasked]);
@@ -1557,6 +1739,7 @@ fn a_question_over_the_limit_is_delivered_cut_never_withheld() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     assert_eq!(out.len(), 1, "withheld {}", state.withheld);
     assert_eq!(state.withheld, 0);
@@ -1791,6 +1974,7 @@ fn network_off_keeps_orchestrator_kinds_on_the_local_bus() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, std::slice::from_ref(&plain));
@@ -1807,6 +1991,7 @@ fn network_off_keeps_orchestrator_kinds_on_the_local_bus() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, [plain]);
@@ -1843,6 +2028,7 @@ fn network_off_keeps_orchestrator_kinds_on_the_local_bus() {
         &mut screen(),
         &worker,
         &Records::default(),
+        None,
     );
     let ids: Vec<_> = out.iter().map(|o| o.entry_id.clone()).collect();
     assert_eq!(ids, [later], "withheld entries are not relayed later");
@@ -1947,4 +2133,148 @@ fn network_off_drops_delivered_orchestrator_kinds() {
     )
     .unwrap();
     assert_eq!(kinds(&s), 1, "lands with the network on");
+}
+
+/// rc4-32: a person post LeanCTX Code signed with its chat key (via
+/// `chat.prepare`) leaves unchanged with that signature; the engine signs
+/// nothing. A wrong signature or a frame for another vault never leaves.
+#[test]
+fn an_app_signed_person_post_leaves_unchanged_and_a_forged_one_never() {
+    use crate::consent::chat_key::ChatKeyCheck;
+    use crate::consent::chat_key::tests::{offer, sign, test_key};
+    use crate::consent::person_sign::{SIGNATURE_FIELD, signing_input};
+    const INSTANCE: &str = "ins_chat_key_test";
+    let key = test_key();
+    let check = ChatKeyCheck {
+        key: offer(&key).public(),
+        instance_id: INSTANCE.into(),
+    };
+    let run = |frame: &serde_json::Map<String, Value>, signature: &str| {
+        let mut s = setup();
+        let id = person_post(&mut s);
+        let entry = s
+            .registry
+            .scratchpad
+            .iter_mut()
+            .find(|e| e.id == id)
+            .unwrap();
+        entry.metadata.insert(
+            PERSON_FRAME_KEY.into(),
+            serde_json::to_string(frame).unwrap(),
+        );
+        entry
+            .metadata
+            .insert(PERSON_SIGNATURE_KEY.into(), signature.to_owned());
+        let mut state = StateV2 {
+            person_publish: true,
+            chat_key: Some(check.clone()),
+            ..StateV2::default()
+        };
+        let out = outgoing(
+            &s.registry,
+            &s.map,
+            &mut state,
+            &mut screen(),
+            &|_: &AgentEntry| None,
+            &Records::default(),
+            None,
+        );
+        (out, state.withheld)
+    };
+    let s = setup();
+    let record = s.map.vaults.values().next().unwrap().clone();
+    let mut probe = setup();
+    let id = person_post(&mut probe);
+    let entry = probe
+        .registry
+        .scratchpad
+        .iter()
+        .find(|e| e.id == id)
+        .unwrap()
+        .clone();
+    let frame = person_frame(&entry, &address_of(&record)).unwrap();
+    let input = signing_input(
+        PERSON_PUBLISH_DOMAIN,
+        &Value::Object(frame.clone()),
+        INSTANCE,
+    )
+    .unwrap();
+    let signature = sign(&key, &input);
+    let (out, withheld) = run(&frame, &signature);
+    assert_eq!((out.len(), withheld), (1, 0), "{out:?}");
+    let mut sent = frame.clone();
+    sent.insert(SIGNATURE_FIELD.into(), signature.clone().into());
+    assert_eq!(
+        out[0].frame,
+        Value::Object(sent),
+        "the app's frame, unchanged"
+    );
+    assert_eq!(out[0].frame["sender"], json!({"kind": "person"}));
+    // A signature over other bytes: withheld, never sent.
+    let wrong = sign(&key, b"something else");
+    let (out, withheld) = run(&frame, &wrong);
+    assert_eq!((out.len(), withheld), (0, 1), "{out:?}");
+    // Signed, but for another vault: withheld too.
+    let mut elsewhere = frame.clone();
+    elsewhere.insert(
+        "to".into(),
+        "vault:00000000-0000-4000-8000-000000000000".into(),
+    );
+    let input = signing_input(
+        PERSON_PUBLISH_DOMAIN,
+        &Value::Object(elsewhere.clone()),
+        INSTANCE,
+    )
+    .unwrap();
+    let (out, withheld) = run(&elsewhere, &sign(&key, &input));
+    assert_eq!((out.len(), withheld), (0, 1), "{out:?}");
+}
+
+/// rc4-32 scope: only person posts need a signature. An agent's post leaves
+/// unsigned as the agent, and a person frame forged into its metadata never
+/// makes it a person's.
+#[test]
+fn an_agent_post_leaves_unsigned_as_the_agent_even_with_a_forged_person_frame() {
+    use crate::consent::chat_key::ChatKeyCheck;
+    use crate::consent::chat_key::tests::{offer, test_key};
+    use crate::consent::person_sign::SIGNATURE_FIELD;
+    let mut s = setup();
+    let id = post(&mut s, Some("#acme/payments"), "status", "parser done");
+    let forged = json!({"t": "place.publish", "to": VAULT_REF, "sender": {"kind": "person"}});
+    let entry = s
+        .registry
+        .scratchpad
+        .iter_mut()
+        .find(|e| e.id == id)
+        .unwrap();
+    entry
+        .metadata
+        .insert(PERSON_FRAME_KEY.into(), forged.to_string());
+    entry
+        .metadata
+        .insert(PERSON_SIGNATURE_KEY.into(), "c2ln".into());
+    let mut state = StateV2 {
+        person_publish: true,
+        chat_key: Some(ChatKeyCheck {
+            key: offer(&test_key()).public(),
+            instance_id: "ins_chat_key_test".into(),
+        }),
+        ..StateV2::default()
+    };
+    let worker = |_: &AgentEntry| Some(WORKER.to_string());
+    let out = outgoing(
+        &s.registry,
+        &s.map,
+        &mut state,
+        &mut screen(),
+        &worker,
+        &Records::default(),
+        None,
+    );
+    assert_eq!(out.len(), 1, "{out:?}");
+    let frame = &out[0].frame;
+    assert_eq!(frame["worker_id"], WORKER, "{frame}");
+    assert_ne!(frame["sender"], json!({"kind": "person"}), "{frame}");
+    assert!(frame.get(SIGNATURE_FIELD).is_none(), "{frame}");
+    assert_eq!(state.withheld, 0);
 }

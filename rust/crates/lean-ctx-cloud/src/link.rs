@@ -200,6 +200,41 @@ pub fn link(root: &Path, vault: &str) -> Result<LinkOutcome, CloudError> {
     })
 }
 
+/// The bytes of `root`'s own link file for [`undo`], when it is a regular
+/// file (a planted symlink is never read through).
+pub fn prior_link(root: &Path) -> Option<Vec<u8>> {
+    let path = root.join(LINK_FILE);
+    let meta = std::fs::symlink_metadata(&path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    std::fs::read(&path).ok()
+}
+
+/// Undo a [`link`] whose vault Cloud refused (rc4-56): the link file gets
+/// back `prior` (its bytes before; `None`: there was none) and a
+/// `.lean-ctx-id` the link created is removed, so a refused link leaves
+/// the checkout as it was.
+pub fn undo(root: &Path, outcome: &LinkOutcome, prior: Option<&[u8]>) -> Result<(), CloudError> {
+    match prior {
+        Some(bytes) => write_file(&outcome.file, bytes)?,
+        None => remove_if_present(&outcome.file)?,
+    }
+    if outcome.created_identity {
+        remove_if_present(&root.join(IDENTITY_FILE))?;
+    }
+    Ok(())
+}
+
+fn remove_if_present(path: &Path) -> Result<(), CloudError> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(CloudError::Local(format!("remove {}: {e}", path.display())))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Write `path` in a checkout someone else may have prepared: the bytes are
 /// staged in a fresh, never pre-existing temp file (create_new, random
 /// name) and renamed over `path`, so a planted symlink at the temp or the

@@ -724,6 +724,10 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "role": {
+                        "$ref": "worker.schema.json#/$defs/role",
+                        "description": "only for a worker with a registered role (rc4-97)"
                       }
                     }
                   },
@@ -3282,7 +3286,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^(security|context|sharing|agents|orchestrator)\\.[a-z_]+$"
+          "pattern": "^(security|context|sharing|agents|orchestrator|landing)\\.[a-z_]+$"
         },
         "merge": {
           "enum": [
@@ -3432,7 +3436,7 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "pattern": "^(security|context|sharing|agents|orchestrator)\\.[a-z_]+$"
+            "pattern": "^(security|context|sharing|agents|orchestrator|landing)\\.[a-z_]+$"
           }
         }
       }
@@ -5275,6 +5279,41 @@
                       "null"
                     ],
                     "minimum": 0
+                  },
+                  "model_cost_usd_micros": {
+                    "description": "Platform W2: model credit drawn by the team that month (micro-USD, by usage time)",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "accepted_outcomes": {
+                    "description": "Host outcomes landed that month and not reverted (open or accepted); the same rule as GET /v1/cpao over the same window; counted from the stored statuses at read time, so a revert reported later still lowers it, also once settled",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "late_reverted_outcomes": {
+                    "description": "Host outcomes landed that month and reverted after their 7-day window (any revert of a task_accepted outcome counts here); not in accepted_outcomes; it may still grow once settled",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cpao_usd_micros": {
+                    "description": "Cost per accepted outcome: model_cost_usd_micros / accepted_outcomes, rounded; null without an accepted outcome",
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "median_time_to_land_s": {
+                    "description": "Median seconds from task creation to land over accepted_outcomes; null without one",
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "settled": {
+                    "description": "The month ended at least 7 days ago, so the 7-day revert window of every outcome landed in it has closed; until then the CPAO figures are provisional. Settled is not frozen: a revert reported later (late_reverted, or a reverted one reported late) still lowers accepted_outcomes and changes cpao_usd_micros",
+                    "type": "boolean"
                   }
                 }
               }
@@ -5389,6 +5428,13 @@
             }
           ]
         },
+        "metrics_sharing": {
+          "description": "F29: whether the host shares its usage metrics, as its latest bus hello said (true, false); null when unknown (an engine that does not send it); absent where a server predates it or the host list is embedded elsewhere",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "slot_free_at": {
           "anyOf": [
             {
@@ -5483,6 +5529,43 @@
         "used": {
           "type": "integer",
           "minimum": 0
+        },
+        "registered": {
+          "description": "rc3-81: the registered slots (limit, in use by the rule that refuses a new instance, and when the next Personal cool-down ends); pooled = a team of a company's Enterprise plan, limit and count are the company's across all its teams; null for an org without a plan row",
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "limit",
+            "used",
+            "frees_at",
+            "pooled"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "frees_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pooled": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },

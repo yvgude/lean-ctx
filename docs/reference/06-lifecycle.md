@@ -267,5 +267,10 @@ an issue template so maintainers get a reproducible report without you hand-
 collecting it. Review the contents before submitting — nothing is sent without
 your confirmation, and secrets are not included.
 
+`--include-tee` additionally attaches the saved full output of your latest
+command (up to 3000 characters). It can contain file contents and paths;
+secrets are redacted, but run `lean-ctx report-issue --include-tee --dry-run`
+and review the saved report before sending it.
+
 > Best practice: run `lean-ctx doctor --json` first, attach that output, and
 > describe the exact command and the client (Cursor/Claude/…) you were using.

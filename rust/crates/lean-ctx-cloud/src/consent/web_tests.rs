@@ -430,3 +430,171 @@ fn a_device_bound_first_share_has_no_code_and_waits_for_the_page() {
     assert_eq!(created["binding"], "device");
     assert!(created.get("code_hash").is_none(), "no pairing code");
 }
+
+/// rc3-70: a first share an app asks for is bound to the browser (the
+/// contract fixture's shape, no pairing code), hands Cloud's URL and poll
+/// interval over once and stores only the Cloud-signed answer.
+#[test]
+fn a_browser_bound_first_share_hands_over_the_page_and_polls_at_its_interval() {
+    let dir = tempfile::tempdir().unwrap();
+    let (broker, record) = pending_request(&dir);
+    let body = browser_body(&record);
+    let fixture = fixture("routes/consent_create.browser_binding.request.json");
+    let keys = |v: &Value| {
+        let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+        k.sort();
+        k
+    };
+    assert_eq!(keys(&body), keys(&fixture));
+    assert_eq!(body["binding"], "browser");
+    let (_, signer) = cloud_consent_key();
+    let polls = Arc::new(AtomicU64::new(0));
+    let seen = record.clone();
+    let counter = Arc::clone(&polls);
+    let fake = Fake::start(move |method, path, _| match method {
+        "POST" => (
+            201,
+            json!({"url": format!("https://cloud.example/consent/{}/", seen.consent_id),
+                "expires_at": "2026-10-25T08:00:00Z", "interval_s": 7, "later": true}),
+        ),
+        _ if path.ends_with(&seen.consent_id) => {
+            if counter.fetch_add(1, Ordering::SeqCst) < 2 {
+                (200, json!({"state": "pending", "interval_s": 7}))
+            } else {
+                (
+                    200,
+                    json!({"state": "approved", "statement": statement(&seen, "allow", NOW + 30_000, &signer)}),
+                )
+            }
+        }
+        _ => (404, json!({"error": {"code": "not_found"}})),
+    });
+    let client = CloudClient::new(&fake.origin).unwrap();
+    let clock = AtomicU64::new(NOW + 1);
+    let now = || clock.load(Ordering::SeqCst);
+    let slept = Mutex::new(Vec::new());
+    let sleep = |d: Duration| {
+        slept.lock().unwrap().push(d);
+        clock.fetch_add(u64::try_from(d.as_millis()).unwrap(), Ordering::SeqCst);
+    };
+    let data = dir.path().join("d");
+    let run = WebRun {
+        broker: &broker,
+        data_dir: &data,
+        now: &now,
+        sleep: &sleep,
+        open: &|_| panic!("the app opens the page, not the engine"),
+    };
+    let mut handed = Vec::new();
+    let stored = run
+        .run_browser(&client, &record.consent_id, &mut |created| {
+            handed.push(created.clone());
+        })
+        .unwrap();
+    assert_eq!(stored.state, State::Approved);
+    assert_eq!(handed.len(), 1, "the page is handed over once");
+    assert_eq!(handed[0]["interval_s"], 7);
+    assert!(
+        slept
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|d| *d == Duration::from_secs(7))
+    );
+    let requests = fake.requests.lock().unwrap().clone();
+    let created = &requests[0].2;
+    assert_eq!(created["binding"], "browser");
+    assert!(created.get("code_hash").is_none(), "no pairing code");
+}
+
+#[test]
+fn a_browser_bound_request_that_expires_ends_without_an_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let (broker, record) = pending_request(&dir);
+    let seen = record.clone();
+    let fake = Fake::start(move |method, path, _| match method {
+        "POST" => (
+            201,
+            json!({"url": "https://cloud.example/consent/x/", "interval_s": 0}),
+        ),
+        _ if path.ends_with(&seen.consent_id) => (200, json!({"state": "expired"})),
+        _ => (404, json!({"error": {"code": "not_found"}})),
+    });
+    let client = CloudClient::new(&fake.origin).unwrap();
+    let clock = AtomicU64::new(NOW + 1);
+    let now = || clock.load(Ordering::SeqCst);
+    let sleep = |d: Duration| {
+        assert_eq!(d, Duration::from_secs(1), "an interval below 1 s is raised");
+        clock.fetch_add(u64::try_from(d.as_millis()).unwrap(), Ordering::SeqCst);
+    };
+    let data = dir.path().join("d");
+    let run = WebRun {
+        broker: &broker,
+        data_dir: &data,
+        now: &now,
+        sleep: &sleep,
+        open: &|_| {},
+    };
+    let error = run
+        .run_browser(&client, &record.consent_id, &mut |_| {})
+        .unwrap_err();
+    assert!(matches!(error, ConsentError::Expired), "{error:?}");
+    assert_eq!(
+        broker.get(&record.consent_id).unwrap().state,
+        State::Pending
+    );
+}
+
+/// A Cloud without the browser binding refuses it (`400 invalid_request`
+/// naming `binding`, its consent route's envelope): the app's first share ends with a plain reason and
+/// no pairing-code request is created.
+#[test]
+fn a_refused_browser_binding_ends_with_a_plain_reason() {
+    let refused = |field: &'static str| {
+        let dir = tempfile::tempdir().unwrap();
+        let (broker, record) = pending_request(&dir);
+        let fake = Fake::start(move |_, _, _| {
+            (
+                400,
+                json!({"error": {
+                    "code": "invalid_request",
+                    "message": "invalid consent request",
+                    "field": field,
+                    "reason": "enum",
+                }}),
+            )
+        });
+        let client = CloudClient::new(&fake.origin).unwrap();
+        let now = || NOW + 1;
+        let sleep = |_: Duration| {};
+        let data = dir.path().join("d");
+        let run = WebRun {
+            broker: &broker,
+            data_dir: &data,
+            now: &now,
+            sleep: &sleep,
+            open: &|_| {},
+        };
+        let mut handed = 0;
+        let error = run
+            .run_browser(&client, &record.consent_id, &mut |_| handed += 1)
+            .unwrap_err();
+        assert_eq!(handed, 0, "no page is handed over");
+        let requests = fake.requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1, "no second create");
+        assert_eq!(requests[0].2["binding"], "browser");
+        assert_eq!(
+            broker.get(&record.consent_id).unwrap().state,
+            State::Pending
+        );
+        error
+    };
+    let error = refused("binding");
+    assert_eq!(error, ConsentError::BrowserUnsupported);
+    assert_eq!(
+        error.to_string(),
+        "This Cloud does not offer the confirmation in the browser yet. Try again after its next update."
+    );
+    // Any other field stays the refusal it was.
+    assert!(matches!(refused("subject"), ConsentError::Local(_)));
+}

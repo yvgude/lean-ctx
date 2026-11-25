@@ -214,7 +214,11 @@ pub fn start() -> bool {
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();
-        plist_path.exists() && crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path)
+        if !plist_path.exists() {
+            return false;
+        }
+        repin_launchagent(&plist_path);
+        crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path)
     }
 
     #[cfg(target_os = "linux")]
@@ -274,6 +278,10 @@ pub fn ensure_supervised(restart: bool) -> Supervision {
         return Supervision::Skipped;
     }
     if is_installed() {
+        // A plist pinned to another layout is re-pinned to this CLI's; launchd
+        // reads it only at bootstrap, so a re-pin restarts the daemon.
+        #[cfg(target_os = "macos")]
+        let restart = repin_launchagent(&launchagent_path()) || restart;
         if restart {
             stop();
         }
@@ -367,6 +375,26 @@ fn launchagent_path() -> PathBuf {
         .join(format!("{PLIST_LABEL}.plist"))
 }
 
+/// Re-pin an installed LaunchAgent (`plist_path`) to the directory layout this
+/// CLI resolves now, so a refresh that only re-bootstraps the existing plist
+/// never keeps a stale `LEAN_CTX_*_DIR` pin (an install re-renders the whole
+/// plist anyway). Only the `EnvironmentVariables` block changes. `true` when
+/// the file was rewritten. Never touches a real plist under `cfg(test)`.
+#[cfg(target_os = "macos")]
+pub(crate) fn repin_launchagent(plist_path: &std::path::Path) -> bool {
+    if cfg!(test) {
+        return false;
+    }
+    let env_block = crate::core::tcc_guard_sandbox::pinned_layout_env_xml();
+    match crate::core::tcc_guard_sandbox::repin_launchagent_file(plist_path, &env_block) {
+        Ok(changed) => changed,
+        Err(e) => {
+            tracing::warn!("re-pin of {} failed: {e}", plist_path.display());
+            false
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn install_launchagent(binary: &str, quiet: bool) {
     let la_dir = dirs::home_dir()
@@ -381,21 +409,42 @@ fn install_launchagent(binary: &str, quiet: bool) {
 
     let _ = std::fs::create_dir_all(&data_dir);
 
-    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
-    // so the daemon (a TCC-standalone process) can never trip the privacy prompt.
-    let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
-        &crate::core::tcc_guard_sandbox::wrap_launchd_args(
-            binary,
-            &["serve", "--_foreground-daemon"],
-        ),
+    let plist = launchagent_plist(binary, &data_dir);
+
+    let _ = std::fs::write(&plist_path, &plist);
+
+    let ok = crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path);
+
+    if !quiet {
+        if ok {
+            println!("  Installed LaunchAgent: {PLIST_LABEL}");
+            println!("  Service file: {}", plist_path.display());
+            println!("  Daemon will start on login and restart if stopped");
+        } else {
+            println!("  Created plist at {}", plist_path.display());
+            println!("  Load reported a problem; check: launchctl print {PLIST_LABEL}");
+        }
+    }
+}
+
+/// Render the daemon LaunchAgent plist (pure, so tests can check it).
+#[cfg(target_os = "macos")]
+fn launchagent_plist(binary: &str, data_dir: &std::path::Path) -> String {
+    use crate::core::tcc_guard_sandbox as tcc;
+    // rc2-2: the binary itself is ProgramArguments[0], so Login Items name
+    // LeanCTX, not sandbox-exec. The daemon applies the #356 deny-~/Documents
+    // seatbelt to itself at start-up (`reexec_under_seatbelt_if_needed`).
+    let program_args = tcc::program_args_xml(
+        &tcc::launchd_program_args(binary, &["serve", "--_foreground-daemon"]),
         "        ",
     );
+    let bundle_ids = tcc::associated_bundle_ids_xml("    ");
 
     // #449: pin the directory layout so the launchd-spawned daemon resolves the
     // same config/data dirs as the installing CLI (see `pinned_layout_env_xml`).
-    let env_vars = crate::core::tcc_guard_sandbox::pinned_layout_env_xml();
+    let env_vars = tcc::pinned_layout_env_xml();
 
-    let plist = format!(
+    format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -406,7 +455,7 @@ fn install_launchagent(binary: &str, quiet: bool) {
     <array>
 {program_args}
     </array>
-{env_vars}    <key>RunAtLoad</key>
+{bundle_ids}{env_vars}    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <dict>
@@ -424,22 +473,7 @@ fn install_launchagent(binary: &str, quiet: bool) {
 "#,
         stdout = data_dir.join("daemon-stdout.log").display(),
         stderr = data_dir.join("daemon-stderr.log").display(),
-    );
-
-    let _ = std::fs::write(&plist_path, &plist);
-
-    let ok = crate::core::launchd::bootstrap(PLIST_LABEL, &plist_path);
-
-    if !quiet {
-        if ok {
-            println!("  Installed LaunchAgent: {PLIST_LABEL}");
-            println!("  Service file: {}", plist_path.display());
-            println!("  Daemon will start on login and restart if stopped");
-        } else {
-            println!("  Created plist at {}", plist_path.display());
-            println!("  Load reported a problem; check: launchctl print {PLIST_LABEL}");
-        }
-    }
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -643,6 +677,23 @@ mod tests {
         assert!(msg.contains("not available"));
         assert!(msg.contains("lean-ctx daemon start"));
         assert!(!msg.contains('✓') && !msg.contains("enabled"));
+    }
+
+    /// rc2-2: Login Items name the item after ProgramArguments[0], so it must
+    /// be the lean-ctx binary (not sandbox-exec), and the plist attributes the
+    /// item to the LeanCTX app.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn launchagent_plist_starts_binary_and_names_the_app() {
+        let plist = super::launchagent_plist("/opt/lc/lean-ctx", Path::new("/tmp/lc-data"));
+        let args = &plist[plist.find("<key>ProgramArguments</key>").expect("args")..];
+        let first = args.find("<string>").expect("first arg") + "<string>".len();
+        let first = &args[first..first + args[first..].find("</string>").expect("end")];
+        assert_eq!(first, "/opt/lc/lean-ctx");
+        assert!(!plist.contains("sandbox-exec"));
+        assert!(plist.contains("<key>AssociatedBundleIdentifiers</key>"));
+        assert!(plist.contains("<string>com.leanctx.workspace</string>"));
+        assert!(!plist.contains("LEAN_CTX_SEATBELT"));
     }
 
     // GH #394: the service file path must be discoverable programmatically so

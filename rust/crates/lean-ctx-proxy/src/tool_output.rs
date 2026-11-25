@@ -214,7 +214,7 @@ mod tests {
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let paragraph = "Grüezi 世界 means hello in Swiss German, and this repeated sentence carries multilingual text for tokenizer accounting. 🤝";
-        let input = format!("{}\n", [paragraph; 20].join("\n\n"));
+        let input = format!("{}\n", [paragraph; 40].join("\n\n"));
         let mut cl100k = input.clone();
         let mut o200k = input;
 

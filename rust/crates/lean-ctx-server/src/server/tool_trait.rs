@@ -341,6 +341,17 @@ tokio::task_local! {
     /// calls would otherwise overwrite one another's token — and cancelling the
     /// wrong command is worse than not cancelling at all.
     pub static REQUEST_CT: tokio_util::sync::CancellationToken;
+
+    /// The progress sender of the request currently being served: `Some` only
+    /// when that request carried a `progressToken`.
+    ///
+    /// Per request for the same reason as [`REQUEST_CT`]. A server-wide slot
+    /// kept the last token after its call had returned, so a later call
+    /// without a token, or a concurrent one, sent its progress under a token
+    /// the host had already retired. The MCP spec allows progress only for an
+    /// active request, and a strict host treats such a stray notification as a
+    /// protocol error and drops the connection.
+    pub static REQUEST_PROGRESS: Option<crate::server::progress::ProgressSender>;
 }
 
 /// Context passed to tool handlers. Contains pre-resolved values that

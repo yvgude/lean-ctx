@@ -115,11 +115,19 @@ pub fn session_wakeup_briefing(
     // Cloud tasks (H2): the claims this machine holds here, then open tasks.
     let tasks = lean_ctx_cloud::tasks::briefing(std::path::Path::new(root));
     let frame = |briefing: &str| format!("{AUTO_CONTEXT_OPEN}\n{briefing}\n{AUTO_CONTEXT_CLOSE}");
+    let fixed = format!(
+        "{}\n{}",
+        packages.as_deref().unwrap_or(""),
+        tasks.as_deref().unwrap_or("")
+    );
+    // Team rules sent to agents (rc4-69), as many as fit the block.
+    let rules = lean_ctx_cloud::team_decisions::briefing(std::path::Path::new(root), |block| {
+        count_tokens(&frame(&format!("{fixed}\n{block}"))) <= AUTO_CONTEXT_MAX_TOKENS
+    });
     let briefing = if lean_ctx::core::config::Config::load().enable_wakeup_ctx {
         let reserved = count_tokens(&frame(&format!(
-            "{}\n{}",
-            packages.as_deref().unwrap_or(""),
-            tasks.as_deref().unwrap_or("")
+            "{fixed}\n{}",
+            rules.as_deref().unwrap_or("")
         )));
         let budget = AUTO_CONTEXT_MAX_TOKENS.saturating_sub(reserved);
         crate::tools::ctx_overview::build_wakeup_briefing_within(root, task, budget)
@@ -129,6 +137,7 @@ pub fn session_wakeup_briefing(
     let body = [
         packages.unwrap_or_default(),
         tasks.unwrap_or_default(),
+        rules.unwrap_or_default(),
         briefing,
     ]
     .into_iter()

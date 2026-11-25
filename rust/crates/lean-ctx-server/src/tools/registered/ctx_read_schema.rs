@@ -16,7 +16,7 @@ pub(super) fn ctx_read_tool_def() -> Tool {
         json!({
             "type": "object",
             "properties": {
-                "path": { "type": "string", "description": "Relative to project root, or to the last ctx_shell cwd if in another git checkout" },
+                "path": { "type": "string", "description": "Absolute, or relative to project root (in a git worktree use absolute paths)" },
                 "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                 "mode": {
                     "type": "string",

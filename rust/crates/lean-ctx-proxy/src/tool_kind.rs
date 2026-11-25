@@ -187,6 +187,148 @@ pub fn responses_tool_names(input: &[Value]) -> HashMap<String, String> {
     map
 }
 
+/// The shell command a tool call's arguments name: `command` or `cmd`, as a
+/// string or an argv array. An argv that runs a shell script (`bash -lc
+/// "<script>"`) names that script; any other argv is joined by spaces.
+fn command_of(arguments: &Value) -> Option<String> {
+    let arguments = match arguments {
+        Value::String(raw) => &serde_json::from_str::<Value>(raw).ok()?,
+        other => other,
+    };
+    let command = arguments.get("command").or_else(|| arguments.get("cmd"))?;
+    match command {
+        Value::String(command) => Some(command.clone()),
+        Value::Array(argv) => {
+            let argv: Vec<&str> = argv.iter().filter_map(Value::as_str).collect();
+            match argv.as_slice() {
+                [] => None,
+                [shell, flag, script]
+                    if matches!(
+                        shell.rsplit('/').next(),
+                        Some("sh" | "bash" | "zsh" | "dash" | "ksh")
+                    ) && flag.starts_with('-')
+                        && flag.ends_with('c') =>
+                {
+                    Some((*script).to_string())
+                }
+                parts => Some(parts.join(" ")),
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `tool_use_id → command` for the Anthropic `tool_use` blocks whose input
+/// names a shell command (`Bash {command}`).
+pub fn anthropic_tool_commands(messages: &[Value]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for msg in messages {
+        let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
+            continue;
+        };
+        for block in blocks {
+            if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                continue;
+            }
+            if let (Some(id), Some(command)) = (
+                block.get("id").and_then(|v| v.as_str()),
+                block.get("input").and_then(command_of),
+            ) {
+                map.insert(id.to_string(), command);
+            }
+        }
+    }
+    map
+}
+
+/// `tool_call_id → command` for the Chat Completions `tool_calls[]` whose
+/// `function.arguments` name a shell command.
+pub fn openai_tool_commands(messages: &[Value]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for msg in messages {
+        let Some(calls) = msg.get("tool_calls").and_then(|c| c.as_array()) else {
+            continue;
+        };
+        for call in calls {
+            let id = call.get("id").and_then(|v| v.as_str());
+            let command = call
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(command_of);
+            if let (Some(id), Some(command)) = (id, command) {
+                map.insert(id.to_string(), command);
+            }
+        }
+    }
+    map
+}
+
+/// `call_id → command` for the Responses `function_call` items whose
+/// `arguments` name a shell command, and `local_shell_call` items
+/// (`action.command`).
+pub fn responses_tool_commands(input: &[Value]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for item in input {
+        let command = match item.get("type").and_then(|t| t.as_str()) {
+            Some("function_call") => item.get("arguments").and_then(command_of),
+            Some("local_shell_call") => item.get("action").and_then(command_of),
+            _ => None,
+        };
+        if let (Some(id), Some(command)) = (item.get("call_id").and_then(|v| v.as_str()), command) {
+            map.insert(id.to_string(), command);
+        }
+    }
+    map
+}
+
+/// `(contents index, parts index) → command` for the Gemini
+/// `functionResponse` parts whose `functionCall` names a shell command in its
+/// `args` (Gemini CLI's `run_shell_command {command}`). A response answers
+/// the call with its `id` when it carries one; without an `id`, Gemini pairs
+/// calls and responses by name in order, so it answers the first unanswered
+/// call of its name. A response that matches no call gets no command — and
+/// is compressed like any other result (with its re-read hint).
+///
+/// Fail-safe by construction: an `id` on one side only matches nothing (an
+/// id-carrying call waits for its id; an id-less response pops only id-less
+/// calls), and parallel id-less calls of one name answered out of order can
+/// swap their commands — either way a result is at worst kept whole or
+/// compressed with its re-read hint, never shortened without a way back.
+pub fn gemini_tool_commands(contents: &[Value]) -> HashMap<(usize, usize), String> {
+    let mut by_id: HashMap<&str, Option<String>> = HashMap::new();
+    let mut by_name: HashMap<&str, std::collections::VecDeque<Option<String>>> = HashMap::new();
+    let mut map = HashMap::new();
+    for (content_idx, content) in contents.iter().enumerate() {
+        let Some(parts) = content.get("parts").and_then(Value::as_array) else {
+            continue;
+        };
+        for (part_idx, part) in parts.iter().enumerate() {
+            if let Some(call) = part.get("functionCall") {
+                let command = call.get("args").and_then(command_of);
+                if let Some(id) = call.get("id").and_then(Value::as_str) {
+                    by_id.insert(id, command);
+                } else if let Some(name) = call.get("name").and_then(Value::as_str) {
+                    by_name.entry(name).or_default().push_back(command);
+                }
+            } else if let Some(response) = part.get("functionResponse") {
+                let command = match response.get("id").and_then(Value::as_str) {
+                    Some(id) => by_id.remove(id).flatten(),
+                    None => response
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .and_then(|name| by_name.get_mut(name))
+                        .and_then(std::collections::VecDeque::pop_front)
+                        .flatten(),
+                };
+                if let Some(command) = command {
+                    map.insert((content_idx, part_idx), command);
+                }
+            }
+        }
+    }
+    map
+}
+
 /// Whether a `tool_result` with the given resolved kind and content must be
 /// preserved intact (never lossy-compressed) by the proxy.
 ///

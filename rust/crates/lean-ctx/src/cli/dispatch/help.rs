@@ -314,6 +314,9 @@ PROJECT & AGENT TOOLS:
 {cloud}    completions <zsh|bash|fish>    Print the shell completion script
     report-issue [--title T] [--description D] [--dry-run] [--include-tee]
                                    Open a GitHub issue with diagnostics (alias: report)
+                                   --include-tee attaches the saved full output of your latest
+                                   command; it can contain file contents and paths. Secrets are
+                                   redacted, but review it (--dry-run saves the report) first
     report sign|verify --json      Sign the savings report digest, or verify a signed report
                                    Plan, entitlement and usage details
 

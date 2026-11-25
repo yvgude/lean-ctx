@@ -1,0 +1,39 @@
+{
+ "description": "The app's task-propose key (rc4-67): bound at POST /v1/device/token (worker.schema.json $defs/task_propose_key_bind, member task_propose_key) by bind_signature over \"leanctx.cloud.task_propose_key_bind.v1\\n\" followed by canonical_json({alg, instance_public_key (the request's string), key_id, public_key, scope: \"task_propose_person.v1\"}); key_id = first 16 hex of sha256(raw public key). It then signs the person's own task proposals only: POST /v1/vaults/{pid}/tasks with origin.kind person carries signed_at (RFC 3339, within 600 s of the Cloud's clock) and task_signature over \"leanctx.cloud.task_propose_person.v1\\n\" followed by canonical_json(body without task_signature, plus instance_id (the instance UUID, lower case with hyphens) and vault_id (32 lower-case hex digits without hyphens, whatever form {pid} used; any other form is refused)). The Cloud verifies it against this key only (never the presence key or the chat key); a chat-key bind of this key does not verify. Test keys only: task-propose key ed25519 seed = sha256(\"leanctx-cloud test task-propose key: rc4-67\"); instance_public_key = standard base64 of the ed25519 public key of seed sha256(\"leanctx-cloud test instance key: rc4-67\").",
+ "alg": "ed25519",
+ "seed": "575463aa529a2bc97d74cb71d5e3007a81a4606fea13872867c68f480e650cce",
+ "public_key": "r8C9rYBJIRTKW6rBzzmKm29IBI2ptcYtK_gECOAojAM",
+ "key_id": "affaec5b6c1add96",
+ "cases": [
+  {
+   "name": "bind",
+   "instance_public_key": "ioEkWHZo5VtdH2xcZCQff/UUv9C2VZlpZzW7qf3qhNo=",
+   "task_propose_key": {
+    "alg": "ed25519",
+    "public_key": "r8C9rYBJIRTKW6rBzzmKm29IBI2ptcYtK_gECOAojAM",
+    "key_id": "affaec5b6c1add96",
+    "bind_signature": "Fgk2EZ-XWttZPolVvHaMIyPqk_EMLScalp8qxUBEeL1wbqs4cvQd5l-HrzdH_uR6-OK9uWV0bjD0K3UnhQI0Cg"
+   },
+   "signing_input": "leanctx.cloud.task_propose_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"ioEkWHZo5VtdH2xcZCQff/UUv9C2VZlpZzW7qf3qhNo=\",\"key_id\":\"affaec5b6c1add96\",\"public_key\":\"r8C9rYBJIRTKW6rBzzmKm29IBI2ptcYtK_gECOAojAM\",\"scope\":\"task_propose_person.v1\"}"
+  },
+  {
+   "name": "propose",
+   "route": "POST /v1/vaults/{pid}/tasks",
+   "fixture": "../../cloud-v1/fixtures/task_propose.person.request.json",
+   "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+   "vault_id": "9d2e4f6a1b3c4d5e8f7a6b5c4d3e2f1a",
+   "body": {
+    "schema": "leanctx.cloud.task-propose/v1",
+    "session_ref": "leanctx-code",
+    "title": "Show the retry budget in settings",
+    "acceptance": "The settings page names the retry budget and links its fact",
+    "origin": {
+     "kind": "person"
+    },
+    "signed_at": "2026-11-24T09:30:00Z",
+    "task_signature": "OGzdIhUg_HO7JT0XJssV-pqSkN2WBu6SL6dGN2fuXzs5fZxT-fF0X865cAoJIWCz_9bzCsJpyeewB4hiiDpqAg"
+   },
+   "signing_input": "leanctx.cloud.task_propose_person.v1\n{\"acceptance\":\"The settings page names the retry budget and links its fact\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"origin\":{\"kind\":\"person\"},\"schema\":\"leanctx.cloud.task-propose/v1\",\"session_ref\":\"leanctx-code\",\"signed_at\":\"2026-11-24T09:30:00Z\",\"title\":\"Show the retry budget in settings\",\"vault_id\":\"9d2e4f6a1b3c4d5e8f7a6b5c4d3e2f1a\"}"
+  }
+ ]
+}

@@ -713,7 +713,7 @@
       }
     },
     "task_fields_request": {
-      "description": "E47 PATCH /v1/vaults/{pid}/tasks/{number}: agents set a task's priority and labels (the web reads them)",
+      "description": "E47 PATCH /v1/vaults/{pid}/tasks/{number}: agents set a task's priority, labels and decision_ids (the web reads them)",
       "type": "object",
       "required": [
         "schema",
@@ -741,6 +741,17 @@
           "items": {
             "type": "string",
             "pattern": "^[a-z0-9-]{1,32}$"
+          }
+        },
+        "decision_ids": {
+          "description": "p5 §36.3: the decisions the task carries out, Cloud decision ids (dec- and kebab case, at most 80 characters); invalid ids or more than 16 are 422 invalid_decision_ids",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^dec-[a-z0-9]+(-[a-z0-9]+)*$"
           }
         }
       }

@@ -119,6 +119,12 @@ fn governor_section() -> SectionSchema {
             "LEAN_CTX_GOVERNOR_R5",
             "outline instead of a first whole read of a large code file (Read, `cat <file>`, Code Mode script reads)",
         ),
+        (
+            "r6",
+            "shadow",
+            "LEAN_CTX_GOVERNOR_R6",
+            "large Grep content result grouped by file (ripgrep --heading layout, lossless)",
+        ),
     ] {
         keys.insert(
             rule.into(),

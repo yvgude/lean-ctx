@@ -281,7 +281,14 @@
           "merge": "false_wins",
           "enforcement": "server",
           "instance_field": null,
-          "server_point": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
+          "server_point": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = on for every plan (Personal included, no confirmation step)"
+        },
+        {
+          "path": "sharing.agent_exchange",
+          "merge": "intersection",
+          "enforcement": "server",
+          "instance_field": null,
+          "server_point": "bus publish (place.publish, POST /v2/bus/…/messages): an instance's message of a kind outside the list is refused (403 policy_denied, member sharing.agent_exchange), progress always passes; absent at every level = all kinds, an empty list = none"
         },
         {
           "path": "agents.allowed",
@@ -306,6 +313,34 @@
         },
         {
           "path": "orchestrator.max_sessions_per_vault",
+          "merge": "min",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "landing.require_approval",
+          "merge": "true_wins",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "landing.required_checks",
+          "merge": "union",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "landing.revert_on_regression",
+          "merge": "true_wins",
+          "enforcement": "advisory",
+          "instance_field": null,
+          "server_point": null
+        },
+        {
+          "path": "landing.max_parallel",
           "merge": "min",
           "enforcement": "advisory",
           "instance_field": null,

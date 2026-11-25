@@ -388,7 +388,22 @@ fn credit_of(raw: &Value) -> Result<Value, Failure> {
         .filter(|t| t.len() <= 64 && t.chars().all(|c| c.is_ascii_graphic()))
         .ok_or_else(unreadable)?;
     out.insert("reset_at".into(), Value::String(reset.to_owned()));
+    out.insert("used_pct".into(), used_pct(&raw["used_pct"])?);
     Ok(Value::Object(out))
+}
+
+/// rc4-96: the share of this month's usage used (allowance plus packs
+/// bought), a whole percent `0..=100` rounded down by the Cloud; `null` from a Cloud that sends none (the app
+/// then shows no percentage, never one it computes itself).
+fn used_pct(value: &Value) -> Result<Value, Failure> {
+    if value.is_null() {
+        return Ok(Value::Null);
+    }
+    value
+        .as_u64()
+        .filter(|pct| *pct <= 100)
+        .map(Value::from)
+        .ok_or_else(unreadable)
 }
 
 /// The credit pack on sale (`credit_topup`), `null` when none is sold.
@@ -993,7 +1008,8 @@ pub(crate) mod tests {
                     "limit_agent_hours": 40.0,
                     "left_agent_hours": 30.0,
                     "state": "ok",
-                    "reset_at": "2026-12-01T00:00:00Z"
+                    "reset_at": "2026-12-01T00:00:00Z",
+                    "used_pct": null
                 },
                 "credit_topup": {"pack_usd_micros": 5_000_000, "pack_agent_hours": 20.0, "max_packs": 10},
                 "manage_billing": true
@@ -1034,6 +1050,17 @@ pub(crate) mod tests {
         );
     }
 
+    /// rc4-96: the Cloud's percentage passes as sent, 0 and 100 included.
+    #[test]
+    fn the_used_share_passes_as_the_cloud_sends_it() {
+        for pct in [0, 25, 100] {
+            let mut body = cloud_billing();
+            body["usage"]["model_credit"]["used_pct"] = json!(pct);
+            let doc = credit_outcome(200, &body).expect("credit");
+            assert_eq!(doc["model_credit"]["used_pct"], json!(pct));
+        }
+    }
+
     #[test]
     fn an_unreadable_credit_is_refused_not_guessed() {
         for (pointer, bad) in [
@@ -1042,10 +1069,15 @@ pub(crate) mod tests {
             ("/usage/model_credit/left_agent_hours", json!(-1.0)),
             ("/usage/model_credit/left_usd_micros", json!("7")),
             ("/usage/model_credit/reset_at", json!("2026-12-01\u{1b}[2J")),
+            ("/usage/model_credit/used_pct", json!(101)),
+            ("/usage/model_credit/used_pct", json!(-1)),
+            ("/usage/model_credit/used_pct", json!(12.5)),
+            ("/usage/model_credit/used_pct", json!("25")),
             ("/credit_topup/max_packs", json!(0)),
             ("/plan", json!("Team <b>")),
         ] {
             let mut body = cloud_billing();
+            body["usage"]["model_credit"]["used_pct"] = json!(25);
             *body.pointer_mut(pointer).unwrap() = bad;
             let failure = credit_outcome(200, &body).expect_err(pointer);
             assert_eq!(failure.code, Code::Internal, "{pointer}");

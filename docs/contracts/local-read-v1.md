@@ -14,6 +14,10 @@ Changes after 3.12.6 (additive):
 - `cloud.presence` rows (§4) add `person_name`, `machine_name` and `working_on` (team
   presence; always printed, `null` when the Cloud does not relay them).
 - New kind `cloud.usage` (§29, CLI only, listed in capabilities under `cloud`: `usage`).
+- New capabilities row `cloud.connect`: `chat_key`, `print_instance_key` (§28a, CLI only,
+  listed whether or not a chat key is bound). `cloud connect` refuses an unknown flag or
+  argument with `invalid_argument` before anything is sent, and on a connected computer
+  `--chat-key -` pairs the chat key (§28a, re-pair).
 - New kind `cloud.gateway.key` (§30, CLI only, listed in capabilities under
   `cloud.gateway`: `key`).
 - `cloud.gateway.key` (§30) adds `state: too_many_keys` (Cloud answered
@@ -125,7 +129,7 @@ and agent messages (`ctx_agent`).
   ```json
   {"contract":"local-read/1","kind":"error","error":{"code":"not_connected","message":"human text"}}
   ```
-  `code` ∈ `invalid_argument` | `no_project` | `not_connected` | `no_vault` | `not_found` | `forbidden` | `withheld` | `anchor_gone` (`knowledge verify`: the code an anchor names is gone) | `conflict` (a local task's state does not allow the write, §3c) | `unavailable` | `rate_limited` (3.12.3: LeanCTX Cloud holds this machine's requests for the seconds the message names; never reported as `not_found`) | `plan_required` (3.12.3, team chat §28: the team's plan does not include it, or the team is locked) | `invalid_state` (3.12.3, team chat §28: the channel's or message's state does not allow it) | `invalid_field` (3.12.3, team chat §28: LeanCTX Cloud refused a field of the request) | `sso_required` (3.12.3, team billing §27: the team requires SSO for the person; sign in with SSO in the browser) | `email_unverified` (top-up §33: the person has not confirmed their email address; the link is in the confirmation email) | `policy_denied` (next release, §26.2: LeanCTX Cloud's policy refuses it; the error object adds `cloud_code`, `member`, `level` and `action`) | `not_offered` (team stop §34: LeanCTX Cloud does not offer the feature; a refusal, not an outage to retry) | `internal` | `no_computer`, `balance_empty`, `computer_exists`, `computer_busy`, `computer_provider_unavailable` (LeanCTX computers §44: LeanCTX Cloud's own refusal, its message passed on) | `computer_not_available` (§44: LeanCTX Cloud offers no computers yet; the message is "LeanCTX computers are not available yet.") | `confirmation_required` (§44: a write that can cost money was asked without `--yes`, or by a caller that is neither at a terminal nor LeanCTX Code, so nothing was sent, or LeanCTX Cloud answered `428` to a confirmed one; the message says who would pay and `error.details` carries the terms `{billing: free|billed|null, usd_per_hour, free_hours_left, topup_usd}`; the refusal of a caller without a person has no `details`). | `app_only` (§26.4: a route only LeanCTX Code may ask for, asked without its app key; nothing was done). Only `confirmation_required` carries `error.details`.
+  `code` ∈ `invalid_argument` | `no_project` | `not_connected` | `no_vault` | `not_found` | `forbidden` | `withheld` | `anchor_gone` (`knowledge verify`: the code an anchor names is gone) | `conflict` (a local task's state does not allow the write, §3c) | `unavailable` | `rate_limited` (3.12.3: LeanCTX Cloud holds this machine's requests for the seconds the message names; never reported as `not_found`) | `plan_required` (3.12.3, team chat §28: the team's plan does not include it, or the team is locked) | `invalid_state` (3.12.3, team chat §28: the channel's or message's state does not allow it) | `invalid_field` (3.12.3, team chat §28: LeanCTX Cloud refused a field of the request) | `sso_required` (3.12.3, team billing §27: the team requires SSO for the person; sign in with SSO in the browser) | `email_unverified` (top-up §33: the person has not confirmed their email address; the link is in the confirmation email) | `policy_denied` (next release, §26.2: LeanCTX Cloud's policy refuses it; the error object adds `cloud_code`, `member`, `level` and `action`) | `not_offered` (team stop §34: LeanCTX Cloud does not offer the feature; a refusal, not an outage to retry) | `internal` | `no_computer`, `balance_empty`, `computer_exists`, `computer_busy`, `computer_provider_unavailable` (LeanCTX computers §44: LeanCTX Cloud's own refusal, its message passed on) | `computer_not_available` (§44: LeanCTX Cloud offers no computers yet; the message is "LeanCTX computers are not available yet.") | `confirmation_required` (§44: a write that can cost money was asked without `--yes`, or by a caller that is neither at a terminal nor LeanCTX Code, so nothing was sent, or LeanCTX Cloud answered `428` to a confirmed one; the message says who would pay and `error.details` carries the terms `{billing: free|billed|null, usd_per_hour, free_hours_left, topup_usd}`; the refusal of a caller without a person has no `details`). | `app_only` (§26.4, §26.5, §26.6: a route only LeanCTX Code may ask for, asked without its app key; nothing was done) | `signature_required` (§28a: a person post without the chat key's signature; nothing was sent) | `chat_key_missing` (§28a: no chat key is bound to this machine) | `signature_invalid` (§28a: wrong `key_id`, or the signature does not verify) | `frame_expired` (§28a: the prepared frame is older than 120 s) | `frame_unknown` (§28a: not prepared by this process, already sent, or LeanCTX Cloud has another message under its `client_msg_id`). Only `confirmation_required` carries `error.details`.
 An error may carry `error.reason`, a stable word that tells refusals sharing a `code` apart (additive; a reader that does not know it ignores it). Today only `forbidden` from Cloud billing (§27, §33) carries one: `reason: "company_billed"` when the team is billed through its company. A plain `forbidden` has no `reason`.
   A document withheld as a whole at the release point is this `withheld` error document on stdout (exit 1; its message is the content-free reason). Only when not even that refusal could be receipted is nothing printed on stdout, and the reason goes to stderr.
 - Read-only, except:
@@ -672,6 +676,13 @@ The local agent bus (registry scratchpad), for the reader's project: messages of
 - `kind` (QN0, additive): the Queen-network kind (§18a), or `null` for an ordinary message,
   for a message stored before QN0 and for a kind this reader does not know.
 - `remote_address`: for a message another machine's worker delivered through LeanCTX Cloud, the bus address it came from (`#ws/vault`); `null` for local messages.
+- `task_action` (rc3-57, additive, optional): present only on a task notice (sender `cloud` or
+  `local-tasks`): `{"task": 7, "actions": ["show", "claim"]}`, the task number and what may be
+  done with it, `show` first; actions ∈ `show` | `claim` | `verify` | `accept` | `decline`. The
+  notice's `message` is plain language without tool syntax; the app renders the actions as
+  buttons, and `ctx_agent action=read` shows an agent the exact `ctx_tasks` call built from this
+  field. Stored as `metadata["lean_ctx.task_action"]` (JSON). Absent on every other message, so
+  their rows are unchanged.
 - `priority` ∈ `low` | `normal` | `high` | `critical`.
 - `withheld` (3.12.3, optional): the number of messages the release point withheld from this
   answer. Present only when > 0, so a document with nothing withheld is unchanged. A count,
@@ -1721,6 +1732,12 @@ stay reachable the same way and are listed as `local_not_shared` (§3a).
   Instance connects) | `other_cloud` (the address names another LeanCTX Cloud server than this Instance's) |
   `shared` (`vault_id` set) | `consent_required` | `declined` | `waiting` (a consent in another
   state, see `message`) | `pending` (LeanCTX Cloud unreachable; the background sync retries) | `refused`.
+- An address without `@<server>` is on the LeanCTX Cloud this Instance is connected to (not
+  connected: the hosted one), so `vault.address` then names that server.
+- `refused` and `other_cloud` leave nothing linked: the link file is removed (or its previous
+  content restored), a `.lean-ctx-id` the link created is removed, and this machine's vault
+  records stay as they were; `created_identity` is then `false`. A vault of another account is
+  `refused` with a `message` that names it and the way forward (Team plan).
 - `answer_web` runs the browser flow: it opens the consent page, prints its URL and waits up to
   10 minutes for the answer. The URL exists only once that command asked LeanCTX Cloud for it.
   A local app may run it, since the person answers in the browser. `answer_terminal` is for the
@@ -2465,13 +2482,19 @@ removed. Nothing is written. Released under `ctx_knowledge`; no project.
 
 After the person's confirmed "Send to agents" click in LeanCTX Code, the app asks the engine to
 have LeanCTX Cloud send one team decision to the team's agents. The engine sends
-`POST /v1/decisions/{decision_id}/send` with `{"confirm": true}` and its instance token; the
+`POST /v1/decisions/{decision_id}/send` with `{"confirm": true}`, plus `"updated_at"` when the
+app gave one, and its instance token (never an `X-Cloud-Agent` header: the send is the
+person's); the
 Cloud then announces the decision to the team's machines on the bus (`decision.changed`), and each
 machine's relay delivers it to its agents as a directive. Released under `ctx_knowledge` as a
 write; project optional.
 
 - Body: `decision_id` (required; the Cloud's decision id: `dec-` and lowercase kebab segments
-  of `[a-z0-9]`, at most 80 characters, else `invalid_argument`), `project_root` (optional).
+  of `[a-z0-9]`, at most 80 characters, else `invalid_argument`), `updated_at` (optional,
+  3.12.8; the decision's `updated_at` exactly as the app showed it to the person: a strict RFC 3339
+  instant of at most 64 bytes, passed on unchanged; malformed is `invalid_argument` and nothing is
+  sent. Without it the engine sends exactly `{"confirm": true}` and never fills it in or reads it
+  itself; the Cloud then sends without its version check. LeanCTX Code 0.5.0 sends none), `project_root` (optional).
 - App-only. At each launch LeanCTX Code writes a fresh random key (64 lowercase hex characters)
   to `<data dir>/agents/app-launch.key` (mode 0600) and sends it in the request header
   `x-leanctx-app-key`. The daemon reads the file on each such request and compares it in constant
@@ -2489,9 +2512,93 @@ write; project optional.
 }
 ```
 
-`sent` is the Cloud's answer as it sent it. Errors: `app_only`, `invalid_argument`,
-`not_connected`, `forbidden` (`error.reason` `step_up_required` when the Cloud asks the person to
-confirm on the web), `policy_denied` (§26.2), `not_found`, `conflict`, `rate_limited`,
+`sent` is the Cloud's answer as it sent it. Errors: `app_only`, `invalid_argument` (also the
+Cloud's `400 invalid_field` on `updated_at`), `not_connected`,
+`forbidden` (`error.reason` `step_up_required` when the Cloud asks the person to confirm on the
+web; `error.reason` `human_session_required` for the Cloud's `403 human_session_required`, message
+"Only a person can send rules to agents."), `conflict` (`error.reason` `decision_changed` for the
+Cloud's `409 decision_changed`: the rule changed since the person saw it; message "This rule
+changed since you looked at it. Open it again before sending."; `error.updated_at` carries the
+Cloud's current `updated_at` when its answer names one as an RFC 3339 instant; the app reloads the
+rule and asks again; `error.reason` `not_active` for a rule already replaced or withdrawn),
+`policy_denied` (§26.2), `not_found`, `rate_limited`, `unavailable`, `internal`. Every message is
+the engine's own fixed text; nothing the Cloud wrote is passed on. Any other `402`/`403` (e.g. a
+host signed in with an enrollment token) is `forbidden` "Sign in on the web to send rules to
+agents."
+
+### 26.5 Replace a decision: `decisions.supersede` (`POST /v1/local/cloud/decisions/supersede`, socket only)
+
+After the person's click in LeanCTX Code, a new decision replaces one active decision written in
+the Cloud. The engine sends `POST /v1/decisions/{decision_id}/supersede` with its instance token;
+the body is the new decision exactly as `decisions.create` (§26.1) sends it (the Cloud's
+`NewDecision`; without an `id` the Cloud derives the new id from the title). The Cloud records
+the new decision (naming the replaced one in its `supersedes`) and turns the replaced one
+`superseded`. Nothing is sent to agents. Released under `ctx_knowledge` as a write; project
+optional. App-only, exactly as `decisions.send` (§26.4): `403 app_only` without the app key; no
+CLI verb (`capabilities` lists `supersede` for `cloud.decisions` as a socket verb only).
+
+- Body: `decision_id` (required; the replaced decision, the Cloud's id rule of §26.4), `decision`
+  (required; the new decision, checked as in §26.1, at most 64 KiB; it names no `supersedes` and
+  its `id`, when given, is not `decision_id`), `project_root` (optional: a project linked to a
+  vault sends that vault's name, as §26.1; without one the Cloud keeps the replaced decision's
+  vault). Anything else is `invalid_argument` before anything is sent.
+
+```json
+{
+  "contract": "local-read/1",
+  "kind": "decisions.supersede",
+  "project_root": null,
+  "vault": null,
+  "decision_id": "dec-use-mysql",
+  "decision": { "id": "dec-use-postgres", "status": "active", "supersedes": ["dec-use-mysql"] },
+  "superseded": { "id": "dec-use-mysql", "status": "superseded", "superseded_by": "dec-use-postgres" }
+}
+```
+
+`decision` and `superseded` are the Cloud's `201 {decision, superseded}` records as it answered
+them (an answer without both is `internal`).
+
+### 26.6 Withdraw a decision: `decisions.revoke` (`POST /v1/local/cloud/decisions/revoke`, socket only)
+
+After the person's click in LeanCTX Code, one active decision written in the Cloud is withdrawn
+and nothing replaces it. The engine sends `POST /v1/decisions/{decision_id}/revoke` with
+`{"reason": …}` and nothing else. Nothing is sent to agents. Released under `ctx_knowledge` as a
+write; project optional. App-only, exactly as `decisions.send` (§26.4).
+
+- Body: `decision_id` (required; the Cloud's id rule of §26.4), `reason` (required; trimmed, 2 to
+  280 characters on one line, no control characters), `project_root` (optional, only echoed).
+
+```json
+{
+  "contract": "local-read/1",
+  "kind": "decisions.revoke",
+  "project_root": null,
+  "decision_id": "dec-0042",
+  "decision": { "id": "dec-0042", "status": "revoked", "revoke_reason": "replaced by the new rule" }
+}
+```
+
+`decision` is the Cloud's `200 {decision}` record (status `revoked`) as it answered it.
+
+Errors of §26.5 and §26.6, each with a plain message (the Cloud's own text is not shown):
+
+| Cloud answer | `code` | `error.reason` | message |
+|---|---|---|---|
+| `404 not_found` | `not_found` | — | Your Cloud does not know this rule. |
+| `409 invalid_state` (`not_active`, or any other `409`) | `conflict` | `not_active` | This rule was already replaced or withdrawn. |
+| `409 invalid_state` `repo_file` | `conflict` | `repo_file` | This rule lives in the repository; change its file there. |
+| `409 invalid_state` `decision_limit` (supersede) | `conflict` | `decision_limit` | Your team already holds as many rules as it may. |
+| `409 decision_exists` (supersede) | `conflict` | `decision_exists` | Your team already has a rule with this id. |
+| `403` naming `required_role` `contributor` / `maintainer` | `forbidden` | `required_role` | Only a contributor can replace a rule. / Only a maintainer can withdraw a rule. (`error.required_role` carries the role) |
+| any other `402`/`403` (e.g. a host with an enrollment token) | `forbidden` | — | Sign in on the web to change this rule. |
+| `403 step_up_required` | `forbidden` | `step_up_required` | Your Cloud asks you to confirm this on the web first. |
+| `403 human_session_required` | `forbidden` | `human_session_required` | Only a person can change rules. |
+| `400` on field `id` (supersede: the replaced rule's id named as the new one's) | `invalid_argument` | — | The new rule needs an id of its own; leave it out to derive one from the title. |
+
+Besides: `app_only`, `invalid_argument` (also the Cloud's other `400`/`422`: a field's reason, an
+unknown field, an empty body), `policy_denied` (§26.2: `403 policy_denied`, e.g. a vault the
+team's policy does not allow),
+`not_connected`, `no_vault` (supersede with a project that is not linked), `rate_limited`,
 `unavailable`, `internal`.
 
 ## 27. Team billing: `cloud billing checkout | portal` (3.12.3)
@@ -2581,7 +2688,8 @@ engine never talks to Stripe.
     "limit_agent_hours": 40.0,
     "left_agent_hours": 30.0,
     "state": "ok",
-    "reset_at": "2026-12-01T00:00:00Z"
+    "reset_at": "2026-12-01T00:00:00Z",
+    "used_pct": 25
   },
   "credit_topup": { "pack_usd_micros": 5000000, "pack_agent_hours": 20.0, "max_packs": 10 },
   "manage_billing": true
@@ -2597,7 +2705,10 @@ the credit but does not buy), in a company's team (checkout, portal and packs an
 `true`; the app offers "Buy agent hours…" only on `true`. Agent-hours are rounded down to one
 decimal by the Cloud. `state` is `ok`,
 `soft` (most of the credit is used) or `hard` (used up: models answer `quota_exceeded` until the
-reset or a top-up).
+reset or a top-up). `used_pct` (additive, 3.12.8) is the share of this month's usage used: the
+used credit (a deficit included) over the month's whole credit (allowance plus packs bought), a
+whole percent from `0` to `100`, rounded down by the Cloud; it is `null` from a Cloud that sends none,
+and the app then shows no percentage (it never computes one). Any other value is `internal`.
 
 Refusals: `forbidden` "only an owner or admin of the team sees its model credit" for a member,
 `sso_required` "sign in with SSO in the browser" where SSO is required, `unavailable` when the Cloud
@@ -2640,6 +2751,145 @@ project is named (`project: false`).
   The Cloud's message is passed on without control characters, at most 300 characters.
 - `chat.post`, `chat.read` and `chat.dm` are writes: the request passes the release point
   before anything is sent (`withheld` otherwise).
+- `chat.post` and `chat.dm` (replies included) are sent only in the signed form of §28a. An
+  unsigned one is refused with `signature_required` and nothing is sent. The reads and
+  `chat.read` are unchanged.
+
+## 28a. Person posts signed by the chat key: `chat.prepare` (rc4-32)
+
+LeanCTX Code holds a device chat key (Ed25519) that signs the person's posts. The engine
+keeps only its public part and checks the app's signatures; it never signs a person post
+itself and has no unsigned fallback. The key's scope is `person_publish.v1` only: never a
+consent action (bind check, opt-in, task pickup). Encoding is base64url without padding
+everywhere.
+
+**Bind (pairing).** `--print-instance-key` and `--chat-key` are LeanCTX Code's only: it
+passes its launch key (the local service's `x-leanctx-app-key`) in `LEAN_CTX_APP_KEY`, which
+lean-ctx reads and removes from its environment before anything else, whatever the
+arguments (an unknown flag included). The key is checked against the key file of the same
+root as the Cloud records the flags change: the config and data directories must be one
+directory, or the default split under the account's home (`~/.config/lean-ctx` and
+`~/.local/share/lean-ctx`), with no symlinked `cloud` or `agents` directory, and a
+`LEAN_CTX_DATA_DIR` may not name the standard config directory. Otherwise
+(e.g. `LEAN_CTX_DATA_DIR` moved to a key file of its own while `LEAN_CTX_CONFIG_DIR` still
+names the real records) the key file is not even read. The directories are resolved once,
+for this check; the command then opens only the records of that checked root and never
+resolves them again. Without the key (or with another,
+or on a split layout) either flag is refused at once, nothing printed, read or sent: with `--json`
+or `--print-instance-key` as one line `{"event": "error", "code": "app_only", "message"}`
+(exit 1), otherwise as an error message. So no agent can bind a chat key of its own.
+`lean-ctx cloud connect --json --print-instance-key` prints
+`{"contract": "local-read/1", "kind": "cloud.instance_key", "instance_public_key"}`: the
+exact string the device-token request will send (the keys are made or reused; nothing is
+sent). The app signs
+`"leanctx.cloud.chat_key_bind.v1\n"` ‖ canonical_json({`alg`, `instance_public_key`,
+`key_id`, `public_key`, `scope`: `"person_publish.v1"`}) and runs `lean-ctx cloud connect
+--json --chat-key -` with `{alg: "ed25519", public_key, key_id, bind_signature}` on stdin
+(never in argv; `key_id` = hex(sha256(raw public key))[..16]). The engine checks the shape
+(ed25519, a 32-byte key, its `key_id`) and the bind signature before anything is sent, adds
+it as `chat_key` to the device-token request, and after the enrollment keeps the public part
+only (`chat_key.json`: `alg`, `key_id`, `public_key`). A new enrollment replaces it; one
+without `--chat-key` removes it. LeanCTX Cloud's `400 invalid_field` on such a pairing is the
+local error "LeanCTX Cloud refused the chat key of LeanCTX Code (invalid_field chat_key). Pair
+this computer again from LeanCTX Code."; on an enrollment with a token it ends "Connect again
+from LeanCTX Code with a new enrollment token." canonical_json: sorted keys, no whitespace.
+`chat_key.json` is not a security boundary: whoever can write it changes only what this
+engine checks locally; LeanCTX Cloud verifies every signed post against the key bound at
+pairing.
+
+The capabilities row `cloud.connect` lists `chat_key` and `print_instance_key` (via `cli`)
+whether or not a chat key is bound; whether one is bound shows in the `chat.prepare` route.
+`cloud connect` accepts only `--url`, `--label`, `--plan`, `--chat-key` (each with a value),
+`--trial`, `--json`, `--no-browser`, `--share`, `--enrollment-token-stdin`,
+`--print-instance-key`, `-y`/`--yes`, `-f`/`--force` and `-h`/`--help` (`--enrollment-token`
+keeps its own refusal). Any other flag or argument is refused before anything is read, made
+or sent: with `--json` or `--print-instance-key` as `{"event": "error", "code":
+"invalid_argument", "message"}` (exit 2), otherwise as an error message (the flag named
+without its value).
+
+**Re-pair (connected computer).** `cloud connect --json --chat-key -` on a computer that is
+already connected runs the device flow with the Cloud it is connected to, its existing keys
+and label plus `chat_key`, and never `replaces`. Approved, it keeps the connection (its
+vault links and worker state untouched), renews only the session and stores the bound key,
+then emits `connected` with `reason`: `bound` (a new key) or `unchanged` (the same key was
+already bound). Without `--chat-key` a connected computer stays a no-op. Refusals, as an
+`error` event (exit 1) with a fixed `message`:
+
+| LeanCTX Cloud answers | `reason` | message |
+|---|---|---|
+| `409` `chat_key_bound` | `chat_key_bound` | "Another chat key is bound to this computer; remove it on the computer's page, then pair again." |
+| `409` `chat_key_cleared` | `chat_key_cleared` | "This chat key was removed; LeanCTX Code makes a new one and pairs again." |
+| `400 invalid_field` `chat_key` | — | the chat key refusal above |
+| `400` `token_enrollment` | — | "This computer was connected with an enrollment token; pairing the chat key needs a connect from LeanCTX Code." |
+
+An answer for another computer or organization is refused and nothing is stored.
+
+| kind | route | inputs |
+|---|---|---|
+| `chat.prepare` | `POST /v1/local/chat/prepare` | `kind` (`post`, `dm`, `bus`), then the inputs of `chat.post` (`orchestrator` a bool, `false` kept), `chat.dm` or `bus.post` (`to` one followed vault, `message`, `thread`, `category`, `task_id`, `project_root`; bus only: `thread_id`, `reply_to`, `deadline`); `client_msg_id` for every kind |
+
+```json
+{"contract": "local-read/1", "kind": "chat.prepare",
+ "frame_b64": "…", "signing_input_b64": "…", "instance_id": "…",
+ "key_id_expected": "…", "expires_at": "2026-11-24T12:02:00Z"}
+```
+
+- The app signs the bytes of `signing_input_b64` and sends the kind it prepared
+  (`chat.post`, `chat.dm` or `bus.post`) with `{frame_b64, presence_signature, key_id}`
+  (bus: plus `project_root`). The engine checks that this process prepared the frame, that
+  it is unexpired and unused, that `key_id` is the bound chat key, and that the signature
+  verifies; the frame then leaves unchanged with `presence_signature`.
+- `chat.prepare` is app-only (`app_only` without the app key, like `decisions.send`), and the
+  CLI verb `cloud chat prepare` is refused with `app_only`. The signed sends check the
+  prepared frame and the signature, not the app key.
+- Prepared frames live in the local service's memory only: at most 64, 120 s each, usable
+  once. A frame whose send LeanCTX Cloud answered (`2xx` or `4xx`) stays used until it
+  expires: sending or preparing the same bytes again is `frame_unknown` with "this post was
+  already sent; check the chat before sending it again". A send that never reached it (no
+  connection, a timeout, a `5xx`) releases the frame, which can then be sent again; an unsent
+  one is renewed. A one-shot CLI process cannot send a frame the
+  local service prepared (`frame_unknown`).
+- `chat.post` also takes a signed direct message (the app sends both there); the prepared
+  frame decides the Cloud route. `chat.dm` takes a direct message only.
+- REST (`chat.post`, `chat.dm`): the sent body is the request body plus `client_msg_id`
+  plus `presence_signature`. A `client_msg_id` the caller names (a lowercase, hyphenated
+  UUID v4; LeanCTX Code keeps one per message over every attempt) is kept unchanged;
+  `chat.prepare` makes one only when none is named, and refuses any other form with
+  `invalid_argument`. A post's `orchestrator` is sent and signed as given, `false` included
+  (absent when not named). A direct message's `members` are lowercase UUIDs. The signed bytes are
+  `"leanctx.cloud.person_publish.v1\n"` ‖ canonical_json(body without
+  `presence_signature`, plus `instance_id`, plus `"t": "chat.message"` and `channel_id`
+  (lowercase) for a channel post or reply, or `"t": "chat.dm"` for a direct message). The
+  route fields are only signed, never sent.
+- Bus (`bus.post` to a vault): the signed bytes are the same domain ‖ canonical_json(the
+  `place.publish` frame without `presence_signature`, plus `instance_id`), the rule of the
+  person's publish. The frame is `{schema, client_msg_id, to, type, body, t: "place.publish",
+  sender: {kind: "person"}}`: `to` the one vault address as a string, `category` → `type`
+  (`question` or `progress` only; anything else is `invalid_argument`), `message` →
+  `body.text` (question, at most 4000 characters) or `body.step` (progress, at most 300),
+  exactly as given: never trimmed or cut, a longer text is `invalid_argument`. A ULID `client_msg_id` the caller names is kept unchanged (otherwise the engine
+  makes one); `thread_id` and `reply_to` (`msg_` and 16 lowercase hex digits) pass through as
+  given; `deadline` (unix ms) becomes `body.deadline`, for a question only. `thread`, `task_id`
+  and a Queen kind add `thread`, `task_id` and `kind` only when named. A malformed value is
+  `invalid_argument`. The post is queued with its signed frame; the relay checks it again and
+  sends it with the app's signature. An unsigned person post to a vault (`bus.post`,
+  `agent.post`) is refused at once with `signature_required` and not queued; person posts
+  queued unsigned before stay held. Agent posts and local-only posts are unchanged.
+- Refusals: `chat_key_missing`, `signature_invalid`, `frame_expired`, `frame_unknown`,
+  `signature_required`. `signature_required` says "Update LeanCTX Code to send team
+  messages." to a request with the app key (the wording only, never proof) and "Team chat
+  posts are sent from the LeanCTX Code app." to every other caller. LeanCTX Cloud's
+  `403 person_unproven` (code or reason) maps to `signature_required` with the same rule; its
+  `409 client_msg_id_reused` to `frame_unknown`; a repeat within 24 h is answered with the
+  original message, passed on unchanged.
+- `chat.prepare` is listed in the capabilities routes only while a chat key is bound to the
+  connected instance; its row carries `kinds`: `["post", "dm", "bus"]`.
+- Scope: only the person's own posts need the signature. A post `--as` a local agent stays an
+  unsigned agent entry and is never refused for a signature, and a person frame in an agent
+  entry never makes it a person's post.
+- Residual risk (accepted by the owner): on Windows and Linux, processes of the same user can
+  read the app's key store and so sign as the person. Each post is audited with `signed_by`
+  and the device.
 
 ## 29. `lean-ctx cloud usage --json` (kind `cloud.usage`)
 

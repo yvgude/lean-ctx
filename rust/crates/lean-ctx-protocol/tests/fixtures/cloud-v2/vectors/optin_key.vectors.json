@@ -1,0 +1,39 @@
+{
+  "description": "The app's opt-in key (rc4-16): bound at POST /v1/device/token (worker.schema.json $defs/optin_key_bind, member optin_key) only from a device flow the person approved in the browser (never with an enrollment token, never through a route the instance token alone reaches), by bind_signature over \"leanctx.cloud.optin_key_bind.v1\\n\" followed by canonical_json({alg, instance_public_key (the request's string), key_id, public_key, scope: \"optin.v1\"}); key_id = first 16 hex of sha256(raw public key). It then signs the person's own turn-on of the computer's task pickup only: PUT /v1/me/optin with active true carries presence_signature over \"leanctx.cloud.optin.v1\\n\" followed by canonical_json(body without presence_signature, plus instance_id: the instance UUID in lower case with hyphens) (as optin.vectors.json). The Cloud verifies it against this key only (never the presence key, the chat key or the task-propose key; without a bound opt-in key the turn-on is refused); a chat-key or task-propose-key bind of this key does not verify. Test keys only: opt-in key ed25519 seed = sha256(\"leanctx-cloud test opt-in key: rc4-16\"); instance_public_key = standard base64 of the ed25519 public key of seed sha256(\"leanctx-cloud test instance key: rc4-67\").",
+  "alg": "ed25519",
+  "seed": "9255f0c0a33e1b276f658b9ddf007e5017482d3b5d29a3c1cb3aae45df460251",
+  "public_key": "h-5BejEvZBRC3aIStZGiozVi4uf7gZ8veK-p7mkpyjU",
+  "key_id": "1b20740d444f4fb5",
+  "cases": [
+    {
+      "name": "bind",
+      "instance_public_key": "ioEkWHZo5VtdH2xcZCQff/UUv9C2VZlpZzW7qf3qhNo=",
+      "optin_key": {
+        "alg": "ed25519",
+        "public_key": "h-5BejEvZBRC3aIStZGiozVi4uf7gZ8veK-p7mkpyjU",
+        "key_id": "1b20740d444f4fb5",
+        "bind_signature": "0cwbxvvScrR7fS3rBT6JmlCmSDpbrBD7xBrkdU4cTG0T6LhkJDp6xTpePzXrSo9NePrFZz4nYV_I6VEC0_AXBQ"
+      },
+      "signing_input": "leanctx.cloud.optin_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"ioEkWHZo5VtdH2xcZCQff/UUv9C2VZlpZzW7qf3qhNo=\",\"key_id\":\"1b20740d444f4fb5\",\"public_key\":\"h-5BejEvZBRC3aIStZGiozVi4uf7gZ8veK-p7mkpyjU\",\"scope\":\"optin.v1\"}"
+    },
+    {
+      "name": "optin",
+      "route": "PUT /v1/me/optin",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "body": {
+        "schema": "leanctx.cloud.instance-optin-on/v1",
+        "active": true,
+        "prev_optin_id": "opt_7a1d4c2e9b3f4e6a8c5d0f1e2a3b4c5d",
+        "vaults": [
+          "0f3c2b6a8d4e4a7b9c105e2f6a7b8c01"
+        ],
+        "daily_budget": {
+          "tasks": 3,
+          "tokens": 1000000
+        },
+        "presence_signature": "TBWmm3lcYfhlZH_gByquAks8MwdiA5UyzoGOvpwUOBaJUKv5t4pc8pswzRJigB4ewgpI5MF8uLjQ4yWwlqK5DA"
+      },
+      "signing_input": "leanctx.cloud.optin.v1\n{\"active\":true,\"daily_budget\":{\"tasks\":3,\"tokens\":1000000},\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"prev_optin_id\":\"opt_7a1d4c2e9b3f4e6a8c5d0f1e2a3b4c5d\",\"schema\":\"leanctx.cloud.instance-optin-on/v1\",\"vaults\":[\"0f3c2b6a8d4e4a7b9c105e2f6a7b8c01\"]}"
+    }
+  ]
+}

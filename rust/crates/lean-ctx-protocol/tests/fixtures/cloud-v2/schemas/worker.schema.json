@@ -674,6 +674,81 @@
           "$ref": "common.schema.json#/$defs/base64url"
         }
       }
+    },
+    "chat_key_bind": {
+      "description": "member chat_key of POST /v1/device/token (rc4-32): the app's key for the person's own chat posts only (domain leanctx.cloud.person_publish.v1). bind_signature signs \"leanctx.cloud.chat_key_bind.v1\\n\" followed by canonical_json({alg, instance_public_key (the request's string), key_id, public_key, scope: \"person_publish.v1\"}); see vectors/chat_key.vectors.json",
+      "type": "object",
+      "required": [
+        "alg",
+        "public_key",
+        "key_id",
+        "bind_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "const": "ed25519"
+        },
+        "public_key": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "bind_signature": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        }
+      }
+    },
+    "task_propose_key_bind": {
+      "description": "member task_propose_key of POST /v1/device/token (rc4-67): the app's key for the person's own task proposals only (POST /v1/vaults/{pid}/tasks origin person, domain leanctx.cloud.task_propose_person.v1). bind_signature signs \"leanctx.cloud.task_propose_key_bind.v1\\n\" followed by canonical_json({alg, instance_public_key (the request's string), key_id, public_key, scope: \"task_propose_person.v1\"}); see vectors/task_propose_key.vectors.json",
+      "type": "object",
+      "required": [
+        "alg",
+        "public_key",
+        "key_id",
+        "bind_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "const": "ed25519"
+        },
+        "public_key": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "bind_signature": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        }
+      }
+    },
+    "optin_key_bind": {
+      "description": "member optin_key of POST /v1/device/token (rc4-16): the app's key for the person's own turn-on of the computer's task pickup only (PUT /v1/me/optin active true, its presence_signature, domain leanctx.cloud.optin.v1). Bound only from a device flow the person approved in the browser: never with an enrollment token (400 invalid_field optin_key reason token_enrollment, also at a re-bind), never through a route the instance token alone reaches. bind_signature signs \"leanctx.cloud.optin_key_bind.v1\\n\" followed by canonical_json({alg, instance_public_key (the request's string), key_id, public_key, scope: \"optin.v1\"}); see vectors/optin_key.vectors.json",
+      "type": "object",
+      "required": [
+        "alg",
+        "public_key",
+        "key_id",
+        "bind_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "const": "ed25519"
+        },
+        "public_key": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "bind_signature": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        }
+      }
     }
   }
 }

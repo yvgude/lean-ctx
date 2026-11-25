@@ -252,7 +252,7 @@ fn repeated_errors_deduped() {
 fn search_results_compressed() {
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
-    let mut lines = (1..=49)
+    let mut lines = (1..=120)
         .map(|line| {
             format!(
                 "src/auth.rs:{line}: pub fn validate_session(user: &User, token: &str) -> Result<AuthContext, AuthError> {{ validate_access_token(user, token) }}"

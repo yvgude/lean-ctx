@@ -12,6 +12,7 @@ const ALL_ON: Policy = Policy {
     // R4 needs an archive and a project; its tests turn it on explicitly.
     r4: RuleMode::Off,
     r5: RuleMode::Off,
+    r6: RuleMode::On,
 };
 
 fn unique_session(tag: &str) -> String {
@@ -323,6 +324,7 @@ const R4_ONLY: Policy = Policy {
     r3: RuleMode::Off,
     r4: RuleMode::On,
     r5: RuleMode::Off,
+    r6: RuleMode::Off,
 };
 /// A compressible command (asserted in the R2 test). File viewers such as
 /// `cat` are verbatim-class: no governor rule touches their output.
@@ -659,6 +661,7 @@ fn r5_outlines_the_first_whole_read_of_a_large_code_file_once() {
     };
     let policy = Policy {
         r5: RuleMode::On,
+        r6: RuleMode::Off,
         ..ALL_ON
     };
     let content = |d: &Decision| -> String {
@@ -715,6 +718,7 @@ fn r5_outlines_the_first_whole_read_of_a_large_code_file_once() {
     let s2 = unique_session("r5-shadow");
     let shadow_policy = Policy {
         r5: RuleMode::Shadow,
+        r6: RuleMode::Off,
         ..ALL_ON
     };
     let shadow_read = serde_json::json!({
@@ -745,6 +749,7 @@ fn r5_outlines_the_first_whole_read_of_a_large_code_file_once() {
     };
     let off = Policy {
         r5: RuleMode::Off,
+        r6: RuleMode::Off,
         ..ALL_ON
     };
     let d = decide(&read_as("o1", "", &big_rs, &big), &off);
@@ -962,6 +967,7 @@ fn policy_env_caps_every_rule() {
             r3: RuleMode::Shadow,
             r4: RuleMode::Shadow,
             r5: RuleMode::On,
+            r6: RuleMode::Shadow,
         },
         "built-in defaults without config: R1.read and R5 live, the rest log-only"
     );
@@ -980,6 +986,7 @@ fn policy_env_caps_every_rule() {
             r3: RuleMode::Shadow,
             r4: RuleMode::On,
             r5: RuleMode::On,
+            r6: RuleMode::On,
         },
         "config rule modes honoured"
     );
@@ -1206,6 +1213,7 @@ fn code_mode_never_rewrites_inner_calls_and_shapes_the_repl_result() {
     let s = unique_session("repl");
     let policy = Policy {
         r5: RuleMode::On,
+        r6: RuleMode::Off,
         ..ALL_ON
     };
     let repl = |tool_use: &str, result: &str, stdout: &str| {
@@ -1399,6 +1407,7 @@ fn code_mode_outlines_a_builtin_first_read_of_a_project_file_once() {
     let s = unique_session("repl-first-read");
     let policy = Policy {
         r5: RuleMode::On,
+        r6: RuleMode::Off,
         ..ALL_ON
     };
     let repl_with = |tool_use: &str, code: &str, stdout: &str| {
@@ -1639,4 +1648,193 @@ fn code_mode_outlines_a_builtin_first_read_of_a_project_file_once() {
             .output
             .is_empty()
     );
+}
+
+fn grep_payload(session: &str, response: &serde_json::Value) -> String {
+    serde_json::json!({
+        "session_id": session,
+        "tool_use_id": "toolu_grep",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Grep",
+        "cwd": "/repo",
+        "tool_input": { "pattern": "handle_", "output_mode": "content", "-n": true },
+        "tool_response": response,
+    })
+    .to_string()
+}
+
+/// A Grep content result as Claude Code returns it: matches with `-n` and
+/// context lines, in long paths that repeat on every line.
+fn grep_content() -> String {
+    let mut s = String::new();
+    for f in 0..12 {
+        let path = format!("rust/crates/lean-ctx-hooks/src/hook_handlers/module_{f}/handler.rs");
+        for l in 0..8 {
+            let n = 10 + l * 7;
+            s.push_str(&format!("{path}-{}-    // context before\n", n - 1));
+            s.push_str(&format!("{path}:{n}:pub fn handle_{f}_{l}() {{}}\n"));
+        }
+        s.push_str("--\n");
+    }
+    s.trim_end_matches('\n').to_string()
+}
+
+fn grep_response(content: &str) -> serde_json::Value {
+    serde_json::json!({
+        "mode": "content", "numFiles": 0, "filenames": [],
+        "content": content, "numLines": content.lines().count()
+    })
+}
+
+/// Seamit bench: under the governor (`hook rewrite-enforce` PreToolUse) no
+/// native Grep was ever shaped. R6 now regroups a large content result
+/// losslessly, and leaves the other modes alone.
+#[test]
+fn r6_regroups_a_large_grep_content_result_losslessly() {
+    let s = unique_session("r6");
+    let content = grep_content();
+    let d = decide(&grep_payload(&s, &grep_response(&content)), &ALL_ON);
+    assert!(!d.output.is_empty(), "Grep content result rewritten");
+    let out: serde_json::Value = serde_json::from_str(&d.output).unwrap();
+    assert_eq!(out["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+    let updated = &out["hookSpecificOutput"]["updatedToolOutput"];
+    assert_eq!(updated["mode"], "content", "other fields kept");
+    let view = updated["content"].as_str().unwrap();
+    assert_eq!(grep::expand(view), content, "lossless");
+    assert!(
+        view.starts_with("rust/crates/lean-ctx-hooks/src/hook_handlers/module_0/handler.rs\n9-")
+    );
+    assert_eq!(
+        view.matches("module_3/handler.rs").count(),
+        1,
+        "each path once"
+    );
+    let r = d.receipt.as_ref().unwrap();
+    assert_eq!((r.rule_id, r.mode), ("R6", RuleMode::On));
+    assert!(r.actual_tokens < r.baseline_tokens);
+    assert!(d.applied_stats().is_some(), "counted as a governor saving");
+
+    // Deterministic (#498): the same result gives the same bytes.
+    let again = decide(&grep_payload(&s, &grep_response(&content)), &ALL_ON);
+    assert_eq!(again.output, d.output);
+}
+
+#[test]
+fn r6_respects_its_mode_and_leaves_other_results_alone() {
+    let s = unique_session("r6-modes");
+    let content = grep_content();
+    let payload = grep_payload(&s, &grep_response(&content));
+    let with = |r6| Policy { r6, ..ALL_ON };
+
+    let shadow = decide(&payload, &with(RuleMode::Shadow));
+    assert!(shadow.output.is_empty(), "shadow never replaces");
+    assert_eq!(shadow.receipt.map(|r| r.rule_id), Some("R6"));
+    let off = decide(&payload, &with(RuleMode::Off));
+    assert!(off.output.is_empty() && off.receipt.is_none());
+
+    let files = serde_json::json!({
+        "mode": "files_with_matches", "numFiles": 2,
+        "filenames": ["a.rs", "b.rs"], "content": content
+    });
+    let small = grep_response("src/a.rs:1:fn handle_a() {}\nsrc/a.rs:2:fn handle_b() {}");
+    let unparsed = grep_response(&format!("{content}\nnot a grep line"));
+    for response in [files, small, unparsed] {
+        let d = decide(&grep_payload(&s, &response), &ALL_ON);
+        assert!(d.output.is_empty() && d.receipt.is_none(), "{response}");
+    }
+}
+
+#[test]
+fn r6_heading_view_round_trips_edge_cases() {
+    for content in [
+        "a.rs:1:x\na.rs-2-y\n--\nb.rs:3:z\n",
+        "C:\\repo\\a.rs:10:x:1:y\nC:\\repo\\a.rs-11-ctx",
+        "a-1-b.rs:4:x\na-1-b.rs-5-ctx\na.rs:6:",
+        "a.rs:3:at 10:15:30\na.rs-4-x-5-y",
+    ] {
+        let view = grep::heading_view(content).expect(content);
+        assert_eq!(grep::expand(&view), content, "{content:?} → {view:?}");
+    }
+    for refused in [
+        "--\na.rs:1:x",
+        "plain text",
+        "a.rs:1:x\n\na.rs:2:y",
+        // A path reappearing after its group closed: not ripgrep's order.
+        "a.rs:1:x\nb.rs:2:y\na.rs:3:z",
+        // Several known paths fit one line (`a.rs` and `a.rs-1-b.rs`).
+        "a.rs:1:x\na.rs-1-b.rs:2:y\na.rs-1-b.rs-3-z",
+    ] {
+        assert!(grep::heading_view(refused).is_none(), "{refused:?}");
+    }
+}
+
+/// bd F1 (!643): a context line whose text contains `:N:` reads as a match
+/// of a fake path `src/a.rs-9-// at 10`. That gave a fake heading, a wrong
+/// line number and split the file in two groups, while `expand` still
+/// round-tripped. R6 must leave such a result untouched.
+#[test]
+fn r6_refuses_a_context_line_that_looks_like_a_match() {
+    let content = "src/a.rs-9-// at 10:15:30\nsrc/a.rs:10:fn handle() {}\nsrc/a.rs-11-}";
+    assert!(
+        grep::heading_view(content).is_none(),
+        "ambiguous parse refused"
+    );
+    // Inside a large result the whole rewrite is refused, not just the line.
+    let big = format!("{}\n--\n{content}", grep_content());
+    assert!(grep::heading_view(&big).is_none());
+    let s = unique_session("r6-f1");
+    let d = decide(&grep_payload(&s, &grep_response(&big)), &ALL_ON);
+    assert!(d.output.is_empty() && d.receipt.is_none());
+}
+
+/// Every heading is a real file of the result, once, in result order — also
+/// for paths that contain dashes, digits, colons and spaces.
+#[test]
+fn r6_headings_are_exactly_the_result_paths() {
+    let files = [
+        "src/v-2-x.rs",
+        "docs/2024-11-notes.md",
+        "C:\\repo\\with space\\m.rs",
+        "lib/a:b.rs",
+    ];
+    let mut content = String::new();
+    for f in files {
+        content.push_str(&format!("{f}-1-before\n{f}:2:hit 3:4\n{f}-3-after\n--\n"));
+    }
+    let content = content.trim_end_matches("--\n").to_string();
+    let view = grep::heading_view(&content).expect("parses");
+    let headings: Vec<&str> = view
+        .split("\n\n")
+        .map(|g| g.split('\n').next().unwrap())
+        .collect();
+    assert_eq!(headings, files);
+    assert_eq!(grep::expand(&view), content);
+}
+
+/// R6 needs line numbers: a Grep run with `-n: false` stays untouched.
+#[test]
+fn r6_leaves_grep_without_line_numbers_alone() {
+    let s = unique_session("r6-no-n");
+    let content = grep_content();
+    let mut payload: serde_json::Value =
+        serde_json::from_str(&grep_payload(&s, &grep_response(&content))).unwrap();
+    payload["tool_input"]["-n"] = serde_json::json!(false);
+    let d = decide(&payload.to_string(), &ALL_ON);
+    assert!(d.output.is_empty() && d.receipt.is_none());
+}
+
+/// The PreToolUse half stays security only (owner decision O-1): an
+/// ordinary Bash or Grep call passes unchanged, so R6 / R2 / R4 in `hook
+/// govern` are the only place native output is shaped.
+#[test]
+fn enforce_hook_passes_ordinary_bash_and_grep_through() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let grep = serde_json::json!({ "tool_name": "Grep", "hook_event_name": "PreToolUse",
+        "transcript_path": "/t", "tool_input": { "pattern": "fn main", "path": "/repo/src" } })
+    .to_string();
+    assert_eq!(enforce::enforce_decision(&grep, "lean-ctx"), "{}");
+    let bash = serde_json::json!({ "tool_name": "Bash", "hook_event_name": "PreToolUse",
+        "transcript_path": "/t", "tool_input": { "command": "git status" } })
+    .to_string();
+    assert_eq!(enforce::enforce_decision(&bash, "lean-ctx"), "{}");
 }

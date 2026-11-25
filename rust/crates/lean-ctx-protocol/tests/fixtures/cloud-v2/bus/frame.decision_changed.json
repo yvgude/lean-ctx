@@ -1,0 +1,7 @@
+{
+  "t": "decision.changed",
+  "vault": "#acme/payments",
+  "decision_id": "dec-use-postgres",
+  "status": "superseded",
+  "superseded_by": "dec-use-postgres-16"
+}

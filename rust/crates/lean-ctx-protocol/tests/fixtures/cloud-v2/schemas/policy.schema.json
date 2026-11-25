@@ -86,6 +86,11 @@
       "maxLength": 256,
       "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
     },
+    "check_name": {
+      "description": "A check's name as the host's project configures it: the record's check-name form (cloud-record-0.3 `checks`) without `/`, so a path never passes for a check.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,63}$"
+    },
     "readable_root": {
       "description": "A readable folder: starts with '{project}', '~' or '/', has no '..' part and compiles as a glob.",
       "allOf": [
@@ -752,7 +757,19 @@
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
+          "x-server": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = on for every plan (Personal included, no confirmation step)"
+        },
+        "agent_exchange": {
+          "description": "Bus message kinds an instance may share with other agents; absent = all, an empty list = none.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/exchange_kind"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "server",
+          "x-server": "bus publish (place.publish, POST /v2/bus/…/messages): an instance's message of a kind outside the list is refused (403 policy_denied, member sharing.agent_exchange), progress always passes; absent at every level = all kinds, an empty list = none"
         }
       }
     },
@@ -810,7 +827,19 @@
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
+          "x-server": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = on for every plan (Personal included, no confirmation step)"
+        },
+        "agent_exchange": {
+          "description": "Bus message kinds an instance may share with other agents; absent = all, an empty list = none.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/exchange_kind"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "server",
+          "x-server": "bus publish (place.publish, POST /v2/bus/…/messages): an instance's message of a kind outside the list is refused (403 policy_denied, member sharing.agent_exchange), progress always passes; absent at every level = all kinds, an empty list = none"
         }
       }
     },
@@ -936,6 +965,82 @@
         }
       }
     },
+    "landing": {
+      "description": "How the team's own host lands changes on trunk (Landing); optional, absent when no level sets a member of it. The host reads the org and workspace merge from GET /api/v1/host/policy.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "require_approval": {
+          "description": "Every change needs an approval on the forge before the host lands it. Absent = the host's own setting.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        },
+        "required_checks": {
+          "description": "Checks (by the name the host's project configures) that must pass before a change lands; every setting level's checks apply. Absent = the host's own checks.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/check_name"
+          },
+          "x-merge": "union",
+          "x-enforcement": "advisory"
+        },
+        "revert_on_regression": {
+          "description": "A landed change that breaks trunk (a real failure, not an infrastructure problem or timeout) is reverted by the host. Absent = the host's own setting.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        },
+        "max_parallel": {
+          "description": "At most this many changes are checked and landed together. Absent = the host's own limit.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "x-merge": "min",
+          "x-enforcement": "advisory"
+        }
+      }
+    },
+    "landing_effective": {
+      "description": "Landing rules of the effective policy; present only when a level sets a member of it.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "require_approval": {
+          "description": "Every change needs an approval on the forge before the host lands it. Absent = the host's own setting.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        },
+        "required_checks": {
+          "description": "Checks (by the name the host's project configures) that must pass before a change lands; every setting level's checks apply. Absent = the host's own checks.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/check_name"
+          },
+          "x-merge": "union",
+          "x-enforcement": "advisory"
+        },
+        "revert_on_regression": {
+          "description": "A landed change that breaks trunk (a real failure, not an infrastructure problem or timeout) is reverted by the host. Absent = the host's own setting.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        },
+        "max_parallel": {
+          "description": "At most this many changes are checked and landed together. Absent = the host's own limit.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "x-merge": "min",
+          "x-enforcement": "advisory"
+        }
+      }
+    },
     "document": {
       "description": "one level's policy document (W routes); every member optional, absent = this level adds no rule; at most 8 KiB canonical JSON",
       "type": "object",
@@ -961,11 +1066,14 @@
         },
         "orchestrator": {
           "$ref": "#/$defs/orchestrator"
+        },
+        "landing": {
+          "$ref": "#/$defs/landing"
         }
       }
     },
     "effective": {
-      "description": "merge of at most one document per level, in normal form: security, context and sharing present (agents and orchestrator each only when a level sets a member of it), every set sorted ascending (bytewise), groups sorted, absent member = no level sets it",
+      "description": "merge of at most one document per level, in normal form: security, context and sharing present (agents, orchestrator and landing each only when a level sets a member of it), every set sorted ascending (bytewise), groups sorted, absent member = no level sets it",
       "type": "object",
       "required": [
         "schema",
@@ -992,6 +1100,9 @@
         },
         "orchestrator": {
           "$ref": "#/$defs/orchestrator_effective"
+        },
+        "landing": {
+          "$ref": "#/$defs/landing_effective"
         }
       }
     },
@@ -1163,7 +1274,7 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "pattern": "^(security|context|sharing|agents|orchestrator)\\.[a-z_]{1,64}$"
+            "pattern": "^(security|context|sharing|agents|orchestrator|landing)\\.[a-z_]{1,64}$"
           }
         },
         "refused": {
@@ -1442,6 +1553,16 @@
             "error"
           ]
         }
+      ]
+    },
+    "exchange_kind": {
+      "description": "A bus message kind another agent receives (progress is always allowed).",
+      "enum": [
+        "answer",
+        "finding",
+        "handoff",
+        "offer",
+        "question"
       ]
     }
   }

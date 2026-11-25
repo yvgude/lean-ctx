@@ -15,8 +15,10 @@
 
 pub mod broker;
 pub mod channel;
+pub mod chat_key;
 #[cfg(unix)]
 pub mod helper_mac;
+pub mod person_sign;
 pub mod web;
 
 use std::sync::OnceLock;
@@ -273,6 +275,9 @@ pub enum ConsentError {
     /// A sensitive operation under an expired, missing or damaged Cloud
     /// policy (`policy_authorisation_expired`); fails closed.
     PolicyExpired(String),
+    /// The Cloud does not offer the browser binding of an app's first
+    /// share yet (`400 invalid_request` naming `binding`).
+    BrowserUnsupported,
     Local(String),
 }
 
@@ -295,6 +300,7 @@ impl ConsentError {
             ConsentError::HelperMissing => "helper_missing",
             ConsentError::HelperSignature => "helper_signature",
             ConsentError::PolicyExpired(_) => "policy_authorisation_expired",
+            ConsentError::BrowserUnsupported => "consent_browser_unsupported",
             ConsentError::Local(_) => "local",
         }
     }
@@ -340,6 +346,9 @@ impl std::fmt::Display for ConsentError {
                 "LeanCTX Consent.app signature invalid; run lean-ctx cloud consent-helper install.",
             ),
             ConsentError::PolicyExpired(why) => write!(f, "Refused: {why}"),
+            ConsentError::BrowserUnsupported => f.write_str(
+                "This Cloud does not offer the confirmation in the browser yet. Try again after its next update.",
+            ),
             ConsentError::Local(why) => write!(f, "consent store: {why}"),
         }
     }

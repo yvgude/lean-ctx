@@ -491,7 +491,7 @@ fn human(kind: &str, doc: &Value) -> String {
     match kind {
         RELEASE if doc["released"] == true => format!("Team {team}: the stop is released."),
         RELEASE => format!(
-            "Release in the web (admin, two-factor):\n  {}",
+            "Confirm the release in the browser (team or company admin):\n  {}",
             doc["step_up_url"].as_str().unwrap_or_default()
         ),
         _ if doc["stopped"] == true => {
@@ -510,7 +510,7 @@ fn human(kind: &str, doc: &Value) -> String {
                 out.push_str(&format!(": {reason}"));
             }
             out.push_str(
-                ".\nLeanCTX Cloud refuses the team's cloud calls, landings and running Code sessions; local agent tools keep working.",
+                ".\nThe team's cloud requests, landings and running Code sessions are held until the stop is released; local agent tools keep working.",
             );
             if doc["may_release"] == true {
                 out.push_str(&format!(

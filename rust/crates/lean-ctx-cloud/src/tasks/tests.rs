@@ -2586,3 +2586,95 @@ fn a_claim_without_the_local_key_sends_nothing_and_holds_nothing() {
     );
     assert!(claims::find(link.data_dir, PROJECT, 7).is_some());
 }
+
+/// rc4-103: a path that leaves the project folder, by a prefix, a root or
+/// a link, gets one answer whether or not something exists out there.
+#[cfg(unix)]
+#[test]
+fn a_path_out_of_the_project_reveals_nothing_outside() {
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "x").unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let link = |name: &str, to: std::path::PathBuf| {
+        std::os::unix::fs::symlink(to, root.path().join(name)).unwrap();
+    };
+    link("there.txt", outside.path().join("secret.txt"));
+    link("gone.txt", outside.path().join("missing.txt"));
+    link("dir", outside.path().to_path_buf());
+    std::fs::write(root.path().join("inner.txt"), "x").unwrap();
+    link("near.txt", root.path().join("inner.txt"));
+
+    let out = "the path must be relative to the project folder and stay inside it";
+    for path in [
+        "there.txt",
+        "gone.txt",
+        "dir/secret.txt",
+        "dir/missing.txt",
+        "/etc/hosts",
+        "a/../b",
+    ] {
+        assert_eq!(super::anchor_refusal(root.path(), path, ""), out, "{path}");
+    }
+    assert_ne!(super::anchor_refusal(root.path(), "near.txt", ""), out);
+    assert!(
+        super::anchor_refusal(root.path(), "absent.txt", "")
+            .starts_with("there is no file absent.txt")
+    );
+}
+
+/// rc4-103: a refused piece of evidence says in plain words what its
+/// reference should be, and README.md at the project root is a valid anchor.
+#[test]
+fn a_refused_evidence_names_the_expected_form() {
+    let root = tempfile::tempdir().unwrap();
+    let refusal = |kind: &str, reference: &str| {
+        super::EvidenceInput {
+            kind: kind.into(),
+            reference: reference.into(),
+        }
+        .into_evidence(root.path())
+        .unwrap_err()
+        .to_string()
+    };
+    let fact = refusal("fact", "the tests pass on main");
+    assert!(fact.contains("\"the tests pass on main\""), "{fact}");
+    assert!(fact.contains("ctx_knowledge"), "{fact}");
+    assert!(fact.contains("not a sentence"), "{fact}");
+    assert!(fact.contains("write it in the summary"), "{fact}");
+    assert!(!fact.contains("does not fit kind"), "{fact}");
+
+    let long = refusal("commit", &"x".repeat(300));
+    assert!(long.contains('…') && long.len() < 300, "{long}");
+
+    let missing = refusal("file_anchor", "README.md");
+    assert!(
+        missing.contains(&format!(
+            "there is no file README.md in the project folder {}",
+            root.path().display()
+        )),
+        "{missing}"
+    );
+    assert!(!missing.contains("store."), "{missing}");
+    let outside = refusal("file_anchor", "../README.md");
+    assert!(
+        outside.contains("relative to the project folder"),
+        "{outside}"
+    );
+
+    std::fs::write(
+        root.path().join("README.md"),
+        "# Demo\n\nA small project.\n",
+    )
+    .unwrap();
+    let readme = super::EvidenceInput {
+        kind: "file_anchor".into(),
+        reference: "README.md".into(),
+    };
+    assert!(readme.into_evidence(root.path()).is_ok());
+
+    let commit = super::EvidenceInput {
+        kind: "commit".into(),
+        reference: "abc1234".into(),
+    };
+    assert!(commit.into_evidence(root.path()).is_ok());
+}

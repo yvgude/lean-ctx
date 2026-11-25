@@ -138,6 +138,16 @@ impl McpTool for CtxSearchTool {
             SearchAction::MovedReindex => Err(moved_reindex_error()),
             SearchAction::FindRelated => handle_find_related(args, ctx),
         };
+        // A Seamit answer under the result, only when one is configured and
+        // answers in time (fail-open: the result is never changed otherwise).
+        // Appended before attribution so the recorded text is the delivered one.
+        let mut result = result;
+        if let Ok(output) = &mut result
+            && matches!(action, SearchAction::Regex | SearchAction::Semantic)
+            && let Some(block) = crate::tools::seamit_answer::block(args, &ctx.project_root)
+        {
+            output.text.push_str(&block);
+        }
         if let Ok(output) = &result {
             record_attribution_result(ctx, action, args, output);
         }
@@ -150,12 +160,15 @@ impl McpTool for CtxSearchTool {
     /// file). Three results name no source and therefore stay of unknown
     /// lineage rather than being claimed: a result without matches, a
     /// delivery stub for a repeated query (`cached_or_search`), and an error.
+    /// With a Seamit answer program configured nothing is declared: its
+    /// answer is appended from outside the scanned files.
     ///
     /// Not declared: `semantic` and `find_related` (ranked from the BM25/dense
     /// index and the graph — derived stores without source lineage) and
     /// `symbol` (the symbol index decides which file is read).
     fn publishes_every_source(&self, args: Option<&Map<String, Value>>) -> bool {
         args.is_some_and(|args| matches!(SearchAction::resolve(args), SearchAction::Regex))
+            && !crate::tools::seamit_answer::configured()
     }
 }
 

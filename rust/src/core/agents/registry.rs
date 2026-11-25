@@ -15,7 +15,7 @@ use super::{
 use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
 
 /// Role an MCP transport holds until `initialize` resolves the session role.
-const PLACEHOLDER_ROLE: &str = "context-engine";
+const PLACEHOLDER_ROLE: &str = super::types::ENGINE_PLACEHOLDER_ROLE;
 const WORKER_LEASE_EXPIRED: &str = "worker lease expired; register again before continuing";
 /// A live MCP connection without a recent tool call is idle, not gone: the
 /// worker lease governs collaboration slots, never transport presence.

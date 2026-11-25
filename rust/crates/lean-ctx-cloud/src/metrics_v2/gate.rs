@@ -14,9 +14,9 @@
 //!    bundle: `false` turns it off. No bundle, or an expired, damaged or
 //!    inconsistent one counts as off (fail closed for egress);
 //! 5. the workspace's sharing state (`GET /v1/metrics/sharing`, the
-//!    `sharing` of every ack): `on`. Unknown yet: the plan default (Team and
-//!    Enterprise on; Personal wait for the person's confirmation,
-//!    `lean-ctx cloud metrics confirm`, in a terminal);
+//!    `sharing` of every ack): `on`. Unknown yet: the plan default, on for
+//!    every plan (owner decision 23.11.: no prompt, the terms cover it). An
+//!    explicit `needs_confirmation` answer from Cloud is still honoured;
 //! 6. no `403` refusal under the policy version or lease in force.
 //!
 //! A vault whose own entry turns the rule off is left out of every slice;
@@ -85,6 +85,18 @@ impl Sharing {
         matches!(self, Self::On { .. })
     }
 
+    /// Cloud still waits for the person's confirmation (an explicit
+    /// `needs_confirmation` answer; no plan asks for it by default any more).
+    pub fn waits_for_confirmation(&self) -> bool {
+        matches!(
+            self,
+            Self::Off {
+                reason: OffReason::NotConfirmed,
+                ..
+            }
+        )
+    }
+
     /// `on (plan default)` or `off (<why>)` as `cloud status` prints it.
     pub fn describe(&self) -> String {
         match self {
@@ -131,9 +143,11 @@ impl Sharing {
     }
 }
 
-/// Whether the plan waits for the person's confirmation by default.
-pub fn needs_confirmation(plan: CloudPlan) -> bool {
-    !matches!(plan, CloudPlan::Team | CloudPlan::Enterprise)
+/// Whether the plan waits for the person's confirmation by default: no
+/// plan does (owner decision 23.11.: metrics are on by default, without a
+/// prompt; turning them off stays possible).
+pub fn needs_confirmation(_plan: CloudPlan) -> bool {
+    false
 }
 
 /// The rule's value in one effective policy: `None` = no level sets it.

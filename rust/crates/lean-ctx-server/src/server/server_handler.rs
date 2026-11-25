@@ -325,10 +325,17 @@ impl LeanCtxServer {
 
                 // The active role is process-wide: a client of a shared server
                 // must not set it for every other client. Its own role is
-                // still remembered for its presence below.
+                // still remembered for its presence below. It is the
+                // permission role: `LEAN_CTX_ROLE` or the built-in role the
+                // client name suggests, never the bus name in
+                // `LEAN_CTX_AGENT_ROLE` (a worker label is no permission).
                 if process_roots_apply {
+                    let (permission_role, _) = resolve_session_role(
+                        &agent_name,
+                        lean_ctx::core::agents::declared_permission_role(),
+                    );
                     let _ =
-                        lean_ctx::core::roles::set_active_role_with_source(&effective_role, true);
+                        lean_ctx::core::roles::set_active_role_with_source(&permission_role, true);
                 }
                 // #1766: remember the resolved role so the fail-closed presence
                 // retry re-registers with it, not the `context-engine` placeholder.
@@ -847,14 +854,10 @@ impl ServerHandler for LeanCtxServer {
             .meta
             .as_ref()
             .and_then(rmcp::model::RequestMetaObject::get_progress_token);
-        if let Some(ref token) = progress_token {
-            let sender =
-                crate::server::progress::ProgressSender::new(context.peer.clone(), token.clone());
-            *self
-                .progress_sender
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sender);
-        }
+        // Scoped to this request only (see `REQUEST_PROGRESS`): progress never
+        // outlives its call or leaks into another one.
+        let progress = progress_token
+            .map(|token| crate::server::progress::ProgressSender::new(context.peer.clone(), token));
 
         let tool_name_for_panic = request.name.as_ref().to_string();
         let args_fp_for_panic = request
@@ -890,10 +893,13 @@ impl ServerHandler for LeanCtxServer {
         // instead of holding its blocking-pool slot until its own soft cap.
         let Ok(result) = AssertUnwindSafe(crate::server::tool_trait::REQUEST_CT.scope(
             ct.clone(),
-            Box::pin(crate::server::call_identity::scoped(
-                host_call_id,
-                lean_ctx::core::session_rights::scope(rights, self.call_tool_guarded(request)),
-            )),
+            crate::server::tool_trait::REQUEST_PROGRESS.scope(
+                progress,
+                Box::pin(crate::server::call_identity::scoped(
+                    host_call_id,
+                    lean_ctx::core::session_rights::scope(rights, self.call_tool_guarded(request)),
+                )),
+            ),
         ))
         .catch_unwind()
         .await

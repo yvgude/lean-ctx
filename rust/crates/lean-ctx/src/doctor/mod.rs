@@ -897,16 +897,18 @@ fn run_inner(json: bool) -> u32 {
     let cache_safety = cache_safety_outcome();
     board.check(&cache_safety);
 
-    // 14) Claude Code instruction truncation guard
+    // 14) Claude Code instruction truncation guard. Scored only when the
+    // client's own config carries lean-ctx: an installed client that is
+    // attached per session (`--mcp-config`) has no global instructions to miss.
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
-        board.check(ct);
+        record_client_item(&mut board, ct, "Claude Code", &user_scope_mcp_locations);
     }
 
     // 14a) CodeBuddy instruction truncation guard
     let codebuddy_truncation = codebuddy_truncation_outcome();
     if let Some(ref cbt) = codebuddy_truncation {
-        board.check(cbt);
+        record_client_item(&mut board, cbt, "CodeBuddy", &user_scope_mcp_locations);
     }
 
     // 14a2) Clients that connect but never call LeanCTX (local ledger, no
@@ -1259,6 +1261,21 @@ fn config_migration_pause_outcome(config: &std::path::Path) -> Option<Outcome> {
     })
 }
 
+/// A per-client item counts toward the score only for a client whose MCP
+/// config names lean-ctx; for any other installed client it is advice.
+fn record_client_item(
+    board: &mut Scoreboard,
+    outcome: &Outcome,
+    client: &str,
+    configured: &std::collections::BTreeSet<&'static str>,
+) {
+    if configured.contains(client) {
+        board.check(outcome);
+    } else {
+        board.info(outcome);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_active_shell_impl;
@@ -1316,6 +1333,30 @@ mod tests {
         assert!(plain.contains("1/3 checks passed"), "{plain}");
         assert!(plain.contains("2 check(s) need attention"), "{plain}");
         assert!(plain.contains("1 optional item(s)"), "{plain}");
+    }
+
+    /// rc3-32: Claude Code installed but attached per session (no lean-ctx
+    /// entry in its config) made `doctor` 39/40 after a clean onboard.
+    #[test]
+    fn client_instructions_count_only_for_a_client_configured_with_lean_ctx() {
+        use super::{Outcome, Scoreboard, record_client_item};
+        let missing = Outcome {
+            ok: false,
+            line: "Claude Code instructions  no CLAUDE.md block".to_owned(),
+        };
+        let scored = |configured: &[&'static str]| {
+            let mut board = Scoreboard::new(true);
+            record_client_item(
+                &mut board,
+                &missing,
+                "Claude Code",
+                &configured.iter().copied().collect(),
+            );
+            board.report_json()["checks"][0]["scored"].clone()
+        };
+        assert_eq!(scored(&[]), serde_json::json!(false));
+        assert_eq!(scored(&["Cursor"]), serde_json::json!(false));
+        assert_eq!(scored(&["Claude Code"]), serde_json::json!(true));
     }
     #[test]
     fn cloud_sync_needs_a_supervised_daemon_when_connected() {

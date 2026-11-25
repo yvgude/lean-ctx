@@ -234,7 +234,7 @@ pub enum Delivery {
     Failed(String),
 }
 
-const NO_PROPOSE_RIGHT: &str = "the LeanCTX Cloud lease does not allow task proposals";
+const NO_PROPOSE_RIGHT: &str = "your LeanCTX Cloud plan does not allow task proposals";
 
 fn deliver(
     session: &Session,

@@ -136,6 +136,15 @@ pub fn without_sharing(config: &mut CloudConfig) {
     config.bus = CloudBusMode::Off;
 }
 
+/// Every channel a "no" switches off is off: what [`without_sharing`]
+/// leaves. A yes given while it holds shares nothing until they are on again.
+pub fn switched_off_by_no(config: &CloudConfig) -> bool {
+    !config.auto_capture
+        && !config.metrics_upload
+        && !config.receipts_upload
+        && config.bus == CloudBusMode::Off
+}
+
 /// `config` with the channels a "no" switched off back at their defaults:
 /// what a later yes means.
 pub fn with_sharing(config: &mut CloudConfig) {
@@ -277,9 +286,17 @@ mod tests {
         assert!(!left.contains("knowledge from") && !left.contains("bus messages"));
         assert!(!config.auto_capture && !config.metrics_upload && !config.receipts_upload);
         assert_eq!(config.bus, CloudBusMode::Off);
+        assert!(switched_off_by_no(&config));
         // A later yes (E2E 27.10. E2) turns the same channels back on.
         with_sharing(&mut config);
         assert_eq!(share_codes(&config), share_codes(&CloudConfig::default()));
+        assert!(!switched_off_by_no(&config));
+        // One channel switched off by hand is not a "no".
+        let one_off = CloudConfig {
+            bus: CloudBusMode::Off,
+            ..CloudConfig::default()
+        };
+        assert!(!switched_off_by_no(&one_off));
         let paused = CloudConfig {
             enabled: Some(false),
             ..CloudConfig::default()

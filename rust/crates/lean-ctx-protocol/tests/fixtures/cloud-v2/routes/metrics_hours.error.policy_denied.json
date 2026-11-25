@@ -2,6 +2,8 @@
   "error": {
     "code": "policy_denied",
     "message": "the policy rule Share instance metrics is off for this instance",
+    "member": "sharing.share_instance_metrics",
+    "level": "workspace",
     "field": "sharing.share_instance_metrics",
     "reason": "workspace"
   }

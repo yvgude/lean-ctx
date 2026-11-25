@@ -4,7 +4,7 @@
     "text": "Can the export wait until the ledger close is done?"
   },
   "client_msg_id": "01M5NKA2Z8B000000000000002",
-  "presence_signature": "Ne6ZEAgtjyY2-K0geGNagTckI3Fy6AmltkM5o6dxypiqqAcq7o0kU0OhKvI2FRtjkLfDQ4Aznpmw19ZWuQ6HBw",
+  "presence_signature": "Srixvqaz2pTWn12E1XsUKiwUMDJpg5-lEZiVE9_nYR5cYyOy1Wdn-BPV5Cj9UF904pNFEaWtFqJEh58vUT4vCA",
   "schema": "leanctx.cloud.bus/v2",
   "sender": {
     "kind": "person"

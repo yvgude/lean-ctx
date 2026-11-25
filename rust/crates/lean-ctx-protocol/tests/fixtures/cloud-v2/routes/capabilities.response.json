@@ -1,8 +1,14 @@
 {
   "features": [
+    "change_trace",
+    "cpao",
     "device_setup",
+    "instance_metrics_sharing",
+    "instance_optin_key",
     "instance_waiting",
     "session_ref",
+    "task_person_origin",
+    "team_stop",
     "usage"
   ],
   "schema": "leanctx.cloud.capabilities/v1"

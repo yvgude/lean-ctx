@@ -13,8 +13,12 @@ impl McpTool for CtxReadTool {
 
     fn produces_machine_readable(&self, args: Option<&Map<String, Value>>) -> bool {
         // The explicit Engine view is a byte-exact payload, even when it is text.
-        // Security and final turn-budget enforcement still run in the pipeline.
+        // So is a raw read (#1316): consumers compare it with the disk bytes,
+        // so no tip, nudge, footer or hint may ride on it, and it consumes no
+        // once-per-session slot. Security and final turn-budget enforcement
+        // still run in the pipeline.
         crate::server::native_receipts::requested("ctx_read", args)
+            || args.is_some_and(raw_requested)
     }
 
     fn tool_def(&self) -> Tool {
@@ -42,13 +46,6 @@ impl McpTool for CtxReadTool {
             return result;
         }
 
-        // #2262: a relative path that resolved against a moved base (the
-        // last ctx_shell cwd in another checkout) says so in the output.
-        let requested = get_str(args, "path").unwrap_or_default();
-        let moved_base = (get_str(args, "repo").is_none()
-            && crate::tools::path_base::is_relative(&requested))
-        .then(|| crate::tools::path_base::active_base(ctx))
-        .flatten();
         let path = if let Some(repo) = get_str(args, "repo") {
             let root = lean_ctx::core::multi_repo::resolve_repo_root(&repo).ok_or_else(|| {
                 let known = lean_ctx::core::multi_repo::known_aliases().join(", ");
@@ -74,28 +71,17 @@ impl McpTool for CtxReadTool {
         // prefix). When exactly one file fits and the jail admits it, read it
         // and say so instead of failing. Byte-exact reads (the engine view,
         // `raw`) never substitute: their output must be the file and nothing else.
-        let byte_exact = engine_interface_v1
-            || get_str(args, "mode").as_deref() == Some("raw")
-            || args.get("raw").and_then(Value::as_bool) == Some(true);
-        // The doubled path (#2262) is checked first, by the rule ctx_patch
-        // shares, so both tools pick the same file.
-        let doubled = moved_base
-            .as_ref()
-            .filter(|_| !byte_exact)
-            .and_then(|base| {
-                crate::tools::path_base::doubled_path_fallback(ctx, base, &requested, &path)
-            });
-        let (path, substituted) = match doubled.or_else(|| {
-            (!byte_exact)
-                .then(|| {
-                    lean_ctx::core::path_suggest::unambiguous_match_in(
-                        std::path::Path::new(&path),
-                        std::path::Path::new(&ctx.project_root),
-                    )
-                })
-                .flatten()
-                .and_then(|found| ctx.resolve_path_sync(&found.to_string_lossy()).ok())
-        }) {
+        let byte_exact = engine_interface_v1 || raw_requested(args);
+        let (path, substituted) = match (!byte_exact)
+            .then(|| {
+                lean_ctx::core::path_suggest::unambiguous_match_in(
+                    std::path::Path::new(&path),
+                    std::path::Path::new(&ctx.project_root),
+                )
+            })
+            .flatten()
+            .and_then(|found| ctx.resolve_path_sync(&found.to_string_lossy()).ok())
+        {
             Some(found) => (found, Some(path)),
             None => (path, None),
         };
@@ -139,17 +125,9 @@ impl McpTool for CtxReadTool {
         let result = result.map(|mut output| {
             if let Some(requested) = &substituted {
                 output.text = format!(
-                    "{}\n{}",
+                    "{}\n[lean-ctx: {requested} does not exist — read {path} instead]",
                     output.text.trim_end_matches('\n'),
-                    crate::tools::path_base::substitution_note(requested, &path, "read")
                 );
-            }
-            if let Some(note) = moved_base
-                .as_ref()
-                .filter(|_| !byte_exact)
-                .and_then(crate::tools::path_base::ActiveBase::note_once)
-            {
-                output.text = format!("{}\n{note}", output.text.trim_end_matches('\n'));
             }
             if let Some(note) = &symbol_note {
                 output.text = format!("{}\n{note}", output.text.trim_end_matches('\n'));
@@ -222,4 +200,10 @@ fn symbol_request(
     }
     rewritten.insert("mode".into(), Value::String(mode));
     Ok((rewritten, note))
+}
+
+/// `raw: true` or `mode: "raw"`: the caller asked for the file's bytes.
+fn raw_requested(args: &Map<String, Value>) -> bool {
+    get_str(args, "mode").as_deref() == Some("raw")
+        || args.get("raw").and_then(Value::as_bool) == Some(true)
 }

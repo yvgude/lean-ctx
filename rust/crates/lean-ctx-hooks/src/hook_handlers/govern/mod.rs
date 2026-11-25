@@ -27,6 +27,10 @@
 //! - **R5** — the first whole-file Read of a large code file comes as its
 //!   outline (symbols with line spans); a second whole-file Read returns the
 //!   full content ([`outline`]). Checked before R1.read.
+//! - **R6** — a large native Grep `content` result comes in ripgrep's
+//!   `--heading` layout: each file path once, then its `N:` match and `N-`
+//!   context lines ([`grep`]). Strictly lossless; without it no Grep result
+//!   was ever shaped, since `hook rewrite-enforce` never compresses.
 //!
 //! Code Mode ([`repl`]): a tool call made by a REPL script (`tool_use_id`
 //! `repl_…`) returns the script's data, so it is never rewritten and leaves
@@ -50,6 +54,7 @@
 mod bash;
 mod diagnostics;
 mod enforce;
+mod grep;
 mod outline;
 mod repl;
 #[cfg(test)]
@@ -122,6 +127,7 @@ pub(crate) struct Policy {
     pub r3: RuleMode,
     pub r4: RuleMode,
     pub r5: RuleMode,
+    pub r6: RuleMode,
 }
 
 impl Policy {
@@ -145,6 +151,7 @@ impl Policy {
             r3: rule("r3", "LEAN_CTX_GOVERNOR_R3", RuleMode::Shadow).min(RuleMode::Shadow),
             r4: rule("r4", "LEAN_CTX_GOVERNOR_R4", RuleMode::Shadow),
             r5: rule("r5", "LEAN_CTX_GOVERNOR_R5", RuleMode::On),
+            r6: rule("r6", "LEAN_CTX_GOVERNOR_R6", RuleMode::Shadow),
         }
     }
 }
@@ -365,6 +372,7 @@ pub(crate) fn decide(input: &str, policy: &Policy) -> Decision {
         Some("Read") => read(&v, policy, session_id),
         Some(name) if read_dedup::CTX_READ_TOOLS.contains(&name) => r1_read(&v, policy, session_id),
         Some("Bash") => bash::decide(&v, policy, session_id, bash::Scope::Model),
+        Some("Grep") => grep::decide(&v, policy, session_id),
         Some("Edit" | "Write" | "MultiEdit" | "NotebookEdit") => {
             bash::bump_epoch(session_id);
             Decision::default()

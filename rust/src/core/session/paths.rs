@@ -108,94 +108,6 @@ pub(crate) fn parse_engine_session_id(id: &str) -> Option<EngineSessionId<'_>> {
     Some(EngineSessionId(id))
 }
 
-/// Extracts the `cd` target from a command string.
-/// Handles patterns like `cd /foo`, `cd foo && bar`, `cd ../dir; cmd`,
-/// `cd "C:\Program Files\My Project" && build`, and Windows `cd /d D:\path`.
-/// Uses quote-aware splitting to avoid breaking on operators inside quoted paths.
-pub(crate) fn extract_cd_target(command: &str, base_cwd: &str) -> Option<String> {
-    let first_cmd = quote_aware_first_segment(command);
-    let first_cmd = first_cmd.trim();
-
-    if !first_cmd.starts_with("cd ") && first_cmd != "cd" {
-        return None;
-    }
-
-    let mut target = first_cmd.strip_prefix("cd")?.trim();
-    if target.is_empty() || target == "~" {
-        return dirs::home_dir().map(|h| h.to_string_lossy().to_string());
-    }
-
-    // Handle Windows `cd /d <path>` prefix
-    if target.starts_with("/d ") || target.starts_with("/D ") {
-        target = target[3..].trim();
-    }
-
-    let target = target.trim_matches('"').trim_matches('\'');
-    let path = std::path::Path::new(target);
-
-    if path.is_absolute() || is_windows_absolute(target) {
-        Some(target.to_string())
-    } else {
-        let base = std::path::Path::new(base_cwd);
-        let joined = base.join(target).to_string_lossy().to_string();
-        Some(joined.replace('\\', "/"))
-    }
-}
-
-/// Detect Windows-style absolute paths like `D:\path` or `C:/path`.
-/// Needed because `Path::is_absolute()` on Unix doesn't recognize drive letters.
-fn is_windows_absolute(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && (bytes[2] == b'\\' || bytes[2] == b'/')
-}
-
-/// Extract the first command segment from a compound command, respecting quotes.
-/// Splits on `&&`, `||`, `;`, `|` but only when outside of single/double quotes.
-fn quote_aware_first_segment(command: &str) -> &str {
-    let bytes = command.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let mut in_single = false;
-    let mut in_double = false;
-
-    while i < len {
-        let ch = bytes[i];
-
-        if in_single {
-            if ch == b'\'' {
-                in_single = false;
-            }
-            i += 1;
-            continue;
-        }
-        if in_double {
-            if ch == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
-                in_double = false;
-            }
-            i += 1;
-            continue;
-        }
-
-        match ch {
-            b'\'' => {
-                in_single = true;
-                i += 1;
-            }
-            b'"' => {
-                in_double = true;
-                i += 1;
-            }
-            b';' | b'\n' | b'\r' | b'|' => return &command[..i],
-            b'&' if i + 1 < len && bytes[i + 1] == b'&' => return &command[..i],
-            _ => i += 1,
-        }
-    }
-    command
-}
-
 pub(crate) fn shorten_path(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() <= 2 {
@@ -208,76 +120,6 @@ pub(crate) fn shorten_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cd_simple_path() {
-        let r = extract_cd_target("cd /foo/bar", "/home");
-        assert_eq!(r, Some("/foo/bar".into()));
-    }
-
-    #[test]
-    fn cd_with_chain_operators() {
-        let r = extract_cd_target("cd /foo && ls", "/home");
-        assert_eq!(r, Some("/foo".into()));
-    }
-
-    #[test]
-    fn cd_quoted_path_with_spaces() {
-        let r = extract_cd_target(r#"cd "/path/with spaces/dir" && build"#, "/home");
-        assert_eq!(r, Some("/path/with spaces/dir".into()));
-    }
-
-    #[test]
-    fn cd_quoted_path_with_ampersand_inside() {
-        let r = extract_cd_target(r#"cd "/path/a&&b""#, "/home");
-        assert_eq!(r, Some("/path/a&&b".into()));
-    }
-
-    #[test]
-    fn cd_single_quoted_path_with_semicolon() {
-        let r = extract_cd_target("cd '/path/a;b' ; ls", "/home");
-        assert_eq!(r, Some("/path/a;b".into()));
-    }
-
-    #[test]
-    fn cd_windows_drive() {
-        let r = extract_cd_target(r"cd /d D:\Projects\app", r"C:\Users\test");
-        assert_eq!(r, Some(r"D:\Projects\app".into()));
-    }
-
-    #[test]
-    fn cd_windows_program_files() {
-        let r = extract_cd_target(
-            r#"cd /d "C:\Program Files\My Project" && cargo build"#,
-            r"C:\Users\test",
-        );
-        assert_eq!(r, Some(r"C:\Program Files\My Project".into()));
-    }
-
-    #[test]
-    fn windows_absolute_detection() {
-        assert!(is_windows_absolute(r"C:\Users\test"));
-        assert!(is_windows_absolute("D:/Projects/app"));
-        assert!(!is_windows_absolute("/unix/path"));
-        assert!(!is_windows_absolute("relative/path"));
-    }
-
-    #[test]
-    fn cd_relative_path() {
-        let r = extract_cd_target("cd src/lib", "/home/user/project");
-        assert_eq!(r, Some("/home/user/project/src/lib".into()));
-    }
-
-    #[test]
-    fn cd_bare() {
-        let r = extract_cd_target("cd", "/home/user");
-        assert!(r.is_some(), "bare cd should return home dir");
-    }
-
-    #[test]
-    fn not_a_cd_command() {
-        assert!(extract_cd_target("ls -la", "/home").is_none());
-    }
 
     #[test]
     fn session_id_is_qualified_by_process() {
@@ -312,11 +154,5 @@ mod tests {
             parse_engine_session_id(&format!("20261004-123406u123456p{}1s0", "0".repeat(100)))
                 .is_none()
         );
-    }
-
-    #[test]
-    fn cd_tilde() {
-        let r = extract_cd_target("cd ~", "/wherever");
-        assert!(r.is_some(), "cd ~ should return home dir");
     }
 }

@@ -90,6 +90,37 @@
           "message": "This request was already answered."
         }
       }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "confirmation_required",
+          "message": "confirm with your password or the link we mail you",
+          "methods": [
+            "password",
+            "link"
+          ]
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "invalid_credentials",
+          "message": "the current password is wrong"
+        }
+      }
+    },
+    {
+      "status": 410,
+      "body": {
+        "error": {
+          "code": "link_expired",
+          "message": "this link was already used or has expired"
+        }
+      }
     }
   ]
 }

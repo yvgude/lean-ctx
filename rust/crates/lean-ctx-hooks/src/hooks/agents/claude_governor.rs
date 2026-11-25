@@ -12,7 +12,7 @@
 //! pins that choice, so no later update migrates it again.
 //!
 //! What the profile writes, and nothing else:
-//! - PostToolUse `Read|Bash|Edit|…` → `hook govern` (explicit 5 s timeout);
+//! - PostToolUse `Read|Bash|Grep|Edit|…` → `hook govern` (explicit 5 s timeout);
 //!   PreCompact, PostCompact, SessionStart → `hook govern` (purge, plus the
 //!   compaction marker on a compaction or clear; no stdout); SessionEnd →
 //!   `hook observe`; PostToolUse `SendMessage` → `hook observe` (mirrors the
@@ -38,10 +38,11 @@ pub use lean_ctx::core::claude_host::GovernorArm;
 pub use lean_ctx::core::claude_host::is_governor_installed as is_installed;
 use lean_ctx::core::claude_host::rules_block;
 
-/// PostToolUse matcher: the governed results plus the edit tools that bump
+/// PostToolUse matcher: the governed results (Grep: R6, since
+/// `hook rewrite-enforce` never shapes it) plus the edit tools that bump
 /// the edit epoch (they never get output), and Code Mode's `REPL` result
 /// with `Poll`, which delivers an async eval's settled result.
-pub(crate) const GOVERN_POST_MATCHER: &str = "Read|Bash|Edit|Write|MultiEdit|NotebookEdit|REPL|Poll|mcp__lean-ctx__ctx_read|mcp__lean_ctx__ctx_read";
+pub(crate) const GOVERN_POST_MATCHER: &str = "Read|Bash|Grep|Edit|Write|MultiEdit|NotebookEdit|REPL|Poll|mcp__lean-ctx__ctx_read|mcp__lean_ctx__ctx_read";
 
 /// Marks an MCP entry this profile wrote, so a revert removes only its own keys.
 const ARM_MARKER_ENV: &str = "LEAN_CTX_GOVERNOR_ARM";
@@ -532,6 +533,23 @@ mod tests {
             .collect();
         assert_eq!(mirror.len(), 1, "one SendMessage group");
         assert_eq!(mirror[0]["hooks"][0]["command"], "lean-ctx hook observe");
+        // Seamit bench: `hook rewrite-enforce` never shapes a native Grep, so
+        // its result must reach `hook govern` (R6) or it is never shaped.
+        let govern_matchers: Vec<String> = settings(home.path())["hooks"]["PostToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|g| g["hooks"][0]["command"] == "lean-ctx hook govern")
+            .map(|g| g["matcher"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(govern_matchers.len(), 1, "one govern group");
+        for tool in ["Bash", "Grep", "Read"] {
+            assert!(
+                govern_matchers[0].split('|').any(|t| t == tool),
+                "{tool} governed: {}",
+                govern_matchers[0]
+            );
+        }
 
         // Idempotent: a second install changes nothing.
         let before = std::fs::read_to_string(settings_path(home.path())).unwrap();
@@ -541,6 +559,52 @@ mod tests {
             std::fs::read_to_string(settings_path(home.path())).unwrap(),
             before
         );
+    }
+
+    /// An install from before R6 has the govern group under the old matcher
+    /// (no Grep). Re-installing or refreshing moves the hook to the new
+    /// matcher instead of adding a second govern group.
+    #[test]
+    fn upgrade_rewrites_the_old_govern_matcher_without_duplicating() {
+        let _env = TestEnv::new();
+        let home = home_with_standard_setup();
+        install(home.path(), GovernorArm::NoMcp);
+        let old_matcher = GOVERN_POST_MATCHER.replace("|Grep", "");
+        assert_ne!(old_matcher, GOVERN_POST_MATCHER);
+        let path = settings_path(home.path());
+        let mut root = settings(home.path());
+        for g in root["hooks"]["PostToolUse"].as_array_mut().unwrap() {
+            if g["matcher"] == GOVERN_POST_MATCHER {
+                g["matcher"] = serde_json::json!(old_matcher);
+            }
+        }
+        std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap()).unwrap();
+
+        for upgrade in [refresh as fn(&std::path::Path), |h| {
+            install(h, GovernorArm::NoMcp);
+        }] {
+            upgrade(home.path());
+            let groups = settings(home.path())["hooks"]["PostToolUse"]
+                .as_array()
+                .unwrap()
+                .clone();
+            let govern: Vec<_> = groups
+                .iter()
+                .filter(|g| {
+                    g["hooks"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|h| h["command"] == "lean-ctx hook govern")
+                })
+                .collect();
+            assert_eq!(govern.len(), 1, "one govern group: {groups:?}");
+            assert_eq!(govern[0]["matcher"], GOVERN_POST_MATCHER);
+            assert!(
+                groups.iter().all(|g| g["matcher"] != old_matcher.as_str()),
+                "old group gone: {groups:?}"
+            );
+        }
     }
 
     #[test]

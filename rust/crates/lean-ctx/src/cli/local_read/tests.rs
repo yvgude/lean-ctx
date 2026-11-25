@@ -2621,3 +2621,42 @@ fn project_less_socket_documents_are_released_not_withheld() {
     );
     assert_eq!(missing.failed, Some(Code::Withheld), "{}", missing.text);
 }
+
+/// rc4-32 scope: only the person's own post to a vault needs the app's
+/// signature; it is refused at once and nothing is queued. A post `--as` an
+/// agent and a local-only post never meet that refusal.
+#[test]
+fn only_an_unsigned_person_post_to_a_vault_is_refused_for_its_signature() {
+    assert!(bus::needs_app_signature(bus::PERSON, &["#acme/payments"]));
+    assert!(!bus::needs_app_signature(
+        "mcp-2-developer",
+        &["#acme/payments"]
+    ));
+    assert!(!bus::needs_app_signature(bus::PERSON, &["agent-a"]));
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+    let args = |extra: &[&str]| {
+        let mut a: Vec<String> = [
+            "--to",
+            "#acme/payments",
+            "--message",
+            "hi",
+            "--project-root",
+            &root,
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+        a.extend(extra.iter().map(|s| (*s).to_owned()));
+        a
+    };
+    let person = bus::bus_post_checked(&args(&[])).unwrap_err();
+    assert_eq!(person.code, Code::SignatureRequired, "{}", person.message);
+    let registry = lean_ctx::core::agents::AgentRegistry::load().unwrap_or_default();
+    assert!(registry.scratchpad.is_empty(), "nothing was queued");
+    // `--as` an agent: whatever else decides, never the signature.
+    if let Err(agent) = bus::bus_post_checked(&args(&["--as", "mcp-2-developer"])) {
+        assert_ne!(agent.code, Code::SignatureRequired, "{}", agent.message);
+    }
+}

@@ -1,0 +1,68 @@
+{
+  "schema": "leanctx.cloud.change-trace/v1",
+  "repo_id": "6f1c2a7e3b0d4f5e9a412d8c7b1e0f93",
+  "change_id": "0f3a9c2e7b1d4a55",
+  "goal": {
+    "task_id": "task:142",
+    "vault": "payments",
+    "task_state": "done",
+    "plan_ref": null
+  },
+  "instructions": {
+    "brief_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "acked_plan_version": null
+  },
+  "context": {
+    "receipt_schema": "leanctx.task-receipt/v1",
+    "receipt_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "chain_broken": false,
+    "pinned_by": "inst_0b6f8f1e6c1d4b8e9a335d7e2c9f4a10",
+    "sessions": [
+      {
+        "session_ref": "sr:3f9a01",
+        "ledger_last_hash": "9e1f",
+        "audit_last_hash": null,
+        "deliveries": 12,
+        "withheld": 1,
+        "agents": 2,
+        "gaps": []
+      }
+    ]
+  },
+  "action": {
+    "kind": "merge_landed",
+    "agent": "codex",
+    "land_sha": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "mr_number": 158
+  },
+  "rule": {
+    "policies": [
+      {
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "version": 7,
+        "key_id": "pk_2026_11"
+      },
+      {
+        "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "version": null,
+        "key_id": null
+      }
+    ],
+    "audit_head": {
+      "seq": 4211,
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "decisions": [
+      "dec-merge-no-rebase",
+      "dec-pricing-usd"
+    ]
+  },
+  "result": {
+    "status": "accepted",
+    "landed_at": "2026-11-18T10:03:41Z",
+    "reverted_at": null
+  },
+  "gaps": [
+    "policy_unknown"
+  ]
+}

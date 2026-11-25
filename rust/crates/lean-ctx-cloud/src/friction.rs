@@ -68,6 +68,10 @@ pub fn emit_due(store: &CloudStore, now: UtcDateTime) -> usize {
     // only names the worker it had, so an hour's findings never bring a
     // gone role back into a full book (and push out an idle one).
     let worker_of = |agent: &AgentEntry| {
+        // rc4-86: an MCP server's own presence is no worker.
+        if agent.is_engine_placeholder() {
+            return None;
+        }
         let (host, role) = super::workers::attach::agent_worker_key(agent);
         if active.contains(agent.agent_id.as_str()) {
             super::workers::attach::attach(store, &instance.instance_id, &host, &role)
@@ -282,7 +286,12 @@ pub(crate) fn hour_findings(
     let mut time: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
     let mut counts: BTreeMap<String, BTreeMap<&'static str, u32>> = BTreeMap::new();
     for agent in agents {
-        let (Some(place), Some(worker)) = (place_of(&agent.project_root), worker_of(agent)) else {
+        // The place first: an agent in a project no vault links gets no
+        // worker attached just to be skipped.
+        let Some(place) = place_of(&agent.project_root) else {
+            continue;
+        };
+        let Some(worker) = worker_of(agent) else {
             continue;
         };
         let start = agent.started_at.max(from);

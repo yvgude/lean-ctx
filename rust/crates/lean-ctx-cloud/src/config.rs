@@ -56,6 +56,17 @@ impl CloudConfigExt for CloudConfig {
     fn root_key(&self, origin: &str) -> Result<[u8; 32], CloudError> {
         managed_carrier_ok()?;
         let encoded = match (&self.root_key, is_hosted_origin(origin)) {
+            // A self-hosted key with the hosted origin: `[cloud] url` (or
+            // `--url`) is missing, and the hosted key set would never verify.
+            (Some(key), true)
+                if !compiled_root_keys(HOSTED_ROOT_KEYS)
+                    .contains(&decode_key(key.trim(), "root_key")?) =>
+            {
+                return Err(CloudError::Config(format!(
+                    "`[cloud] root_key` is not a key of {origin}; set `[cloud] url` \
+                     (or pass --url) to the Cloud this key belongs to"
+                )));
+            }
             (Some(key), _) => key.as_str(),
             (None, true) => HOSTED_ROOT_KEYS.first().copied().ok_or_else(|| {
                 CloudError::Config(
@@ -65,7 +76,9 @@ impl CloudConfigExt for CloudConfig {
             })?,
             (None, false) => {
                 return Err(CloudError::Config(format!(
-                    "set `[cloud] root_key` to the root public key of {origin}"
+                    "{origin} needs its root public key: set `root_key` in the `[cloud]` \
+                     section of config.toml (`lean-ctx config path` shows the file) to the \
+                     base64 key that {origin}'s operator gives you"
                 )));
             }
         };
@@ -221,12 +234,42 @@ mod tests {
             ..CloudConfig::default()
         };
         let origin = config.origin().unwrap();
-        assert!(config.root_key(&origin).is_err());
+        // rc4-120: the refusal says where the key goes and who has it.
+        let error = config.root_key(&origin).unwrap_err().to_string();
+        for part in [
+            "`[cloud]`",
+            "config.toml",
+            "lean-ctx config path",
+            "operator",
+        ] {
+            assert!(error.contains(part), "{part}: {error}");
+        }
         let config = CloudConfig {
             root_key: Some(B64.encode([7u8; 32])),
             ..config
         };
         assert_eq!(config.root_key(&origin).unwrap(), [7u8; 32]);
+    }
+
+    #[test]
+    fn a_self_hosted_root_key_without_its_url_names_the_missing_url() {
+        // rc4-47: root_key of another Cloud, no url → the hosted origin.
+        let config = CloudConfig {
+            root_key: Some(B64.encode([7u8; 32])),
+            ..CloudConfig::default()
+        };
+        let origin = config.origin().unwrap();
+        let error = config.root_key(&origin).unwrap_err().to_string();
+        assert!(error.contains("set `[cloud] url`"), "{error}");
+        // The hosted key itself stays accepted for the hosted origin.
+        let hosted = CloudConfig {
+            root_key: Some(HOSTED_ROOT_KEYS[0].into()),
+            ..CloudConfig::default()
+        };
+        assert_eq!(
+            hosted.root_key(&origin).unwrap(),
+            compiled_root_keys(HOSTED_ROOT_KEYS)[0]
+        );
     }
 
     #[test]

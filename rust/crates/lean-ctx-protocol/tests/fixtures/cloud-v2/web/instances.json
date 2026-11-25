@@ -26,6 +26,7 @@
             "grace_until": "2026-10-28T06:58:00Z"
           },
           "slot_free_at": null,
+          "metrics_sharing": true,
           "vaults": [
             {
               "vault": "payments",
@@ -61,6 +62,7 @@
           "revoked_at": "2026-10-24T09:00:00Z",
           "lease": null,
           "slot_free_at": "2026-10-31T09:00:00Z",
+          "metrics_sharing": false,
           "vaults": [
             {
               "vault": "payments",
@@ -88,12 +90,19 @@
           "revoked_at": "2026-10-25T16:20:00Z",
           "lease": null,
           "slot_free_at": null,
+          "metrics_sharing": null,
           "vaults": []
         }
       ],
       "next_cursor": null,
       "limit": 3,
-      "used": 1
+      "used": 1,
+      "registered": {
+        "limit": 3,
+        "used": 2,
+        "frees_at": "2026-10-31T09:00:00Z",
+        "pooled": false
+      }
     }
   },
   "errors": [

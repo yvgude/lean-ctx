@@ -1,0 +1,68 @@
+{
+  "body_b64": "eyJzY2hlbWEiOiJsZWFuY3R4LnBsYW4tYm9keS92MSIsInRpdGxlIjoiVmVjdG9yIHBsYW4iLCJnb2FsIjoiU2hpcCB0aGUgdGVzdCB2ZWN0b3IiLCJzZXNzaW9ucyI6W3sic2xvdCI6ImEiLCJyb2xlIjoiaW1wbGVtZW50ZXIiLCJicmllZiI6IldyaXRlIHRoZSBwYXJzZXIiLCJmb2xkZXIiOiJzcmMifSx7InNsb3QiOiJiIiwicm9sZSI6InJldmlld2VyIiwiYnJpZWYiOiJSZXZpZXcgdGhlIHBhcnNlciIsImZvbGRlciI6InNyYyJ9XX0=",
+  "body_utf8": "{\"schema\":\"leanctx.plan-body/v1\",\"title\":\"Vector plan\",\"goal\":\"Ship the test vector\",\"sessions\":[{\"slot\":\"a\",\"role\":\"implementer\",\"brief\":\"Write the parser\",\"folder\":\"src\"},{\"slot\":\"b\",\"role\":\"reviewer\",\"brief\":\"Review the parser\",\"folder\":\"src\"}]}",
+  "content_sha256": "sha256:e7dc1b68bc2339553e6aff965fea7bd1d072f359511251e125c66abc18d705e4",
+  "document": {
+    "body": "eyJzY2hlbWEiOiJsZWFuY3R4LnBsYW4tYm9keS92MSIsInRpdGxlIjoiVmVjdG9yIHBsYW4iLCJnb2FsIjoiU2hpcCB0aGUgdGVzdCB2ZWN0b3IiLCJzZXNzaW9ucyI6W3sic2xvdCI6ImEiLCJyb2xlIjoiaW1wbGVtZW50ZXIiLCJicmllZiI6IldyaXRlIHRoZSBwYXJzZXIiLCJmb2xkZXIiOiJzcmMifSx7InNsb3QiOiJiIiwicm9sZSI6InJldmlld2VyIiwiYnJpZWYiOiJSZXZpZXcgdGhlIHBhcnNlciIsImZvbGRlciI6InNyYyJ9XX0=",
+    "content_sha256": "sha256:e7dc1b68bc2339553e6aff965fea7bd1d072f359511251e125c66abc18d705e4",
+    "issued_by": "33333333-3333-4333-8333-333333333333",
+    "plan_id": "plan_22222222222222222222222222222222",
+    "published_at": "2026-11-20T12:00:00.000Z",
+    "schema": "leanctx.cloud.plan/v1",
+    "sessions": [
+      {
+        "brief_sha256": "sha256:4f26a3975893ee3356a6e7bd0291cb1a6823d6a35f99a23e67e09a2600bdff93",
+        "changed": true,
+        "slot": "a",
+        "task_id": null,
+        "worker_id": null
+      },
+      {
+        "brief_sha256": "sha256:3dce5b7aab1d14b75c803f024514cc9003dfbbcbf2d99d9a00d403ce6b07db29",
+        "changed": true,
+        "slot": "b",
+        "task_id": null,
+        "worker_id": null
+      }
+    ],
+    "signature": {
+      "key_id": "4718b4ce16a67de3",
+      "sig": "e3a895cc27d9fac01a61169daede7dcd0452f9be5c4b252d6b9e5f734d73f88dceb9e91407971a1b0a334efc5f1910d1a64177f2e35c18e94dcd6ba69b1d4d00"
+    },
+    "supersedes_version": null,
+    "vault": "11111111111141118111111111111111",
+    "version": 1
+  },
+  "domain": "leanctx.cloud.plan.v1\n",
+  "key_id": "4718b4ce16a67de3",
+  "key_source": "CloudKeys::from_seeds with purpose control = seed_hex (not CloudKeys::fixture); key_id = hex(blake3(public_key))[..16]",
+  "note": "TEST key only: seed_hex is public and must never sign anything outside tests. Cloud signs the statement (plan-statement/v1) with its control key over domain + canonical JSON; body, sessions and published_at are not signed (body is bound by content_sha256).",
+  "public_key_hex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+  "publish_request": {
+    "body": "eyJzY2hlbWEiOiJsZWFuY3R4LnBsYW4tYm9keS92MSIsInRpdGxlIjoiVmVjdG9yIHBsYW4iLCJnb2FsIjoiU2hpcCB0aGUgdGVzdCB2ZWN0b3IiLCJzZXNzaW9ucyI6W3sic2xvdCI6ImEiLCJyb2xlIjoiaW1wbGVtZW50ZXIiLCJicmllZiI6IldyaXRlIHRoZSBwYXJzZXIiLCJmb2xkZXIiOiJzcmMifSx7InNsb3QiOiJiIiwicm9sZSI6InJldmlld2VyIiwiYnJpZWYiOiJSZXZpZXcgdGhlIHBhcnNlciIsImZvbGRlciI6InNyYyJ9XX0=",
+    "content_sha256": "sha256:e7dc1b68bc2339553e6aff965fea7bd1d072f359511251e125c66abc18d705e4",
+    "plan_id": "plan_22222222222222222222222222222222",
+    "schema": "leanctx.cloud.plan-publish/v1",
+    "sessions": [
+      {
+        "brief_sha256": "sha256:4f26a3975893ee3356a6e7bd0291cb1a6823d6a35f99a23e67e09a2600bdff93",
+        "slot": "a",
+        "task_id": null,
+        "worker_id": null
+      },
+      {
+        "brief_sha256": "sha256:3dce5b7aab1d14b75c803f024514cc9003dfbbcbf2d99d9a00d403ce6b07db29",
+        "slot": "b",
+        "task_id": null,
+        "worker_id": null
+      }
+    ],
+    "supersedes_version": null
+  },
+  "purpose": "control",
+  "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "signature": "e3a895cc27d9fac01a61169daede7dcd0452f9be5c4b252d6b9e5f734d73f88dceb9e91407971a1b0a334efc5f1910d1a64177f2e35c18e94dcd6ba69b1d4d00",
+  "signed_message_hex": "6c65616e6374782e636c6f75642e706c616e2e76310a7b22636f6e74656e745f736861323536223a227368613235363a65376463316236386263323333393535336536616666393635666561376264316430373266333539353131323531653132356336366162633138643730356534222c226973737565645f6279223a2233333333333333332d333333332d343333332d383333332d333333333333333333333333222c226b65795f6964223a2234373138623463653136613637646533222c22706c616e5f6964223a22706c616e5f3232323232323232323232323232323232323232323232323232323232323232222c22736368656d61223a226c65616e6374782e636c6f75642e706c616e2d73746174656d656e742f7631222c227661756c74223a223131313131313131313131313431313138313131313131313131313131313131222c2276657273696f6e223a317d",
+  "signed_message_utf8": "leanctx.cloud.plan.v1\n{\"content_sha256\":\"sha256:e7dc1b68bc2339553e6aff965fea7bd1d072f359511251e125c66abc18d705e4\",\"issued_by\":\"33333333-3333-4333-8333-333333333333\",\"key_id\":\"4718b4ce16a67de3\",\"plan_id\":\"plan_22222222222222222222222222222222\",\"schema\":\"leanctx.cloud.plan-statement/v1\",\"vault\":\"11111111111141118111111111111111\",\"version\":1}",
+  "statement": "{\"content_sha256\":\"sha256:e7dc1b68bc2339553e6aff965fea7bd1d072f359511251e125c66abc18d705e4\",\"issued_by\":\"33333333-3333-4333-8333-333333333333\",\"key_id\":\"4718b4ce16a67de3\",\"plan_id\":\"plan_22222222222222222222222222222222\",\"schema\":\"leanctx.cloud.plan-statement/v1\",\"vault\":\"11111111111141118111111111111111\",\"version\":1}"
+}

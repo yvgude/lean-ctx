@@ -145,6 +145,8 @@ fn compress_in_pass(
         // (and any `functionCall` ↔ `functionResponse` correspondence) is intact.
         // `mode` resolved above.
         let boundary = super::history_prune::prune_boundary(mode, contents.len());
+        // The shell command of each response (`compress::with_tool_command`).
+        let tool_commands = tool_kind::gemini_tool_commands(contents);
 
         for (idx, content) in contents.iter_mut().enumerate() {
             let in_old_region = idx < boundary;
@@ -156,7 +158,7 @@ fn compress_in_pass(
             let Some(parts) = content.get_mut("parts").and_then(|p| p.as_array_mut()) else {
                 continue;
             };
-            for part in parts.iter_mut() {
+            for (part_idx, part) in parts.iter_mut().enumerate() {
                 let Some(func_resp) = part.get_mut("functionResponse") else {
                     continue;
                 };
@@ -179,11 +181,14 @@ fn compress_in_pass(
                 let Some(response) = func_resp.get_mut("response") else {
                     continue;
                 };
+                let command = tool_commands.get(&(idx, part_idx)).map(String::as_str);
                 for field in ["result", "content"] {
                     modified |= if in_old_region {
                         prune_string_field(response, field, kind)
                     } else if live {
-                        compress_string_field(response, field, name.as_deref(), kind)
+                        super::compress::with_tool_command(command, || {
+                            compress_string_field(response, field, name.as_deref(), kind)
+                        })
                     } else {
                         false
                     };
@@ -289,7 +294,7 @@ mod tests {
         // to the shared engine, so its output matches the name-routed engine
         // byte-for-byte (the contract that distinguishes this from `None`).
         // `infer_command`'s use of the name is unit-tested in `compress.rs`.
-        let raw = (0..60)
+        let raw = (0..150)
             .map(|i| format!("src/matches.rs:{i}:    let matched = find(foo, bar, baz);"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -314,6 +319,56 @@ mod tests {
             routed,
             "Gemini path must route the inline tool name to the shared compressor"
         );
+    }
+
+    /// A filtered shell result past the size floor (>60 lines, >4 KiB,
+    /// <16 KiB): the `functionCall` it answers names the command in `args`,
+    /// paired by `id` or, without one, by name in order.
+    #[test]
+    fn a_shell_grep_result_keeps_its_filtered_output_whole() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let output = (1..=300)
+            .map(|i| format!("build.log:{i}:[info] processed item {i:04} ok"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let result = |command: &str, with_id: bool| {
+            let mut call = serde_json::json!({
+                "name": "run_shell_command",
+                "args": {"command": command}
+            });
+            let mut response = serde_json::json!({
+                "name": "run_shell_command",
+                "response": {"result": output}
+            });
+            if with_id {
+                call["id"] = "call_1".into();
+                response["id"] = "call_1".into();
+            }
+            let body = serde_json::json!({
+                "contents": [
+                    {"role": "model", "parts": [{"functionCall": call}]},
+                    {"role": "user", "parts": [{"functionResponse": response}]}
+                ]
+            });
+            let bytes = serde_json::to_vec(&body).expect("serialisable body");
+            let (out, _, _) = compress_request_body(body, bytes.len(), None);
+            let parsed: Value = serde_json::from_slice(&out).expect("rewritten body is JSON");
+            parsed["contents"][1]["parts"][0]["functionResponse"]["response"]["result"]
+                .as_str()
+                .expect("the result stays a string")
+                .to_string()
+        };
+
+        for with_id in [true, false] {
+            let filtered = result("rg -n processed build.log | head -400", with_id);
+            assert_eq!(filtered, output, "the grep call keeps its result whole");
+            assert_ne!(
+                result("make build", with_id),
+                output,
+                "an unfiltered command is still compressed"
+            );
+        }
     }
 
     #[test]
@@ -383,7 +438,7 @@ mod tests {
         let mut s = String::from(
             "$ git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n",
         );
-        for i in 0..80 {
+        for i in 0..200 {
             s.push_str(&format!("\tmodified:   src/module_{i}/file_{i}.rs\n"));
         }
         s.push_str("\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n");

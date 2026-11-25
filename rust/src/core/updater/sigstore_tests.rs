@@ -190,6 +190,48 @@ fn an_installed_cosign_that_rejects_blocks_the_update() {
 }
 
 #[test]
+fn a_local_io_error_in_the_cosign_check_is_not_reported_as_a_bad_signature() {
+    // A full disk or quota made `lean-ctx update` say "cosign release signature
+    // verification failed: Disk quota exceeded". The update must still refuse,
+    // but name the local problem, not the signature.
+    let root = tempfile::tempdir().unwrap();
+    let missing = root.path().join("no-such-dir");
+    let err =
+        verify_release_signature_in(SUMS, SUMS_SIG, SUMS_PEM, "v3.11.0", "false", Some(&missing))
+            .unwrap_err();
+    assert!(
+        err.contains("could not run the cosign release signature check"),
+        "{err}"
+    );
+    assert!(err.contains("TMPDIR"), "{err}");
+    assert!(!err.contains("signature verification failed"), "{err}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cosign_that_cannot_start_is_not_reported_as_a_full_disk_or_a_bad_signature() {
+    // bd !656 NIT: a spawn error other than NotFound (here: not executable)
+    // must not get the disk/TMPDIR hint, and must still refuse.
+    let dir = tempfile::tempdir().unwrap();
+    let cosign = dir.path().join("cosign");
+    std::fs::write(&cosign, b"not a program").unwrap();
+    let err = verify_release_signature_with(
+        SUMS,
+        SUMS_SIG,
+        SUMS_PEM,
+        "v3.11.0",
+        cosign.to_str().unwrap(),
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("could not start cosign for the release signature check"),
+        "{err}"
+    );
+    assert!(!err.contains("TMPDIR"), "{err}");
+    assert!(!err.contains("signature verification failed"), "{err}");
+}
+
+#[test]
 fn malformed_inputs_are_errors_not_panics() {
     for cert in [&b""[..], b"not base64 !!", b"LS0tLS1CRUdJTg=="] {
         assert!(verify_blob(SUMS, SUMS_SIG, cert, "v3.11.0").is_err());

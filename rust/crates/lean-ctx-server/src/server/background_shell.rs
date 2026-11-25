@@ -961,7 +961,7 @@ mod tests {
     }
 
     /// #1173: a `timeout_ms` far beyond the soft cap must NOT keep the command
-    /// in the foreground. Raising the cap past the MCP host's ~120s abort is
+    /// in the foreground. Raising the cap past the MCP host's call abort (~105–120s) is
     /// what stranded results behind an unresolvable task id; the caller must
     /// still get a real `shell_*` job id at the cap.
     #[test]

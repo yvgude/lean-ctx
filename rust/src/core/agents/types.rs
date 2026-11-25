@@ -79,6 +79,14 @@ pub struct AgentEntry {
 }
 
 impl AgentEntry {
+    /// Whether this is only a LeanCTX MCP server's own presence: the
+    /// `context-engine` placeholder no agent stated. It is local plumbing,
+    /// never a team agent or a Cloud worker.
+    pub fn is_engine_placeholder(&self) -> bool {
+        self.role.as_deref() == Some(ENGINE_PLACEHOLDER_ROLE)
+            && self.role_source != Some(RoleSource::Declared)
+    }
+
     /// The current status line when the agent wrote it itself, else none:
     /// a later lifecycle note from LeanCTX (or a cleared status) replaces
     /// `status_message` without touching `agent_status_message`, so the
@@ -131,6 +139,9 @@ impl TransportClient {
     }
 }
 
+/// The role an MCP server registers before any agent states one.
+pub const ENGINE_PLACEHOLDER_ROLE: &str = "context-engine";
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RoleSource {
@@ -152,11 +163,41 @@ impl RoleSource {
 /// The session role stated through the environment (`LEAN_CTX_ROLE`, then
 /// `LEAN_CTX_AGENT_ROLE`). Anything else an MCP session gets is assumed.
 pub fn declared_session_role() -> Option<String> {
-    std::env::var("LEAN_CTX_ROLE")
-        .or_else(|_| std::env::var("LEAN_CTX_AGENT_ROLE"))
-        .ok()
-        .map(|role| role.trim().to_string())
-        .filter(|role| !role.is_empty())
+    stated_roles(
+        std::env::var("LEAN_CTX_ROLE").ok().as_deref(),
+        std::env::var("LEAN_CTX_AGENT_ROLE").ok().as_deref(),
+    )
+    .session
+}
+
+/// The permission role stated through the environment: `LEAN_CTX_ROLE`
+/// only. `LEAN_CTX_AGENT_ROLE` names the agent on the bus (a host such as
+/// LeanCTX Code sets it per worker) and never chooses what tools may do.
+pub fn declared_permission_role() -> Option<String> {
+    stated_roles(std::env::var("LEAN_CTX_ROLE").ok().as_deref(), None).permission
+}
+
+/// What `LEAN_CTX_ROLE` and `LEAN_CTX_AGENT_ROLE` state, blank values unset.
+#[derive(Debug, PartialEq, Eq)]
+pub struct StatedRoles {
+    /// The role on the bus and in presence.
+    pub session: Option<String>,
+    /// The role whose permissions apply.
+    pub permission: Option<String>,
+}
+
+pub fn stated_roles(role: Option<&str>, agent_role: Option<&str>) -> StatedRoles {
+    let clean = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    let permission = clean(role);
+    StatedRoles {
+        session: permission.clone().or_else(|| clean(agent_role)),
+        permission,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -330,3 +371,33 @@ impl ScratchpadEntry {
 
 #[cfg(test)]
 mod lineage_tests;
+
+#[cfg(test)]
+mod stated_role_tests {
+    use super::{StatedRoles, stated_roles};
+
+    #[test]
+    fn a_bus_name_is_a_session_role_but_never_a_permission_role() {
+        assert_eq!(
+            stated_roles(None, Some("reviewer")),
+            StatedRoles {
+                session: Some("reviewer".into()),
+                permission: None,
+            }
+        );
+        assert_eq!(
+            stated_roles(Some(" coder "), Some("reviewer")),
+            StatedRoles {
+                session: Some("coder".into()),
+                permission: Some("coder".into()),
+            }
+        );
+        assert_eq!(
+            stated_roles(Some("  "), Some("")),
+            StatedRoles {
+                session: None,
+                permission: None,
+            }
+        );
+    }
+}

@@ -24,4 +24,8 @@ mod cloud_agent_tests;
 #[cfg(test)]
 mod edit_outcome_tests;
 #[cfg(test)]
+mod raw_read_tests;
+#[cfg(all(test, unix))]
+mod shell_cwd_tests;
+#[cfg(test)]
 mod tests;

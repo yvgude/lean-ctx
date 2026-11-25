@@ -308,13 +308,13 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// A prose blob well over the funnel's 600-char floor: eight identical
-    /// paragraphs the prose squeeze deduplicates down to one.
+    /// A prose blob past the funnel's verbatim budget (60 lines / 4 KiB):
+    /// forty identical paragraphs the prose squeeze deduplicates down to one.
     fn dedupable_prose() -> String {
         let para = "Rust is a multi-paradigm systems programming language that \
                     emphasizes performance, type safety, and fearless concurrency, \
                     achieving memory safety without a garbage collector at runtime.";
-        format!("{}\n", [para; 8].join("\n\n"))
+        format!("{}\n", [para; 40].join("\n\n"))
     }
 
     fn run(messages: Vec<Value>, model: Option<&str>) -> CompressResponse {
@@ -466,7 +466,7 @@ mod tests {
         );
         assert_eq!(
             recovered.matches("fearless concurrency").count(),
-            8,
+            40,
             "all deduped paragraphs are recoverable"
         );
     }

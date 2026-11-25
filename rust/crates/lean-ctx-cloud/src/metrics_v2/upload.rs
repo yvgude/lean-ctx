@@ -639,6 +639,26 @@ pub fn refresh_sharing(session: &Session) -> Result<SharingStateV2, CloudError> 
     Ok(sharing)
 }
 
+/// Cloud's answer to a confirmation it does not need (`409 invalid_state`,
+/// reason `not_required`): the plan shares by default.
+pub(super) fn not_required(error: &CloudError) -> bool {
+    matches!(error, CloudError::Server { status: 409, code } if code == "invalid_state")
+}
+
+/// The state after a `not_required` answer: the one Cloud sent last
+/// (a team rule that turned sharing off, say), else the plan default. A
+/// stored `needs_confirmation` is stale (Cloud no longer waits), so the
+/// plan default replaces it.
+pub(super) fn nothing_to_confirm(
+    known: Option<&SharingStateV2>,
+    plan: lean_ctx_protocol::cloud::lease::CloudPlan,
+) -> SharingStateV2 {
+    match known {
+        Some(known) if known.state != SharingValue::NeedsConfirmation => known.clone(),
+        _ => gate::plan_state(plan),
+    }
+}
+
 /// `cloud metrics confirm`: the person agrees (Personal). Callers
 /// make sure a person answered in a terminal; MCP tools never call this.
 pub fn confirm(session: &Session) -> Result<SharingStateV2, CloudError> {
@@ -648,9 +668,7 @@ pub fn confirm(session: &Session) -> Result<SharingStateV2, CloudError> {
         ));
     }
     let answer =
-        session.with_client(|client| client.post(SHARING_CONFIRM_ROUTE, &serde_json::json!({})))?;
-    let sharing: SharingStateV2 = serde_json::from_value(answer)
-        .map_err(|e| CloudError::Protocol(format!("instance metrics sharing: {e}")))?;
+        session.with_client(|client| client.post(SHARING_CONFIRM_ROUTE, &serde_json::json!({})));
     let cloud = session.store.data_dir();
     let mut state = State::load(cloud);
     if state.org_id != session.instance.org_id {
@@ -659,6 +677,22 @@ pub fn confirm(session: &Session) -> Result<SharingStateV2, CloudError> {
             ..State::default()
         };
     }
+    let sharing: SharingStateV2 = match answer {
+        Ok(answer) => serde_json::from_value(answer)
+            .map_err(|e| CloudError::Protocol(format!("instance metrics sharing: {e}")))?,
+        // `409 invalid_state` (`not_required`): nothing to confirm. A state
+        // Cloud sent earlier (a team rule that turned it off, say) stays as
+        // it is; a stale `needs_confirmation` or none at all gives way to the
+        // plan default until the next answer.
+        Err(error) if not_required(&error) => {
+            let settled = nothing_to_confirm(state.sharing.as_ref(), session.lease.lease.plan);
+            if state.sharing.as_ref() == Some(&settled) {
+                return Ok(settled);
+            }
+            settled
+        }
+        Err(error) => return Err(error),
+    };
     state.sharing = Some(sharing.clone());
     state.store(cloud)?;
     Ok(sharing)

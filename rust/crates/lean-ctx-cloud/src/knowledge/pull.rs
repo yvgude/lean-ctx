@@ -131,6 +131,25 @@ pub fn resolve_project(
     resolver.resolve(&stable, root)
 }
 
+/// Cloud refused mapping a checkout to `vault` (`<ws>/<vault>`): it is not
+/// one this account may use (rc4-57). Said in the person's words, with the
+/// way forward.
+pub fn foreign_vault_refusal(vault: &str) -> String {
+    format!(
+        "your account may not use {vault}: it belongs to another account, or your role \
+         there does not allow it. With a Personal plan you use only your own vaults; to \
+         work in a vault together, its owner invites you to their team (Team plan)."
+    )
+}
+
+/// The `<ws>/<vault>` the checkout at `root` is linked to, for a refusal.
+fn linked_vault(root: &Path) -> String {
+    match crate::link::read_link(root) {
+        Ok(Some(link)) => format!("{}/{}", link.vault.ns, link.vault.name),
+        _ => "This project's vault".to_owned(),
+    }
+}
+
 /// Send drafts, then pull. `cwd_root` adds the current project to the pull
 /// even if it never drafted (for `lean-ctx cloud sync` in a project).
 pub fn sync(session: &Session, config: &CloudConfig, cwd_root: Option<&Path>) -> SyncReport {
@@ -169,7 +188,12 @@ pub fn sync(session: &Session, config: &CloudConfig, cwd_root: Option<&Path>) ->
     {
         let stable = lean_ctx_protocol::cloud::vault::stable_identity(&identity);
         if let Err(error) = resolver.resolve(&stable, root) {
-            report.problems.push(format!("{}: {error}", root.display()));
+            report.problems.push(match error {
+                MapError::Cloud(CloudError::Forbidden) => {
+                    foreign_vault_refusal(&linked_vault(root))
+                }
+                error => format!("{}: {error}", root.display()),
+            });
         }
     }
     // A C0 2.0 Cloud takes no 1.x draft: capture sends the same knowledge
@@ -350,6 +374,12 @@ fn pull_all(resolver: &Resolver<'_>, report: &mut SyncReport) {
             Err(error) => report
                 .problems
                 .push(format!("pull {}/{}: {error}", record.ns, record.name)),
+        }
+        // rc4-69: the team rules sent to agents reach every agent here.
+        if let Err(error) = crate::team_decisions::pull(resolver.session, &data, record) {
+            report
+                .problems
+                .push(format!("team rules {}/{}: {error}", record.ns, record.name));
         }
     }
 }

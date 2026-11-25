@@ -67,6 +67,7 @@ pub mod state;
 pub mod status;
 pub mod sync;
 pub mod tasks;
+pub mod team_decisions;
 pub mod team_stop;
 pub mod throttle;
 pub mod transport;

@@ -267,8 +267,25 @@ pub struct PlanNeed {
 pub const LOCKED_MARK: &str = "this workspace is locked (read and export only)";
 
 /// The 1.x engine-seat text: the limits worded as everywhere (E10; plan
-/// limits of 17.11.: an Enterprise seat gets what a Team seat gets).
-pub const PLAN_LIMITS: &str = "Personal 3 instances, 2 connected at once; Team and Enterprise 3 per seat, 2 connected at once per seat";
+/// limits of 17.11.: an Enterprise seat gets what a Team seat gets), in the
+/// two host counts of the web (rc4-58): registered and connected at once.
+pub const PLAN_LIMITS: &str = "Personal up to 3 hosts registered, up to 2 connected at once; Team and Enterprise up to 3 hosts registered, up to 2 connected at once per seat";
+
+/// The label of `registered_instances`: hosts that connected at least once
+/// and are not revoked (the web's "Registered", rc4-58).
+pub const HOSTS_REGISTERED: &str = "hosts registered";
+
+/// The label of `connected_instances`: hosts connected now, against the
+/// plan's limit of hosts connected at once (rc4-58).
+pub const HOSTS_CONNECTED: &str = "hosts connected at once";
+
+/// How a full registered count frees (rc4-62): one revoked host frees its
+/// registration (in Personal after the cool-down or a recovery).
+pub const FREE_REGISTERED: &str = "to free one, revoke a host you no longer use on the Hosts page";
+
+/// How a full connected-at-once count frees (rc4-58).
+pub const FREE_CONNECTED: &str =
+    "to free one, disconnect a host (`lean-ctx cloud disconnect` on that machine)";
 
 impl PlanNeed {
     /// `trial_ended` or `plan_ended`: the workspace is locked.
@@ -445,6 +462,9 @@ pub const TRIAL_USED: &str = "trial_used";
 /// `409 not_ready`: Cloud cannot serve a signed answer yet (plans without
 /// a control key, contract §37.2). Kept as the code of a `Server` error.
 pub const NOT_READY: &str = "not_ready";
+/// `403 vault_create_forbidden`: the caller's role may not add a new vault
+/// to the team (rc4-71); read as [`CloudError::Forbidden`].
+pub const VAULT_CREATE_FORBIDDEN: &str = "vault_create_forbidden";
 
 /// A web address of the service shown on a terminal: `http(s)://` or a
 /// path on the Cloud's own origin (`/o/…`, resolved by
@@ -767,6 +787,19 @@ impl CloudError {
             .map(|body| body.error)
             .ok()
             .or_else(|| lenient_detail(&body["error"]));
+        // rc4-32 re-pair refusals (p37 §3.18.1), named by `reason` or `code`:
+        // kept so the connect says which one, never dropped as `unknown`.
+        if matches!(status, 400 | 409)
+            && let Some(name) = [&body["error"]["reason"], &body["error"]["code"]]
+                .iter()
+                .filter_map(|v| v.as_str())
+                .find(|name| crate::auth::CHAT_KEY_REPAIR_REASONS.contains(name))
+        {
+            return Self::Server {
+                status,
+                code: name.to_owned(),
+            };
+        }
         // A code this protocol version does not name, kept so a caller can
         // tell "not available yet" from a failure.
         if status == 409 && body["error"]["code"].as_str() == Some(NOT_READY) {
@@ -774,6 +807,11 @@ impl CloudError {
                 status,
                 code: NOT_READY.into(),
             };
+        }
+        // rc4-71: a contributor's first share of a vault the team has not
+        // added yet; the role refuses it as `forbidden_right` does.
+        if status == 403 && body["error"]["code"].as_str() == Some(VAULT_CREATE_FORBIDDEN) {
+            return Self::Forbidden;
         }
         let Some(mut detail) = decoded else {
             return Self::of_status(status, lenient_u64(&body["error"]["retry_after_s"]));
@@ -1085,7 +1123,7 @@ impl fmt::Display for CloudError {
                 }
                 f.write_str("; reconnect with `lean-ctx cloud connect` after an admin allows it")
             }
-            Self::Forbidden => f.write_str("this instance's lease does not allow that"),
+            Self::Forbidden => f.write_str("LeanCTX Cloud does not allow this for your account"),
             Self::Vetoed => f.write_str("a workspace veto bars it until the veto is lifted"),
             Self::UploadDisabled(kind) => match kind {
                 CloudUploadKind::Metrics => {
@@ -1204,17 +1242,27 @@ impl CloudError {
 /// Where a person frees or recovers an engine slot (P7): the recovery
 /// route (`POST /api/v1/orgs/{o}/instances/{id}/recover`, owner with a
 /// second factor) is on the web only.
-pub const RECOVER_HINT: &str = "for a lost or broken device, recover its slot now on the LeanCTX Cloud web (Settings › Connected instances › Recover, with your second factor; once per 30 days)";
+pub const RECOVER_HINT: &str = "for a lost or broken device, recover its slot now on the LeanCTX Cloud web (Hosts › Recover the slot now, with your second factor; once per 30 days)";
+
+/// The head of a full host count, in the web's words (rc4-58, rc4-62).
+fn host_cap_head(resource: &str) -> Option<&'static str> {
+    match resource {
+        "registered_instances" => Some("all hosts the plan includes are registered"),
+        "connected_instances" => Some("all hosts that may be connected at once are connected"),
+        _ => None,
+    }
+}
 
 /// An `instance_limit` refusal: connected at once is freed by disconnecting
-/// one, registered by removing one.
+/// one, registered by revoking one.
 fn write_instance_cap(f: &mut fmt::Formatter<'_>, cap: &InstanceCap) -> fmt::Result {
     let connected = cap.resource.as_deref() == Some("connected_instances");
-    if connected {
-        f.write_str("all instances this workspace may connect at once are connected")?;
+    let resource = if connected {
+        "connected_instances"
     } else {
-        f.write_str("all instances of the workspace are in use")?;
-    }
+        "registered_instances"
+    };
+    f.write_str(host_cap_head(resource).unwrap_or_default())?;
     if let (Some(used), Some(limit)) = (cap.used, cap.limit) {
         write!(f, " ({used} of {limit}")?;
         if let (Some(seats), Some(per_seat)) = (cap.seats, cap.per_seat) {
@@ -1223,11 +1271,9 @@ fn write_instance_cap(f: &mut fmt::Formatter<'_>, cap: &InstanceCap) -> fmt::Res
         f.write_str(")")?;
     }
     if connected {
-        f.write_str(
-            "; disconnect one (`lean-ctx cloud disconnect` on that machine, or in LeanCTX Cloud) or upgrade the plan",
-        )?;
+        write!(f, "; {FREE_CONNECTED}, or upgrade the plan")?;
     } else {
-        f.write_str("; remove one in LeanCTX Cloud or upgrade the plan")?;
+        write!(f, "; {FREE_REGISTERED}, or upgrade the plan")?;
     }
     write_hint(f, cap.next_step)
 }
@@ -1238,9 +1284,9 @@ pub fn quota_label(resource: &str) -> &str {
     match resource {
         "transfer_bytes" => "monthly transfer",
         "bus_messages" => "monthly bus messages",
-        "registered_instances" => "instance slots",
+        "registered_instances" => HOSTS_REGISTERED,
         "private_vaults" => "private vaults",
-        "connected_instances" => "connected instances",
+        "connected_instances" => HOSTS_CONNECTED,
         "storage_bytes" => "storage",
         "model_credit_usd_micros" => "model credit",
         other => other,
@@ -1249,26 +1295,32 @@ pub fn quota_label(resource: &str) -> &str {
 
 fn write_quota(f: &mut fmt::Formatter<'_>, q: &Quota) -> fmt::Result {
     let what = quota_label(&q.resource);
-    write!(f, "this workspace has used all its {what}")?;
-    if let (Some(used), Some(limit)) = (q.used, q.limit) {
-        write!(
-            f,
-            " ({} of {})",
-            amount_text(&q.resource, used),
-            amount_text(&q.resource, limit)
-        )?;
+    if let Some(head) = host_cap_head(&q.resource) {
+        f.write_str(head)?;
+        if let (Some(used), Some(limit)) = (q.used, q.limit) {
+            write!(f, " ({used} of {limit})")?;
+        }
+    } else {
+        write!(f, "this workspace has used all its {what}")?;
+        if let (Some(used), Some(limit)) = (q.used, q.limit) {
+            write!(
+                f,
+                " ({} of {})",
+                amount_text(&q.resource, used),
+                amount_text(&q.resource, limit)
+            )?;
+        }
     }
     f.write_str("; nothing is charged for more")?;
     match q.resource.as_str() {
         "registered_instances" if q.cooling_slot() => write!(
             f,
-            "; a revoked instance's slot frees at {} ({}-day cool-down), or {RECOVER_HINT}",
+            "; a revoked host stays registered until {} ({}-day cool-down), or {RECOVER_HINT}",
             q.reset_at.as_deref().unwrap_or("?"),
             q.cooldown_days.unwrap_or(0)
         )?,
-        "registered_instances" => f.write_str(
-            "; revoke an instance you no longer use in LeanCTX Cloud (Settings › Connected instances), or upgrade the plan",
-        )?,
+        "registered_instances" => write!(f, "; {FREE_REGISTERED}, or upgrade the plan")?,
+        "connected_instances" => write!(f, "; {FREE_CONNECTED}")?,
         "private_vaults" => {
             f.write_str("; remove or publish a vault in LeanCTX Cloud, or upgrade the plan")?;
         }
@@ -1626,7 +1678,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "all instances of the workspace are in use (2 of 2); remove one in LeanCTX Cloud or upgrade the plan"
+            "all hosts the plan includes are registered (2 of 2); to free one, revoke a host you no longer use on the Hosts page, or upgrade the plan"
         );
     }
 
@@ -1653,7 +1705,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "all instances this workspace may connect at once are connected (4 of 4: 2 seats, 2 per seat); disconnect one (`lean-ctx cloud disconnect` on that machine, or in LeanCTX Cloud) or upgrade the plan; every seat you add in LeanCTX Cloud brings its own allowance"
+            "all hosts that may be connected at once are connected (4 of 4: 2 seats, 2 per seat); to free one, disconnect a host (`lean-ctx cloud disconnect` on that machine), or upgrade the plan; every seat you add in LeanCTX Cloud brings its own allowance"
         );
         assert!(!error.is_transient());
         let personal = CloudError::from_response(
@@ -1771,6 +1823,26 @@ mod tests {
             quota("registered_instances", 3, "contact")
                 .ends_with("; contact us to extend your Enterprise contract")
         );
+        // rc4-58/rc4-62: the host counts in the web's words, with how to free one.
+        assert_eq!(
+            quota("registered_instances", 3, "upgrade_team"),
+            "all hosts the plan includes are registered (3 of 3); nothing is charged for more; \
+             to free one, revoke a host you no longer use on the Hosts page, or upgrade the plan; \
+             Team gives every seat its own allowance"
+        );
+        assert_eq!(
+            quota("connected_instances", 2, "wait"),
+            "all hosts that may be connected at once are connected (2 of 2); \
+             nothing is charged for more; to free one, disconnect a host (`lean-ctx cloud disconnect` on that machine)"
+        );
+        // The counts never say "slot" (the web dropped "Host slots"); only the
+        // recovery names the web's menu item "Recover the slot now" (RECOVER_HINT).
+        for resource in ["registered_instances", "connected_instances"] {
+            let line = quota(resource, 2, "upgrade_team");
+            for word in ["instance", "slot", "workspace"] {
+                assert!(!line.contains(word), "{word} in {line}");
+            }
+        }
         // `wait` adds no hint: the line already says the outbox waits.
         let monthly = CloudError::from_response(
             429,
@@ -2111,7 +2183,7 @@ mod tests {
         let error = CloudError::from_response(402, &body).with_plan(CloudPlan::NoPlan);
         assert_eq!(
             error.to_string(),
-            "this workspace's plan does not include LeanCTX Cloud here (Personal 3 instances, 2 connected at once; Team and Enterprise 3 per seat, 2 connected at once per seat)"
+            "this workspace's plan does not include LeanCTX Cloud here (Personal up to 3 hosts registered, up to 2 connected at once; Team and Enterprise up to 3 hosts registered, up to 2 connected at once per seat)"
         );
         assert!(
             matches!(&error, CloudError::PlanRequired(need) if need.plan.is_none()),
@@ -2173,5 +2245,17 @@ mod tests {
             }
             .is_transient()
         );
+    }
+
+    #[test]
+    fn a_role_that_may_not_add_a_vault_is_forbidden() {
+        let body = json!({"error": {
+            "code": "vault_create_forbidden",
+            "message": "Only an owner, admin or maintainer of this team can add a new vault.",
+            "role_needed": "maintainer",
+        }});
+        assert_eq!(CloudError::from_response(403, &body), CloudError::Forbidden);
+        // Another status with that code is no role refusal.
+        assert_ne!(CloudError::from_response(500, &body), CloudError::Forbidden);
     }
 }

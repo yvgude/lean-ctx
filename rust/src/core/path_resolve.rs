@@ -14,55 +14,20 @@ use std::path::{Path, PathBuf};
 /// path resolution have a local, discoverable handle.
 pub use crate::core::pathutil::has_project_marker;
 
-/// Nearest ancestor (including `start` itself) containing a `.git` entry —
-/// directory (normal checkout) **or file** (linked worktree: `gitdir: …`),
-/// canonicalized for comparison. `None` when no git boundary exists upward.
-///
-/// Deliberately `.git`-only, NOT [`has_project_marker`]: markers like
-/// `Cargo.toml` exist in nested monorepo subdirectories (`rust/Cargo.toml`
-/// in this very repo), so using them here would make a plain `cd rust/` look
-/// like a checkout switch (#707).
-fn nearest_git_boundary(start: &Path) -> Option<PathBuf> {
-    let start = crate::core::pathutil::safe_canonicalize_or_self(start);
-    let mut cur: Option<&Path> = Some(start.as_path());
-    while let Some(dir) = cur {
-        if dir.join(".git").exists() {
-            return Some(dir.to_path_buf());
-        }
-        cur = dir.parent();
-    }
-    None
-}
-
-/// True when `shell_cwd` lives in a DIFFERENT git checkout than
-/// `project_root` (#707): both sides resolve to a `.git` boundary and the
-/// boundaries differ. This is the worktree signal — Claude Code's
-/// `EnterWorktree` nests a full checkout (own `.git` *file*) under
-/// `<repo>/.claude/worktrees/<name>/`, so a same-named relative path exists
-/// in both trees and a bare `exists()` probe silently picks the stale one.
-/// A monorepo subdirectory (`cd rust/`) shares the boundary → not diverged;
-/// either side without any `.git` upward → no signal → not diverged.
-pub fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &str) -> bool {
-    if shell_cwd == project_root {
-        return false;
-    }
-    match (
-        nearest_git_boundary(Path::new(shell_cwd)),
-        nearest_git_boundary(Path::new(project_root)),
-    ) {
-        (Some(cwd_git), Some(root_git)) => cwd_git != root_git,
-        _ => false,
-    }
-}
-
 /// Resolve a (possibly relative) tool path to a normalized, jail-checked,
 /// secret-screened absolute path.
 ///
-/// Resolution order for relative inputs:
+/// Resolution of the input:
 /// 1. absolute path → used as-is
-/// 2. `<project_root>/<path>` if it exists
-/// 3. `<shell_cwd>/<path>` if a shell cwd is known
-/// 4. `<jail_root>/<path>` as a last resort
+/// 2. relative path with a project root → `<project_root>/<path>`, whether or
+///    not it exists (a write target), exactly as the tool schemas promise
+/// 3. relative path without a project root → `<shell_cwd>/<path>` (the
+///    directory the client started the session in), else `<jail_root>/<path>`
+///
+/// The base of a relative path never depends on earlier tool calls (#2262):
+/// `ctx_shell` does not move `shell_cwd`, and with a project root it is not
+/// consulted at all. A worktree or other checkout is addressed by absolute
+/// path.
 ///
 /// Relative inputs are NEVER resolved against the process CWD: the daemon's
 /// CWD is not the project, so a CWD `exists()` probe made resolution
@@ -157,24 +122,7 @@ pub fn resolve_tool_path_refusing(
     let resolved: PathBuf = if p.is_absolute() {
         PathBuf::from(&normalized)
     } else if let Some(root) = project_root {
-        // #707: a live shell_cwd inside a DIFFERENT git checkout (a worktree
-        // switched into mid-session) outranks the stale project_root — even
-        // when `<project_root>/<path>` exists, because in a worktree it
-        // almost always does (full checkout, same layout, stale content).
-        if let Some(cwd) = shell_cwd
-            && shell_cwd_is_divergent_checkout(root, cwd)
-        {
-            Path::new(cwd).join(&normalized)
-        } else {
-            let joined = Path::new(root).join(&normalized);
-            if joined.exists() {
-                joined
-            } else if let Some(cwd) = shell_cwd {
-                Path::new(cwd).join(&normalized)
-            } else {
-                joined
-            }
-        }
+        Path::new(root).join(&normalized)
     } else if let Some(cwd) = shell_cwd {
         Path::new(cwd).join(&normalized)
     } else {
@@ -280,13 +228,15 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// #2262: with a project root, a relative path names the file under that
+    /// root — a session cwd elsewhere is never a second base, not even for a
+    /// file that exists only there.
     #[test]
-    fn falls_back_to_shell_cwd_when_not_in_project_root() {
+    fn shell_cwd_is_no_second_base_when_a_project_root_is_set() {
         let _environment = crate::core::data_dir::test_env_lock();
-        let base = std::env::temp_dir().join(format!("lc_pr_cwd_{}", std::process::id()));
-        let root = base.join("root");
-        let cwd = base.join("cwd");
-        fs::create_dir_all(&root).unwrap();
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("root");
+        let cwd = root.join("sub");
         fs::create_dir_all(&cwd).unwrap();
         fs::write(cwd.join("only_in_cwd.txt"), "x").unwrap();
 
@@ -294,13 +244,14 @@ mod tests {
             Some(&root.to_string_lossy()),
             Some(&cwd.to_string_lossy()),
             "only_in_cwd.txt",
+        )
+        .unwrap();
+        let parent = crate::core::pathjail::canonicalize_or_self(Path::new(&out).parent().unwrap());
+        assert_eq!(
+            parent,
+            crate::core::pathjail::canonicalize_or_self(&root),
+            "{out}"
         );
-        // jail_root is project_root; a file only under shell_cwd resolves to a
-        // cwd-joined path which may be rejected by the jail — either way it must
-        // not panic and must yield a deterministic Result.
-        assert!(out.is_ok() || out.is_err());
-
-        let _ = fs::remove_dir_all(&base);
     }
 
     // P0-3 (#415): a relative path that happens to exist in the *process CWD*
@@ -374,103 +325,53 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// #707: the exact Claude Code `EnterWorktree` topology — a full checkout
-    /// with its own `.git` FILE nested under `<repo>/.claude/worktrees/<n>/`.
-    /// The same relative path exists in both trees; the live shell_cwd
-    /// (worktree) must win over the stale project_root copy.
+    /// #2262: the Claude Code `EnterWorktree` topology — a full checkout with
+    /// its own `.git` FILE nested under `<repo>/.claude/worktrees/<n>/`, and a
+    /// session cwd inside it. A project-relative path still names the project
+    /// root's file (existing or a write target); the worktree is reached by
+    /// absolute path, or by the path relative to the root.
     #[test]
-    fn worktree_shell_cwd_outranks_stale_project_root_copy() {
+    fn worktree_shell_cwd_does_not_move_the_relative_base() {
         // Path authorization reads the process-wide protected-runtime profile.
         // Serialize with tests that temporarily change that profile.
         let _environment = crate::core::data_dir::test_env_lock();
-        let base = std::env::temp_dir().join(format!("lc_707_nested_{}", std::process::id()));
-        let repo = base.join("repo");
+        let base = tempfile::tempdir().unwrap();
+        let repo = base.path().join("repo");
         let wt = repo.join(".claude").join("worktrees").join("fix-x");
         fs::create_dir_all(repo.join("src")).unwrap();
         fs::create_dir_all(repo.join(".git")).unwrap(); // main checkout: .git dir
         fs::create_dir_all(wt.join("src")).unwrap();
         fs::write(wt.join(".git"), "gitdir: ../../.git/worktrees/fix-x\n").unwrap(); // worktree: .git FILE
-        fs::write(repo.join("src/scoring.rs"), "stale").unwrap();
-        fs::write(wt.join("src/scoring.rs"), "fresh").unwrap();
+        fs::write(repo.join("src/scoring.rs"), "root").unwrap();
+        fs::write(wt.join("src/scoring.rs"), "worktree").unwrap();
+        let (repo_s, wt_s) = (repo.to_string_lossy(), wt.to_string_lossy());
 
-        let out = resolve_tool_path(
-            Some(&repo.to_string_lossy()),
-            Some(&wt.to_string_lossy()),
-            "src/scoring.rs",
-        )
-        .unwrap();
-        assert_eq!(
-            fs::read_to_string(&out).unwrap(),
-            "fresh",
-            "must resolve into the worktree, not the stale root: {out}"
-        );
+        let out = resolve_tool_path(Some(&repo_s), Some(&wt_s), "src/scoring.rs").unwrap();
+        assert_eq!(fs::read_to_string(&out).unwrap(), "root", "{out}");
 
-        // A path that does not exist yet (a write target) also lands in the
-        // worktree — writes after the switch must not touch the stale tree.
-        let new = resolve_tool_path(
-            Some(&repo.to_string_lossy()),
-            Some(&wt.to_string_lossy()),
-            "src/new_file.rs",
-        )
-        .unwrap();
+        let new = resolve_tool_path(Some(&repo_s), Some(&wt_s), "src/new_file.rs").unwrap();
         assert!(
-            new.contains("worktrees"),
-            "write target must land in the worktree: {new}"
+            !new.contains("worktrees"),
+            "write target stays in the root: {new}"
         );
 
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    /// #707 regression guard from the report: `cd rust/` inside the SAME
-    /// checkout (nested `Cargo.toml`, no own `.git`) must NOT count as a
-    /// divergent checkout — project_root resolution stays authoritative.
-    #[test]
-    fn monorepo_subdir_shell_cwd_is_not_a_divergent_checkout() {
-        let _environment = crate::core::data_dir::test_env_lock();
-        let base = std::env::temp_dir().join(format!("lc_707_mono_{}", std::process::id()));
-        let repo = base.join("repo");
-        fs::create_dir_all(repo.join("rust").join("src")).unwrap();
-        fs::create_dir_all(repo.join(".git")).unwrap();
-        fs::write(repo.join("rust/Cargo.toml"), "[package]").unwrap();
-        fs::write(repo.join("rust/src/main.rs"), "root copy").unwrap();
-
-        assert!(!shell_cwd_is_divergent_checkout(
-            &repo.to_string_lossy(),
-            &repo.join("rust").to_string_lossy(),
-        ));
-
-        let out = resolve_tool_path(
-            Some(&repo.to_string_lossy()),
-            Some(&repo.join("rust").to_string_lossy()),
-            "rust/src/main.rs",
+        // The #2262 repro path: relative to the root, never doubled.
+        let rel = resolve_tool_path(
+            Some(&repo_s),
+            Some(&wt_s),
+            ".claude/worktrees/fix-x/src/scoring.rs",
         )
         .unwrap();
-        assert_eq!(
-            fs::read_to_string(&out).unwrap(),
-            "root copy",
-            "same-checkout cwd must not divert resolution: {out}"
-        );
+        assert_eq!(fs::read_to_string(&rel).unwrap(), "worktree", "{rel}");
+        assert_eq!(rel.matches("worktrees").count(), 1, "{rel}");
 
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    /// #707: divergence needs a `.git` boundary on BOTH sides — a cwd with no
-    /// git upward (scratch dir) gives no signal and must not divert.
-    #[test]
-    fn gitless_shell_cwd_gives_no_divergence_signal() {
-        let base = std::env::temp_dir().join(format!("lc_707_gitless_{}", std::process::id()));
-        let repo = base.join("repo");
-        let scratch = base.join("scratch");
-        fs::create_dir_all(repo.join(".git")).unwrap();
-        fs::create_dir_all(&scratch).unwrap();
-        fs::write(repo.join("a.txt"), "root").unwrap();
-
-        assert!(!shell_cwd_is_divergent_checkout(
-            &repo.to_string_lossy(),
-            &scratch.to_string_lossy(),
-        ));
-
-        let _ = fs::remove_dir_all(&base);
+        let abs = resolve_tool_path(
+            Some(&repo_s),
+            Some(&wt_s),
+            &wt.join("src/scoring.rs").to_string_lossy(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&abs).unwrap(), "worktree", "{abs}");
     }
 
     #[test]
