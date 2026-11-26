@@ -347,6 +347,16 @@ async fn a_worktree_cwd_notes_where_relative_paths_resolve() {
 /// never from one call's `cwd` (another agent's checkout), and keeps it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_missing_root_is_learned_from_the_start_dir_not_a_calls_cwd() {
+    // The jail's runtime widenings (the roots-derived allow-list, the session
+    // read-only roots) are process-wide and never cleared: in one `cargo test`
+    // process another test can leave one that admits `other`, so the refusal
+    // this test is about would pass through. Run it in its own process.
+    if lean_ctx::test_env::run_in_own_process(
+        "server::call_tool::shell_cwd_tests::a_missing_root_is_learned_from_the_start_dir_not_a_calls_cwd",
+        &[],
+    ) {
+        return;
+    }
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     // The default `projects` scope also admits, for reading, any project below
     // `$HOME`. Where the checkout lies below `$HOME` (GitHub runners:
@@ -404,8 +414,9 @@ async fn a_missing_root_is_learned_from_the_start_dir_not_a_calls_cwd() {
     .await;
     assert!(
         text(&second).contains("working directory rejected, command not run"),
-        "{}",
-        text(&second)
+        "{}\nsession read-only roots: {:?}",
+        text(&second),
+        lean_ctx::core::pathjail::session_read_only_roots()
     );
     assert!(
         !text(&second)

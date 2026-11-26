@@ -95,7 +95,7 @@ fn keeps_filtered_output(command: &str, output: &str) -> bool {
 ///
 /// One filtering segment exempts the whole command line (`cd x && rg …`,
 /// `sed -n … | cut; ls`, but also `cargo build; wc -l f`). Deliberate: the
-/// exemption is bounded by [`FILTERED_VERBATIM_MAX_BYTES`], and without it
+/// exemption is bounded by `FILTERED_VERBATIM_MAX_BYTES`, and without it
 /// the result is compressed with its re-read hint, so either side is
 /// lossless — a too-wide match costs tokens, never content, while a strict
 /// every-segment rule would prune the bounded views the caller chained.
@@ -191,7 +191,7 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
 ///
 /// A result the policy leaves uncompressed (`compress_tool_output` off,
 /// `log_compression_level` 0, code under `code_preserve`) leaves as every
-/// funnel leaves a result it keeps whole ([`policy_whole`]): without its
+/// funnel leaves a result it keeps whole (`policy_whole`): without its
 /// `<lc_safe>` markers, under protection on record under the lineage of its
 /// original (bd M1 on !646).
 pub fn compress_tool_result_with_policy(

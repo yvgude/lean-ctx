@@ -434,6 +434,13 @@ mod tests {
     /// bd 38432 S3: [`checked_root`] as the command runs it, from the
     /// variables, and the store opened from its root stays there whatever
     /// changes after the gate.
+    ///
+    /// Not on Windows: there `dirs::home_dir()` asks the system for the
+    /// profile folder and ignores `HOME`, so the test cannot place the home
+    /// it checks against. The rule itself is covered on every platform by the
+    /// explicit-directory test above,
+    /// `app_only_flags_need_one_root_for_the_key_file_and_the_records`.
+    #[cfg(not(windows))]
     #[test]
     fn the_checked_root_follows_the_variables_once() {
         use lean_ctx::test_env::{VarGuard, set_var};

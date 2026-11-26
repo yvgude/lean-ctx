@@ -13,7 +13,7 @@
 //! hard, kernel-enforced backstop: at start-up a launchd-standalone process
 //! re-execs itself under `sandbox-exec` with a profile that *denies* file access
 //! under the three TCC-protected home directories
-//! ([`reexec_under_seatbelt_if_needed`]). If any code path touches them anyway,
+//! (`reexec_under_seatbelt_if_needed`). If any code path touches them anyway,
 //! the kernel refuses with `EPERM` silently — the TCC subsystem is never
 //! consulted, so no prompt can appear. Everything else is permitted
 //! (`allow default`), so the processes keep full functionality.
@@ -41,7 +41,7 @@ const TCC_PROTECTED_SUBDIRS: [&str; 3] = ["Documents", "Desktop", "Downloads"];
 
 /// Env sentinel marking that this process is already running under the
 /// deny-`~/Documents` seatbelt. Set by the self re-exec
-/// ([`reexec_under_seatbelt_if_needed`]) and inherited by its children, so the
+/// (`reexec_under_seatbelt_if_needed`) and inherited by its children, so the
 /// re-exec can never loop. The LaunchAgent plists deliberately do *not* carry
 /// it: its absence is what makes a launchd-started process re-exec itself.
 pub const SEATBELT_SENTINEL: &str = "LEAN_CTX_SEATBELT";
@@ -89,7 +89,7 @@ fn sbpl_escape(s: &str) -> String {
 /// launchd `ProgramArguments` for a lean-ctx LaunchAgent: the plain
 /// `[binary, args…]`. The binary must come first so macOS names the login item
 /// after lean-ctx (rc2-2); the deny-`~/Documents` seatbelt (#356) is applied by
-/// the process itself at start-up ([`reexec_under_seatbelt_if_needed`]).
+/// the process itself at start-up (`reexec_under_seatbelt_if_needed`).
 pub fn launchd_program_args(binary: &str, args: &[&str]) -> Vec<String> {
     let mut out = vec![binary.to_string()];
     out.extend(args.iter().map(|a| (*a).to_string()));
@@ -227,11 +227,11 @@ const ENV_BLOCK_KEY: &str = "    <key>EnvironmentVariables</key>\n";
 const ENV_BLOCK_END: &str = "\n    </dict>\n";
 const ENV_BLOCK_ANCHOR: &str = "    <key>RunAtLoad</key>";
 
-/// `true` when the plist's `ProgramArguments` start with [`SANDBOX_EXEC`], i.e.
+/// `true` when the plist's `ProgramArguments` start with `SANDBOX_EXEC`, i.e.
 /// launchd spawns the job inside the seatbelt the pre-rc2-2 installers rendered.
 /// Only such a plist may carry the #356 sentinel: on any other (pre-#356, or a
 /// `brew upgrade` install whose plist was never re-rendered) the sentinel would
-/// suppress [`reexec_under_seatbelt_if_needed`] and leave the job unsandboxed.
+/// suppress `reexec_under_seatbelt_if_needed` and leave the job unsandboxed.
 pub fn plist_runs_under_seatbelt(plist: &str) -> bool {
     let Some(args) = plist
         .find("<key>ProgramArguments</key>")
