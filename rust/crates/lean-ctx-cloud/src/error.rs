@@ -583,6 +583,12 @@ pub enum TaskRefusal {
     /// C0 2.2 E47: a priority or labels write named an older
     /// `fields_version` (`stale_base`): read the task again.
     StaleBase,
+    /// rc4-67: a person's proposal whose app signature the Cloud did not
+    /// accept (`forbidden_right`, `person_unproven`); never sent again.
+    PersonUnproven,
+    /// rc4-67: a person's proposal signed too long ago or ahead
+    /// (`forbidden_right`, `signature_expired`); never sent again.
+    SignatureExpired,
 }
 
 impl TaskRefusal {
@@ -605,6 +611,8 @@ impl TaskRefusal {
                 _ => PermitCheck::Unknown,
             }),
             (CloudErrorCode::ForbiddenRight, "optin_scope") => Self::OptinScope,
+            (CloudErrorCode::ForbiddenRight, "person_unproven") => Self::PersonUnproven,
+            (CloudErrorCode::ForbiddenRight, "signature_expired") => Self::SignatureExpired,
             (CloudErrorCode::InvalidState, "optin_changed") => Self::OptinChanged,
             (CloudErrorCode::InvalidState, "optin_inactive") => Self::OptinInactive,
             (CloudErrorCode::RateLimited, "daily_budget") => Self::DailyBudget { retry_after },
@@ -650,6 +658,12 @@ impl fmt::Display for TaskRefusal {
             ),
             Self::StaleBase => f.write_str(
                 "the task's priority or labels changed meanwhile; read it again and retry",
+            ),
+            Self::PersonUnproven => f.write_str(
+                "the app's signature on this task did not check out; propose it again in the app",
+            ),
+            Self::SignatureExpired => f.write_str(
+                "the app's signature on this task is too old; propose it again in the app",
             ),
             Self::DailyBudget { retry_after } => match retry_after {
                 Some(s) => write!(f, "today's task budget is used up (resets in {s} s)"),
@@ -772,6 +786,70 @@ fn lenient_detail(error: &serde_json::Value) -> Option<CloudErrorDetailV1> {
     serde_json::from_value(serde_json::Value::Object(kept)).ok()
 }
 
+/// The pairing refusals of a task-propose key (rc4-67): `400 invalid_field`
+/// on `task_propose_key` ([`TASK_KEY_INVALID`]), and `409 invalid_state`
+/// with reason `task_propose_key_bound` or `task_propose_key_cleared`.
+fn task_key_refusal(status: u16, body: &serde_json::Value) -> Option<String> {
+    let error = &body["error"];
+    let code = error["code"].as_str()?;
+    let reason = error["reason"].as_str();
+    match (status, code) {
+        (400, "invalid_field") if error["field"].as_str() == Some("task_propose_key") => {
+            Some(TASK_KEY_INVALID.into())
+        }
+        (409, "invalid_state") => reason
+            .filter(|r| matches!(*r, TASK_KEY_BOUND | TASK_KEY_CLEARED))
+            .map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// The pairing refusals of an opt-in key (rc4-16): `400 invalid_field` on
+/// `optin_key` or `optin_key.bind_signature` ([`OPTIN_KEY_INVALID`]), and a
+/// `409` whose code or reason is `optin_key_bound` or `optin_key_cleared`.
+fn optin_key_refusal(status: u16, body: &serde_json::Value) -> Option<String> {
+    let error = &body["error"];
+    let code = error["code"].as_str()?;
+    match (status, code) {
+        (400, "invalid_field")
+            if matches!(
+                error["field"].as_str(),
+                Some("optin_key" | "optin_key.bind_signature")
+            ) =>
+        {
+            Some(OPTIN_KEY_INVALID.into())
+        }
+        (409, _) => [code, error["reason"].as_str().unwrap_or_default()]
+            .into_iter()
+            .find(|name| matches!(*name, OPTIN_KEY_BOUND | OPTIN_KEY_CLEARED))
+            .map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// `CloudError::Server` code: the Cloud refused the offered opt-in key.
+pub const OPTIN_KEY_INVALID: &str = "optin_key_invalid";
+/// `CloudError::Server` code: another opt-in key is bound already.
+pub const OPTIN_KEY_BOUND: &str = "optin_key_bound";
+/// `CloudError::Server` code: this opt-in key was removed on the web.
+pub const OPTIN_KEY_CLEARED: &str = "optin_key_cleared";
+
+/// `CloudError::Server` code (f3129): the offered app keys are not exactly
+/// the ones announced at the device code.
+pub const APP_KEY_NOT_ANNOUNCED: &str = "app_key_not_announced";
+/// `CloudError::Server` code (f3129): `app_keys_bind_signature` is missing
+/// or does not verify.
+pub const APP_KEY_BIND_INVALID: &str = "app_key_bind_invalid";
+/// `CloudError::Server` code (f3129): the Cloud refused the announced
+/// `app_keys` at the device code (`400 invalid_field`, field `app_keys`).
+pub const APP_KEYS_INVALID: &str = "app_keys_invalid";
+/// `CloudError::Server` code: the Cloud refused the offered task-propose key.
+pub const TASK_KEY_INVALID: &str = "task_propose_key_invalid";
+/// `CloudError::Server` code: another task-propose key is bound already.
+pub const TASK_KEY_BOUND: &str = "task_propose_key_bound";
+/// `CloudError::Server` code: this task-propose key was removed on the web.
+pub const TASK_KEY_CLEARED: &str = "task_propose_key_cleared";
+
 /// The longest `retry_after_s` an answer may ask for (32 days); a larger one
 /// (up to `u64::MAX`) is shortened to this before any time arithmetic.
 pub const RETRY_AFTER_CAP_S: u64 = 32 * 86_400;
@@ -787,6 +865,41 @@ impl CloudError {
             .map(|body| body.error)
             .ok()
             .or_else(|| lenient_detail(&body["error"]));
+        // f3129: offers that are not the announced set, or a bind signature
+        // that does not verify, keep their reason; checked first, before the
+        // task key, whose `field` the same answer may name.
+        if status == 400
+            && body["error"]["code"].as_str() == Some("invalid_field")
+            && let Some(reason @ (APP_KEY_NOT_ANNOUNCED | APP_KEY_BIND_INVALID)) =
+                body["error"]["reason"].as_str()
+        {
+            return Self::Server {
+                status,
+                code: reason.into(),
+            };
+        }
+        // f3129: an announcement the Cloud cannot parse, kept apart from
+        // other `invalid_field` answers by its field.
+        if status == 400
+            && body["error"]["code"].as_str() == Some("invalid_field")
+            && body["error"]["field"].as_str() == Some("app_keys")
+        {
+            return Self::Server {
+                status,
+                code: APP_KEYS_INVALID.into(),
+            };
+        }
+        // rc4-67: a pairing whose task-propose key the Cloud refused, named
+        // so the pairing can say why in plain words. Checked before the
+        // re-pair reasons: its `field`/`reason` names the task key exactly,
+        // while a re-pair `reason` below may ride along on the same answer.
+        if let Some(code) = task_key_refusal(status, body) {
+            return Self::Server { status, code };
+        }
+        // rc4-16: the same for the opt-in key (§46.4 texts).
+        if let Some(code) = optin_key_refusal(status, body) {
+            return Self::Server { status, code };
+        }
         // rc4-32 re-pair refusals (p37 §3.18.1), named by `reason` or `code`:
         // kept so the connect says which one, never dropped as `unknown`.
         if matches!(status, 400 | 409)
@@ -1222,6 +1335,34 @@ impl CloudError {
                 "expired".into()
             }
             Self::DeviceFlow(why) if why == CODE_DENIED => "denied".into(),
+            // rc4-67: a refused task-propose key keeps its own reason.
+            Self::DeviceFlow(why) if why == crate::auth::TASK_KEY_REFUSED => {
+                TASK_KEY_INVALID.into()
+            }
+            Self::DeviceFlow(why) if why == crate::auth::TASK_KEY_ALREADY_BOUND => {
+                TASK_KEY_BOUND.into()
+            }
+            Self::DeviceFlow(why) if why == crate::auth::TASK_KEY_WAS_REMOVED => {
+                TASK_KEY_CLEARED.into()
+            }
+            // rc4-16: a refused opt-in key keeps its own reason (§46.4).
+            Self::DeviceFlow(why) if why == crate::auth::OPTIN_KEY_REFUSED => {
+                OPTIN_KEY_INVALID.into()
+            }
+            Self::DeviceFlow(why) if why == crate::auth::OPTIN_KEY_ALREADY_BOUND => {
+                OPTIN_KEY_BOUND.into()
+            }
+            Self::DeviceFlow(why) if why == crate::auth::OPTIN_KEY_WAS_REMOVED => {
+                OPTIN_KEY_CLEARED.into()
+            }
+            Self::DeviceFlow(why) if why == crate::auth::OPTIN_KEY_TOKEN_ENROLLMENT => {
+                "token_enrollment".into()
+            }
+            // f3129 §11: either app-key refusal reads "Pairing failed"; the
+            // app keeps telling it apart by this code.
+            Self::DeviceFlow(why) if why == crate::auth::APP_KEY_PAIRING_FAILED => {
+                APP_KEY_NOT_ANNOUNCED.into()
+            }
             Self::DeviceFlow(_) => "not_approved".into(),
             Self::InstanceLimit(_) => "instance_limit".into(),
             Self::QuotaExceeded(_) => "quota_exceeded".into(),
@@ -1564,6 +1705,38 @@ mod tests {
             "error"
         );
         assert_eq!(CloudError::Offline("reset".into()).event_code(), "offline");
+        // f3129 §11: "Pairing failed" keeps its own code for the app.
+        assert_eq!(
+            CloudError::DeviceFlow(crate::auth::APP_KEY_PAIRING_FAILED.into()).event_code(),
+            APP_KEY_NOT_ANNOUNCED
+        );
+        assert_eq!(APP_KEY_NOT_ANNOUNCED, "app_key_not_announced");
+        // Both app-key reasons are kept from the answer, others are not.
+        for reason in [APP_KEY_NOT_ANNOUNCED, APP_KEY_BIND_INVALID] {
+            let body = serde_json::json!({"error": {"code": "invalid_field",
+                "field": "app_keys_bind_signature", "reason": reason, "message": "x"}});
+            assert!(matches!(
+                CloudError::from_response(400, &body),
+                CloudError::Server { status: 400, code } if code == reason
+            ));
+        }
+    }
+
+    /// f3129: `invalid_field` is a named protocol code now; it keeps its
+    /// wire name instead of collapsing to `unknown`.
+    #[test]
+    fn invalid_field_keeps_its_code() {
+        assert_eq!(
+            CloudError::from_response(
+                400,
+                &json!({"error": {"code": "invalid_field", "message": "x",
+                    "field": "chat_key.bind_signature"}}),
+            ),
+            CloudError::Server {
+                status: 400,
+                code: "invalid_field".into()
+            }
+        );
     }
 
     /// Review fix: one member of an unexpected type no longer collapses the

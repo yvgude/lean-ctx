@@ -34,12 +34,19 @@ pub(crate) const FILE: &str = lean_ctx::core::io_boundary::APP_KEY_FILE;
 
 /// The kinds only LeanCTX Code may ask for. `chat.prepare` (rc4-32): no
 /// other process may fill the prepared-frame store and push the app's
-/// frames out of it.
+/// frames out of it. The person task kinds (rc4-67): no other process may
+/// propose a task in the person's name.
 pub(crate) const APP_ONLY: &[&str] = &[
     super::decisions_part::SEND,
     super::decisions_part::SUPERSEDE,
     super::decisions_part::REVOKE,
+    super::tasks_part::PERSON_PROPOSE,
+    super::tasks_part::PERSON_PREPARE,
     super::chat_sign::PREPARE,
+    super::pickup_part::STATUS,
+    super::pickup_part::SET,
+    super::pickup_part::KEY,
+    super::unlink_part::KIND,
 ];
 
 /// Whether `kind` is answered only for a request with the app key.
@@ -88,7 +95,7 @@ pub(crate) fn refusal() -> Failure {
 
 /// The environment variable LeanCTX Code passes its launch key in when it
 /// runs a CLI command with an app-only flag (rc4-32 `cloud connect
-/// --chat-key`, later `--task-propose-key`, `--optin-key`).
+/// --chat-key`, `--task-propose-key`, `--app-keys`).
 pub(crate) const ENV: &str = "LEAN_CTX_APP_KEY";
 
 /// The app key of this run, removed from the environment whether or not
@@ -547,6 +554,7 @@ mod tests {
         assert!(guards(super::super::decisions_part::SEND));
         assert!(guards(super::super::decisions_part::SUPERSEDE));
         assert!(guards(super::super::decisions_part::REVOKE));
+        assert!(guards(super::super::unlink_part::KIND));
         assert!(!guards(super::super::decisions_part::KIND));
         assert!(!guards(super::super::decisions_part::CREATE));
         assert_eq!(refusal().code.as_str(), "app_only");

@@ -205,6 +205,11 @@ pub fn forget_stale_at(data_dir: &Path, root: &Path) -> Result<Option<Stale>, Cl
 /// identity no longer backs is never written to, also before link, connect
 /// or sync dropped it (a `git pull` that changed the link file).
 pub fn vault_for_root(data_dir: &Path, root: &Path) -> Result<Option<VaultRecord>, CloudError> {
+    // A folder the person stopped sharing (`cloud unlink`) has no vault,
+    // also not through its main checkout or another checkout (rc4-6).
+    if crate::unlinked::contains(data_dir, root) {
+        return Ok(None);
+    }
     vault_in(&VaultMap::load(data_dir), root).map(Option::<&VaultRecord>::cloned)
 }
 

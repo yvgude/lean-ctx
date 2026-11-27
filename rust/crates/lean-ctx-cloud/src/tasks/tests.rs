@@ -1469,6 +1469,7 @@ fn proposals_have_one_key_and_are_validated_before_queueing() {
         session_ref: None,
         local_number: None,
         ref_keyed: true,
+        signed: None,
     };
     let a = proposal(["f-1", "f-2"]);
     // Two local tasks of one title brought on link stay two vault tasks.
@@ -2544,6 +2545,142 @@ fn proposals_carry_the_keyed_ref_or_are_not_queued() {
         Some(rekeyed.as_str()),
         "once"
     );
+}
+
+/// Cloud v2 ids: a UUID instance and a 32-hex vault (rc4-67).
+const PERSON_INSTANCE: &str = "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09";
+const PERSON_VAULT: &str = "0123456789abcdef0123456789abcdef";
+
+/// rc4-67: only the app-only route queues a person's proposal;
+/// `propose_agent_task` (`ctx_tasks`, `cloud tasks propose`) has no way to
+/// name one. A person's origin goes out only signed by the app's key and
+/// only to a Cloud that announced `task_person_origin`; an unsigned one, or
+/// an older Cloud, gets the agent's origin without a signature.
+#[test]
+fn only_a_persons_proposal_carries_origin_person_and_older_clouds_get_agent() {
+    use lean_ctx_protocol::cloud::tasks::TaskOriginKind;
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let place = Place::new();
+    let root = place.root.path();
+    for args in [
+        &["init", "-q"][..],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/payments.git",
+        ],
+    ] {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+    let data = place.data.path();
+    propose::propose_agent_task(data, root, "Fix the login", None, "Green", None, "ses-1").unwrap();
+    propose::propose_person_task(data, root, "Fix the login", Some("Why"), "Green", None).unwrap();
+    let queued: Vec<QueuedProposal> = crate::outbox::Outbox::at(data)
+        .list(crate::outbox::CHANNEL_TASKS)
+        .into_iter()
+        .map(|item| serde_json::from_value(item.payload).unwrap())
+        .collect();
+    assert_eq!(queued.len(), 2, "one task each: the keys differ by origin");
+    let agent = queued
+        .iter()
+        .find(|p| p.kind == ProposalKind::Agent)
+        .unwrap();
+    let person = queued
+        .iter()
+        .find(|p| p.kind == ProposalKind::Person)
+        .unwrap();
+    assert_ne!(agent.idempotency_key(), person.idempotency_key());
+    assert_eq!(
+        serde_json::to_value(person).unwrap()["kind"],
+        json!("person"),
+        "the outbox payload"
+    );
+
+    for announced in [false, true] {
+        let sent = agent.request_for(announced);
+        assert_eq!(
+            sent.origin.kind,
+            TaskOriginKind::Agent,
+            "an agent never sends person"
+        );
+        assert!(sent.validate().is_ok());
+    }
+    for announced in [false, true] {
+        let unsigned = person.request_for(announced);
+        assert_eq!(
+            serde_json::to_value(&unsigned.origin).unwrap(),
+            json!({"kind": "agent"}),
+            "never an unsigned person"
+        );
+        assert!(unsigned.signed_at.is_none() && unsigned.task_signature.is_none());
+        assert!(unsigned.validate().is_ok());
+    }
+
+    // Signed: the app signs the prepared bytes; the engine only queues.
+    use crate::consent::task_key::{self, tests as keys};
+    let key = keys::test_key();
+    let bound = keys::offer(&key, &keys::instance_public_key()).public();
+    let at = lean_ctx_time::UtcDateTime::from_timestamp(1_795_000_000, 0).unwrap();
+    let fields = propose::Fields {
+        title: "Fix the login",
+        goal: Some("Why"),
+        acceptance: "Green",
+        role: None,
+    };
+    let prepared =
+        propose::prepare_person_task(data, root, &fields, PERSON_INSTANCE, PERSON_VAULT, at)
+            .unwrap();
+    assert_eq!(
+        prepared.body["signed_at"],
+        json!(at.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true))
+    );
+    assert!(prepared.body.get("task_signature").is_none());
+    assert!(
+        prepared
+            .signing_input
+            .starts_with(task_key::PERSON_TASK_DOMAIN.as_bytes())
+    );
+    let signature = keys::sign(&key, &prepared.signing_input);
+    assert!(bound.verifies(&prepared.signing_input, &signature));
+    let id = propose::enqueue_signed_person(data, &prepared, &signature).unwrap();
+    let signed: QueuedProposal = crate::outbox::Outbox::at(data)
+        .list(crate::outbox::CHANNEL_TASKS)
+        .into_iter()
+        .find(|item| item.id == id)
+        .map(|item| serde_json::from_value(item.payload).unwrap())
+        .unwrap();
+    let new_cloud = signed.request_for(true);
+    assert_eq!(
+        serde_json::to_value(&new_cloud.origin).unwrap(),
+        json!({"kind": "person"})
+    );
+    assert_eq!(
+        new_cloud.task_signature.as_deref(),
+        Some(signature.as_str())
+    );
+    assert!(new_cloud.validate().is_ok());
+    // What is sent, less its signature, is exactly what the app signed.
+    assert_eq!(
+        task_key::person_task_signing_input(&new_cloud, PERSON_INSTANCE, PERSON_VAULT).unwrap(),
+        prepared.signing_input
+    );
+    let old_cloud = signed.request_for(false);
+    assert_eq!(
+        serde_json::to_value(&old_cloud.origin).unwrap(),
+        json!({"kind": "agent"})
+    );
+    assert!(old_cloud.signed_at.is_none() && old_cloud.task_signature.is_none());
+    assert!(old_cloud.validate().is_ok());
+    assert_eq!(old_cloud.title, new_cloud.title);
 }
 
 /// !406 follow-up: without a readable local key a task claim is not sent

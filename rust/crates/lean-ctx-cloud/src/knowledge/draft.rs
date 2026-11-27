@@ -124,6 +124,13 @@ fn save_watermark(data_dir: &Path, stable: &str, mark: &Watermark) -> Result<(),
     )
 }
 
+/// Start the capture of the project `stable` from the beginning again, as
+/// [`recapture`] does: `cloud unlink` dropped its unsent drafts, so their
+/// facts are captured again once the folder is shared again (rc4-6).
+pub(crate) fn reset_watermark(data_dir: &Path, stable: &str) -> Result<(), CloudError> {
+    save_watermark(data_dir, stable, &Watermark::default())
+}
+
 /// An opaque per-session reference: no host, user or path data. It is an
 /// unsalted digest, so a guessable session id can be tested against it:
 /// it names sessions locally (file names, done markers) and, uploaded, only
@@ -193,6 +200,10 @@ fn capture_session(
 ) -> Result<(Option<String>, capture::CaptureCounts), CloudError> {
     let nothing = || Ok((None, capture::CaptureCounts::default()));
     if config.enabled == Some(false) || !config.auto_capture || store.instance()?.is_none() {
+        return nothing();
+    }
+    // A folder the person stopped sharing (`cloud unlink`) queues no draft.
+    if crate::unlinked::contains(store.data_dir(), root) {
         return nothing();
     }
     let Some(identity) = project_identity(root) else {

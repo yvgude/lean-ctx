@@ -899,6 +899,336 @@ pub(crate) fn json_answer(
     }
 }
 
+/// What the app-only person proposal answers (rc4-67, kind
+/// `tasks.propose`): the `tasks.ack` fields, plus whether the proposal is
+/// still queued and the origin the task carries.
+#[derive(Debug, Serialize)]
+pub(crate) struct PersonProposal {
+    pub project_root: String,
+    pub vault: Option<String>,
+    /// `null` while the proposal waits in the queue (not sent yet).
+    pub change: Option<ChangeRow>,
+    pub queued: bool,
+    /// `person`; `agent` when the project's Cloud does not take a
+    /// person's origin yet (it records the task as before).
+    pub origin: &'static str,
+    /// The task after the write; local tasks only.
+    pub task: Option<LocalDetail>,
+}
+
+/// The document of `POST /v1/local/cloud/tasks/propose` (rc4-67): a task the
+/// person proposed in LeanCTX Code. App-only (`app_key`), so only the
+/// person's confirmed click reaches it, never an agent. On a linked project
+/// it is queued and sent with origin `person`; the Cloud names the
+/// person this machine is linked to (nothing in the body names anyone). On
+/// an unlinked one it is a local task proposed by a person.
+pub(crate) fn person_propose_answer(args: &[String]) -> local_read::Answer {
+    if local_read::tasks_sign::is_signed(args) {
+        return signed_person_propose_answer(args);
+    }
+    let via = local_read::Via::Socket;
+    let root = match local_read::project_root(args) {
+        Ok(root) => root,
+        Err(failure) => return local_read::Answer::failure(&failure),
+    };
+    let path = PathBuf::from(&root);
+    let linked = match local::linked(&path) {
+        Ok(linked) => linked,
+        Err(message) => {
+            return local_read::Answer::failure(&Failure::new(Code::Unavailable, message));
+        }
+    };
+    let preview = write_preview("propose", args);
+    local_read::answer_released_write(
+        "ctx_tasks",
+        &root,
+        PERSON_PROPOSE_KIND,
+        via,
+        &preview,
+        || {
+            if !linked {
+                let (change, task) = local_action("propose", args, &path, &Caller::Person)?;
+                return Ok(PersonProposal {
+                    project_root: root.clone(),
+                    vault: None,
+                    change: change.as_ref().map(change_row),
+                    queued: false,
+                    origin: "person",
+                    task,
+                });
+            }
+            let (change, queued, person) = cloud_person_propose(args, &path)?;
+            Ok(PersonProposal {
+                project_root: root.clone(),
+                vault: vault_of(&root),
+                change,
+                queued,
+                origin: if person { "person" } else { "agent" },
+                task: None,
+            })
+        },
+    )
+}
+
+/// The kind of [`person_propose_answer`]'s document.
+pub(crate) const PERSON_PROPOSE_KIND: &str = "tasks.propose";
+
+/// What `tasks.propose.prepare` answers (rc4-67): either the exact body
+/// and the bytes LeanCTX Code signs with its task-propose key, or
+/// `signed: false` and why (the app then sends the unsigned form, which a
+/// project's Cloud records as an agent's).
+#[derive(Debug, Serialize)]
+pub(crate) struct PersonPrepared {
+    pub project_root: String,
+    pub signed: bool,
+    /// `not_linked`, `not_connected`, `not_offered` or `no_task_key` when
+    /// `signed` is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_b64: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_input_b64: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vault_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_id_expected: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+}
+
+impl PersonPrepared {
+    fn unsigned(project_root: String, reason: &'static str) -> Self {
+        Self {
+            project_root,
+            signed: false,
+            reason: Some(reason),
+            body_b64: None,
+            signing_input_b64: None,
+            instance_id: None,
+            vault_id: None,
+            key_id_expected: None,
+            expires_at: None,
+        }
+    }
+}
+
+/// The refusal of a person's proposal whose computer or project id is not
+/// the Cloud's form (a connection from an older version).
+const IDS_UNEXPECTED_TEXT: &str = "This computer's connection is from an older version; connect it again before proposing a task.";
+
+/// The document of `POST /v1/local/cloud/tasks/propose/prepare` (rc4-67,
+/// app-only): the person's proposal prepared for the app's signature. The
+/// words pass the release check here, as they would on `tasks.propose`;
+/// nothing is queued, sent or signed.
+pub(crate) fn person_prepare_answer(args: &[String]) -> local_read::Answer {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+    use lean_ctx_cloud::tasks::propose;
+    use local_read::tasks_sign;
+    let via = local_read::Via::Socket;
+    let root = match local_read::project_root(args) {
+        Ok(root) => root,
+        Err(failure) => return local_read::Answer::failure(&failure),
+    };
+    let path = PathBuf::from(&root);
+    let preview = write_preview("propose", args);
+    local_read::answer_released_write(
+        "ctx_tasks",
+        &root,
+        tasks_sign::PREPARE,
+        via,
+        &preview,
+        || {
+            let title = required(args, "--title")?;
+            let acceptance = required(args, "--acceptance")?;
+            if !local::linked(&path).map_err(|m| Failure::new(Code::Unavailable, m))? {
+                return Ok(PersonPrepared::unsigned(root.clone(), "not_linked"));
+            }
+            let Ok(connected) = cloud_tasks::connected(
+                &path,
+                lean_ctx_protocol::cloud::lease::CloudRight::TasksPropose,
+            ) else {
+                return Ok(PersonPrepared::unsigned(root.clone(), "not_connected"));
+            };
+            if !propose::person_origin_offered(&connected.session) {
+                return Ok(PersonPrepared::unsigned(root.clone(), "not_offered"));
+            }
+            let Some(bound) = lean_ctx_cloud::consent::task_key::bound_task_key(&connected.store)
+            else {
+                return Ok(PersonPrepared::unsigned(root.clone(), "no_task_key"));
+            };
+            // Signed as the Cloud checks them (bd S1). Ids of another form
+            // are refused, never answered unsigned: the app could then send
+            // the person's proposal as an agent's.
+            let Some((instance_id, vault_id)) =
+                lean_ctx_cloud::consent::task_key::canonical_person_ids(
+                    &connected.session.instance.instance_id,
+                    &connected.project.vault_id,
+                )
+            else {
+                return Err(Failure::new(Code::InvalidState, IDS_UNEXPECTED_TEXT)
+                    .with_reason("ids_unexpected"));
+            };
+            let fields = propose::Fields {
+                title,
+                goal: flag(args, "--goal")?,
+                acceptance,
+                role: flag(args, "--role")?,
+            };
+            let prepared = propose::prepare_person_task(
+                connected.store.data_dir(),
+                &path,
+                &fields,
+                &instance_id,
+                &vault_id,
+                lean_ctx_time::UtcDateTime::now(),
+            )?;
+            let signing_input_b64 = B64URL.encode(&prepared.signing_input);
+            let body_b64 =
+                tasks_sign::store().insert(&root, prepared, std::time::Instant::now())?;
+            Ok(PersonPrepared {
+                project_root: root.clone(),
+                signed: true,
+                reason: None,
+                body_b64: Some(body_b64),
+                signing_input_b64: Some(signing_input_b64),
+                instance_id: Some(instance_id),
+                vault_id: Some(vault_id),
+                key_id_expected: Some(bound.key_id),
+                expires_at: tasks_sign::expires_at(),
+            })
+        },
+    )
+}
+
+/// `tasks.propose` in its signed form (rc4-67): the prepared body, checked
+/// against the app's signature and the bound task-propose key, queued with
+/// that signature and sent now with origin `person`.
+fn signed_person_propose_answer(args: &[String]) -> local_read::Answer {
+    use lean_ctx_cloud::tasks::propose;
+    let via = local_read::Via::Socket;
+    let root = match local_read::project_root(args) {
+        Ok(root) => root,
+        Err(failure) => return local_read::Answer::failure(&failure),
+    };
+    // Checked (the project among it) and claimed; given back below unless
+    // the proposal was queued (bd S2).
+    let ready = match local_read::tasks_sign::take_signed(args, &root) {
+        Ok(ready) => ready,
+        Err(failure) => return local_read::Answer::failure(&failure),
+    };
+    // The release check sees the words that leave, as they were prepared.
+    let words = &ready.prepared.proposal;
+    let mut fields = vec![
+        "--title".to_owned(),
+        words.title.clone(),
+        "--acceptance".to_owned(),
+        words.acceptance.clone(),
+    ];
+    for (flag, value) in [("--goal", &words.goal), ("--role", &words.role)] {
+        if let Some(value) = value {
+            fields.extend([flag.to_owned(), value.clone()]);
+        }
+    }
+    let preview = write_preview("propose", &fields);
+    let queued_it = std::cell::Cell::new(false);
+    let answer = local_read::answer_released_write(
+        "ctx_tasks",
+        &root,
+        PERSON_PROPOSE_KIND,
+        via,
+        &preview,
+        || {
+            let store = lean_ctx_cloud::CloudStore::open()?;
+            let id = propose::enqueue_signed_person(
+                store.data_dir(),
+                &ready.prepared,
+                &ready.signature,
+            )?;
+            // Queued: it leaves with the outbox now, sent or not.
+            queued_it.set(true);
+            let path = PathBuf::from(&root);
+            let (change, queued, person) = send_queued_person(&store, &path, &id)?;
+            Ok(PersonProposal {
+                project_root: root.clone(),
+                vault: vault_of(&root),
+                change,
+                queued,
+                origin: if person { "person" } else { "agent" },
+                task: None,
+            })
+        },
+    );
+    if !queued_it.get() {
+        local_read::tasks_sign::store().release(&ready.body_b64);
+    }
+    answer
+}
+
+/// Queue the person's proposal for the linked vault and send it now: the
+/// change (`None` while it waits), whether it is still queued, and whether
+/// the Cloud records origin `person`.
+fn cloud_person_propose(
+    args: &[String],
+    root: &Path,
+) -> Result<(Option<ChangeRow>, bool, bool), Failure> {
+    use lean_ctx_cloud::tasks::propose;
+    let store = lean_ctx_cloud::CloudStore::open()?;
+    let id = propose::propose_person_task(
+        store.data_dir(),
+        root,
+        required(args, "--title")?,
+        flag(args, "--goal")?,
+        required(args, "--acceptance")?,
+        flag(args, "--role")?,
+    )?;
+    // Unsigned: a Cloud records it as an agent's, whatever it announces.
+    send_queued_person(&store, root, &id).map(|(change, queued, _)| (change, queued, false))
+}
+
+/// Send the queued person's proposal `id` now: the change (`None` while it
+/// waits), whether it is still queued, and whether the Cloud records origin
+/// `person`.
+fn send_queued_person(
+    store: &lean_ctx_cloud::CloudStore,
+    root: &Path,
+    id: &str,
+) -> Result<(Option<ChangeRow>, bool, bool), Failure> {
+    use lean_ctx_cloud::tasks::propose::{self, Delivery};
+    let Ok(connected) = cloud_tasks::connected(
+        root,
+        lean_ctx_protocol::cloud::lease::CloudRight::TasksPropose,
+    ) else {
+        // Not connected now: it stays queued; the last answer of the Cloud
+        // says how it will be recorded.
+        let person =
+            lean_ctx_cloud::session_ref::announced(store, propose::FEATURE_TASK_PERSON_ORIGIN);
+        return Ok((None, true, person));
+    };
+    match propose::send_person_now(&connected.session, id) {
+        (Some(Delivery::Sent(number, state)), person) => Ok((
+            Some(ChangeRow {
+                number,
+                event: "proposed",
+                state: wire(&state),
+                seq: None,
+            }),
+            false,
+            person,
+        )),
+        (Some(Delivery::Failed(problem)), _) => Err(Failure::new(
+            Code::Unavailable,
+            format!("the task proposal was not sent: {problem}"),
+        )),
+        // Waiting, or the scheduler sent it meanwhile: it is on its way.
+        (Some(Delivery::Waiting(_)), person) => Ok((None, true, person)),
+        (None, person) => Ok((None, false, person)),
+    }
+}
+
 /// A write's request as the release point sees it before anything is
 /// written or sent to Cloud (G08), for `--json`, the socket and plain text
 /// alike: a withheld write writes nothing.
@@ -1281,6 +1611,108 @@ mod tests {
         let stopped = doc(stopped);
         assert_eq!(stopped["change"]["event"], "stopped");
         assert_eq!(stopped["change"]["state"], "cancelled");
+    }
+
+    /// rc4-67: the person's proposal from LeanCTX Code is its own app-only
+    /// route. Only the app key admits it, the CLI is refused, the body names
+    /// no one (no agent, no name), and the task's origin is `person`. The
+    /// agent's propose route stays as it was.
+    #[test]
+    fn the_app_only_route_proposes_as_the_person_and_names_no_one() {
+        use local_read::{Via, app_key, routes::args_of, tasks_part};
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().expect("project");
+        let root = dir.path().to_str().expect("utf-8").to_owned();
+        let route = tasks_part::ROUTES
+            .iter()
+            .find(|r| r.path == "/v1/local/cloud/tasks/propose")
+            .expect("the person's route");
+        assert_eq!(route.kind, tasks_part::PERSON_PROPOSE);
+        assert!(app_key::guards(route.kind), "app-only");
+        assert!(route.cli.is_empty(), "no CLI words");
+        let agents = tasks_part::ROUTES
+            .iter()
+            .find(|r| r.path == "/v1/local/tasks/propose")
+            .expect("the agent's route");
+        assert!(!app_key::guards(agents.kind));
+
+        let inputs = |body: Value| -> Vec<(String, Value)> {
+            let mut inputs: Vec<(String, Value)> = body
+                .as_object()
+                .expect("a body")
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            inputs.push(("project_root".into(), json!(root)));
+            inputs
+        };
+        for claim in [json!({"agent": "w1"}), json!({"by": "Someone else"})] {
+            let mut body = json!({"title": "Fix the login test", "acceptance": "50 green runs"});
+            body.as_object_mut()
+                .unwrap()
+                .extend(claim.as_object().unwrap().clone());
+            assert!(
+                args_of(route, None, &inputs(body)).is_err(),
+                "the body names no one"
+            );
+        }
+        let args = args_of(
+            route,
+            None,
+            &inputs(json!({"title": "Fix the login test", "acceptance": "50 green runs"})),
+        )
+        .expect("routed");
+        let cli = tasks_part::answer(route.kind, &args, Via::Cli);
+        assert_eq!(cli.failed, Some(Code::AppOnly), "{}", cli.text);
+
+        let answer = tasks_part::answer(route.kind, &args, Via::Socket);
+        assert_eq!(answer.failed, None, "{}", answer.text);
+        let doc: Value = serde_json::from_str(&answer.text).expect("a document");
+        assert_eq!(doc["kind"], "tasks.propose");
+        assert_eq!(doc["origin"], "person");
+        assert_eq!(doc["queued"], false);
+        assert_eq!(doc["change"]["event"], "proposed");
+        assert_eq!(doc["task"]["origin"]["kind"], "person", "{doc}");
+
+        // The signed form's prepare step: app-only too; an unlinked project
+        // has nothing to sign (its task is a local one).
+        let prepare = tasks_part::ROUTES
+            .iter()
+            .find(|r| r.path == "/v1/local/cloud/tasks/propose/prepare")
+            .expect("the prepare route");
+        assert_eq!(prepare.kind, "tasks.propose.prepare");
+        assert!(app_key::guards(prepare.kind), "app-only");
+        assert!(prepare.cli.is_empty(), "no CLI words");
+        let args = args_of(
+            prepare,
+            None,
+            &inputs(json!({"title": "Fix the login test", "acceptance": "50 green runs"})),
+        )
+        .expect("routed");
+        let cli = tasks_part::answer(prepare.kind, &args, Via::Cli);
+        assert_eq!(cli.failed, Some(Code::AppOnly), "{}", cli.text);
+        let answer = tasks_part::answer(prepare.kind, &args, Via::Socket);
+        assert_eq!(answer.failed, None, "{}", answer.text);
+        let doc: Value = serde_json::from_str(&answer.text).expect("a document");
+        assert_eq!(doc["kind"], "tasks.propose.prepare");
+        assert_eq!(doc["signed"], false);
+        assert_eq!(doc["reason"], "not_linked");
+        assert!(doc.get("body_b64").is_none());
+
+        // A signed form this process never prepared is refused, nothing sent.
+        let signed = args_of(
+            route,
+            None,
+            &inputs(json!({
+                "body_b64": "bm9wZQ",
+                "task_signature": "c2ln",
+                "key_id": "abababababababab",
+            })),
+        )
+        .expect("routed");
+        let answer = tasks_part::answer(route.kind, &signed, Via::Socket);
+        assert_eq!(answer.failed, Some(Code::InvalidState), "{}", answer.text);
+        assert!(answer.text.contains("proposal_unknown"), "{}", answer.text);
     }
 
     #[test]

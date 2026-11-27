@@ -45,6 +45,7 @@ pub(crate) mod lease_part;
 pub(crate) mod leases;
 pub(crate) mod link;
 pub(crate) mod members_part;
+pub(crate) mod pickup_part;
 pub(crate) mod plan_part;
 pub(crate) mod policies;
 pub(crate) mod policy_layers;
@@ -60,7 +61,9 @@ pub(crate) mod sync;
 pub(crate) mod task_receipt;
 pub(crate) mod tasks;
 pub(crate) mod tasks_part;
+pub(crate) mod tasks_sign;
 pub(crate) mod team_stop_part;
+pub(crate) mod unlink_part;
 pub(crate) mod usage;
 pub(crate) mod vaults;
 
@@ -90,6 +93,12 @@ pub(crate) const PARTS: &[Part] = &[
         kinds: tasks_part::KINDS,
         commands: tasks_part::COMMANDS,
         answer: tasks_part::answer,
+    },
+    Part {
+        routes: pickup_part::ROUTES,
+        kinds: pickup_part::KINDS,
+        commands: pickup_part::COMMANDS,
+        answer: pickup_part::answer,
     },
     Part {
         routes: team_stop_part::ROUTES,
@@ -186,6 +195,12 @@ pub(crate) const PARTS: &[Part] = &[
         kinds: plan_part::KINDS,
         commands: plan_part::COMMANDS,
         answer: plan_part::answer,
+    },
+    Part {
+        routes: unlink_part::ROUTES,
+        kinds: unlink_part::KINDS,
+        commands: unlink_part::COMMANDS,
+        answer: unlink_part::answer,
     },
 ];
 

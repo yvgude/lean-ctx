@@ -1,0 +1,28 @@
+{
+  "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+  "chat_key": {
+    "alg": "ed25519",
+    "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+    "key_id": "7db0b01f39d179aa",
+    "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+  },
+  "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+  "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+  "instance_label": "studio-mac",
+  "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+  "instance_version": "3.12.9",
+  "optin_key": {
+    "alg": "ed25519",
+    "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+    "key_id": "ef1bd9c792ccc768",
+    "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+  },
+  "os": "macos",
+  "schema": "leanctx.cloud.device-token-request/v1",
+  "task_propose_key": {
+    "alg": "ed25519",
+    "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+    "key_id": "9ebdc850b1afad78",
+    "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+  }
+}

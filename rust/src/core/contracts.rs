@@ -448,6 +448,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("app-presence", "app-presence-v1.md", 1, Experimental),
         doc("task-receipt", "task-receipt-v1.md", 1, Experimental),
         doc("session-usage", "session-usage-v1.md", 1, Experimental),
+        doc("app-key-bind", "app-key-bind-v1.md", 1, Experimental),
     ]
 }
 

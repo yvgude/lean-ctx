@@ -378,7 +378,10 @@ Same source as today's `cloud tasks list` (through this Instance; Desktop never 
 - `fields_version`: `int` | `null`, +1 on every priority or labels write (C0 2.2 E47);
   `null` from a LeanCTX Cloud server that sends none. It is the `base_version` of the next write.
 - Order: `high` first, then by `number` ascending (the board order, 3.12.3).
-- `origin.kind` ∈ `person` | `agent` | `contradiction` | `question`.
+- `origin.kind` ∈ `person` | `agent` | `contradiction` | `question`. `person`: a person
+  created it on the web, or proposed it in LeanCTX Code (§3c-1); `agent`: an agent proposed it
+  (`ctx_tasks`, `lean-ctx cloud tasks propose`), or a person in LeanCTX Code while the
+  project's Cloud did not take a person's proposal yet. An unknown kind reads `unknown`.
 
 ## 3b. `lean-ctx cloud tasks show <n> --json`
 
@@ -398,7 +401,7 @@ Same fields as a list item, filled, plus:
     "claim_until": "2026-11-04T07:25:00Z",
     "updated": "2026-11-04T07:10:00Z",
     "created": "2026-11-03T10:00:00Z",
-    "created_by": { "kind": "person", "label": "Yves" },
+    "created_by": { "kind": "person", "label": "Yves", "own": true },
     "origin": { "kind": "person", "facts": [], "message": null },
     "updates": [ { "at": "2026-11-04T07:10:00Z", "by": "Claude Code · tester", "summary": "Reproduced locally." } ],
     "result": null
@@ -408,6 +411,9 @@ Same fields as a list item, filled, plus:
 
 - `result`: `null` | `{ "summary": string|null, "outcome": "completed"|"failed", "evidence": [ { "kind": string, "ref": string|null } ], "at": ts }`.
 - `updated` in show = newest of created / update / result / claim time.
+- `created_by.own` (rc4-79, additive): `true` when the creator is the person this machine is
+  linked to, `false` when it is someone else; left out when the Cloud does not say (not
+  known). The Cloud decides it from its own records; no person id reaches the machine.
 
 ## 3b-1. `lean-ctx cloud tasks priority|labels <n> … --json` (3.12.3)
 
@@ -584,6 +590,120 @@ lean-ctx tasks labels <n> <a,b,...>|--clear [--priority high|normal] --json     
   `local-tasks`, metadata `lean_ctx.request_id` = `task:<n>:<event>:<seq>:<i>`),
   the number only, no task text. `submitted` goes to every agent of the
   project except its worker; everything else to all.
+
+### 3c-1. A person's proposal: `tasks.propose` (`POST /v1/local/cloud/tasks/propose`, socket only)
+
+After the person proposes a task in LeanCTX Code, the app asks LeanCTX to propose it as the
+person's own (rc4-67). Released under `ctx_tasks` as a write; project required.
+
+- Body: `project_root` (required), `title` (required), `acceptance` (required), `goal`, `role`.
+  The body names no one: `agent` and `by` are refused (`invalid_argument`).
+- App-only, as `decisions.send` (§26.4): without LeanCTX Code's app key in `x-leanctx-app-key`
+  the answer is `403 app_only` and nothing is queued. The CLI has no verb for it
+  (`capabilities` lists `propose` for `cloud.tasks` as a socket verb too).
+- A linked project, unsigned form (the body above): queued and sent at once with origin `agent`;
+  a Cloud records a person's proposal only with the app's signature (signed form below).
+  A project not linked: a local task proposed by a person (§3c).
+- Signed form (rc4-67): body `project_root`, `body_b64`, `task_signature`, `key_id` from
+  `tasks.propose.prepare` (§3c-2) and the app's task-propose key. The prepared body must be one
+  this process prepared for that `project_root`, unexpired (120 s) and unused; `key_id` must be
+  the key bound at pairing and `task_signature` must verify over `signing_input_b64`. It is
+  queued unchanged with `signed_at` and `task_signature` and sent with origin `person`; the Cloud
+  records the person this machine is linked to. Refusals: `409 invalid_state` with
+  `error.reason` `proposal_unknown` (not prepared here), `proposal_sent` (already sent) or
+  `proposal_expired`; `400 invalid_argument` with `proposal_other_project` (prepared for another
+  `project_root`); `403 forbidden` with `task_key_missing` or `signature_invalid`. A refused,
+  withheld or locally failed request leaves the prepared body unused until it expires. A Cloud
+  that refuses it (`person_unproven`, `signature_expired`) fails the queued proposal; the app
+  prepares again.
+- Agents never propose as a person: `ctx_tasks propose`, `lean-ctx cloud tasks propose` and
+  `POST /v1/local/tasks/propose` keep origin `agent` on a linked project.
+
+```json
+{
+  "contract": "local-read/1",
+  "kind": "tasks.propose",
+  "project_root": "/path/to/repo",
+  "vault": "vlt_…",
+  "change": { "number": 42, "event": "proposed", "state": "open", "seq": null },
+  "queued": false,
+  "origin": "person",
+  "task": null
+}
+```
+
+- `change` is `null` while the proposal waits in the queue (`queued` `true`), e.g. while offline;
+  the next sync sends it.
+- `origin`: `person`, or `agent` for a Cloud without `task_person_origin`.
+- `task`: the local task (§3c) for a project not linked, else `null`.
+- Errors: `app_only`, `invalid_argument`, `withheld`, `forbidden`, `unavailable` (the link
+  cannot be read, or the proposal was not sent and will not be), `internal`.
+
+### 3c-2. Preparing the signed form: `tasks.propose.prepare` (`POST /v1/local/cloud/tasks/propose/prepare`, socket only)
+
+App-only like §3c-1, released under `ctx_tasks` as a write. Body as §3c-1's unsigned form
+(`project_root`, `title`, `acceptance`, `goal`, `role`). Nothing is queued, sent or signed:
+LeanCTX builds the exact request body, keeps it in memory (at most 64, 120 s, single use)
+and answers the bytes the app signs with its task-propose key (Keychain, no prompt). LeanCTX
+never holds that private key.
+
+```json
+{
+  "contract": "local-read/1",
+  "kind": "tasks.propose.prepare",
+  "project_root": "/path/to/repo",
+  "signed": true,
+  "body_b64": "<base64url, canonical JSON of the request body without task_signature>",
+  "signing_input_b64": "<base64url of the bytes to sign>",
+  "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+  "vault_id": "9d2e4f6a1b3c4d5e8f7a6b5c4d3e2f1a",
+  "key_id_expected": "<16 hex>",
+  "expires_at": "2026-11-24T12:02:00Z"
+}
+```
+
+- `signing_input` = `"leanctx.cloud.task_propose_person.v1\n"` + canonical JSON of the body
+  plus `instance_id` (dashed lowercase UUID, as every cloud v2 instance id) and `vault_id` (32 lowercase hex). The app signs exactly these bytes (Ed25519, base64url
+  without padding) and posts `{project_root, body_b64, task_signature, key_id}` to §3c-1.
+- `signed: false` with `reason` and no other fields: `not_linked` (use §3c-1 unsigned for a
+  local task), `not_connected`, `not_offered` (the Cloud does not announce
+  `task_person_origin`), `no_task_key` (pair again from the app). The app then sends the
+  unsigned form, recorded as an agent's.
+- Errors: `app_only`, `invalid_argument`, `withheld`, `invalid_state` (reason `proposal_sent`: the
+  same words were just sent; or reason `ids_unexpected`: this computer's or project's id is not a cloud v2 id, from a
+  connection of an older version, so the proposal is refused rather than sent unsigned as an
+  agent's: "This computer's connection is from an older version; connect it again before
+  proposing a task."), `internal`.
+
+### 3c-3. Binding the task-propose key at pairing
+
+`lean-ctx cloud connect --print-instance-key` prints
+`{"contract":"local-read/1","kind":"cloud.instance_key","instance_public_key":"<std base64>"}`
+without pairing. The app builds its bind statement
+`"leanctx.cloud.task_propose_key_bind.v1\n"` + canonical JSON
+`{alg, instance_public_key, key_id, public_key, scope:"task_propose_person.v1"}`, signs it with
+the task-propose key and runs `lean-ctx cloud connect --json --task-propose-key -` with
+`{"alg":"ed25519","public_key":"<b64url>","key_id":"<16 hex>","bind_signature":"<b64url>"}` on
+stdin (max 16 KiB). Both flags are LeanCTX Code's only: it passes its launch key in
+`LEAN_CTX_APP_KEY`; without it (or with another) the answer is an `error` event with code
+`app_only` and exit 1, before stdin is read, a key is made or anything is sent. LeanCTX
+checks shape, key id and bind signature, sends it as
+`task_propose_key` on `POST /v1/device/token` and keeps only the public part once the Cloud
+accepts it. Not combinable with `--enrollment-token-stdin`; a token pairing drops a stored key.
+On a machine already connected, `--task-propose-key` re-binds: the device flow runs again with
+the same instance keys (the Cloud keeps the instance id; no `replaces` is sent) instead of
+answering `connected` at once. Refusals end with an `error` event whose `code` is the reason:
+`task_propose_key_invalid` (400 `invalid_field`), `task_propose_key_bound` or
+`task_propose_key_cleared` (409 `invalid_state`), or `app_key_not_announced` (400
+`invalid_field` with reason `app_key_not_announced` or `app_key_bind_invalid`, f3129: the
+offered keys are not the announced set, or the bind signature does not verify; the message is
+"Pairing failed, please start connecting again."). A device-flow re-bind of the same instance (the
+same instance id, team and Cloud) keeps each key kind it does not offer (the Cloud keeps it
+bound); a new enrollment, or an unreadable local record, forgets it. A task-only re-bind does
+not learn of a chat key removed on the web: this computer keeps that key's public part until
+the next chat-key pairing replaces it, so `chat.prepare` stays listed and still prepares and
+signs frames, and LeanCTX Cloud refuses their sends (a `person_unproven` refusal maps to
+`signature_required`, §28a).
 
 ## 4. `lean-ctx cloud presence --json`
 
@@ -1808,6 +1928,62 @@ stay reachable the same way and are listed as `local_not_shared` (§3a).
 
 ---
 
+## 20a. `lean-ctx cloud unlink --json [--project-root P]` (kind `cloud.unlink`, rc4-6)
+
+Stops sharing one project folder with its vault, on this machine only. The vault and its data
+stay in Cloud; local knowledge, cache, sessions and `.lean-ctx-id` stay on disk. Works without a
+connection and is idempotent.
+
+- Socket: `POST /v1/local/cloud/unlink`, body `{"project_root": P}`, app-only (app key, like
+  `decisions.send`, §26). The generic CLI path for the kind is refused (`app_only`); the
+  person's own `lean-ctx cloud unlink [--json]` prints the same document.
+- Success:
+
+```json
+{"contract": "local-read/1", "kind": "cloud.unlink", "ok": true,
+ "project_root": "/abs/path", "removed": "link",
+ "vault": {"id": "vlt_…", "name": "acme/payments"},
+ "drafts_dropped": 2, "link_file": "kept", "link_file_reason": "other_vault"}
+```
+
+  - `removed` ∈ `link` | `none`; `vault` only with `link`. `link` also for a checkout
+    shared only through its identity (the record of another checkout of the same repository):
+    `vault` names that record's vault, and the record stays for the other checkout.
+  - `drafts_dropped` (uint, always present): unsent knowledge drafts of the folder that were
+    dropped. The capture watermark of the folder's own record is reset with them (not the one
+    of a record kept for another checkout).
+  - `link_file` ∈ `removed` | `kept` | `absent` (always present): the folder's
+    `.lean-ctx-cloud.json`. A regular, readable file is removed when it names the vault left
+    (namespace, name and server), or, when the folder has no record and no identity vault, when
+    it names a vault on this machine's Cloud (a link file for another server is kept).
+  - `link_file_reason` (only with `kept`) ∈ `other_vault` (names a vault or server other than
+    the folder's record or identity vault) | `unreadable` (not a regular file, or not
+    parseable) | `symlink`.
+- Refusal `{ok: false, code, error}` (`error` is for people):
+  - `invalid_root` (`no_project`): no project folder, or none named on the socket.
+  - `shared_from_main` (`invalid_state`): a git worktree shared through its main checkout; adds
+    `main_root` (string), where unlinking has to happen.
+  - `failed` (`internal`): a file could not be written; `error` names the steps already done.
+- Opt-out: the folder is recorded in `<cloud data>/unlinked_roots.json`. While it is there no
+  path resolves a vault for it (also not through its main checkout or another checkout of the
+  same repository, and not through a kept link file): `cloud sync`, knowledge send/pull and
+  session capture, task proposals, bus messages, collaboration findings and usage counts skip
+  it; `cloud status`, `cloud connect` and the line under `remember` show it as not shared,
+  `cloud vaults` marks no vault `current` for it, and `cloud link` names no `previous_vault`
+  from a record;
+  recall from Cloud is not delivered for it. The folder is recorded whenever a vault record, an
+  identity vault or a link file was there. An explicit `cloud link` (CLI or `cloud.link`,
+  §20) keeps it in force while it links and shares (nothing is sent meanwhile) and lifts it only
+  once the link is kept; a link that Cloud refuses (`refused`, `other_cloud`) or that fails
+  after writing its link file (lifting the opt-out included) is undone: the previous link
+  file and identity and this machine's vault records are put back and the opt-out stays, so
+  the folder is left as it was. When undoing fails too, the error names the link file to
+  remove by hand. Changes are made under a file lock and written atomically. A store that
+  cannot be read fails closed: every path above treats every folder as not shared, `cloud
+  status` names it as `problem` (§ cloud status; before any other problem, joined with
+  `; `), senders refuse with its text, and `cloud unlink` and `cloud link` answer `failed`
+  naming the file until it is fixed or removed.
+
 ## 21. Knowledge freshness: `knowledge stale | verify | dedupe | outdated | conflicts`
 
 Which facts are no longer current truth, and the primitives a weekly clean-up runs. Every
@@ -2791,15 +2967,63 @@ it as `chat_key` to the device-token request, and after the enrollment keeps the
 only (`chat_key.json`: `alg`, `key_id`, `public_key`). A new enrollment replaces it; one
 without `--chat-key` removes it. LeanCTX Cloud's `400 invalid_field` on such a pairing is the
 local error "LeanCTX Cloud refused the chat key of LeanCTX Code (invalid_field chat_key). Pair
-this computer again from LeanCTX Code."; on an enrollment with a token it ends "Connect again
-from LeanCTX Code with a new enrollment token." canonical_json: sorted keys, no whitespace.
+this computer again from LeanCTX Code." An enrollment with a token carries no chat key
+(f3129, "Announced and signed" below). canonical_json: sorted keys, no whitespace.
 `chat_key.json` is not a security boundary: whoever can write it changes only what this
 engine checks locally; LeanCTX Cloud verifies every signed post against the key bound at
 pairing.
 
-The capabilities row `cloud.connect` lists `chat_key` and `print_instance_key` (via `cli`)
-whether or not a chat key is bound; whether one is bound shows in the `chat.prepare` route.
-`cloud connect` accepts only `--url`, `--label`, `--plan`, `--chat-key` (each with a value),
+**All keys in one pairing (`--app-keys -`).** To bind the chat key, the task-propose key
+(§3c-3) and the opt-in key (§46.3) together, the app runs
+`lean-ctx cloud connect --json --app-keys -` with ONE JSON object on stdin (max 32 KiB):
+`{"chat_key"?: {…}, "task_key"?: {…}, "optin_key"?: {…}}`, each
+`{alg, public_key, key_id, bind_signature}`, at least one member. `chat_key` and `task_key`
+have the shape and bind statement of `--chat-key -` and `--task-propose-key -`; `optin_key`
+has the shape and bind statement of §46.3 (`leanctx.cloud.optin_key_bind.v1\n`, scope
+`optin.v1`) and comes only this way (no single-key flag). Unknown members (in the object or
+in an offer) are refused. It is app-only like those flags (`app_only` without the launch
+key), and the same rules apply per key: shape checked when read, bind signature checked
+against this computer's `instance_public_key` before the Cloud is contacted at all (no device
+code, no browser; a bad one sends nothing, `config`), all sent on the same
+`POST /v1/device/token` (`chat_key`, `task_propose_key`,
+`optin_key`), kept after the Cloud accepts. With `task_key` or `optin_key` a connected
+computer re-binds (§3c-3: the device flow again with the same keys, approved by the person in
+the browser); with `chat_key` alone it re-pairs (below). Neither `task_key` nor `optin_key`
+goes with an enrollment token (`config` before anything is sent), and since f3129 neither does
+`chat_key`. `--chat-key -` and
+`--task-propose-key -` stay as single-key aliases. `--app-keys` with either alias, or
+`--chat-key` with `--task-propose-key`, is refused as `invalid_argument` before anything is
+read, made or sent.
+
+**Announced and signed (f3129 S2/S3, app-key-bind-v1).** Every pairing that offers keys (the
+first pairing, a re-bind and the chat-key re-pair alike) announces them when it starts:
+`POST /v1/device/code` carries `app_keys: [{kind, alg: "ed25519", key_id, public_key}]`, one per
+offered key, sorted by kind (`chat` < `optin` < `task_propose`). A pairing without offers sends
+no `app_keys` member; its request is unchanged. If the code answer does not list the feature
+`device_app_keys` (or an older Cloud refuses the member with `400 invalid_request`), nothing is
+polled and the connect ends with `config`: "This Cloud cannot pair the keys of LeanCTX Code yet,
+so nothing was paired. Connect again later, or connect without LeanCTX Code." The token request
+then offers exactly the announced keys and adds `app_keys_bind_signature`: this computer's
+instance key's Ed25519 signature (base64url, no padding) over
+`"leanctx.cloud.app_key_bind.v1\n"` followed by the canonical JSON of
+`{device_code_sha256, instance_public_key, keys: [{alg, kind, key_id, public_key}]}` (keys
+sorted by kind; `instance_public_key` as the token request sends it). No offer is ever sent
+unsigned. An enrollment token has no device code to sign over, so it carries no app key: a
+`chat_key`, `task_key` or `optin_key` with a token is refused (`config`) before anything is
+sent. The Cloud's `400 invalid_field` with reason `app_key_not_announced` (offers differ from
+the announced set) or `app_key_bind_invalid` (signature missing or not verifying) ends the
+pairing with "Pairing failed, please start connecting again." (event `code`
+`app_key_not_announced`); nothing is stored. A Cloud that refuses the announcement itself at
+`POST /v1/device/code` (`400 invalid_field`, field `app_keys`) ends the connect before anything
+is polled with `config`: "Pairing failed, please start connecting again."
+
+The capabilities row `cloud.connect` lists `app_keys`, `chat_key`, `optin_key`,
+`print_instance_key` and `task_propose_key` (via `cli`) whether or not a key is bound, so the
+app tells from the row alone that `--app-keys -` is supported and takes `optin_key`; whether a
+chat key is bound shows in the `chat.prepare` route, whether the opt-in key is in
+`cloud.pickup` (§46.1).
+`cloud connect` accepts only `--url`, `--label`, `--plan`, `--chat-key`, `--task-propose-key`,
+`--app-keys` (each with a value),
 `--trial`, `--json`, `--no-browser`, `--share`, `--enrollment-token-stdin`,
 `--print-instance-key`, `-y`/`--yes`, `-f`/`--force` and `-h`/`--help` (`--enrollment-token`
 keeps its own refusal). Any other flag or argument is refused before anything is read, made
@@ -2821,6 +3045,9 @@ already bound). Without `--chat-key` a connected computer stays a no-op. Refusal
 | `409` `chat_key_cleared` | `chat_key_cleared` | "This chat key was removed; LeanCTX Code makes a new one and pairs again." |
 | `400 invalid_field` `chat_key` | — | the chat key refusal above |
 | `400` `token_enrollment` | — | "This computer was connected with an enrollment token; pairing the chat key needs a connect from LeanCTX Code." |
+| `400 invalid_field` reason `app_key_not_announced` or `app_key_bind_invalid` (f3129) | — (event `code` `app_key_not_announced`) | "Pairing failed, please start connecting again." |
+| `400 invalid_field` field `app_keys` at the device code (f3129) | — (event `code` `config`) | "Pairing failed, please start connecting again." |
+| code answer without `device_app_keys` | — (event `code` `config`) | "This Cloud cannot pair the keys of LeanCTX Code yet, so nothing was paired. Connect again later, or connect without LeanCTX Code." |
 
 An answer for another computer or organization is refused and nothing is stored.
 
@@ -4441,3 +4668,194 @@ rows; `cloud.computers` does not.
   known_hosts, keyed by `host_alias`).
 - `show` of an unknown name: the `error` document with code `not_found`; a bad name or
   flag: `invalid_argument` (exit 2).
+
+## 46. Task pickup switch: `cloud.pickup`, `cloud.pickup.set`, `cloud.pickup.key` (socket only), `cloud worker on --json`
+
+LeanCTX Code turns task pickup on and off for this computer (rc4-16). The opt-in lives on the
+Cloud (`GET|PUT /v1/me/optin`, Cloud API §13). Turning it off needs only this computer's credential.
+Turning it on needs the person: LeanCTX Code signs the request with its own opt-in key (Ed25519,
+kept in the app's Keychain, no prompt per click). lean-ctx never holds that key's private half;
+it checks the signature against the key's public part and forwards the signed request unchanged.
+
+All three kinds are app-only (`x-leanctx-app-key`, as §26.4): any other caller gets `app_only`,
+and the CLI has no verb for them. No project.
+
+| kind | route | body or query | released under |
+|---|---|---|---|
+| `cloud.pickup` | `GET /v1/local/cloud/pickup` | `vault` (repeatable, 32 hex), `daily_budget` (JSON) | `ctx_knowledge` |
+| `cloud.pickup.set` | `POST /v1/local/cloud/pickup/set` | `{"state":"off"}` or `{"state":"on","turn_on":{…signed…}}` | `ctx_agent` (write) |
+| `cloud.pickup.key` | `POST /v1/local/cloud/pickup/key` | `{"optin_key":{alg, public_key, key_id, bind_signature}}` | `ctx_agent` (write) |
+
+### 46.1 State (`cloud.pickup`; `cloud.pickup.set` answers the same document)
+
+```json
+{
+  "state": "off",
+  "explicit_off": false,
+  "suggest_on": true,
+  "paused_here": false,
+  "worker_on": true,
+  "optin_key_id": "a1b2c3d4e5f60718",
+  "optin_key_pending": false,
+  "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+  "vault_count": 0,
+  "default_budget": {"tasks": 3, "tokens": 1000000},
+  "turn_on": {
+    "body": {"schema": "leanctx.cloud.instance-optin-on/v1", "active": true, "prev_optin_id": null,
+             "vaults": ["0f3c2b6a8d4e4a7b9c105e2f6a7b8c01"], "daily_budget": {"tasks": 3, "tokens": 1000000}},
+    "domain": "leanctx.cloud.optin.v1\n",
+    "signing_input": "leanctx.cloud.optin.v1\n{\"active\":true,…,\"instance_id\":\"3f1c…\",…}",
+    "vaults": [{"vault_id": "0f3c2b6a8d4e4a7b9c105e2f6a7b8c01", "name": "notes"}],
+    "daily_budget": {"tasks": 3, "tokens": 1000000}
+  },
+  "optin": {"schema": "leanctx.cloud.instance-optin/v1", "active": false, "vaults": [], "…": "as the Cloud answered"}
+}
+```
+
+- `state`: `on`, `off`, `paused_here` (on at the Cloud, paused on this computer) or `no_vaults`
+  (on, but `vault_count` is 0: show it as off). An off kept on this computer (below) is `off`
+  whatever the Cloud says.
+- `explicit_off`: the person turned it off: a stop on the Cloud, a pause here, or the off this
+  computer keeps in its worker state. That off is durable: `cloud.pickup.set` `off` (and
+  `cloud worker stop`) writes it, `cloud worker resume` lifts only the pause and never the off,
+  a damaged worker state counts as off. Two things lift it: a turn-on the app signed (§46.2), and
+  a turn-on by the person on the web. This computer keeps the id of the opt-in it stopped (empty
+  when none was active); the id changes on every stop and turn-on, so an active opt-in with another
+  id was turned on after the off, and this computer drops its off (and the pause the stop set) the
+  next time it reads the opt-in (`cloud.pickup`, `cloud worker status`, a claim). The same id keeps
+  the off; an off whose id is not known yet (the stop did not reach the Cloud, or a damaged state)
+  takes the id read next as the stopped one. A missing worker state is not an off: a computer that
+  never wrote one (fresh, or updated from an older version) keeps picking up tasks while its opt-in
+  on the Cloud is active. lean-ctx never turns task pickup on again by itself.
+- `suggest_on`: there was never an opt-in, nothing was turned off, and the worker state is the one
+  the connect wrote (a state written again after its file went missing never suggests). It only
+  means "preselect on" in the app. Default on (owner decision rc3-72 part 4): the Cloud already turns task pickup on for
+  the person's own vaults when the computer is approved in the browser, with 3 tasks and 1M tokens
+  a day and no cost limit. When it did not (an older pairing), the app preselects the switch; it
+  still turns it on only with the person's click.
+- `worker_on`: the Cloud took this computer's opt-in key (a 2xx answer to the token request that
+  carried it, §46.3) and `GET /v1/capabilities` lists `instance_optin_key`. Only then is there a
+  switch to turn on: otherwise `turn_on` is `null` and a turn-on is refused with `no_optin_key`
+  before anything is sent. There is no presence-key fallback; turning off needs no key.
+- `optin_key_id`: the opt-in key kept here, taken or not; `optin_key_pending`: it is kept but the
+  Cloud has not taken it yet (connect again from LeanCTX Code).
+- `turn_on`: the request to sign, `null` while `worker_on` is false or when no vault is named.
+  `prev_optin_id` is the current opt-in (`null` only when there is none); `vaults` are the `vault`
+  query values, else the current ones; the budget is `daily_budget`, else the current one, else the default above.
+  `turn_on.vaults` (each `vault_id` with its `name`, `null` when this computer does not know it)
+  and `turn_on.daily_budget` repeat what `body` sets, so the app shows them at the click.
+
+### 46.2 Turn on and off (`cloud.pickup.set`)
+
+The app NEVER signs a turn-on without the person's click on the switch: not for `suggest_on`, not
+on launch, not on an agent's request. On that click it signs exactly the UTF-8 bytes of
+`turn_on.signing_input` as lean-ctx gave them (`domain` followed by the canonical JSON of `body`
+with `instance_id` added) and never rebuilds them, puts the base64url signature (no padding) into
+`body.presence_signature`, and sends it as `turn_on`. lean-ctx checks the request
+(`EngineOptinOnV1`, unknown members refused), verifies the signature locally (nothing is sent when
+it does not verify), sends `PUT /v1/me/optin` with the signed body as it is, and lifts the pause
+and the kept off on this computer once the Cloud took it. `state: "off"` stops task pickup on the
+Cloud (`leanctx.cloud.instance-optin-stop/v1`), keeps the off here with the stopped opt-in's id
+(§46.1), and ends held claims. A Cloud without an active opt-in (`409 optin_inactive`) is already
+off: that is a success, and the off is kept with an empty id. A turn-on the Cloud refused or that
+did not reach it leaves the off as it was.
+
+Errors (`error.reason` in brackets): `app_only`, `invalid_argument` (`token_enrollment`: this
+computer was connected with an enrollment token; pairing the opt-in key needs a connect from
+LeanCTX Code), `not_connected`,
+`forbidden` (`no_optin_key`: no opt-in key bound here and taken by the Cloud, or the Cloud does
+not announce `instance_optin_key`; nothing is sent, and there is no presence-key fallback:
+"Pair LeanCTX Code with this computer first to turn on task pickup here."; `person_unproven`: no
+signature, the signature is not the opt-in key's, or the Cloud refused it),
+`invalid_field` (`vault_not_in_org`), `invalid_state` (`optin_changed`: read again and sign
+again), `conflict` (`team_stopped`; `optin_key_bound`: another opt-in key is bound to this computer;
+remove it on the computer's page, then pair again; `optin_key_cleared`: this opt-in key was
+removed, it is pending again here and LeanCTX Code makes a new one and pairs again), `not_found`,
+`rate_limited`, `unavailable`, `internal`.
+
+### 46.3 Hand over the opt-in key (`cloud.pickup.key`)
+
+`public_key` is the raw 32-byte Ed25519 key in base64url; `key_id` is the first 16 hex characters
+of SHA-256 of those bytes; `bind_signature` is the opt-in key's own signature (proof of
+possession) over `"leanctx.cloud.optin_key_bind.v1\n"` followed by the canonical JSON of
+`{"alg":"ed25519","instance_public_key":…,"key_id":…,"public_key":…,"scope":"optin.v1"}`.
+`instance_public_key` is this computer's key exactly as the token request sends it (standard
+base64), not the computer's UUID (`instance_id`). The key signs nothing but the bind and the opt-in domain
+`leanctx.cloud.optin.v1\n`.
+
+The Cloud takes the bind only as `optin_key` on `POST /v1/device/token`, so the person proves
+themselves through the device flow; a new key replaces a taken one only through that flow again
+(with the same instance keys). This route therefore checks the bind as the Cloud will and keeps
+the public part as pending; it never claims the key is usable by itself:
+
+```json
+{"key_id": "a1b2c3d4e5f60718", "worker_on": false, "bind": "pending_connect"}
+```
+
+`worker_on` turns true (and `bind` disappears) only once the Cloud took that key and announces
+`instance_optin_key` (§46.1).
+
+The Cloud takes the key through `cloud connect --json --app-keys -` with the same offer as
+`optin_key` (§28a, "All keys in one pairing"); LeanCTX Code hands the offer to that connect on
+stdin again. lean-ctx never sends the key kept by this route by itself: `optin_key.json` holds no
+bind signature and anyone on this computer can write it. The connect:
+
+1. checks the offer (unknown members refused, ed25519, `key_id`, and the bind signature over
+   this computer's `instance_public_key`) before anything is read from or sent to the Cloud (no
+   device code is fetched, no browser opened); a bind that does not verify sends nothing
+   (`config`);
+2. runs the device flow: the device code request announces the key in `app_keys` (f3129 S2,
+   §28a "Announced and signed"; a Cloud without `device_app_keys` ends it with `config` before
+   polling), the person approves the pairing in the browser, and the token request carries
+   `optin_key` with `app_keys_bind_signature` (S3). On a connected computer this re-binds (same
+   instance keys); a token enrollment never carries it;
+3. on the 2xx answer keeps the public part and marks it taken, so `cloud.pickup` reports
+   `worker_on` once the Cloud announces `instance_optin_key`. A pairing that enrolls a new
+   computer (another id, team or Cloud) without an `optin_key` puts a kept key back to pending
+   (`optin_key_pending`); a re-bind of the same id, team and Cloud without it keeps it.
+
+The connect's refusals (`code` of the `--json` error event, its text in `message`):
+`optin_key_invalid` (`400 invalid_field` on `optin_key` or `optin_key.bind_signature`: "The
+opt-in key of LeanCTX Code was not accepted. Pair this computer again from LeanCTX Code."),
+`optin_key_bound` and `optin_key_cleared` (a `409` with that code or reason; the §46.4 texts).
+`optin_key_cleared` also puts the kept key back to pending when it is the offered one. A
+computer once enrolled with a token whose re-bind carries `optin_key` and gets
+`400 token_enrollment` answers `token_enrollment` with the §46.2 text ("This computer was
+connected with an enrollment token; pairing the opt-in key needs a connect from LeanCTX Code.").
+
+### 46.4 CLI: `lean-ctx cloud worker on --json`, `cloud worker status --json`
+
+`cloud worker on --json` is LeanCTX Code's: like `cloud connect --chat-key`, it needs the app's
+launch key in `LEAN_CTX_APP_KEY` (the Local Service's `x-leanctx-app-key`, removed from the
+environment once read) and is refused with `app_only` before stdin is read otherwise. It reads the
+signed request (`body` plus `presence_signature`) from stdin and does what §46.2 does for
+`state: "on"`. It takes no `--vault`: run it with the project folder as the working directory; the
+vault is the one that folder is linked to (symbolic links resolved; a project folder that resolves
+outside the working directory's path is refused), and the signed `vaults` must name it (otherwise
+`vault_not_in_org`; a working directory that cannot be read: `failed`; no connection:
+`not_connected`). Read `cloud worker status --json` in the same
+folder for the `turn_on` to sign. Exit code 0 on success, 1 otherwise.
+
+```json
+{"ok":true,"state":"on","optin":{"schema":"leanctx.cloud.instance-optin/v1","optin_id":"opt_7a1d…","active":true,"…":"as the Cloud answered"}}
+{"ok":false,"code":"person_unproven","error":"the turn-on is not signed by this computer's opt-in key"}
+```
+
+`code` is one of `app_only`, `no_optin_key`, `person_unproven`, `not_connected`,
+`vault_not_in_org`, `optin_key_bound`, `optin_key_cleared`, `token_enrollment`, `optin_changed`,
+`team_stopped`, `failed`; `error` is plain text. `optin_changed` (the Cloud's `409 optin_changed`:
+the opt-in changed since `turn_on` was read) means: read `cloud worker status --json` again and ask
+for the click again on the new `turn_on`; never sign the old one again. `team_stopped` (`423`): the
+team is stopped, nothing to sign until it is released. The Cloud's `409 optin_key_bound`, `409 optin_key_cleared` and
+`400 token_enrollment` keep their own codes (texts: "Another opt-in key is bound to this computer;
+remove it on the computer's page, then pair again.", "This opt-in key was removed; LeanCTX Code
+makes a new one and pairs again.", "This computer was connected with an enrollment token; pairing
+the opt-in key needs a connect from LeanCTX Code."), and `400 invalid_field` on `vaults` maps to
+`vault_not_in_org`.
+
+`cloud worker resume` lifts only a pause; after an off it says that task pickup stays off until
+LeanCTX Code turns it on.
+
+`cloud worker status --json` adds `"capabilities":{"worker_on":true}`, `instance_id` and
+`turn_on` (as §46.1, its `vaults` the opt-in's vaults plus the current folder's linked vault)
+only while `worker_on` holds (§46.1); otherwise the document is unchanged.

@@ -404,6 +404,13 @@ async fn a_missing_root_is_learned_from_the_start_dir_not_a_calls_cwd() {
         text(&first)
     );
 
+    // A `no-jail` build (`cargo test --all-features`, the public CI) has no
+    // jail to hold the learned root to: `jail_path` admits every directory
+    // there, so the refusal below exists only with the jail compiled in.
+    if cfg!(feature = "no-jail") {
+        return;
+    }
+
     // Once the root is known, the jail holds to it: the other checkout's `cwd`
     // is refused and the command does not run at all; the root is kept.
     let second = call(

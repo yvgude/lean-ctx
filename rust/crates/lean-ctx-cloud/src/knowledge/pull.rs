@@ -58,6 +58,9 @@ struct Resolver<'a> {
     salt: Option<(String, Vec<u8>)>,
     map: VaultMap,
     config: &'a CloudConfig,
+    /// The share of an explicit `cloud link`, which may map a folder the
+    /// person unlinked; its opt-out is lifted only after the share (bd 40060).
+    explicit_link: bool,
 }
 
 impl Resolver<'_> {
@@ -71,6 +74,12 @@ impl Resolver<'_> {
     /// The project for `root`, mapped in Cloud when unknown
     /// ([`crate::mapping`]: match, first-share consent, resolve).
     fn resolve(&mut self, stable: &str, root: &Path) -> Result<VaultRecord, MapError> {
+        // A folder the person stopped sharing (`cloud unlink`) is never
+        // mapped again on its own, also not through a kept link file.
+        if !self.explicit_link && crate::unlinked::contains(self.session.store.data_dir(), root) {
+            let reason = crate::unlinked::refusal(self.session.store.data_dir());
+            return Err(CloudError::Refused(reason).into());
+        }
         // A resolution the link file or the identity no longer backs is
         // never used: it is dropped and the checkout resolves again.
         if let Some(stale) = crate::resolution::forget_stale(&mut self.map, root) {
@@ -119,6 +128,15 @@ pub fn resolve_project(
     config: &CloudConfig,
     root: &Path,
 ) -> Result<VaultRecord, MapError> {
+    resolve_with(session, config, root, false)
+}
+
+fn resolve_with(
+    session: &Session,
+    config: &CloudConfig,
+    root: &Path,
+    explicit_link: bool,
+) -> Result<VaultRecord, MapError> {
     let identity = crate::vault::project_identity(root)
         .ok_or_else(|| CloudError::Config("not inside a git repository".into()))?;
     let stable = lean_ctx_protocol::cloud::vault::stable_identity(&identity);
@@ -127,8 +145,22 @@ pub fn resolve_project(
         salt: None,
         map: VaultMap::load(session.store.data_dir()),
         config,
+        explicit_link,
     };
     resolver.resolve(&stable, root)
+}
+
+/// [`resolve_project`] for the share of an explicit `cloud link`: a folder
+/// the person unlinked is mapped too, while its opt-out still keeps every
+/// sender quiet; `cloud link` lifts it only once Cloud took the share
+/// (bd 40060). A damaged opt-out store still refuses.
+pub fn resolve_for_link(
+    session: &Session,
+    config: &CloudConfig,
+    root: &Path,
+) -> Result<VaultRecord, MapError> {
+    crate::unlinked::check(session.store.data_dir(), root)?;
+    resolve_with(session, config, root, true)
 }
 
 /// Cloud refused mapping a checkout to `vault` (`<ws>/<vault>`): it is not
@@ -182,8 +214,11 @@ pub fn sync(session: &Session, config: &CloudConfig, cwd_root: Option<&Path>) ->
         salt: None,
         map,
         config,
+        explicit_link: false,
     };
     if let Some(root) = cwd_root
+        // A folder the person stopped sharing is not mapped (rc4-6).
+        && !crate::unlinked::contains(&data, root)
         && let Some(identity) = crate::vault::project_identity(root)
     {
         let stable = lean_ctx_protocol::cloud::vault::stable_identity(&identity);
@@ -618,6 +653,7 @@ mod tests {
             salt: None,
             map,
             config: &config,
+            explicit_link: false,
         };
         crate::session_ref::make_keyless(&data);
         let mut report = SyncReport::default();
@@ -653,5 +689,61 @@ mod tests {
         send_drafts(&mut resolver, &mut again);
         assert!(again.problems.is_empty(), "{:?}", again.problems);
         assert_eq!(outbox.list(CHANNEL_KNOWLEDGE)[0].attempts, 1);
+    }
+
+    /// bd 40158: only the share of an explicit `cloud link` maps a folder
+    /// the person unlinked (`explicit_link`); every other resolve is refused.
+    /// Without the bypass a relink would be refused and undone forever; with
+    /// it inverted, sync would map the unlinked folder again.
+    #[test]
+    fn unlink_is_bypassed_only_by_the_explicit_link_resolve() {
+        let (_dir, session) = crate::auth::fixture_session();
+        let data = session.store.data_dir().to_path_buf();
+        let checkout = tempfile::tempdir().unwrap();
+        let root = checkout.path().canonicalize().unwrap();
+        std::fs::write(root.join(".lean-ctx-id"), "payments-repo").unwrap();
+        let stable = lean_ctx_protocol::cloud::vault::stable_identity(
+            &crate::vault::project_identity(&root).unwrap(),
+        );
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            stable,
+            VaultRecord {
+                vault_id: "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![root.to_string_lossy().into_owned()],
+            },
+        );
+        map.save(&data).unwrap();
+        let config = CloudConfig::default();
+        // Recorded here: both resolve without a request.
+        assert_eq!(
+            resolve_project(&session, &config, &root).unwrap().name,
+            "payments"
+        );
+
+        crate::unlinked::add(&data, &root).unwrap();
+        match resolve_project(&session, &config, &root) {
+            Err(MapError::Cloud(CloudError::Refused(why))) => {
+                assert_eq!(why, crate::unlinked::refusal(&data));
+            }
+            other => panic!("an unlinked folder is refused: {other:?}"),
+        }
+        let linked = resolve_for_link(&session, &config, &root)
+            .expect("the explicit link maps the unlinked folder");
+        assert_eq!(
+            (linked.ns.as_str(), linked.name.as_str()),
+            ("acme", "payments")
+        );
+        assert!(
+            crate::unlinked::contains(&data, &root),
+            "the resolve never lifts the opt-out"
+        );
+
+        // A damaged opt-out store refuses the explicit link too.
+        std::fs::write(data.join(crate::unlinked::FILE), "[").unwrap();
+        assert!(resolve_for_link(&session, &config, &root).is_err());
     }
 }

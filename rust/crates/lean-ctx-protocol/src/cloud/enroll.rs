@@ -16,6 +16,11 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub use super::app_keys::{
+    AppKeyAnnouncementV1, AppKeyKind, AppKeyOfferV1, FEATURE_DEVICE_APP_KEYS,
+    app_key_bind_signing_input,
+};
+use super::app_keys::{decode_b64url_exact, validate_app_keys};
 use super::lease::{CloudLeaseEnvelopeV1, EnrollmentKeySet};
 use super::{
     CLOUD_ENGINE_CLIENT_ID, TOKEN_ASSERTION_DOMAIN, require_schema, validate_b64_len, validate_id,
@@ -86,6 +91,12 @@ pub struct DeviceCodeRequestV1 {
     /// Only with `intent: "trial"`: the plan whose trial the browser starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<TrialPlan>,
+    /// f3129 S2: the app keys this pairing binds, sorted by kind, one per
+    /// kind. Sent before the code answer shows [`FEATURE_DEVICE_APP_KEYS`]:
+    /// a Cloud without it refuses the unknown member and nothing is bound.
+    /// Absent when empty, so every older request stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub app_keys: Vec<AppKeyAnnouncementV1>,
 }
 
 /// `DeviceCodeRequestV1.intent`.
@@ -133,7 +144,16 @@ impl DeviceCodeRequestV1 {
             instance_label: None,
             intent: None,
             plan: None,
+            app_keys: Vec::new(),
         }
+    }
+
+    /// The same request announcing `keys` (f3129 S2), sorted by kind.
+    #[must_use]
+    pub fn with_app_keys(mut self, mut keys: Vec<AppKeyAnnouncementV1>) -> Self {
+        keys.sort_by_key(|key| key.kind);
+        self.app_keys = keys;
+        self
     }
 
     /// The same request naming the engine (`--label`).
@@ -167,6 +187,7 @@ impl DeviceCodeRequestV1 {
                 "plan is only allowed with intent trial",
             ));
         }
+        validate_app_keys(&self.app_keys)?;
         validate_engine_version(&self.instance_version)
     }
 }
@@ -206,6 +227,12 @@ impl DeviceCodeV1 {
     /// Whether this Cloud takes `POST /v1/device/setup` for this code.
     pub fn offers_device_setup(&self) -> bool {
         self.features.iter().any(|f| f == FEATURE_DEVICE_SETUP)
+    }
+
+    /// Whether this Cloud binds app keys in the device flow (f3129 S2+S3).
+    /// Without it the engine announces, offers and binds none.
+    pub fn offers_app_keys(&self) -> bool {
+        self.features.iter().any(|f| f == FEATURE_DEVICE_APP_KEYS)
     }
 }
 
@@ -304,6 +331,20 @@ pub struct DeviceTokenRequestV1 {
     pub instance_label: String,
     pub instance_version: String,
     pub os: EngineOs,
+    /// f3129 offers of the announced app keys, each with its own
+    /// `bind_signature`. Together they must equal `app_keys` of the code
+    /// request; absent when none was announced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_key: Option<AppKeyOfferV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optin_key: Option<AppKeyOfferV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_propose_key: Option<AppKeyOfferV1>,
+    /// f3129 S3: base64url (no padding) Ed25519 signature of
+    /// `instance_public_key` over [`app_key_bind_signing_input`]. Required
+    /// whenever app keys were announced; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_keys_bind_signature: Option<String>,
 }
 
 impl fmt::Debug for DeviceTokenRequestV1 {
@@ -331,7 +372,48 @@ impl DeviceTokenRequestV1 {
             "instance_label",
             false,
         )?;
+        let offers = self.app_key_offers();
+        for (kind, offer) in &offers {
+            offer.validate(*kind)?;
+        }
+        match &self.app_keys_bind_signature {
+            Some(signature) if !offers.is_empty() => {
+                decode_b64url_exact(signature, 64, "app_keys_bind_signature")?;
+            }
+            Some(_) => {
+                return Err(ValidationError::new(
+                    "app_keys_bind_signature needs at least one offered app key",
+                ));
+            }
+            None if !offers.is_empty() => {
+                return Err(ValidationError::new(
+                    "offered app keys need app_keys_bind_signature",
+                ));
+            }
+            None => {}
+        }
         validate_engine_version(&self.instance_version)
+    }
+
+    /// The offered app keys, sorted by kind.
+    pub fn app_key_offers(&self) -> Vec<(AppKeyKind, &AppKeyOfferV1)> {
+        [
+            (AppKeyKind::Chat, &self.chat_key),
+            (AppKeyKind::Optin, &self.optin_key),
+            (AppKeyKind::TaskPropose, &self.task_propose_key),
+        ]
+        .into_iter()
+        .filter_map(|(kind, offer)| offer.as_ref().map(|offer| (kind, offer)))
+        .collect()
+    }
+
+    /// The offer member of `kind`.
+    pub fn app_key_offer_mut(&mut self, kind: AppKeyKind) -> &mut Option<AppKeyOfferV1> {
+        match kind {
+            AppKeyKind::Chat => &mut self.chat_key,
+            AppKeyKind::Optin => &mut self.optin_key,
+            AppKeyKind::TaskPropose => &mut self.task_propose_key,
+        }
     }
 }
 

@@ -162,15 +162,22 @@ pub enum ProjectStep {
     None,
     /// This machine already knows the vault (`ns/name`).
     Known(String),
+    /// The person unlinked this folder (`cloud unlink`), or the list of
+    /// unlinked folders is damaged: connect shares nothing and never says
+    /// it syncs, also not through the main checkout's record (bd 40060).
+    Unlinked,
     /// Ask Cloud for the vault: it maps a known project, or (1.x and v4)
     /// creates one on first sight.
     Resolve,
 }
 
 /// The project step for `root`, from local state only.
-pub fn project_step(map: &VaultMap, root: &Path) -> ProjectStep {
+pub fn project_step(data_dir: &Path, map: &VaultMap, root: &Path) -> ProjectStep {
     if project_identity(root).is_none() {
         return ProjectStep::None;
+    }
+    if crate::unlinked::contains(data_dir, root) {
+        return ProjectStep::Unlinked;
     }
     match map.for_root(&root.to_string_lossy()) {
         Some(record) => ProjectStep::Known(format!("{}/{}", record.ns, record.name)),
@@ -312,8 +319,9 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let bare = base.path().join("bare");
         std::fs::create_dir_all(&bare).unwrap();
+        let data = base.path().join("data");
         let map = VaultMap::default();
-        assert_eq!(project_step(&map, &bare), ProjectStep::None);
+        assert_eq!(project_step(&data, &map, &bare), ProjectStep::None);
 
         let repo = base.path().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -322,7 +330,7 @@ mod tests {
             "[remote \"origin\"]\n\turl = git@github.com:acme/payments.git\n",
         )
         .unwrap();
-        assert_eq!(project_step(&map, &repo), ProjectStep::Resolve);
+        assert_eq!(project_step(&data, &map, &repo), ProjectStep::Resolve);
 
         let mut map = VaultMap::default();
         map.vaults.insert(
@@ -336,8 +344,36 @@ mod tests {
             },
         );
         assert_eq!(
-            project_step(&map, &repo),
+            project_step(&data, &map, &repo),
             ProjectStep::Known("acme/payments".into())
         );
+    }
+
+    /// bd 40060: connect never says an unlinked worktree syncs through its
+    /// main checkout's record.
+    #[test]
+    fn unlink_of_a_worktree_is_its_own_project_step() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (main, wt) = crate::unlinked::fake_worktree(&base);
+        std::fs::write(wt.join(".lean-ctx-id"), "payments-repo").unwrap();
+        let data = base.join("data");
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "s1".into(),
+            VaultRecord {
+                vault_id: "v1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![main.to_string_lossy().into_owned()],
+            },
+        );
+        assert_eq!(
+            project_step(&data, &map, &wt),
+            ProjectStep::Known("acme/payments".into())
+        );
+        crate::unlinked::add(&data, &wt).unwrap();
+        assert_eq!(project_step(&data, &map, &wt), ProjectStep::Unlinked);
     }
 }

@@ -415,3 +415,33 @@ fn a_draft_queued_before_keying_is_rekeyed_once() {
     let back = queued(&serde_json::to_value(&old).unwrap()).unwrap();
     assert!(back.ref_keyed);
 }
+
+#[test]
+fn a_session_end_after_unlink_queues_no_draft() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    let place = place();
+    remember_session(&place.root.to_string_lossy());
+    let draft = || {
+        enqueue_session_draft(
+            &place.store,
+            &CloudConfig::default(),
+            &place.root,
+            "s1",
+            Trigger::SessionEnd,
+            &mut Screen::for_installation(),
+            UtcDateTime::now(),
+        )
+    };
+
+    // M2 (rc4-6): the folder was unlinked; a session that ends queues
+    // nothing, so no draft shares it again on the next sync.
+    crate::unlinked::add(place.store.data_dir(), &place.root).unwrap();
+    assert_eq!(draft().unwrap(), None);
+    assert!(queued_drafts(&place).is_empty());
+
+    // Linked again: the session's learnings are queued as before.
+    crate::unlinked::remove(place.store.data_dir(), &place.root).unwrap();
+    assert!(draft().unwrap().is_some());
+    assert_eq!(queued_drafts(&place).len(), 1);
+}

@@ -32,6 +32,58 @@ pub(crate) const MATCH_FILE: &str = "vault-match.json";
 /// Who `<data>/cloud` belongs to (3.12.8 account scope, [`DataScope`]).
 pub(crate) const SCOPE_FILE: &str = "scope.json";
 
+/// Every entry of `<config>/cloud` (rc4-274). In a single-dir layout (a
+/// legacy `~/.lean-ctx`, a custom `LEAN_CTX_DATA_DIR`) `<config>/cloud` and
+/// `<data>/cloud` are one directory: removing the data there keeps these,
+/// with their `.damaged-<n>` copies and in-flight temporary files. Every
+/// name written through [`CloudStore::write_config`] must be listed (checked
+/// in debug builds); an entry not listed counts as data and is removed.
+const CONFIG_ENTRIES: &[&str] = &[
+    INSTANCE_KEY_FILE,
+    KX_KEY_FILE,
+    INSTANCE_FILE,
+    LEASE_FILE,
+    KEYS_FILE,
+    TOKEN_FILE,
+    SHARING_FILE,
+    MATCH_FILE,
+    super::keyset_v3::KEYS_V3_FILE,
+    super::root_cert::CERT_FILE,
+    super::revoked::REVOKED_FILE,
+    super::disconnect::PENDING_FILE,
+    super::session_ref::CAPABILITIES_FILE,
+    super::company_bound::FILE,
+    super::bus::relay_v2::PROTOCOL_FILE,
+    super::consent::chat_key::CHAT_KEY_FILE,
+    super::consent::optin_key::OPTIN_KEY_FILE,
+    super::consent::task_key::TASK_KEY_FILE,
+    super::consent::broker::PRESENCE_KEY_FILE,
+    super::consent::broker::ACCOUNT_FILE,
+    super::consent::broker::KEY_FILE,
+    super::consent::broker::DIR,
+    // `replica::crypt::master_key`: the replica master key, when no
+    // keychain holds it.
+    "replica.key",
+];
+
+/// `bring_local` ledgers, one per checkout: `bring-local-<hash>.json`.
+const CONFIG_PREFIX_BRING_LOCAL: &str = "bring-local-";
+
+/// Whether `name`, an entry of `<config>/cloud`, belongs to the config
+/// (rc4-274). Lock files always do: a lock file removed while held no
+/// longer orders anything, and an empty lock of the data costs nothing.
+fn is_config_entry(name: &str) -> bool {
+    if Path::new(name).extension().is_some_and(|ext| ext == "lock") {
+        return true;
+    }
+    let base = name
+        .strip_prefix('.')
+        .and_then(|n| n.split_once(".tmp."))
+        .map_or(name, |(base, _)| base);
+    let base = base.split_once(".damaged-").map_or(base, |(base, _)| base);
+    CONFIG_ENTRIES.contains(&base) || base.starts_with(CONFIG_PREFIX_BRING_LOCAL)
+}
+
 /// The enrolled instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceRecord {
@@ -152,6 +204,7 @@ impl CloudStore {
     }
 
     pub(crate) fn write_config_bytes(&self, name: &str, bytes: &[u8]) -> Result<(), CloudError> {
+        debug_assert!(is_config_entry(name), "{name} is missing in CONFIG_ENTRIES");
         write_private(&self.config, name, bytes)
     }
 
@@ -167,6 +220,7 @@ impl CloudStore {
         name: &str,
         value: &T,
     ) -> Result<(), CloudError> {
+        debug_assert!(is_config_entry(name), "{name} is missing in CONFIG_ENTRIES");
         write_private(&self.config, name, &to_json(value)?)
     }
 
@@ -279,7 +333,10 @@ impl CloudStore {
 
     /// Remove `<data>/cloud` in one step: renamed aside first, so no reader
     /// sees half of it, then deleted. The replica master key lives in the
-    /// config directory and stays.
+    /// config directory and stays. When the config directory is the data
+    /// directory or lies inside it (a single-dir layout, rc4-274), only the
+    /// data entries are moved aside: the enrolment, its keys and its lease
+    /// stay.
     fn wipe_data(&self) -> Result<(), CloudError> {
         if !self.data.exists() {
             return Ok(());
@@ -292,12 +349,44 @@ impl CloudStore {
             .data
             .with_file_name(format!("{name}.wiped-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&aside);
-        std::fs::rename(&self.data, &aside)
-            .map_err(|e| CloudError::Local(format!("move {} aside: {e}", self.data.display())))?;
+        let move_aside = |e: std::io::Error| {
+            CloudError::Local(format!("move {} aside: {e}", self.data.display()))
+        };
+        match self.config_in_data() {
+            None => std::fs::rename(&self.data, &aside).map_err(move_aside)?,
+            Some(config) => {
+                // The entry of `<data>/cloud` that holds the config directory,
+                // or none when the two are the same directory.
+                let holder = config.components().next().map(|c| c.as_os_str().to_owned());
+                private_dir(&aside)?;
+                for entry in std::fs::read_dir(&self.data).map_err(move_aside)? {
+                    let entry = entry.map_err(move_aside)?;
+                    let entry_name = entry.file_name();
+                    let keep = match &holder {
+                        Some(holder) => *holder == entry_name,
+                        None => is_config_entry(&entry_name.to_string_lossy()),
+                    };
+                    if !keep {
+                        std::fs::rename(entry.path(), aside.join(&entry_name))
+                            .map_err(move_aside)?;
+                    }
+                }
+            }
+        }
         std::fs::remove_dir_all(&aside)
             .map_err(|e| CloudError::Local(format!("remove {}: {e}", aside.display())))?;
         self.sweep_wiped(&name);
         Ok(())
+    }
+
+    /// Where the config directory lies inside the data directory, relative
+    /// to it (empty: the same directory), or `None` when it lies elsewhere
+    /// (the XDG split). Compared as resolved paths, so a symlinked root is
+    /// seen as well.
+    fn config_in_data(&self) -> Option<PathBuf> {
+        let resolve = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let (config, data) = (resolve(&self.config), resolve(&self.data));
+        config.strip_prefix(&data).ok().map(Path::to_path_buf)
     }
 
     /// Copies an earlier removal moved aside but did not finish deleting
@@ -451,9 +540,10 @@ impl CloudStore {
         ] {
             self.remove_config(name)?;
         }
-        if !keep_local && self.data.exists() {
-            std::fs::remove_dir_all(&self.data)
-                .map_err(|e| CloudError::Local(format!("remove {}: {e}", self.data.display())))?;
+        if !keep_local {
+            // Not `remove_dir_all`: in a single-dir layout that would take
+            // the rest of the config with it (rc4-274).
+            self.wipe_data()?;
         }
         knowledge
     }
@@ -1122,5 +1212,151 @@ mod scope_tests {
         assert_eq!(knowledge_left(&healthy), (false, true));
         assert_eq!(store.enrolled_instance().unwrap(), None);
         assert_eq!(store.instance().unwrap(), None);
+    }
+
+    /// The config of a single-dir layout: one of every kind of entry.
+    const SINGLE_DIR_CONFIG: &[&str] = &[
+        INSTANCE_KEY_FILE,
+        KX_KEY_FILE,
+        LEASE_FILE,
+        KEYS_FILE,
+        "keys_v3.json",
+        "chat_key.json",
+        "bring-local-0123abcd.json",
+        "consent.key",
+        "consent/offer-1.json",
+        "replica.key",
+        "scope.json.lock",
+        "lease.json.damaged-1",
+        ".keys.json.tmp.4242.0",
+    ];
+
+    fn single_dir_config(cloud: &Path) {
+        for name in SINGLE_DIR_CONFIG {
+            let path = cloud.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"{}").unwrap();
+        }
+    }
+
+    fn missing_config(cloud: &Path) -> Vec<&'static str> {
+        SINGLE_DIR_CONFIG
+            .iter()
+            .copied()
+            .filter(|name| !cloud.join(name).exists())
+            .collect()
+    }
+
+    /// rc4-274: a legacy `~/.lean-ctx` or a custom `LEAN_CTX_DATA_DIR` puts
+    /// `<config>/cloud` and `<data>/cloud` in one directory. Enrolling
+    /// another account removes only the data there; the config (keys,
+    /// lease, consent, locks) stays and nothing is left beside it.
+    #[test]
+    fn a_single_dir_layout_keeps_the_config_when_the_data_goes() {
+        let dir = tempfile::tempdir().unwrap();
+        let cloud = dir.path().join("cloud");
+        let store = CloudStore::at(&cloud, &cloud);
+        single_dir_config(&cloud);
+        data_of_a(&store);
+        std::fs::write(cloud.join(ACTIVITY_FILE), b"{}").unwrap();
+
+        let b = instance("https://cloud.example", "org_b", "inst_2");
+        store.scope_to_enrollment(&b).unwrap();
+        assert!(!has_data_of_a(&store), "nothing of A stays for B");
+        assert!(!cloud.join(ACTIVITY_FILE).exists());
+        assert_eq!(missing_config(&cloud), Vec::<&str>::new());
+        assert_eq!(store.scope(), Some(DataScope::of(&b)));
+        let beside: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(beside, ["cloud"], "no copy left beside it");
+
+        // A reader connected to another team later: the same.
+        data_of_a(&store);
+        connect(
+            &store,
+            &instance("https://cloud.example", "org_c", "inst_3"),
+        );
+        assert!(store.instance().unwrap().is_some());
+        assert!(!has_data_of_a(&store));
+        assert_eq!(missing_config(&cloud), Vec::<&str>::new());
+        assert!(cloud.join(INSTANCE_FILE).exists());
+    }
+
+    /// rc4-274: the config directory reached through a symlink, or lying
+    /// inside the data directory, is kept as well.
+    #[cfg(unix)]
+    #[test]
+    fn a_config_dir_behind_a_symlink_or_inside_the_data_stays() {
+        let dir = tempfile::tempdir().unwrap();
+        let cloud = dir.path().join("cloud");
+        std::fs::create_dir_all(&cloud).unwrap();
+        std::os::unix::fs::symlink(&cloud, dir.path().join("linked")).unwrap();
+        let store = CloudStore::at(dir.path().join("linked"), &cloud);
+        single_dir_config(&cloud);
+        data_of_a(&store);
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_2"))
+            .unwrap();
+        assert!(!has_data_of_a(&store));
+        assert_eq!(missing_config(&cloud), Vec::<&str>::new());
+
+        let data = dir.path().join("data");
+        let config = data.join("config").join("cloud");
+        let store = CloudStore::at(&config, &data);
+        single_dir_config(&config);
+        data_of_a(&store);
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_b", "inst_2"))
+            .unwrap();
+        assert!(!has_data_of_a(&store));
+        assert_eq!(missing_config(&config), Vec::<&str>::new());
+    }
+
+    /// rc4-274: a disconnect without `--keep-local` in a single-dir layout
+    /// removes the data and the enrolment, but not the rest of the config
+    /// (as in the XDG split, where `<config>/cloud` is never removed whole).
+    #[test]
+    fn a_single_dir_disconnect_removes_the_data_but_not_the_config_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cloud = dir.path().join("cloud");
+        let store = CloudStore::at(&cloud, &cloud);
+        store
+            .scope_to_enrollment(&instance("https://cloud.example", "org_a", "inst_1"))
+            .unwrap();
+        connect(
+            &store,
+            &instance("https://cloud.example", "org_a", "inst_1"),
+        );
+        data_of_a(&store);
+        std::fs::write(cloud.join("consent.key"), b"k").unwrap();
+        store.forget(false).unwrap();
+        assert!(!has_data_of_a(&store));
+        assert!(!cloud.join(INSTANCE_FILE).exists());
+        assert!(!cloud.join(SCOPE_FILE).exists());
+        assert!(cloud.join("consent.key").exists());
+    }
+
+    /// Every name in the list is one a module writes (a renamed constant
+    /// cannot leave a stale entry), and data names are not in it.
+    #[test]
+    fn config_entries_name_the_config_only() {
+        for name in CONFIG_ENTRIES {
+            assert!(is_config_entry(name), "{name}");
+            assert!(is_config_entry(&format!(".{name}.tmp.1.0")), "{name}");
+            assert!(is_config_entry(&format!("{name}.damaged-2")), "{name}");
+        }
+        for data in [
+            ACTIVITY_FILE,
+            SCOPE_FILE,
+            "projects.json",
+            "outbox",
+            "bus",
+            "replicas",
+            ".projects.json.tmp.1.0",
+        ] {
+            assert!(!is_config_entry(data), "{data}");
+        }
     }
 }

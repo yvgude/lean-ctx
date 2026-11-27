@@ -26,7 +26,7 @@ use super::{CloudError, CloudStore};
 use lean_ctx_protocol::cloud::lease::CloudLeaseV1;
 use lean_ctx_protocol::cloud::root_cert::RootCertV1;
 
-const CERT_FILE: &str = "root-cert.json";
+pub(crate) const CERT_FILE: &str = "root-cert.json";
 const MAX_VENDOR_ROOTS: usize = 8;
 
 /// The vendor roots compiled into this build (none: no self-host trust).

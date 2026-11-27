@@ -18,7 +18,9 @@ pub mod channel;
 pub mod chat_key;
 #[cfg(unix)]
 pub mod helper_mac;
+pub mod optin_key;
 pub mod person_sign;
+pub mod task_key;
 pub mod web;
 
 use std::sync::OnceLock;

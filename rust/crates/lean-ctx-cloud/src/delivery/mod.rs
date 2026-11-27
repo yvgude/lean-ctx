@@ -293,20 +293,33 @@ fn folded(store: &crate::CloudStore, vault_id: &str) -> Option<(Graph, knowledge
     Some((graph, states))
 }
 
+/// The vault `root` is bound to through its identity; `None` for a folder
+/// the person unlinked (rc4-6, bd 39936) and while the opt-out store is
+/// damaged.
+fn bound_vault(
+    data_dir: &std::path::Path,
+    root: &std::path::Path,
+) -> Option<crate::vault::VaultRecord> {
+    if crate::unlinked::contains(data_dir, root) {
+        return None;
+    }
+    let stable =
+        lean_ctx_protocol::cloud::vault::stable_identity(&crate::vault::project_identity(root)?);
+    crate::vault::VaultMap::load(data_dir)
+        .vaults
+        .get(&stable)
+        .cloned()
+}
+
 /// The vault section a recall in `project_root` delivers (§3.5.1): the
 /// bound vault's replica, deterministic and within budget. `None` when the
-/// checkout is not bound or has no replica yet (nothing is created here).
+/// checkout is not bound or has no replica yet (nothing is created here),
+/// and for a folder the person unlinked (rc4-6, bd 39936).
 pub fn for_project(project_root: &str, query: &str) -> Option<String> {
     let store = crate::CloudStore::open().ok()?;
     // Nothing while not connected, nothing of another account (3.12.8).
     store.instance().ok()??;
-    let root = std::path::Path::new(project_root);
-    let stable =
-        lean_ctx_protocol::cloud::vault::stable_identity(&crate::vault::project_identity(root)?);
-    let record = crate::vault::VaultMap::load(store.data_dir())
-        .vaults
-        .get(&stable)?
-        .clone();
+    let record = bound_vault(store.data_dir(), std::path::Path::new(project_root))?;
     let (graph, states) = folded(&store, &record.vault_id)?;
     let list = items_in(&graph, &states, &|_| None, query);
     let out = render(

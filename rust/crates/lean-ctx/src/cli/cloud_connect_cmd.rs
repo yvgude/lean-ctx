@@ -22,13 +22,15 @@ use serde_json::{Value, json};
 use super::cloud_cmd::{flag_value, plan_name};
 use lean_ctx_cloud::CloudConfigExt as _;
 use lean_ctx_cloud::auth::{
-    ChatKeyRepair, EnrollmentToken, Session, SetupAnnouncement, announce_setup,
-    chat_key_repair_refusal, enroll_with_token_chat, finish_device_flow_chat, repair_chat_key,
-    start_device_flow_for,
+    AppKeyOffers, ChatKeyRepair, EnrollmentToken, Session, SetupAnnouncement, announce_setup,
+    chat_key_repair_refusal, enroll_with_token_chat, finish_device_flow_with, repair_chat_key,
+    start_device_flow_with,
 };
 use lean_ctx_cloud::connect::{self as steps, ProjectStep};
 use lean_ctx_cloud::consent::ConsentError;
 use lean_ctx_cloud::consent::chat_key::ChatKeyOffer;
+use lean_ctx_cloud::consent::optin_key::OptinKeyOffer;
+use lean_ctx_cloud::consent::task_key::TaskKeyOffer;
 use lean_ctx_cloud::mapping::MapError;
 use lean_ctx_cloud::state::InstanceRecord;
 use lean_ctx_cloud::status::report;
@@ -140,16 +142,32 @@ const ENROLLMENT_TOKEN_STDIN: &str = "--enrollment-token-stdin";
 /// replaces it (one without it drops the old one); on a connected computer
 /// it pairs the key with the connection kept ([`repair_flow`]).
 const CHAT_KEY: &str = "--chat-key";
+/// `--task-propose-key -` (rc4-67): LeanCTX Code's task-propose key offer
+/// (`{alg, public_key, key_id, bind_signature}`, public material only), from
+/// stdin only (never argv). Checked against this machine's key before the
+/// pairing sends anything; only its public part is kept. A re-pair replaces
+/// it (a re-pair without one drops the old one). Both keys at once go in
+/// [`APP_KEYS`].
+const TASK_PROPOSE_KEY: &str = "--task-propose-key";
+/// `--app-keys -`: LeanCTX Code's keys in one stdin JSON object (at most
+/// 32 KiB, unknown members refused) `{"chat_key"?, "task_key"?,
+/// "optin_key"?}`, each `{alg, public_key, key_id, bind_signature}`, at least
+/// one of them. The opt-in key (rc4-16) comes only this way; [`CHAT_KEY`]
+/// and [`TASK_PROPOSE_KEY`] stay as single-key aliases; none of the three
+/// flags combine ([`conflicting_key_flags`]).
+const APP_KEYS: &str = "--app-keys";
+/// The largest `--app-keys -` input read.
+const APP_KEYS_MAX: u64 = 32 * 1024;
 /// Prints `{contract, kind, instance_public_key}` and connects nothing
 /// (rc4-32 bind, step 1).
 const PRINT_INSTANCE_KEY: &str = "--print-instance-key";
 /// The kind of the [`PRINT_INSTANCE_KEY`] answer.
 const INSTANCE_KEY_KIND: &str = "cloud.instance_key";
 
-/// What only LeanCTX Code may ask for: binding a chat key, or the instance
-/// key to bind one to. An agent that could bind a key of its own would hold
-/// a signer of the person's posts.
-const APP_ONLY_FLAGS: &[&str] = &[CHAT_KEY, PRINT_INSTANCE_KEY];
+/// What only LeanCTX Code may ask for: binding a chat key or a task key, or
+/// the instance key to bind one to. An agent that could bind a key of its
+/// own would hold a signer of the person's posts or task proposals.
+const APP_ONLY_FLAGS: &[&str] = &[CHAT_KEY, TASK_PROPOSE_KEY, APP_KEYS, PRINT_INSTANCE_KEY];
 
 /// The shared gate ([`app_only_gate`](super::local_read::app_key::app_only_gate))
 /// of the app-only flags: `layout` gives the one root of the key file and
@@ -169,7 +187,10 @@ fn app_gate(
             json!({
                 "event": "error",
                 "code": failure.code.as_str(),
-                "message": format!("{CHAT_KEY} and {PRINT_INSTANCE_KEY}: {}", failure.message),
+                "message": format!(
+                    "{CHAT_KEY}, {TASK_PROPOSE_KEY}, {APP_KEYS} and {PRINT_INSTANCE_KEY}: {}",
+                    failure.message
+                ),
             })
         },
     )
@@ -226,24 +247,37 @@ fn chat_key_offer(
         .take(16 * 1024)
         .read_to_string(&mut raw)
         .map_err(|e| CloudError::Config(format!("{CHAT_KEY}: {e}")))?;
+    parse_chat_key(&raw, CHAT_KEY).map(Some)
+}
+
+/// A chat key offer from its JSON text; `what` names where it came from.
+fn parse_chat_key(raw: &str, what: &str) -> Result<ChatKeyOffer, CloudError> {
     let offer: ChatKeyOffer = serde_json::from_str(raw.trim()).map_err(|_| {
         CloudError::Config(format!(
-            "{CHAT_KEY}: not a chat key {{alg, public_key, key_id, bind_signature}}"
+            "{what}: not a chat key {{alg, public_key, key_id, bind_signature}}"
         ))
     })?;
     // The shape locally (alg, 32-byte key, key_id of it); the bind signature
     // is checked against this machine's key before the pairing sends it.
     if !offer.well_formed() {
         return Err(CloudError::Config(format!(
-            "{CHAT_KEY}: alg must be ed25519, public_key 32 bytes (base64url), key_id hex(sha256)[..16]"
+            "{what}: alg must be ed25519, public_key 32 bytes (base64url), key_id hex(sha256)[..16]"
         )));
     }
-    Ok(Some(offer))
+    Ok(offer)
 }
 /// `cloud connect` flags that take the next argument as their value
 /// (`--enrollment-token` only to refuse it with its own message, the value
 /// never echoed).
-const VALUE_FLAGS: &[&str] = &["--url", "--label", "--plan", CHAT_KEY, "--enrollment-token"];
+const VALUE_FLAGS: &[&str] = &[
+    "--url",
+    "--label",
+    "--plan",
+    CHAT_KEY,
+    TASK_PROPOSE_KEY,
+    APP_KEYS,
+    "--enrollment-token",
+];
 
 /// `cloud connect` flags without a value.
 const SWITCHES: &[&str] = &[
@@ -278,11 +312,208 @@ fn unknown_argument(args: &[String]) -> Option<String> {
             return Some("unexpected argument (cloud connect takes flags only)".into());
         }
     }
+    conflicting_key_flags(args)
+}
+
+/// The app's key flags each read all of stdin: [`APP_KEYS`] carries every
+/// key, [`CHAT_KEY`] and [`TASK_PROPOSE_KEY`] one each, so none combine.
+fn conflicting_key_flags(args: &[String]) -> Option<String> {
+    let named = |flag: &str| args.iter().any(|a| a == flag);
+    if named(APP_KEYS) && (named(CHAT_KEY) || named(TASK_PROPOSE_KEY)) {
+        return Some(format!(
+            "{APP_KEYS} carries every key: pass it alone, without {CHAT_KEY} or {TASK_PROPOSE_KEY}"
+        ));
+    }
+    if named(CHAT_KEY) && named(TASK_PROPOSE_KEY) {
+        return Some(format!(
+            "{CHAT_KEY} and {TASK_PROPOSE_KEY} both read stdin: pass both keys in {APP_KEYS} -"
+        ));
+    }
     None
 }
 
 /// The longest stdin line read for a token (it is 68 characters).
 const ENROLLMENT_TOKEN_MAX_LINE: u64 = 1024;
+
+/// The task key offer of `--task-propose-key -`, read from `stdin`; its
+/// shape is checked here, its bind signature before the pairing sends it.
+fn task_key_offer(
+    args: &[String],
+    stdin: &mut dyn std::io::Read,
+) -> Result<Option<TaskKeyOffer>, CloudError> {
+    let Some(source) = flag_value(args, TASK_PROPOSE_KEY)? else {
+        return Ok(None);
+    };
+    if source != "-" {
+        return Err(CloudError::Config(format!(
+            "{TASK_PROPOSE_KEY} reads the task key from stdin only: pass {TASK_PROPOSE_KEY} -"
+        )));
+    }
+    if args.iter().any(|a| a == ENROLLMENT_TOKEN_STDIN) {
+        return Err(CloudError::Config(format!(
+            "{TASK_PROPOSE_KEY} goes with a pairing approved in the browser, not with an enrollment token"
+        )));
+    }
+    let mut raw = String::new();
+    stdin
+        .take(16 * 1024)
+        .read_to_string(&mut raw)
+        .map_err(|e| CloudError::Config(format!("{TASK_PROPOSE_KEY}: {e}")))?;
+    TaskKeyOffer::parse_shape(&raw)
+        .map(Some)
+        .map_err(|e| CloudError::Config(format!("{TASK_PROPOSE_KEY}: {e}")))
+}
+
+/// `--app-keys -` on stdin: one object, unknown members refused.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AppKeysInput {
+    #[serde(default)]
+    chat_key: Option<Value>,
+    #[serde(default)]
+    task_key: Option<Value>,
+    #[serde(default)]
+    optin_key: Option<Value>,
+}
+
+/// The chat, task and opt-in key offers of one run.
+type OfferedKeys = (
+    Option<ChatKeyOffer>,
+    Option<TaskKeyOffer>,
+    Option<OptinKeyOffer>,
+);
+
+/// An opt-in key offer from its JSON value: the offer shape (unknown members
+/// refused), ed25519, a 32-byte key and its `key_id`; the bind signature is
+/// checked against this computer's key before the pairing sends it.
+fn parse_optin_key(value: Value) -> Result<OptinKeyOffer, CloudError> {
+    let what = format!("{APP_KEYS} optin_key");
+    let offer: OptinKeyOffer = serde_json::from_value(value).map_err(|_| {
+        CloudError::Config(format!(
+            "{what}: not an opt-in key {{alg, public_key, key_id, bind_signature}}"
+        ))
+    })?;
+    if !offer.well_formed() {
+        return Err(CloudError::Config(format!(
+            "{what}: alg must be ed25519, public_key 32 bytes (base64url), key_id hex(sha256)[..16]"
+        )));
+    }
+    Ok(offer)
+}
+
+/// The keys LeanCTX Code hands over this run, read from stdin once: by
+/// [`APP_KEYS`], or by one of the single-key aliases [`CHAT_KEY`] and
+/// [`TASK_PROPOSE_KEY`] (never combined, [`conflicting_key_flags`]). Shapes
+/// are checked here; bind signatures before the pairing sends anything.
+fn app_key_offers(
+    args: &[String],
+    stdin: &mut dyn std::io::Read,
+) -> Result<OfferedKeys, CloudError> {
+    if let Some(conflict) = conflicting_key_flags(args) {
+        return Err(CloudError::Config(conflict));
+    }
+    let Some(source) = flag_value(args, APP_KEYS)? else {
+        let chat = chat_key_offer(args, stdin)?;
+        let task = task_key_offer(args, stdin)?;
+        return Ok((chat, task, None));
+    };
+    if source != "-" {
+        return Err(CloudError::Config(format!(
+            "{APP_KEYS} reads the keys from stdin only: pass {APP_KEYS} -"
+        )));
+    }
+    if args.iter().any(|a| a == ENROLLMENT_TOKEN_STDIN) {
+        return Err(CloudError::Config(format!(
+            "{APP_KEYS} - and {ENROLLMENT_TOKEN_STDIN} both read stdin: pass the token in {ENROLLMENT_TOKEN_ENV}"
+        )));
+    }
+    let mut raw = String::new();
+    stdin
+        .take(APP_KEYS_MAX + 1)
+        .read_to_string(&mut raw)
+        .map_err(|e| CloudError::Config(format!("{APP_KEYS}: {e}")))?;
+    if raw.len() as u64 > APP_KEYS_MAX {
+        return Err(CloudError::Config(format!(
+            "{APP_KEYS}: more than {} KiB on stdin",
+            APP_KEYS_MAX / 1024
+        )));
+    }
+    let input: AppKeysInput = serde_json::from_str(raw.trim()).map_err(|e| {
+        CloudError::Config(format!(
+            "{APP_KEYS}: not {{\"chat_key\"?, \"task_key\"?, \"optin_key\"?}} ({e})"
+        ))
+    })?;
+    let what_chat = format!("{APP_KEYS} chat_key");
+    let chat = match input.chat_key {
+        Some(value) => Some(parse_chat_key(&value.to_string(), &what_chat)?),
+        None => None,
+    };
+    let task = match input.task_key {
+        Some(value) => Some(
+            TaskKeyOffer::parse_shape(&value.to_string())
+                .map_err(|e| CloudError::Config(format!("{APP_KEYS} task_key: {e}")))?,
+        ),
+        None => None,
+    };
+    let optin = input.optin_key.map(parse_optin_key).transpose()?;
+    if chat.is_none() && task.is_none() && optin.is_none() {
+        return Err(CloudError::Config(format!(
+            "{APP_KEYS}: names no key; give chat_key, task_key, optin_key or several"
+        )));
+    }
+    Ok((chat, task, optin))
+}
+
+/// The offers of one run as the pairing takes them.
+fn offers_of<'a>(
+    chat: Option<&'a ChatKeyOffer>,
+    task: Option<&'a TaskKeyOffer>,
+    optin: Option<&'a OptinKeyOffer>,
+) -> AppKeyOffers<'a> {
+    AppKeyOffers { chat, task, optin }
+}
+
+/// A token enrollment never carries an opt-in key (§46.2
+/// `token_enrollment`: the person approves it in the browser).
+fn no_optin_key_with_token(
+    token: Option<&EnrollmentToken>,
+    optin_key: Option<&OptinKeyOffer>,
+) -> Result<(), CloudError> {
+    if token.is_some() && optin_key.is_some() {
+        return Err(CloudError::Config(format!(
+            "{APP_KEYS} optin_key goes with a pairing approved in the browser, not with an enrollment token"
+        )));
+    }
+    Ok(())
+}
+
+/// A token enrollment never carries a chat key (f3129 S3: no device code
+/// for the computer's key to sign the offered keys over).
+fn no_chat_key_with_token(
+    token: Option<&EnrollmentToken>,
+    chat_key: Option<&ChatKeyOffer>,
+) -> Result<(), CloudError> {
+    if token.is_some() && chat_key.is_some() {
+        return Err(CloudError::Config(format!(
+            "{CHAT_KEY} goes with a pairing approved in the browser, not with an enrollment token"
+        )));
+    }
+    Ok(())
+}
+
+/// A token enrollment never carries a task key (nobody approved the
+/// computer's keys as the person).
+fn no_task_key_with_token(
+    token: Option<&EnrollmentToken>,
+    task_key: Option<&TaskKeyOffer>,
+) -> Result<(), CloudError> {
+    if token.is_some() && task_key.is_some() {
+        return Err(CloudError::Config(format!(
+            "{TASK_PROPOSE_KEY} goes with a pairing approved in the browser, not with an enrollment token"
+        )));
+    }
+    Ok(())
+}
 
 /// The enrollment token this connect uses, if any: one line of `stdin`
 /// with `--enrollment-token-stdin` (an explicit flag wins), else
@@ -387,10 +618,14 @@ fn connected_event(lease: &CloudLeaseV1, runtime: Option<Value>) -> Value {
 
 /// `cloud connect --json`, event `error` (the command exits 1).
 fn error_event(error: &CloudError) -> Value {
+    // A pairing refusal with fixed words (f3129 §11) carries them as they
+    // are, without the error kind's prefix; the code tells them apart.
+    let message = chat_key_repair_refusal(error)
+        .map_or_else(|| error.to_string(), |(_, text)| text.to_owned());
     json!({
         "event": "error",
         "code": error.event_code(),
-        "message": error.to_string(),
+        "message": message,
     })
 }
 
@@ -473,11 +708,11 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     // From here on only the gate's root: no second resolution (bd 38432).
     let root = root.as_ref();
     if args.iter().any(|a| a == PRINT_INSTANCE_KEY) {
-        // rc4-32 bind, step 1: LeanCTX Code learns the exact
+        // rc4-32/rc4-67 bind, step 1: LeanCTX Code learns the exact
         // `instance_public_key` the device-token request will carry, signs
-        // the bind statement with its chat key, then runs `connect
-        // --chat-key -`. The keys are made (or reused) here; nothing is
-        // sent.
+        // the bind statement with its chat key and/or task key, then runs
+        // `connect --chat-key -` and/or `--task-propose-key -`. The keys are
+        // made (or reused) here; nothing is sent.
         let store = open_store(root)?;
         emit(&instance_public_key_event(&store)?);
         return Ok(());
@@ -493,17 +728,29 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     let trial = trial_choice(args)?;
     let store = open_store(root)?;
     let origin = origin_for(config, args)?;
-    if let Some(existing) = store.instance()? {
+    // The app's keys: read and shape-checked before anything is sent.
+    let (chat_key, task_key, optin_key) = app_key_offers(args, &mut std::io::stdin().lock())?;
+    no_task_key_with_token(token.as_ref(), task_key.as_ref())?;
+    no_optin_key_with_token(token.as_ref(), optin_key.as_ref())?;
+    no_chat_key_with_token(token.as_ref(), chat_key.as_ref())?;
+    // Each bind checked against this computer's key before the Cloud is
+    // contacted (§46.3 point 1); the pairing checks again before it sends.
+    offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()).verify(&store)?;
+    // rc4-67, rc4-16: a task or opt-in key re-binds a connected machine
+    // ([`run_json`]).
+    if let Some(existing) = store
+        .instance()?
+        .filter(|_| task_key.is_none() && optin_key.is_none())
+    {
         let current = report(&store, config, UtcDateTime::now());
-        if current.connected() && args.iter().any(|a| a == CHAT_KEY) {
+        if let (true, Some(offer)) = (current.connected(), &chat_key) {
             // rc4-32 re-pair: LeanCTX Code binds its chat key to this
             // connected computer; nothing else of the connection changes.
-            let outcome = repair_flow(config, &store, &existing, args, print_repair_code).map_err(
-                |error| match chat_key_repair_refusal(&error) {
+            let outcome = repair_flow(config, &store, &existing, offer, args, print_repair_code)
+                .map_err(|error| match chat_key_repair_refusal(&error) {
                     Some((_, text)) => CloudError::Refused(text.to_owned()),
                     None => error,
-                },
-            )?;
+                })?;
             println!(
                 "{}",
                 match outcome {
@@ -538,7 +785,6 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
     let chosen: Option<String> = flag_value(args, "--label")?
         .map(|label| label.chars().take(MAX_INSTANCE_LABEL_CHARS).collect());
     let label = chosen.unwrap_or_else(default_label);
-    let chat_key = chat_key_offer(args, &mut std::io::stdin().lock())?;
     let client = CloudClient::new(&origin)?;
     println!("LeanCTX Cloud — connect this machine");
     // A self-hosted Cloud is trusted when LeanCTX vouched for its root.
@@ -562,8 +808,14 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
                 .map_err(|error| unreachable(error, &origin));
         (None, None, false, enrolled)
     } else {
-        let code = start_device_flow_for(&client, Some(label.as_str()), trial)
-            .map_err(|error| unreachable(error, &origin))?;
+        // f3129 S2: the offered keys are announced with the code.
+        let code = start_device_flow_with(
+            &client,
+            Some(label.as_str()),
+            trial,
+            offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()),
+        )
+        .map_err(|error| unreachable(error, &origin))?;
         // C0 2.1: the approval page also asks "Share this project" (one code).
         // The folder name and git remote reach Cloud only after the person's
         // yes here (or `--yes`); without one the page names no project.
@@ -613,14 +865,14 @@ pub(super) fn run(config: &CloudConfig, args: &[String]) -> Result<(), CloudErro
         }
         print!("  Waiting for you to approve…");
         let _ = std::io::stdout().flush();
-        let enrolled = finish_device_flow_chat(
+        let enrolled = finish_device_flow_with(
             &store,
             &client,
             &code,
             &label,
             &root,
             &std::thread::sleep,
-            chat_key.as_ref(),
+            offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()),
         )
         .map_err(|error| trial_aware(error, trial));
         (early, named, announced, enrolled)
@@ -880,12 +1132,24 @@ fn run_json(
     let trial = trial_choice(args)?;
     let store = open_store(root)?;
     let origin = origin_for(config, args)?;
-    if store.instance()?.is_some() {
+    let existing = store.instance()?;
+    // The app's keys: read and shape-checked before anything is sent.
+    let (chat_key, task_key, optin_key) = app_key_offers(args, &mut std::io::stdin().lock())?;
+    no_task_key_with_token(token.as_ref(), task_key.as_ref())?;
+    no_optin_key_with_token(token.as_ref(), optin_key.as_ref())?;
+    no_chat_key_with_token(token.as_ref(), chat_key.as_ref())?;
+    // Each bind checked against this computer's key before the Cloud is
+    // contacted (§46.3 point 1); the pairing checks again before it sends.
+    offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()).verify(&store)?;
+    // rc4-67, rc4-16: a task or opt-in key offered on a connected machine
+    // re-binds it: the device flow runs again with the same instance keys
+    // (the Cloud keeps the instance id; no `replaces`), instead of answering
+    // `connected`.
+    let rebind = task_key.is_some() || optin_key.is_some();
+    if existing.is_some() && !rebind {
         let current = report(&store, config, UtcDateTime::now());
-        if let (true, Some(lease)) = (current.connected(), &current.lease)
-            && args.iter().any(|a| a == CHAT_KEY)
-        {
-            return repair_json(config, &store, lease, args);
+        if let (true, Some(lease), Some(offer)) = (current.connected(), &current.lease, &chat_key) {
+            return repair_json(config, &store, lease, offer, args);
         }
         if let (true, Some(lease)) = (current.connected(), &current.lease) {
             emit(&connected_event(lease, None));
@@ -900,27 +1164,35 @@ fn run_json(
     }
     let chosen: Option<String> = flag_value(args, "--label")?
         .map(|label| label.chars().take(MAX_INSTANCE_LABEL_CHARS).collect());
-    let label = chosen.unwrap_or_else(default_label);
-    let chat_key = chat_key_offer(args, &mut std::io::stdin().lock())?;
+    // A re-bind keeps this machine's name unless the app names another.
+    let label = chosen
+        .or_else(|| existing.as_ref().map(|e| e.label.clone()))
+        .unwrap_or_else(default_label);
     let client = CloudClient::new(&origin)?;
     let trust = lean_ctx_cloud::root_cert::for_connect(&client, config, &origin)?;
     let root = trust.root;
     let enrolled = if let Some(token) = &token {
         enroll_with_token_chat(&store, &client, token, &label, &root, chat_key.as_ref())
     } else {
-        let code = start_device_flow_for(&client, Some(label.as_str()), trial)?;
+        // f3129 S2: the offered keys are announced with the code.
+        let code = start_device_flow_with(
+            &client,
+            Some(label.as_str()),
+            trial,
+            offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()),
+        )?;
         emit(&code_event(&code));
         if !args.iter().any(|a| a == "--no-browser") {
             let _ = open_browser(&code.verification_uri_complete);
         }
-        finish_device_flow_chat(
+        finish_device_flow_with(
             &store,
             &client,
             &code,
             &label,
             &root,
             &std::thread::sleep,
-            chat_key.as_ref(),
+            offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()),
         )
         .map_err(|error| trial_aware(error, trial))
     };
@@ -961,21 +1233,26 @@ fn repair_flow(
     config: &CloudConfig,
     store: &CloudStore,
     existing: &InstanceRecord,
+    offer: &ChatKeyOffer,
     args: &[String],
     show: fn(&DeviceCodeV1),
 ) -> Result<ChatKeyRepair, CloudError> {
-    let offer = chat_key_offer(args, &mut std::io::stdin().lock())?
-        .ok_or_else(|| CloudError::Config(format!("{CHAT_KEY} needs a value")))?;
     let client = CloudClient::new(&existing.url)?;
     let root = lean_ctx_cloud::root_cert::trust_root(store, config, &existing.url)?;
-    let code = start_device_flow_for(&client, Some(&existing.label), None)?;
+    // f3129 S2: the chat key is announced with the code it is signed over.
+    let code = start_device_flow_with(
+        &client,
+        Some(&existing.label),
+        None,
+        offers_of(Some(offer), None, None),
+    )?;
     show(&code);
     if !(args.iter().any(|a| a == "--no-browser")
         || std::env::var_os("LEAN_CTX_NO_BROWSER").is_some())
     {
         let _ = open_browser(&code.verification_uri_complete);
     }
-    repair_chat_key(store, &client, &code, &root, &std::thread::sleep, &offer)
+    repair_chat_key(store, &client, &code, &root, &std::thread::sleep, offer)
 }
 
 /// The terminal's view of a re-pair's code.
@@ -1007,10 +1284,11 @@ fn repair_json(
     config: &CloudConfig,
     store: &CloudStore,
     lease: &CloudLeaseV1,
+    offer: &ChatKeyOffer,
     args: &[String],
 ) -> Result<(), CloudError> {
     let existing = store.instance()?.ok_or(CloudError::NotConnected)?;
-    match repair_flow(config, store, &existing, args, emit_code) {
+    match repair_flow(config, store, &existing, offer, args, emit_code) {
         Ok(outcome) => {
             emit(&repaired_event(lease, outcome));
             Ok(())
@@ -1102,9 +1380,16 @@ fn share_json(session: &Session) -> Result<(), CloudError> {
     // A recorded vault the link file or the identity no longer backs is
     // resolved again, as in a terminal connect.
     lean_ctx_cloud::resolution::forget_stale_at(session.store.data_dir(), root)?;
-    let known = steps::project_step(&VaultMap::load(session.store.data_dir()), root);
+    let known = steps::project_step(
+        session.store.data_dir(),
+        &VaultMap::load(session.store.data_dir()),
+        root,
+    );
     let outcome = match known {
         ProjectStep::None => Outcome::NoProject,
+        ProjectStep::Unlinked => {
+            Outcome::KeptLocal(lean_ctx_cloud::unlinked::refusal(session.store.data_dir()))
+        }
         ProjectStep::Known(vault) => {
             let (ns, name) = vault.split_once('/').unwrap_or(("", vault.as_str()));
             Outcome::Shared {
@@ -1707,8 +1992,15 @@ fn map_project(config: &CloudConfig, session: &Session, root: &Path, device: boo
 fn map_project_step(config: &CloudConfig, session: &Session, root: &Path, device: bool) -> Outcome {
     let project = project_name(root);
     let org = &session.instance.org_name;
-    match steps::project_step(&VaultMap::load(session.store.data_dir()), root) {
+    match steps::project_step(
+        session.store.data_dir(),
+        &VaultMap::load(session.store.data_dir()),
+        root,
+    ) {
         ProjectStep::None => Outcome::NoProject,
+        ProjectStep::Unlinked => {
+            Outcome::KeptLocal(lean_ctx_cloud::unlinked::refusal(session.store.data_dir()))
+        }
         ProjectStep::Known(vault) => {
             println!("  This project syncs with the vault {vault}.");
             let (ns, name) = vault.split_once('/').unwrap_or(("", vault.as_str()));
@@ -2205,6 +2497,10 @@ mod tests {
             "share_event",
             "project_here",
             "chat_key_offer",
+            "task_key_offer",
+            "app_key_offers",
+            "parse_chat_key",
+            "conflicting_key_flags",
             "instance_public_key_event",
             "app_gate",
             "open_store",
@@ -2237,7 +2533,7 @@ mod tests {
         }
         assert!(
             body.find("emit(&code_event(").unwrap()
-                < body.find("finish_device_flow_chat(").unwrap()
+                < body.find("finish_device_flow_with(").unwrap()
         );
         // The terminal flow, by contrast, prints: the check sees it.
         assert!(stdout_writes(run).contains(&"println!"));
@@ -2554,6 +2850,8 @@ mod tests {
             &["--json", "--no-browser", "--label", "my laptop"],
             &["--enrollment-token-stdin"],
             &["--json", "--chat-key", "-"],
+            &["--json", "--task-propose-key", "-"],
+            &["--json", "--app-keys", "-"],
             &["--json", "--print-instance-key"],
             &[
                 "--url",
@@ -2618,12 +2916,12 @@ mod tests {
             lean_ctx_cloud::auth::CHAT_KEY_TOKEN_ENROLLMENT
         );
         assert!(repair_refusal_event(&CloudError::NotConnected).is_none());
-        // Without --chat-key the connected branches stay the no-op.
+        // Without a chat key the connected branches stay the no-op.
         let run = source_of("run");
-        assert!(run.contains("current.connected() && args.iter().any(|a| a == CHAT_KEY)"));
+        assert!(run.contains("(current.connected(), &chat_key)"), "{run}");
         let json = source_of("run_json");
-        assert!(json.contains("&& args.iter().any(|a| a == CHAT_KEY)"));
-        assert!(json.contains("return repair_json(config, &store, lease, args);"));
+        assert!(json.contains("&current.lease, &chat_key)"), "{json}");
+        assert!(json.contains("return repair_json(config, &store, lease, offer, args);"));
     }
 
     /// A `--trial` code that ran out points to the plans page (an older
@@ -2681,8 +2979,9 @@ mod tests {
         assert_eq!(instance_public_key_event(&store).unwrap(), event, "stable");
     }
 
-    /// rc4-32 (bd MUST 3): binding a chat key and printing the instance key
-    /// to bind one to are LeanCTX Code's only, behind its launch key.
+    /// rc4-32 (bd MUST 3), rc4-67 (bd M1): binding a chat key or a task key
+    /// and printing the instance key to bind one to are LeanCTX Code's
+    /// only, behind its launch key.
     #[test]
     fn chat_key_flags_are_refused_without_the_app_key() {
         const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -2704,6 +3003,10 @@ mod tests {
         for args in [
             &["--json", "--chat-key", "-"][..],
             &["--chat-key", "-"],
+            &["--json", "--task-propose-key", "-"],
+            &["--task-propose-key", "-"],
+            &["--json", "--app-keys", "-"],
+            &["--app-keys", "-"],
             &["--json", "--print-instance-key"],
             &["--print-instance-key"],
         ] {
@@ -2750,7 +3053,7 @@ mod tests {
             app_gate(&strings(&[]), None, || None, |_, _| false),
             Ok(None)
         );
-        // The gate runs before the instance key is printed or a chat key read.
+        // The gate runs before the instance key is printed or a key read.
         let run = source_of("run");
         // The env key is taken first, before any refusal returns.
         let taken = run.find("take_app_key()").unwrap();
@@ -2760,7 +3063,7 @@ mod tests {
         assert!(run[gate..].contains("app_key::checked_root"));
         assert!(gate < run.find("instance_public_key_event(").unwrap());
         assert!(gate < run.find("run_json(config, args, root)").unwrap());
-        assert!(gate < run.find("chat_key_offer(").unwrap());
+        assert!(gate < run.find("app_key_offers(").unwrap());
         // bd 38432: after the gate the records are opened only through the
         // gate's root, never resolved again.
         assert!(!run.contains("CloudStore::open()"), "{run}");
@@ -2811,5 +3114,325 @@ mod tests {
         let private =
             r#"{"alg":"ed25519","public_key":"a","key_id":"b","bind_signature":"c","seed":"d"}"#;
         assert!(chat_key_offer(&strings(&["--chat-key", "-"]), &mut private.as_bytes()).is_err());
+    }
+
+    /// rc4-67 (bd S3): `--json --task-propose-key -` on a connected machine
+    /// re-binds: it does not answer `connected` and stop, it reads the key
+    /// before anything is sent, keeps the machine's name and runs the
+    /// device flow with that key (no token enrollment carries one).
+    #[test]
+    fn a_task_key_on_a_connected_machine_rebinds_in_run_json() {
+        let json = source_of("run_json");
+        let at = |needle: &str| {
+            json.find(needle)
+                .unwrap_or_else(|| panic!("run_json names {needle}"))
+        };
+        assert!(json.contains("let rebind = task_key.is_some() || optin_key.is_some();"));
+        assert!(at("app_key_offers(") < at("let rebind"));
+        assert!(json.contains("if existing.is_some() && !rebind {"));
+        assert!(
+            at("let rebind") < at("connected_event("),
+            "the gate is the early answer's"
+        );
+        // Read and checked before any request is made.
+        assert!(at("app_key_offers(") < at("CloudClient::new("));
+        assert!(at("no_task_key_with_token(") < at("CloudClient::new("));
+        assert!(at("no_optin_key_with_token(") < at("CloudClient::new("));
+        // The existing name, unless the app names another.
+        assert!(json.contains(".or_else(|| existing.as_ref().map(|e| e.label.clone()))"));
+        // The device flow carries the offered key.
+        let flow = &json[at("finish_device_flow_with(")..];
+        let flow = &flow[..flow.find(".map_err(").unwrap()];
+        assert!(
+            flow.contains("offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref())"),
+            "{flow}"
+        );
+    }
+
+    /// bd 40488: `run` and `run_json` announce and send the same offers in
+    /// both device-flow calls; `repair_flow` announces the chat key it
+    /// pairs. Every first-pairing refusal's JSON message is its plain text.
+    #[test]
+    fn cloud_connect_passes_the_offers_in_run_run_json_and_repair_flow() {
+        let call = |body: &'static str, head: &str| -> &'static str {
+            let at = body.find(head).unwrap_or_else(|| panic!("{head}"));
+            let rest = &body[at..];
+            &rest[..rest.find(")\n").unwrap_or(rest.len())]
+        };
+        let all = "offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref())";
+        for name in ["run", "run_json"] {
+            let body = source_of(name);
+            for head in ["start_device_flow_with(", "finish_device_flow_with("] {
+                assert!(call(body, head).contains(all), "{name}: {head}");
+            }
+        }
+        let repair = source_of("repair_flow");
+        assert!(
+            call(repair, "start_device_flow_with(").contains("offers_of(Some(offer), None, None)"),
+            "{repair}"
+        );
+        assert!(
+            repair.contains(
+                "repair_chat_key(store, &client, &code, &root, &std::thread::sleep, offer)"
+            )
+        );
+        for refused in [
+            CloudError::DeviceFlow(lean_ctx_cloud::auth::APP_KEY_PAIRING_FAILED.into()),
+            CloudError::Config(lean_ctx_cloud::auth::APP_KEY_PAIRING_FAILED.into()),
+            CloudError::Config(lean_ctx_cloud::auth::APP_KEYS_UNSUPPORTED.into()),
+        ] {
+            let (CloudError::DeviceFlow(text) | CloudError::Config(text)) = &refused else {
+                unreachable!()
+            };
+            assert_eq!(
+                error_event(&refused)["message"],
+                text.as_str(),
+                "{refused:?}"
+            );
+        }
+    }
+
+    /// bd 40254 S1: in both `run` and `run_json` the offers are read, kept
+    /// off a token enrollment and their binds verified against this
+    /// computer's key before the Cloud is contacted (no client, no device
+    /// code, no browser, no re-pair).
+    #[test]
+    fn cloud_connect_checks_every_offer_before_the_cloud_in_run_and_run_json() {
+        let none = offers_of(None, None, None);
+        assert!(none.chat.is_none() && none.task.is_none() && none.optin.is_none());
+        for name in ["run", "run_json"] {
+            let body = source_of(name);
+            let at = |needle: &str| {
+                body.find(needle)
+                    .unwrap_or_else(|| panic!("{name} names {needle}"))
+            };
+            let verify = at(
+                "offers_of(chat_key.as_ref(), task_key.as_ref(), optin_key.as_ref()).verify(&store)?;",
+            );
+            assert!(at("app_key_offers(") < verify, "{name}");
+            assert!(at("no_task_key_with_token(") < verify, "{name}");
+            assert!(at("no_optin_key_with_token(") < verify, "{name}");
+            assert!(at("no_chat_key_with_token(") < verify, "{name}");
+            for later in [
+                "CloudClient::new(",
+                "start_device_flow_with(",
+                "open_browser(",
+                "finish_device_flow_with(",
+            ] {
+                assert!(verify < at(later), "{name}: verify before {later}");
+            }
+            let repair = if name == "run" {
+                "repair_flow("
+            } else {
+                "repair_json("
+            };
+            assert!(verify < at(repair), "{name}: verify before {repair}");
+        }
+    }
+
+    /// rc4-67: the task key comes from stdin only, its shape checked, and
+    /// never with an enrollment token.
+    #[test]
+    fn a_task_key_is_read_from_stdin_only_and_checked_for_shape() {
+        use base64::Engine as _;
+        use lean_ctx_cloud::consent::task_key::key_id_of;
+        let public = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]).verifying_key();
+        let good = TaskKeyOffer {
+            alg: "ed25519".into(),
+            public_key: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public.as_bytes()),
+            key_id: key_id_of(public.as_bytes()),
+            bind_signature: "c2ln".into(),
+        };
+        let text = serde_json::to_string(&good).unwrap();
+        let none = task_key_offer(&strings(&["--json"]), &mut std::io::empty()).unwrap();
+        assert!(none.is_none());
+        let flag = ["--task-propose-key", "-"];
+        let piped = task_key_offer(&strings(&flag), &mut text.as_bytes())
+            .unwrap()
+            .unwrap();
+        assert_eq!(piped, good);
+        assert!(
+            task_key_offer(
+                &strings(&["--task-propose-key", "key.json"]),
+                &mut std::io::empty()
+            )
+            .is_err(),
+            "never a path or a value in argv"
+        );
+        let both = task_key_offer(
+            &strings(&["--task-propose-key", "-", "--enrollment-token-stdin"]),
+            &mut text.as_bytes(),
+        );
+        assert!(both.is_err());
+        let token = EnrollmentToken::parse(&format!("het_{}", "a".repeat(64))).unwrap();
+        assert!(no_task_key_with_token(Some(&token), Some(&good)).is_err());
+        no_task_key_with_token(None, Some(&good)).unwrap();
+        let short = r#"{"alg":"ed25519","public_key":"cGs","key_id":"abababababababab","bind_signature":"c2ln"}"#;
+        assert!(task_key_offer(&strings(&flag), &mut short.as_bytes()).is_err());
+        let private =
+            r#"{"alg":"ed25519","public_key":"a","key_id":"b","bind_signature":"c","seed":"d"}"#;
+        assert!(task_key_offer(&strings(&flag), &mut private.as_bytes()).is_err());
+    }
+
+    /// rc4-32 + rc4-67: `--app-keys -` hands over both keys (or one) in one
+    /// stdin object; unknown members, no key, or more than 32 KiB are refused.
+    #[test]
+    fn app_keys_reads_one_object_with_either_or_both_keys() {
+        use base64::Engine as _;
+        let public = |seed: u8| {
+            let key = ed25519_dalek::SigningKey::from_bytes(&[seed; 32]).verifying_key();
+            (
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes()),
+                key,
+            )
+        };
+        let (chat_b64, chat_public) = public(7);
+        let chat = ChatKeyOffer {
+            alg: "ed25519".into(),
+            public_key: chat_b64,
+            key_id: lean_ctx_cloud::consent::chat_key::key_id_of(chat_public.as_bytes()),
+            bind_signature: "c2ln".into(),
+        };
+        let (task_b64, task_public) = public(9);
+        let task = TaskKeyOffer {
+            alg: "ed25519".into(),
+            public_key: task_b64,
+            key_id: lean_ctx_cloud::consent::task_key::key_id_of(task_public.as_bytes()),
+            bind_signature: "c2ln".into(),
+        };
+        let (optin_b64, optin_public) = public(11);
+        let optin = OptinKeyOffer {
+            alg: "ed25519".into(),
+            public_key: optin_b64,
+            key_id: lean_ctx_cloud::consent::optin_key::key_id_of(optin_public.as_bytes()),
+            bind_signature: "c2ln".into(),
+        };
+        let keys = strings(&["--json", "--app-keys", "-"]);
+        let read = |text: String| app_key_offers(&keys, &mut text.as_bytes());
+        let both = json!({"chat_key": chat, "task_key": task}).to_string();
+        assert_eq!(
+            read(both).unwrap(),
+            (Some(chat.clone()), Some(task.clone()), None)
+        );
+        assert_eq!(
+            read(json!({"task_key": task}).to_string()).unwrap(),
+            (None, Some(task.clone()), None)
+        );
+        assert_eq!(
+            read(json!({"chat_key": chat}).to_string()).unwrap(),
+            (Some(chat.clone()), None, None)
+        );
+        // rc4-16: the opt-in key alone or with the others.
+        assert_eq!(
+            read(json!({"optin_key": optin}).to_string()).unwrap(),
+            (None, None, Some(optin.clone()))
+        );
+        let all = json!({"chat_key": chat, "task_key": task, "optin_key": optin});
+        assert_eq!(
+            read(all.to_string()).unwrap(),
+            (Some(chat.clone()), Some(task.clone()), Some(optin.clone()))
+        );
+        // At least one key; no member it does not know.
+        assert!(read("{}".into()).is_err());
+        assert!(read(json!({"chat_key": chat, "pickup_key": optin}).to_string()).is_err());
+        // The opt-in key's own shape: no extra member (never a private
+        // half), ed25519, its key_id.
+        let mut with_seed = serde_json::to_value(&optin).unwrap();
+        with_seed["seed"] = json!("c2Vla3JldA");
+        assert!(read(json!({"optin_key": with_seed}).to_string()).is_err());
+        let mut wrong_id = optin.clone();
+        wrong_id.key_id = "f".repeat(16);
+        assert!(read(json!({"optin_key": wrong_id}).to_string()).is_err());
+        let mut rsa = optin.clone();
+        rsa.alg = "rsa".into();
+        assert!(read(json!({"optin_key": rsa}).to_string()).is_err());
+        assert!(read(json!({"optin_key": "key"}).to_string()).is_err());
+        // Each key keeps its alias's shape check.
+        let mut bad = task.clone();
+        bad.key_id = "f".repeat(16);
+        assert!(read(json!({"task_key": bad}).to_string()).is_err());
+        assert!(read(json!({"chat_key": {"alg": "rsa"}}).to_string()).is_err());
+        // Two objects, or more than 32 KiB, are not the contract.
+        let two = format!("{}{}", json!({"chat_key": chat}), json!({"task_key": task}));
+        assert!(read(two).is_err());
+        let padded = format!("{}{}", json!({"chat_key": chat}), " ".repeat(33 * 1024));
+        assert!(read(padded).is_err());
+        // stdin only, and not together with a token read from stdin.
+        assert!(
+            app_key_offers(
+                &strings(&["--app-keys", "keys.json"]),
+                &mut std::io::empty()
+            )
+            .is_err()
+        );
+        assert!(
+            app_key_offers(
+                &strings(&["--app-keys", "-", "--enrollment-token-stdin"]),
+                &mut std::io::empty()
+            )
+            .is_err()
+        );
+        // Without a key flag nothing is read.
+        assert_eq!(
+            app_key_offers(&strings(&["--json"]), &mut std::io::empty()).unwrap(),
+            (None, None, None)
+        );
+    }
+
+    /// rc4-16: an opt-in key never goes with an enrollment token (the person
+    /// approves it in the browser).
+    #[test]
+    fn an_optin_key_never_goes_with_an_enrollment_token() {
+        let offer = OptinKeyOffer {
+            alg: "ed25519".into(),
+            public_key: "cGs".into(),
+            key_id: "abababababababab".into(),
+            bind_signature: "c2ln".into(),
+        };
+        let token = EnrollmentToken::parse(&format!("het_{}", "a".repeat(64))).unwrap();
+        assert!(no_optin_key_with_token(Some(&token), Some(&offer)).is_err());
+        no_optin_key_with_token(None, Some(&offer)).unwrap();
+        no_optin_key_with_token(Some(&token), None).unwrap();
+        let chat = lean_ctx_cloud::consent::chat_key::ChatKeyOffer {
+            alg: "ed25519".into(),
+            public_key: "k".into(),
+            key_id: "id".into(),
+            bind_signature: "s".into(),
+        };
+        assert!(no_chat_key_with_token(Some(&token), Some(&chat)).is_err());
+        no_chat_key_with_token(None, Some(&chat)).unwrap();
+        no_chat_key_with_token(Some(&token), None).unwrap();
+    }
+
+    /// `--app-keys` never combines with an alias, nor the aliases with each
+    /// other: refused as `invalid_argument` before anything is read.
+    #[test]
+    fn key_flags_do_not_combine() {
+        for args in [
+            &["--json", "--app-keys", "-", "--chat-key", "-"][..],
+            &["--json", "--app-keys", "-", "--task-propose-key", "-"],
+            &["--json", "--chat-key", "-", "--task-propose-key", "-"],
+            &[
+                "--app-keys",
+                "-",
+                "--chat-key",
+                "-",
+                "--task-propose-key",
+                "-",
+            ],
+        ] {
+            let refused = unknown_argument(&strings(args)).unwrap_or_else(|| panic!("{args:?}"));
+            assert!(refused.contains("--app-keys"), "{refused}");
+            // Refused before stdin is touched, whichever path reads it.
+            let mut untouched = std::io::repeat(b'x');
+            assert!(app_key_offers(&strings(args), &mut untouched).is_err());
+        }
+        for alone in [
+            &["--json", "--app-keys", "-"][..],
+            &["--json", "--chat-key", "-"],
+            &["--json", "--task-propose-key", "-"],
+        ] {
+            assert_eq!(conflicting_key_flags(&strings(alone)), None, "{alone:?}");
+        }
     }
 }

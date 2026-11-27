@@ -88,7 +88,7 @@ pub fn emit_due(store: &CloudStore, now: UtcDateTime) -> usize {
     while hour < this_hour {
         let end = hour + Duration::hours(1);
         let events = friction::events(hour, end);
-        for finding in hour_findings(&events, agents, &vaults, &worker_of, hour, end) {
+        for finding in hour_findings(dir, &events, agents, &vaults, &worker_of, hour, end) {
             if let Err(error) = super::bus::relay_v2::queue_publish(store, finding.publish(now_ms))
             {
                 store.record_error(&format!("collaboration finding: {error}"));
@@ -131,7 +131,10 @@ pub fn sample_merge_conflicts(store: &CloudStore, seen: &mut std::collections::B
     let registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
     let mut roots: BTreeMap<&str, &str> = BTreeMap::new();
     for agent in registry.list_active(None) {
-        if vaults.for_root(&agent.project_root).is_some() {
+        // An unlinked checkout sends nothing, also not through its main
+        // checkout's record (bd 40060).
+        if crate::unlinked::shared_record(store.data_dir(), &vaults, &agent.project_root).is_some()
+        {
             roots
                 .entry(agent.project_root.as_str())
                 .or_insert(agent.agent_id.as_str());
@@ -274,6 +277,7 @@ impl HourFinding {
 /// checkout under the vault's sending worker. Vaults without friction and
 /// without agent time get no finding.
 pub(crate) fn hour_findings(
+    data_dir: &std::path::Path,
     events: &[Event],
     agents: &[AgentEntry],
     vaults: &VaultMap,
@@ -281,7 +285,11 @@ pub(crate) fn hour_findings(
     from: UtcDateTime,
     to: UtcDateTime,
 ) -> Vec<HourFinding> {
-    let place_of = |root: &str| vaults.for_root(root).map(super::bus::relay_v2::address_of);
+    // A checkout the person unlinked has no place, also not through its
+    // main checkout's record (bd 40060).
+    let place_of = |root: &str| {
+        crate::unlinked::shared_record(data_dir, vaults, root).map(super::bus::relay_v2::address_of)
+    };
     // vault → worker → agent seconds, and vault → C0 key → count.
     let mut time: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
     let mut counts: BTreeMap<String, BTreeMap<&'static str, u32>> = BTreeMap::new();
@@ -403,6 +411,50 @@ mod tests {
         map
     }
 
+    /// bd 40060 MUST: a worktree the person unlinked sends no findings,
+    /// also not through its main checkout's record.
+    #[test]
+    fn unlink_of_a_worktree_sends_no_friction_findings() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (main, wt) = crate::unlinked::fake_worktree(&base);
+        let data = base.join("data");
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "v1".into(),
+            VaultRecord {
+                vault_id: "v1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![main.to_string_lossy().into_owned()],
+            },
+        );
+        let wt_text = wt.to_string_lossy().into_owned();
+        let agents = [agent(
+            "mcp-a",
+            &wt_text,
+            "2026-10-24T07:00:00Z",
+            "2026-10-24T10:00:00Z",
+        )];
+        let events = [event(friction::WAIT_TIMEOUT, None, Some(&wt_text))];
+        let worker_of = |a: &AgentEntry| Some(format!("wkr_{}", a.agent_id));
+        let run = || {
+            hour_findings(
+                &data,
+                &events,
+                &agents,
+                &map,
+                &worker_of,
+                at("2026-10-24T08:00:00Z"),
+                at("2026-10-24T09:00:00Z"),
+            )
+        };
+        assert!(!run().is_empty(), "shared through the main checkout");
+        crate::unlinked::add(&data, &wt).unwrap();
+        assert!(run().is_empty(), "{:?}", run());
+    }
+
     /// Every local signal counts under exactly one C0 key, and only the
     /// eight C0 keys exist.
     #[test]
@@ -460,6 +512,7 @@ mod tests {
             event("unknown_signal", Some("mcp-a"), None),
         ];
         let findings = hour_findings(
+            std::path::Path::new("/nonexistent/cloud-data"),
             &events,
             &agents,
             &vaults(),
@@ -688,6 +741,7 @@ mod tests {
             "2026-10-24T06:00:00Z",
         )];
         let findings = hour_findings(
+            std::path::Path::new("/nonexistent/cloud-data"),
             &[],
             &agents,
             &vaults(),

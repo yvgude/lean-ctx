@@ -6,7 +6,7 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
-## [3.12.8] — 2026-11-25
+## [3.12.8] — 2026-11-27
 
 ### Upgrade notes
 - **Usage metrics are on by default after `lean-ctx cloud connect`.** Connect no longer asks; it confirms the metrics only when nobody has decided yet. An off chosen in Settings, by a team policy, by a project setting, or after access ended or was revoked stays off. To switch them off: `lean-ctx config set cloud.metrics_upload false`, or Settings in the app. What is sent: `docs/guides/cloud-engine-metrics.md`.
@@ -32,6 +32,26 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   service reports it.
 
 - **`lean-ctx cloud worker status --json`.** Prints the worker-mode state (`not_opted_in`, `stopped`, `paused`, `active`), whether it is paused on this computer, and the opt-in as LeanCTX Cloud returned it, including the ids of the vaults whose tasks agents may pick up, so the app limits automatic pickup to them.
+
+- **LeanCTX Code pairs its opt-in key with the other app keys (rc4-16).**
+  `lean-ctx cloud connect --json --app-keys -` now takes `optin_key` beside
+  `chat_key` and `task_key`. The key's bind is checked before anything is
+  sent, travels on the same pairing the person approves in the browser, and
+  is kept as taken once the Cloud accepts it, so task pickup can be turned on
+  from LeanCTX Code. A refused, already bound or removed opt-in key keeps its
+  own reason (`optin_key_invalid`, `optin_key_bound`, `optin_key_cleared`).
+
+- **LeanCTX Code can turn task pickup on and off for this computer (rc4-16).**
+  Three app-only Local Service routes (`cloud.pickup`, `cloud.pickup.set`,
+  `cloud.pickup.key`) report the state and daily budget, stop task pickup, and
+  turn it on with a request the app signs with its own opt-in key; the engine
+  checks that signature and forwards it unchanged. A first turn-on proposes
+  3 tasks and 1M tokens a day with no cost limit, for the person's own vaults;
+  a stop or a pause by the person is never turned on again. `lean-ctx cloud
+  worker on --json` forwards the same signed request, and `cloud worker status
+  --json` advertises it with `capabilities.worker_on` once the key is bound.
+
+- **`lean-ctx cloud unlink`: stop sharing a project folder.** It removes the folder's link to its vault on this machine and keeps everything stored locally: knowledge, tasks and the files in the folder stay as they are, and the vault in the cloud is not changed. Notes queued for the vault from this folder are dropped, and nothing from the folder is shared again, also not through another checkout of the same repository, until you run `lean-ctx cloud link` in it. It works while this machine is disconnected, running it twice changes nothing, and `--json` prints the Local Read kind `cloud.unlink` (local-read-v1 §20a).
 
 ### Changed
 - **A `ctx_shell` `cwd` or `cd` applies to that call only, and relative
@@ -63,6 +83,26 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **`LEAN_CTX_AGENT_ROLE` names an agent on the bus; it no longer narrows its permissions.** A host that wants a narrower permission role for an agent sets `LEAN_CTX_ROLE`. LeanCTX's own background presence is no longer shown as a team agent or a worker.
 
 - **Connect and setup without questions, plain output.** No step counter, the computer name as the default label, terminal links where the terminal supports them, and a short closing line when no project is linked. `cloud connect --json` reports the runtime install as a `runtime` member of `connected`. Runtime errors name their cause: expired channel catalog, channel mismatch, package manifest, or platform not available yet. `setup runtime install` without flags installs from the signed channel; usage errors list the valid forms. Uninstall leftovers are printed as plain lines, and the summary no longer claims a full removal when something remains.
+
+- **A refusal with code `invalid_field` now keeps its code.** The engine
+  reports such a 400 as `Server { status: 400, code: "invalid_field" }`
+  instead of `unknown`, so its `event_code` is now `invalid_field` on every
+  route that answers it, not only in pairing.
+- **`lean-ctx-protocol` names the error code `CloudErrorCode::InvalidField`
+  (wire `invalid_field`, 400).** On the wire this is additive: a code the
+  engine does not know still decodes as `Unknown`. `CloudErrorCode` is not
+  `#[non_exhaustive]`, so Rust code that matches it without a wildcard arm
+  needs one more arm.
+
+- **The keys of LeanCTX Code are paired only as announced and signed.**
+  When LeanCTX Code pairs its keys with a computer, lean-ctx now names
+  those keys when the pairing starts and signs them with the computer's
+  own key when it finishes. The service accepts only the named and signed
+  keys, so no other key can be slipped into the pairing. If the service
+  cannot pair the keys yet, nothing is paired and lean-ctx says so before
+  you approve anything. If the service refuses the keys, the connect ends
+  with "Pairing failed, please start connecting again." An enrollment
+  token no longer pairs the chat key; connect from LeanCTX Code for that.
 
 ### Fixed
 - **Readable task lists on request.** `lean-ctx cloud tasks list` and `show` take `--plain` to print task texts without the data markers; without it the texts stay marked as data, so agents never read a task as an instruction. `lean-ctx cloud stop --help` now explains stopping, releasing and checking a team stop on its own page, and the release message no longer claims a two-factor step.
@@ -136,6 +176,16 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **Homebrew on macOS pours a bottle instead of building from source.** Without a bottle, `brew install lean-ctx` took the build-from-source path and stopped on outdated Command Line Tools before installing the prebuilt binary. Releases now attach deterministic arm64 and x86_64 bottles, verified against the release checksums.
 - **Only agents in checkouts linked to a LeanCTX Cloud vault are announced and registered.** Agents in unlinked checkouts no longer appear in presence, registrations or subscriptions; the local relay report still names them, with the reason that their checkout is not linked to a vault.
 - **Release evidence:** the pinned digest of the release workflow is refreshed and now checked on every merge request.
+
+- **A task a person proposes in LeanCTX Code now shows as theirs (rc4-67).**
+  The app sent the proposal as an agent's, so the team saw "from an agent".
+  LeanCTX Code now signs the proposal with its own task key, kept in the
+  Keychain and set up when you pair this computer, without asking for Touch
+  ID each time. The project then records the task as proposed by the person
+  this computer is linked to. Nothing in the request names anyone, agents
+  keep proposing as agents, and a proposal without that signature is still
+  recorded as an agent's. A task's `created_by` also says `own` when the
+  project tells whether the creator is the person this computer is linked to.
 
 ## [3.12.7] — 2026-11-22
 

@@ -583,6 +583,8 @@ fn proposal(space: &str, t: &TaskPlan) -> Proposal {
             message: None,
         },
         session_ref: "emspace-import".into(),
+        signed_at: None,
+        task_signature: None,
     };
     if let Err(e) = request.validate() {
         problems.push(format!("LeanCTX Cloud would refuse it: {e}"));

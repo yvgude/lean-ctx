@@ -330,6 +330,8 @@ impl Board {
                 message: None,
             },
             session_ref: "local".to_owned(),
+            signed_at: None,
+            task_signature: None,
         };
         request.validate().map_err(invalid)?;
         self.make_room()?;

@@ -19,6 +19,11 @@ pub enum CloudErrorCode {
     AccessDenied,
     /// 400: body failed validation or carried unknown fields.
     InvalidRequest,
+    /// 400 with `field` (the request path, e.g. `chat_key.bind_signature`)
+    /// and optionally `reason` (f3129: `app_key_not_announced`,
+    /// `app_key_bind_invalid`): one member of an otherwise well-formed
+    /// request was refused (`docs/contracts/app-key-bind-v1.md`).
+    InvalidField,
     /// 401: access token missing, expired or not for this instance.
     Unauthorized,
     /// 402: the organization's plan does not include Cloud.
@@ -86,7 +91,8 @@ impl CloudErrorCode {
             | Self::SlowDown
             | Self::ExpiredToken
             | Self::AccessDenied
-            | Self::InvalidRequest => 400,
+            | Self::InvalidRequest
+            | Self::InvalidField => 400,
             Self::Unauthorized | Self::LeaseExpired | Self::InstanceRevoked => 401,
             Self::PlanRequired => 402,
             Self::ForbiddenRight
@@ -274,6 +280,24 @@ mod tests {
             serde_json::from_str(r#"{"error":{"code":"brand_new","message":"x","extra":1}}"#)
                 .unwrap();
         assert_eq!(body.error.code, CloudErrorCode::Unknown);
+    }
+
+    /// f3129: `invalid_field` is a named code; codes still unknown stay
+    /// [`CloudErrorCode::Unknown`] (the test above).
+    #[test]
+    fn invalid_field_decodes_with_field_and_reason() {
+        let body: CloudErrorBody = serde_json::from_str(
+            r#"{"error":{"code":"invalid_field","message":"x","field":"chat_key.bind_signature","reason":"app_key_bind_invalid"}}"#,
+        )
+        .unwrap();
+        assert_eq!(body.error.code, CloudErrorCode::InvalidField);
+        assert_eq!(body.error.code.http_status(), 400);
+        assert_eq!(body.error.field.as_deref(), Some("chat_key.bind_signature"));
+        assert_eq!(body.error.reason.as_deref(), Some("app_key_bind_invalid"));
+        assert_eq!(
+            serde_json::to_value(CloudErrorCode::InvalidField).unwrap(),
+            "invalid_field"
+        );
     }
 
     /// Cloud answers `POST /v1/metrics/hours` with this while

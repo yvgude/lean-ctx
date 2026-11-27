@@ -23,6 +23,110 @@ fn every_document_and_error_names_the_contract_and_kind() {
 }
 
 #[test]
+fn unlink_list_damage_is_the_cloud_status_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = lean_ctx_cloud::CloudStore::at(dir.path().join("c"), dir.path().join("d"));
+    let report = lean_ctx_cloud::status::report(
+        &store,
+        &lean_ctx_cloud::CloudConfig::default(),
+        lean_ctx_time::UtcDateTime::now(),
+    );
+    assert!(report.problem.is_none());
+    // bd 40060: the damage reaches the document through `of_state`.
+    std::fs::create_dir_all(store.data_dir()).unwrap();
+    std::fs::write(store.data_dir().join(lean_ctx_cloud::unlinked::FILE), "[").unwrap();
+    let project = dir.path().join("app");
+    std::fs::create_dir_all(&project).unwrap();
+    let answer = status::of_state(
+        &report,
+        store.data_dir(),
+        true,
+        Some(project.to_string_lossy().into_owned()),
+    );
+    let shown: serde_json::Value = serde_json::from_str(&answer.text).unwrap();
+    let problem = shown["problem"]
+        .as_str()
+        .expect("the damage is the problem");
+    assert!(
+        problem.contains(lean_ctx_cloud::unlinked::FILE),
+        "{problem}"
+    );
+    assert_eq!(shown["project"]["linked"], false);
+
+    // Another problem never hides it (bd 40060).
+    let mut enrolling = report;
+    enrolling.problem = Some("enrollment pending".into());
+    let shown = serde_json::to_value(status::of_report(
+        &enrolling,
+        status::LocalFacts {
+            capture: None,
+            project_root: Some("/work/app".into()),
+            linked_vault: None,
+            auto_capture: true,
+            sharing_problem: Some("unlinked_roots.json cannot be read".into()),
+        },
+    ))
+    .unwrap();
+    assert_eq!(
+        shown["problem"],
+        "unlinked_roots.json cannot be read; enrollment pending"
+    );
+}
+
+/// af watch point on !667: after `cloud.unlink` of a worktree whose main
+/// checkout stays shared, the status document the app reloads says the
+/// worktree is not linked (no `for_root` fallback to the main checkout).
+#[test]
+fn unlink_of_a_worktree_is_not_linked_in_the_status_document() {
+    let base = tempfile::tempdir().unwrap();
+    let base = base.path().canonicalize().unwrap();
+    let store = lean_ctx_cloud::CloudStore::at(base.join("c"), base.join("d"));
+    let (main, wt) = lean_ctx_cloud::unlinked::fake_worktree(&base);
+    std::fs::write(wt.join(".lean-ctx-id"), "payments-repo").unwrap();
+    let stable = lean_ctx_protocol::cloud::vault::stable_identity(
+        &lean_ctx_cloud::vault::project_identity(&wt).unwrap(),
+    );
+    let mut map = lean_ctx_cloud::vault::VaultMap::default();
+    map.vaults.insert(
+        stable,
+        lean_ctx_cloud::vault::VaultRecord {
+            vault_id: "vlt_1".into(),
+            ns: "acme".into(),
+            name: "payments".into(),
+            sealed: false,
+            roots: vec![main.to_string_lossy().into_owned()],
+        },
+    );
+    map.save(store.data_dir()).unwrap();
+    let report = lean_ctx_cloud::status::report(
+        &store,
+        &lean_ctx_cloud::CloudConfig::default(),
+        lean_ctx_time::UtcDateTime::now(),
+    );
+    let shown = |root: &std::path::Path| -> serde_json::Value {
+        let answer = status::of_state(
+            &report,
+            store.data_dir(),
+            true,
+            Some(root.to_string_lossy().into_owned()),
+        );
+        serde_json::from_str(&answer.text).unwrap()
+    };
+    // Before: the worktree is linked through its main checkout's record.
+    let before = shown(&wt);
+    assert_eq!(before["project"]["linked"], true, "{before}");
+    assert_eq!(before["project"]["vault"], "acme/payments", "{before}");
+
+    lean_ctx_cloud::unlinked::add(store.data_dir(), &wt).unwrap();
+    let after = shown(&wt);
+    assert_eq!(after["project"]["linked"], false, "{after}");
+    assert!(after["project"]["vault"].is_null(), "{after}");
+    // The main checkout stays shared.
+    let main_doc = shown(&main);
+    assert_eq!(main_doc["project"]["linked"], true, "{main_doc}");
+}
+
+#[test]
 fn cloud_status_adds_the_local_read_keys_only_on_opt_in() {
     use lean_ctx_protocol::cloud::status::CloudCliStatusV1;
     let dir = tempfile::tempdir().unwrap();
@@ -54,6 +158,7 @@ fn cloud_status_adds_the_local_read_keys_only_on_opt_in() {
         project_root: Some("/work/app".into()),
         linked_vault: Some("acme/app".into()),
         auto_capture: true,
+        sharing_problem: None,
     };
     let shown = serde_json::to_value(status::of_report(&report, facts)).unwrap();
     for key in [
@@ -88,6 +193,7 @@ fn cloud_status_adds_the_local_read_keys_only_on_opt_in() {
             project_root: None,
             linked_vault: None,
             auto_capture: true,
+            sharing_problem: None,
         },
     ))
     .unwrap();

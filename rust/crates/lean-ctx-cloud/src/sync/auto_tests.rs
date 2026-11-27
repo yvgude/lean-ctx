@@ -1850,3 +1850,35 @@ fn a_status_row_names_the_keys_the_app_reads() {
     assert_eq!(value["code"], serde_json::json!("not_found"));
     assert!(value["next_attempt_at"].is_string());
 }
+
+/// bd 40060: the background pass drops an unlinked root and keeps the
+/// others; a damaged opt-out store holds every root back.
+#[test]
+fn unlink_drops_the_root_from_the_background_pass() {
+    let data = tempfile::tempdir().unwrap();
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let roots = vec![
+        a.path().to_string_lossy().into_owned(),
+        b.path().to_string_lossy().into_owned(),
+    ];
+    let mut map = VaultMap::default();
+    map.vaults.insert(
+        "s1".into(),
+        VaultRecord {
+            vault_id: "v1".into(),
+            ns: "acme".into(),
+            name: "payments".into(),
+            sealed: false,
+            roots: roots.clone(),
+        },
+    );
+    crate::unlinked::add(data.path(), a.path()).unwrap();
+    let mut kept = map.clone();
+    super::without_unlinked(data.path(), &mut kept);
+    assert_eq!(kept.vaults["s1"].roots, roots[1..].to_vec());
+
+    std::fs::write(data.path().join(crate::unlinked::FILE), "[").unwrap();
+    super::without_unlinked(data.path(), &mut map);
+    assert!(map.vaults["s1"].roots.is_empty());
+}

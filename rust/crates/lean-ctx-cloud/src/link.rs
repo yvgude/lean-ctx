@@ -111,6 +111,12 @@ fn read_link_file(root: &Path) -> Result<Option<VaultLink>, CloudError> {
     }
 }
 
+/// The link file of `root` itself (no main-checkout fallback), for
+/// [`crate::unlink`].
+pub(crate) fn read_link_file_at(root: &Path) -> Result<Option<VaultLink>, CloudError> {
+    read_link_file(root)
+}
+
 fn parse(path: &Path, text: &str) -> Result<VaultLink, CloudError> {
     parse_link(text).map_err(|why| CloudError::Local(format!("{} {why}", path.display())))
 }
@@ -245,23 +251,10 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), CloudError> {
 }
 
 /// A main checkout and a linked worktree laid out as `git worktree add`
-/// writes them: `<main>/.git/worktrees/wt/{gitdir,commondir}` and
-/// `<wt>/.git` (a file).
+/// writes them; the shared fixture [`crate::unlinked::fake_worktree`].
 #[cfg(test)]
 pub(crate) fn worktree_layout(base: &Path) -> (PathBuf, PathBuf) {
-    let main = base.join("main");
-    let wt = base.join("wt");
-    let admin = main.join(".git").join("worktrees").join("wt");
-    std::fs::create_dir_all(&admin).unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
-    std::fs::write(
-        admin.join("gitdir"),
-        format!("{}\n", wt.join(".git").display()),
-    )
-    .unwrap();
-    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
-    (main, wt)
+    crate::unlinked::fake_worktree(base)
 }
 
 #[cfg(test)]

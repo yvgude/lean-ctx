@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "The signature on this task is too old.",
+    "reason": "signature_expired"
+  }
+}

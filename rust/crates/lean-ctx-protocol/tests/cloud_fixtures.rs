@@ -34,6 +34,12 @@ const INSTANCE_SEED: [u8; 32] = [0x49; 32];
 const POLICY_SEED: [u8; 32] = [0x4f; 32];
 const ORG_SALT: [u8; 32] = [0x0a; 32];
 const KX_PUBLIC: [u8; 32] = [0x58; 32];
+// f3129 app keys (app_key_bind.vectors.json), test-only like the others.
+const CHAT_KEY_SEED: [u8; 32] = [0x43; 32];
+const OPTIN_KEY_SEED: [u8; 32] = [0x50; 32];
+const TASK_PROPOSE_KEY_SEED: [u8; 32] = [0x54; 32];
+const OTHER_APP_KEY_SEED: [u8; 32] = [0x5a; 32];
+const DEVICE_CODE: &str = "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e";
 
 const T0: &str = "2026-10-20T12:00:00Z";
 const T0_UNIX: i64 = 1_792_497_600;
@@ -530,6 +536,7 @@ fn fixtures() -> Vec<Fixture> {
     list.extend(threshold_fixtures());
     list.extend(code_graph_fixtures());
     list.extend(optin_fixtures());
+    list.extend(app_key_fixtures());
     list.push(Fixture {
         name: "vectors",
         kind: Other,
@@ -921,6 +928,26 @@ fn optin_fixtures() -> Vec<Fixture> {
                 json!({"reason": "optin_scope"}),
             ),
         },
+        // p37 docs/API.md (!298), POST /v1/vaults/{pid}/tasks with origin
+        // person: no valid task-propose key signature, or a stale signed_at.
+        Fixture {
+            name: "error.person_unproven",
+            kind: Response,
+            value: error(
+                "forbidden_right",
+                "The person's signature on this task is missing or invalid.",
+                json!({"reason": "person_unproven"}),
+            ),
+        },
+        Fixture {
+            name: "error.signature_expired",
+            kind: Response,
+            value: error(
+                "forbidden_right",
+                "The signature on this task is too old.",
+                json!({"reason": "signature_expired"}),
+            ),
+        },
         Fixture {
             name: "error.daily_budget",
             kind: Response,
@@ -934,6 +961,404 @@ fn optin_fixtures() -> Vec<Fixture> {
 }
 
 /// Section 5: profiles and reputation.
+fn b64url(bytes: &[u8]) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn app_key_seed(kind: app_keys::AppKeyKind) -> [u8; 32] {
+    match kind {
+        app_keys::AppKeyKind::Chat => CHAT_KEY_SEED,
+        app_keys::AppKeyKind::Optin => OPTIN_KEY_SEED,
+        app_keys::AppKeyKind::TaskPropose => TASK_PROPOSE_KEY_SEED,
+    }
+}
+
+fn announcement(kind: app_keys::AppKeyKind, seed: [u8; 32]) -> app_keys::AppKeyAnnouncementV1 {
+    app_keys::AppKeyAnnouncementV1::new(kind, key(seed).verifying_key().as_bytes())
+}
+
+/// All three app keys, sorted by kind.
+fn announced() -> Vec<app_keys::AppKeyAnnouncementV1> {
+    app_keys::AppKeyKind::ALL
+        .into_iter()
+        .map(|kind| announcement(kind, app_key_seed(kind)))
+        .collect()
+}
+
+/// The offer of `kind`'s key from `seed`, its own bind signature included.
+fn app_key_offer(kind: app_keys::AppKeyKind, seed: [u8; 32]) -> Value {
+    let a = announcement(kind, seed);
+    let input =
+        app_keys::app_key_offer_bind_input(kind, &public(INSTANCE_SEED), &a.key_id, &a.public_key)
+            .unwrap();
+    json!({
+        "alg": a.alg, "public_key": a.public_key, "key_id": a.key_id,
+        "bind_signature": b64url(&key(seed).sign(&input).to_bytes()),
+    })
+}
+
+/// The identity point: a small-order Ed25519 public key.
+const SMALL_ORDER_KEY: [u8; 32] = {
+    let mut key = [0u8; 32];
+    key[0] = 1;
+    key
+};
+
+/// `R` = the base point, `s` = 1. Under [`SMALL_ORDER_KEY`] a plain
+/// `verify` accepts it for every message (`[s]B = R + [k]A` with `A` the
+/// identity); `verify_strict` refuses the small-order key.
+fn small_order_signature() -> [u8; 64] {
+    let mut signature = [0x66u8; 64];
+    signature[0] = 0x58;
+    signature[32..].fill(0);
+    signature[32] = 1;
+    signature
+}
+
+/// The S3 signature of the instance key over `keys` for `device_code`.
+fn app_keys_bind_signature(device_code: &str, keys: &[app_keys::AppKeyAnnouncementV1]) -> String {
+    let input =
+        app_keys::app_key_bind_signing_input(device_code, &public(INSTANCE_SEED), keys).unwrap();
+    b64url(&key(INSTANCE_SEED).sign(&input).to_bytes())
+}
+
+fn device_code_app_keys_request() -> Value {
+    json!({
+        "schema": DEVICE_CODE_REQUEST_SCHEMA, "client_id": CLOUD_ENGINE_CLIENT_ID,
+        "instance_version": "3.12.9", "os": "macos", "app_keys": announced(),
+    })
+}
+
+/// The token request binding `keys` (offers and S3 over the same set).
+fn device_token_app_keys_request(keys: &[app_keys::AppKeyAnnouncementV1]) -> Value {
+    let mut request = json!({
+        "schema": DEVICE_TOKEN_REQUEST_SCHEMA, "device_code": DEVICE_CODE,
+        "instance_public_key": public(INSTANCE_SEED), "instance_kx_public_key": B64.encode(KX_PUBLIC),
+        "instance_label": "studio-mac", "instance_version": "3.12.9", "os": "macos",
+        "app_keys_bind_signature": app_keys_bind_signature(DEVICE_CODE, keys),
+    });
+    for a in keys {
+        request[a.kind.request_member()] = app_key_offer(a.kind, app_key_seed(a.kind));
+    }
+    request
+}
+
+fn app_key_error(field: &str, message: &str, reason: Option<&str>) -> Value {
+    let mut extra = json!({"field": field});
+    if let Some(reason) = reason {
+        extra["reason"] = Value::from(reason);
+    }
+    error(app_keys::APP_KEY_ERROR_CODE, message, extra)
+}
+
+/// Every 400 the Cloud answers in f3129 S2/S3, each with the request that
+/// draws it. `announced` is the `app_keys` the Cloud stored with the code.
+fn app_key_negative_vectors() -> Value {
+    use app_keys::AppKeyKind::*;
+    let code_request = device_code_app_keys_request();
+    let code_case = |case: &str, mutate: &dyn Fn(&mut Value)| {
+        let mut request = code_request.clone();
+        mutate(&mut request);
+        json!({
+            "case": case, "route": "POST /v1/device/code", "request": request,
+            "response": app_key_error("app_keys", "app_keys is invalid.", None),
+        })
+    };
+    let all = announced();
+    let token_request = device_token_app_keys_request(&all);
+    let bind_invalid = app_key_error(
+        "app_keys_bind_signature",
+        "app_keys_bind_signature does not verify.",
+        Some(app_keys::REASON_APP_KEY_BIND_INVALID),
+    );
+    let not_announced = |member: &str| {
+        app_key_error(
+            member,
+            "The offered app keys differ from the announced ones.",
+            Some(app_keys::REASON_APP_KEY_NOT_ANNOUNCED),
+        )
+    };
+    let token_case = |case: &str,
+                      announced: &[app_keys::AppKeyAnnouncementV1],
+                      request: Value,
+                      response: Value| {
+        json!({
+            "case": case, "route": "POST /v1/device/token", "announced": announced,
+            "request": request, "response": response,
+        })
+    };
+    let without = |members: &[&str]| {
+        let mut request = token_request.clone();
+        for member in members {
+            request.as_object_mut().unwrap().remove(*member);
+        }
+        request
+    };
+    let mut other_code = token_request.clone();
+    other_code["app_keys_bind_signature"] =
+        Value::from(app_keys_bind_signature("dc_another_device_code", &all));
+    let mut by_app_key = token_request.clone();
+    by_app_key["app_keys_bind_signature"] = Value::from(b64url(
+        &key(CHAT_KEY_SEED)
+            .sign(
+                &app_keys::app_key_bind_signing_input(DEVICE_CODE, &public(INSTANCE_SEED), &all)
+                    .unwrap(),
+            )
+            .to_bytes(),
+    ));
+    let mut offer_forged = token_request.clone();
+    offer_forged["chat_key"]["bind_signature"] =
+        app_key_offer(Chat, OTHER_APP_KEY_SEED)["bind_signature"].clone();
+    let mut swapped = token_request.clone();
+    swapped["chat_key"] = app_key_offer(Chat, OTHER_APP_KEY_SEED);
+    let mut weak = all.clone();
+    weak[0] = app_keys::AppKeyAnnouncementV1::new(Chat, &SMALL_ORDER_KEY);
+    let mut small_order = device_token_app_keys_request(&weak);
+    small_order["chat_key"] = json!({
+        "alg": weak[0].alg, "public_key": weak[0].public_key, "key_id": weak[0].key_id,
+        "bind_signature": b64url(&small_order_signature()),
+    });
+    let mut unknown_code = token_request.clone();
+    unknown_code["device_code"] = json!("dc_unknown_device_code");
+    unknown_code["app_keys_bind_signature"] =
+        Value::from(app_keys_bind_signature("dc_unknown_device_code", &all));
+    let code_refused = || {
+        error(
+            "expired_token",
+            "The code is unknown, expired or used; start again.",
+            json!({}),
+        )
+    };
+    let mut offer_unknown = token_request.clone();
+    offer_unknown["chat_key"]["scope"] = json!("person_publish.v1");
+    let two = all[..2].to_vec();
+    let mut extra = device_token_app_keys_request(&two);
+    extra["task_propose_key"] = app_key_offer(TaskPropose, TASK_PROPOSE_KEY_SEED);
+    json!([
+        code_case("unknown_kind", &|r| r["app_keys"][0]["kind"] =
+            json!("share")),
+        code_case("duplicate_kind", &|r| r["app_keys"][1] =
+            r["app_keys"][0].clone()),
+        code_case("unsorted", &|r| r["app_keys"]
+            .as_array_mut()
+            .unwrap()
+            .reverse()),
+        code_case("too_many", &|r| {
+            let first = r["app_keys"][0].clone();
+            r["app_keys"].as_array_mut().unwrap().push(first);
+        }),
+        code_case("wrong_alg", &|r| r["app_keys"][0]["alg"] = json!("ed448")),
+        code_case("padded_public_key", &|r| {
+            let padded = format!("{}=", r["app_keys"][0]["public_key"].as_str().unwrap());
+            r["app_keys"][0]["public_key"] = Value::from(padded);
+        }),
+        code_case("standard_base64_public_key", &|r| {
+            // Only the alphabet is wrong: no padding, a key with `-`/`_`.
+            let a = (1..=u8::MAX)
+                .map(|byte| announcement(Chat, [byte; 32]))
+                .find(|a| a.public_key.contains(['-', '_']))
+                .unwrap();
+            r["app_keys"][0] = json!({
+                "kind": "chat", "alg": a.alg, "key_id": a.key_id,
+                "public_key": a.public_key.replace('-', "+").replace('_', "/"),
+            });
+        }),
+        code_case("noncanonical_trailing_bits", &|r| {
+            // 32 bytes leave two unused low bits in the last character.
+            let mut key = r["app_keys"][0]["public_key"].as_str().unwrap().to_owned();
+            let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+            let index = alphabet.find(key.pop().unwrap()).unwrap() | 1;
+            key.push(alphabet.as_bytes()[index] as char);
+            r["app_keys"][0]["public_key"] = Value::from(key);
+        }),
+        code_case("unknown_member", &|r| r["app_keys"][0]["label"] =
+            json!("Chat messages")),
+        code_case("short_public_key", &|r| {
+            r["app_keys"][0]["public_key"] = Value::from(b64url(&[0x43; 31]));
+        }),
+        code_case("key_id_mismatch", &|r| {
+            r["app_keys"][0]["key_id"] = r["app_keys"][1]["key_id"].clone();
+        }),
+        token_case(
+            "bind_signature_missing",
+            &all,
+            without(&["app_keys_bind_signature"]),
+            bind_invalid.clone()
+        ),
+        token_case(
+            "nothing_offered",
+            &all,
+            without(&[
+                "app_keys_bind_signature",
+                "chat_key",
+                "optin_key",
+                "task_propose_key"
+            ]),
+            bind_invalid.clone(),
+        ),
+        token_case(
+            "bind_signature_other_device_code",
+            &all,
+            other_code,
+            bind_invalid.clone()
+        ),
+        token_case(
+            "bind_signature_not_by_instance_key",
+            &all,
+            by_app_key,
+            bind_invalid.clone()
+        ),
+        token_case(
+            "offer_bind_signature_forged",
+            &all,
+            offer_forged,
+            app_key_error(
+                "chat_key.bind_signature",
+                "chat_key.bind_signature does not verify.",
+                None,
+            ),
+        ),
+        token_case(
+            "announced_key_not_offered",
+            &all,
+            without(&["task_propose_key"]),
+            not_announced("task_propose_key")
+        ),
+        token_case(
+            "offered_key_swapped",
+            &all,
+            swapped,
+            not_announced("chat_key")
+        ),
+        token_case(
+            "offered_key_not_announced",
+            &two,
+            extra,
+            not_announced("task_propose_key")
+        ),
+        token_case(
+            "offers_without_announcement",
+            &[],
+            without(&["app_keys_bind_signature"]),
+            not_announced("chat_key")
+        ),
+        token_case(
+            "signature_without_announcement",
+            &[],
+            without(&["chat_key", "optin_key", "task_propose_key"]),
+            bind_invalid.clone()
+        ),
+        token_case(
+            "offer_unknown_member",
+            &all,
+            offer_unknown,
+            app_key_error("chat_key", "chat_key is invalid.", None)
+        ),
+        token_case(
+            "offer_small_order_key",
+            &weak,
+            small_order,
+            app_key_error(
+                "chat_key.bind_signature",
+                "chat_key.bind_signature does not verify.",
+                None,
+            ),
+        ),
+        token_case("device_code_unknown", &[], unknown_code, code_refused()),
+        token_case(
+            "device_code_expired",
+            &all,
+            token_request.clone(),
+            code_refused()
+        ),
+        token_case(
+            "device_code_used",
+            &all,
+            token_request.clone(),
+            code_refused()
+        ),
+    ])
+}
+
+fn app_key_bind_vectors() -> Value {
+    let all = announced();
+    let statement = app_keys::app_key_bind_statement(DEVICE_CODE, &public(INSTANCE_SEED), &all);
+    let input =
+        app_keys::app_key_bind_signing_input(DEVICE_CODE, &public(INSTANCE_SEED), &all).unwrap();
+    let per_key = all
+        .iter()
+        .map(|a| {
+            let input = app_keys::app_key_offer_bind_input(
+                a.kind,
+                &public(INSTANCE_SEED),
+                &a.key_id,
+                &a.public_key,
+            )
+            .unwrap();
+            (
+                a.kind.as_str().to_owned(),
+                Value::from(String::from_utf8(input).unwrap()),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    json!({
+        "note": "Test-only keys; never valid outside fixtures and the fake Cloud service.",
+        "keys": {
+            "instance_seed_hex": hex(&INSTANCE_SEED), "instance_ed25519_pub": public(INSTANCE_SEED),
+            "chat_seed_hex": hex(&CHAT_KEY_SEED),
+            "optin_seed_hex": hex(&OPTIN_KEY_SEED),
+            "task_propose_seed_hex": hex(&TASK_PROPOSE_KEY_SEED),
+            "other_app_key_seed_hex": hex(&OTHER_APP_KEY_SEED),
+        },
+        "feature": app_keys::FEATURE_DEVICE_APP_KEYS,
+        "device_code": DEVICE_CODE,
+        "device_code_sha256": hex(&Sha256::digest(DEVICE_CODE.as_bytes())),
+        "statement": statement,
+        "signing_input": String::from_utf8(input).unwrap(),
+        "app_keys_bind_signature": app_keys_bind_signature(DEVICE_CODE, &all),
+        "offer_bind_inputs": per_key,
+        "labels": app_keys::AppKeyKind::ALL
+            .into_iter()
+            .map(|kind| (kind.as_str().to_owned(), Value::from(kind.label())))
+            .collect::<serde_json::Map<_, _>>(),
+        "user_text": app_keys::PAIRING_FAILED_TEXT,
+        "negative": app_key_negative_vectors(),
+    })
+}
+
+/// f3129 S2+S3 (`docs/contracts/app-key-bind-v1.md`).
+fn app_key_fixtures() -> Vec<Fixture> {
+    use Kind::*;
+    vec![
+        Fixture {
+            name: "device_code_app_keys.request",
+            kind: Request,
+            value: device_code_app_keys_request(),
+        },
+        Fixture {
+            name: "device_code_app_keys.response",
+            kind: Response,
+            value: json!({
+                "schema": DEVICE_CODE_SCHEMA, "device_code": DEVICE_CODE, "user_code": "WDJB-MJHT",
+                "verification_uri": "https://cloud.leanctx.com/device",
+                "verification_uri_complete": "https://cloud.leanctx.com/device?user_code=WDJB-MJHT",
+                "interval": 5, "expires_in": 900,
+                "features": [app_keys::FEATURE_DEVICE_APP_KEYS],
+            }),
+        },
+        Fixture {
+            name: "device_token_app_keys.request",
+            kind: Request,
+            value: device_token_app_keys_request(&announced()),
+        },
+        Fixture {
+            name: "app_key_bind.vectors",
+            kind: Other,
+            value: app_key_bind_vectors(),
+        },
+    ]
+}
+
 fn profile_fixtures() -> Vec<Fixture> {
     use Kind::*;
     vec![Fixture {
@@ -1449,6 +1874,13 @@ fn every_fixture_decodes_validates_and_round_trips() {
             }
             n if n.starts_with("task.") => check(&fixture, tasks::TaskV1::validate),
             "task_list.response" => check(&fixture, tasks::TaskListV1::validate),
+            "device_code_app_keys.request" => check(&fixture, DeviceCodeRequestV1::validate),
+            "device_code_app_keys.response" => check(&fixture, |code: &DeviceCodeV1| {
+                assert!(code.offers_app_keys());
+                code.validate()
+            }),
+            "device_token_app_keys.request" => check(&fixture, DeviceTokenRequestV1::validate),
+            "app_key_bind.vectors" => {}
             "vectors" => {}
             other => panic!("fixture {other} has no type mapping"),
         }
@@ -1647,4 +2079,303 @@ fn a_daily_task_limit_is_absent_or_one_to_a_hundred() {
         optin::DailyBudgetV1::default().tasks,
         Some(optin::DEFAULT_DAILY_TASKS)
     );
+}
+
+/// Reference of the Cloud's f3129 token checks in their contract order:
+/// code status (step 0: unknown, expired or used) → schema → `app_keys_bind_signature` → each offer's
+/// `bind_signature` → announced-set equality. Signatures verify strictly.
+/// `Err` is the 400 body.
+fn reference_token_check(
+    announced: &[app_keys::AppKeyAnnouncementV1],
+    request: &Value,
+    code_refused: bool,
+) -> Result<(), Value> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+    let verify = |public: &[u8], message: &[u8], signature: &str| -> bool {
+        let (Ok(public), Ok(signature)) = (
+            <[u8; 32]>::try_from(public),
+            B64URL
+                .decode(signature)
+                .ok()
+                .and_then(|s| <[u8; 64]>::try_from(s).ok())
+                .ok_or(()),
+        ) else {
+            return false;
+        };
+        VerifyingKey::from_bytes(&public).is_ok_and(|key| {
+            key.verify_strict(message, &Signature::from_bytes(&signature))
+                .is_ok()
+        })
+    };
+    if code_refused {
+        return Err(error(
+            "expired_token",
+            "The code is unknown, expired or used; start again.",
+            json!({}),
+        ));
+    }
+    // An offer that does not decode or validate is refused by its member,
+    // before the generic schema check of the rest.
+    for kind in app_keys::AppKeyKind::ALL {
+        let member = kind.request_member();
+        if let Some(offer) = request.get(member) {
+            let invalid = || app_key_error(member, &format!("{member} is invalid."), None);
+            serde_json::from_value::<app_keys::AppKeyOfferV1>(offer.clone())
+                .map_err(|_| invalid())?
+                .validate(kind)
+                .map_err(|_| invalid())?;
+        }
+    }
+    let typed: DeviceTokenRequestV1 = serde_json::from_value(request.clone())
+        .map_err(|_| error("invalid_request", "schema", json!({})))?;
+    let bind_invalid = || {
+        app_key_error(
+            "app_keys_bind_signature",
+            "app_keys_bind_signature does not verify.",
+            Some(app_keys::REASON_APP_KEY_BIND_INVALID),
+        )
+    };
+    if announced.is_empty() {
+        if typed.app_keys_bind_signature.is_some() {
+            return Err(bind_invalid());
+        }
+    } else {
+        let instance = B64.decode(&typed.instance_public_key).unwrap();
+        let input = app_keys::app_key_bind_signing_input(
+            &typed.device_code,
+            &typed.instance_public_key,
+            announced,
+        )
+        .unwrap();
+        match &typed.app_keys_bind_signature {
+            Some(signature) if verify(&instance, &input, signature) => {}
+            _ => return Err(bind_invalid()),
+        }
+    }
+    for (kind, offer) in typed.app_key_offers() {
+        let raw = app_keys::decode_b64url_exact(&offer.public_key, 32, "public_key").unwrap();
+        let input = app_keys::app_key_offer_bind_input(
+            kind,
+            &typed.instance_public_key,
+            &offer.key_id,
+            &offer.public_key,
+        )
+        .unwrap();
+        if !verify(&raw, &input, &offer.bind_signature) {
+            // The field names the exact request path of the signature.
+            let field = format!("{}.bind_signature", kind.request_member());
+            return Err(app_key_error(
+                &field,
+                &format!("{field} does not verify."),
+                None,
+            ));
+        }
+    }
+    app_keys::offered_equals_announced(announced, &typed.app_key_offers()).map_err(|member| {
+        app_key_error(
+            member,
+            "The offered app keys differ from the announced ones.",
+            Some(app_keys::REASON_APP_KEY_NOT_ANNOUNCED),
+        )
+    })
+}
+
+/// Reference of the Cloud's f3129 code check: any failure in `app_keys`,
+/// decode errors (unknown kind or member) included, is 400 `invalid_field`,
+/// `field: "app_keys"`, never a generic schema error.
+fn reference_code_check(request: &Value) -> Result<(), Value> {
+    let refuse = || app_key_error("app_keys", "app_keys is invalid.", None);
+    if let Some(keys) = request.get("app_keys") {
+        let keys: Vec<app_keys::AppKeyAnnouncementV1> =
+            serde_json::from_value(keys.clone()).map_err(|_| refuse())?;
+        app_keys::validate_app_keys(&keys).map_err(|_| refuse())?;
+    }
+    let schema = || error("invalid_request", "schema", json!({}));
+    let mut rest = request.clone();
+    rest.as_object_mut().ok_or_else(schema)?.remove("app_keys");
+    serde_json::from_value::<DeviceCodeRequestV1>(rest)
+        .map_err(|_| schema())?
+        .validate()
+        .map_err(|_| schema())
+}
+
+fn on_disk(name: &str) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(fixture_dir().join(name)).unwrap()).unwrap()
+}
+
+/// The committed f3129 fixtures verify on their own: every signature in
+/// them checks against the documented test keys, so 63 can rely on them and
+/// a drift of the generator or the files fails here.
+#[test]
+fn app_key_fixtures_verify_from_disk() {
+    reference_code_check(&on_disk("device_code_app_keys.request.json")).unwrap();
+    let code: DeviceCodeRequestV1 =
+        serde_json::from_value(on_disk("device_code_app_keys.request.json")).unwrap();
+    code.validate().unwrap();
+    assert_eq!(code.app_keys, announced());
+    let answer: DeviceCodeV1 =
+        serde_json::from_value(on_disk("device_code_app_keys.response.json")).unwrap();
+    assert!(answer.offers_app_keys());
+    let raw = on_disk("device_token_app_keys.request.json");
+    let token: DeviceTokenRequestV1 = serde_json::from_value(raw.clone()).unwrap();
+    token.validate().unwrap();
+    assert_eq!(token.device_code, answer.device_code);
+    assert_eq!(token.instance_public_key, public(INSTANCE_SEED));
+    reference_token_check(&code.app_keys, &raw, false).unwrap();
+
+    let vectors = on_disk("app_key_bind.vectors.json");
+    let input = app_keys::app_key_bind_signing_input(
+        &token.device_code,
+        &token.instance_public_key,
+        &code.app_keys,
+    )
+    .unwrap();
+    assert_eq!(
+        vectors["signing_input"],
+        String::from_utf8(input.clone()).unwrap()
+    );
+    assert_eq!(
+        vectors["app_keys_bind_signature"],
+        token.app_keys_bind_signature.clone().unwrap()
+    );
+    assert_eq!(
+        vectors["device_code_sha256"],
+        hex(&Sha256::digest(token.device_code.as_bytes()))
+    );
+    // Precondition under which canonical_json equals JCS (RFC 8785): every
+    // key and string is printable ASCII without `"` or `\`, so both sort by
+    // the same code units and neither escapes anything. This checks that
+    // precondition; it does not compare against an independent JCS
+    // implementation.
+    fn plain_ascii(value: &Value) -> bool {
+        let ok = |s: &str| {
+            s.bytes()
+                .all(|b| (0x20..0x7f).contains(&b) && b != b'"' && b != b'\\')
+        };
+        match value {
+            Value::Object(fields) => fields.iter().all(|(k, v)| ok(k) && plain_ascii(v)),
+            Value::Array(values) => values.iter().all(plain_ascii),
+            Value::String(s) => ok(s),
+            _ => false,
+        }
+    }
+    assert!(plain_ascii(&vectors["statement"]));
+    assert_eq!(
+        app_keys::APP_KEY_BIND_DOMAIN
+            .as_bytes()
+            .to_vec()
+            .into_iter()
+            .chain(canonical_json(&vectors["statement"]).unwrap())
+            .collect::<Vec<_>>(),
+        input
+    );
+    // Seeds in the vectors are the keys the fixtures carry.
+    for kind in app_keys::AppKeyKind::ALL {
+        let seed: [u8; 32] = (0..32)
+            .map(|i| {
+                let hex_seed = vectors["keys"][format!("{}_seed_hex", kind.as_str())]
+                    .as_str()
+                    .unwrap();
+                u8::from_str_radix(&hex_seed[2 * i..2 * i + 2], 16).unwrap()
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        assert_eq!(seed, app_key_seed(kind));
+        assert_eq!(raw[kind.request_member()], app_key_offer(kind, seed));
+    }
+
+    for case in vectors["negative"].as_array().unwrap() {
+        let name = case["case"].as_str().unwrap();
+        let body: CloudErrorBody = serde_json::from_value(case["response"].clone())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        if case["response"]["error"]["code"] == "invalid_field" {
+            assert_eq!(body.error.code, CloudErrorCode::InvalidField, "{name}");
+        }
+        // A dotted field is a path that exists in the request it refuses.
+        if let Some(field) = body.error.field.as_deref().filter(|f| f.contains('.')) {
+            let found = field
+                .split('.')
+                .try_fold(&case["request"], |at, member| at.get(member));
+            assert!(found.is_some(), "{name}: {field} is not in the request");
+        }
+        if case["route"] == "POST /v1/device/code" {
+            let refused = serde_json::from_value::<DeviceCodeRequestV1>(case["request"].clone())
+                .map_or(true, |request| request.validate().is_err());
+            assert!(refused, "{name} passes the code request validator");
+            assert_eq!(body.error.field.as_deref(), Some("app_keys"), "{name}");
+            assert_eq!(
+                reference_code_check(&case["request"]),
+                Err(case["response"].clone()),
+                "{name}"
+            );
+            continue;
+        }
+        let announced: Vec<app_keys::AppKeyAnnouncementV1> =
+            serde_json::from_value(case["announced"].clone()).unwrap();
+        app_keys::validate_app_keys(&announced).unwrap();
+        // Step 0 is the Cloud's own state of the code, not in the request.
+        let refused = name.starts_with("device_code_");
+        assert_eq!(
+            reference_token_check(&announced, &case["request"], refused),
+            Err(case["response"].clone()),
+            "{name}"
+        );
+        if name == "offer_small_order_key" {
+            // Only strict verification refuses this offer.
+            let offer = &case["request"]["chat_key"];
+            let raw = app_keys::decode_b64url_exact(
+                offer["public_key"].as_str().unwrap(),
+                32,
+                "public_key",
+            )
+            .unwrap();
+            let public = VerifyingKey::from_bytes(&raw.try_into().unwrap()).unwrap();
+            assert!(public.is_weak());
+            let input = app_keys::app_key_offer_bind_input(
+                app_keys::AppKeyKind::Chat,
+                case["request"]["instance_public_key"].as_str().unwrap(),
+                offer["key_id"].as_str().unwrap(),
+                offer["public_key"].as_str().unwrap(),
+            )
+            .unwrap();
+            let bytes: [u8; 64] = app_keys::decode_b64url_exact(
+                offer["bind_signature"].as_str().unwrap(),
+                64,
+                "bind_signature",
+            )
+            .unwrap()
+            .try_into()
+            .unwrap();
+            let signature = Signature::from_bytes(&bytes);
+            assert!(public.verify(&input, &signature).is_ok(), "lenient accepts");
+            assert!(
+                public.verify_strict(&input, &signature).is_err(),
+                "strict refuses"
+            );
+        }
+        if let Some(text) = app_keys::app_key_refusal_text(body.error.reason.as_deref()) {
+            assert_eq!(text, vectors["user_text"]);
+        }
+    }
+}
+
+/// Old requests stay byte-identical: no app keys, no new members.
+#[test]
+fn requests_without_app_keys_keep_their_bytes() {
+    let plain = DeviceCodeRequestV1::new("3.12.0", EngineOs::Macos);
+    assert_eq!(
+        serde_json::to_value(&plain).unwrap(),
+        on_disk("device_code.request.json")
+    );
+    let token: DeviceTokenRequestV1 =
+        serde_json::from_value(on_disk("device_token.request.json")).unwrap();
+    assert!(token.app_key_offers().is_empty() && token.app_keys_bind_signature.is_none());
+    assert_eq!(
+        serde_json::to_value(&token).unwrap(),
+        on_disk("device_token.request.json")
+    );
+    let answer: DeviceCodeV1 =
+        serde_json::from_value(on_disk("device_code.response.json")).unwrap();
+    assert!(!answer.offers_app_keys(), "no feature, no app-key binding");
 }

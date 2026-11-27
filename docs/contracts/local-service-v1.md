@@ -70,6 +70,9 @@ same arguments (the document and a final `\n`), `Content-Type: application/json`
 | POST | `/v1/local/cloud/decisions/send` | `decisions.send` | (none: app-only, `x-leanctx-app-key`; optional `updated_at`) |
 | POST | `/v1/local/cloud/decisions/supersede` | `decisions.supersede` | (none: app-only, `x-leanctx-app-key`) |
 | POST | `/v1/local/cloud/decisions/revoke` | `decisions.revoke` | (none: app-only, `x-leanctx-app-key`) |
+| GET | `/v1/local/cloud/pickup` | `cloud.pickup` | (none: app-only, `x-leanctx-app-key`) |
+| POST | `/v1/local/cloud/pickup/set` | `cloud.pickup.set` | (none: app-only, `x-leanctx-app-key`) |
+| POST | `/v1/local/cloud/pickup/key` | `cloud.pickup.key` | (none: app-only, `x-leanctx-app-key`) |
 | GET | `/v1/local/cloud/members` | `cloud.members.list` | `cloud members list --json` |
 | POST | `/v1/local/cloud/billing/checkout` | `cloud.billing.checkout` | `cloud billing checkout --json` |
 | POST | `/v1/local/cloud/billing/portal` | `cloud.billing.portal` | `cloud billing portal --json` |

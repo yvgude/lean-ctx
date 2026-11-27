@@ -542,7 +542,7 @@ pub(crate) fn settle_queued(data_dir: &Path, client_msg_id: &str) -> Result<bool
 
 /// Which bus protocol the enrolled Cloud speaks, as the instance card
 /// found out (E44 exists only on a C0 2.0 Cloud): `<config>/bus_protocol.json`.
-const PROTOCOL_FILE: &str = "bus_protocol.json";
+pub(crate) const PROTOCOL_FILE: &str = "bus_protocol.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct ProtocolRecord {

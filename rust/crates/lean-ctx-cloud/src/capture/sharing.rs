@@ -79,8 +79,11 @@ pub fn decide(
     if !crate::sync::place::capture_allowed(config) {
         return Some(Sharing::Off);
     }
+    // An unlinked folder is not shared, also not through its main
+    // checkout's record (bd 40060).
+    let map = VaultMap::load(store.data_dir());
     Some(
-        match VaultMap::load(store.data_dir()).for_root(project_root) {
+        match crate::unlinked::shared_record(store.data_dir(), &map, project_root) {
             Some(vault) => Sharing::NextSync {
                 vault: format!("{}/{}", vault.ns, vault.name),
             },
@@ -278,6 +281,63 @@ mod tests {
         let line = local.line("Acme");
         assert!(line.contains("local only: no_reference"), "{line}");
         assert!(line.contains("--ref file:"), "the fix is named: {line}");
+    }
+
+    /// bd 40060: a remember in an unlinked worktree never says it goes to
+    /// the vault of the main checkout.
+    #[test]
+    fn unlink_of_a_worktree_says_not_shared() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (main, wt) = crate::unlinked::fake_worktree(&base);
+        let store = CloudStore::at(base.join("config"), base.join("data"));
+        store
+            .write_config(
+                crate::state::INSTANCE_FILE,
+                &crate::state::InstanceRecord {
+                    instance_id: "inst_a".into(),
+                    org_id: "org_a".into(),
+                    org_name: "Acme".into(),
+                    label: "mac".into(),
+                    url: "https://cloud.example".into(),
+                    org_salt_id: "salt".into(),
+                    enrolled_at: "2026-10-24T00:00:00Z".into(),
+                    web_url: None,
+                    org_kind: None,
+                    company_name: None,
+                },
+            )
+            .unwrap();
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "s1".into(),
+            crate::vault::VaultRecord {
+                vault_id: "v1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![main.to_string_lossy().into_owned()],
+            },
+        );
+        map.save(store.data_dir()).unwrap();
+        let config = crate::CloudConfig {
+            auto_capture: true,
+            enabled: None,
+            ..crate::CloudConfig::default()
+        };
+        let fact = "The daemon syncs every shared vault in the background.";
+        let wt_text = wt.to_string_lossy();
+        assert_eq!(
+            decide(&store, &config, &wt_text, fact, true),
+            Some(Sharing::NextSync {
+                vault: "acme/payments".into()
+            })
+        );
+        crate::unlinked::add(store.data_dir(), &wt).unwrap();
+        assert_eq!(
+            decide(&store, &config, &wt_text, fact, true),
+            Some(Sharing::NotShared)
+        );
     }
 
     #[test]
