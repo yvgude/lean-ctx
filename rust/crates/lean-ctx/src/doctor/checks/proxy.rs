@@ -4,7 +4,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
-use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
+use crate::doctor::{Advice, BOLD, DIM, FixAction, GREEN, Outcome, RED, RST, Severity, YELLOW};
 
 pub(crate) fn proxy_health_outcome() -> Outcome {
     use lean_ctx::core::config::Config;
@@ -158,7 +158,7 @@ fn removed_routing_tiers_line(rules: &lean_ctx::core::config::RoutingRules) -> O
     ))
 }
 
-pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
+pub(crate) fn proxy_subscription_conflict_outcome() -> Option<(Outcome, Advice)> {
     use lean_ctx::core::config::Config;
 
     let home = dirs::home_dir()?;
@@ -190,16 +190,46 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
         return None;
     }
 
-    Some(Outcome {
+    Some(subscription_conflict())
+}
+
+/// The Claude auth finding: a Pro/Max login routed to the local proxy
+/// without an API key (rc4-220: title, one sentence, named fixes).
+pub(crate) fn subscription_conflict() -> (Outcome, Advice) {
+    let advice = Advice {
+        id: "claude_subscription_via_proxy",
+        title: "Claude subscription goes through the proxy".to_string(),
+        severity: Severity::Error,
+        detail: "Claude Code sends its requests to the LeanCTX proxy without an \
+                 ANTHROPIC_API_KEY, so it uses your Pro/Max login, and Anthropic does \
+                 not allow third-party tools to route a subscription login."
+            .to_string(),
+        actions: vec![
+            FixAction {
+                label: "Turn off the proxy".to_string(),
+                changes: "The proxy goes off for every client on this computer (Claude Code, \
+                          Codex, shell exports and autostart): Claude Code talks to \
+                          api.anthropic.com again, your subscription keeps working and the \
+                          ctx_* tools still save tokens."
+                    .to_string(),
+                commands: vec!["lean-ctx proxy disable".to_string()],
+            },
+            FixAction {
+                label: "Use an API key".to_string(),
+                changes: "Set ANTHROPIC_API_KEY where Claude Code starts (your shell profile \
+                          or Claude Code's settings.json), then turn the proxy on again. \
+                          Requests keep going through the proxy and are billed pay-as-you-go \
+                          to your API key."
+                    .to_string(),
+                commands: vec!["lean-ctx proxy enable".to_string()],
+            },
+        ],
+    };
+    let outcome = Outcome {
         ok: false,
-        line: format!(
-            "{BOLD}Claude auth{RST}  {RED}ANTHROPIC_BASE_URL → proxy but no ANTHROPIC_API_KEY (Pro/Max subscription){RST}\n\
-             {DIM}         Anthropic does not permit third-party tools to route a subscription login;{RST}\n\
-             {DIM}         keep it on api.anthropic.com. Fix one of:{RST}\n\
-             {YELLOW}           lean-ctx proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
-             {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: lean-ctx proxy enable  (pay-as-you-go via proxy){RST}"
-        ),
-    })
+        line: format!("{BOLD}Claude auth{RST}  {RED}{}{RST}", advice.title),
+    };
+    (outcome, advice)
 }
 pub(crate) fn proxy_upstream_outcome() -> Outcome {
     use lean_ctx::core::config::{Config, ProxyProvider, is_local_proxy_url};

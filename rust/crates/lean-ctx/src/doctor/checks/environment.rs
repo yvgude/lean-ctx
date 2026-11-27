@@ -4,7 +4,9 @@
 
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
-use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, WHITE, YELLOW};
+use crate::doctor::{
+    Advice, BOLD, DIM, FixAction, GREEN, Outcome, RED, RST, Severity, WHITE, YELLOW,
+};
 use std::net::TcpListener;
 
 /// Cognition v2 activation: how many science-backed subsystems have actually
@@ -1171,44 +1173,80 @@ pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
 }
 
 /// GH #1470: Detect version skew between CLI binary and installed agent-bridge
-/// packages (pi-lean-ctx, Cursor extension, CodeBuddy extension).
-pub(crate) fn version_skew_outcomes() -> Vec<Outcome> {
+/// packages (pi-lean-ctx, Cursor extension, CodeBuddy extension). A skewed
+/// bridge carries [`Advice`] (rc4-220).
+pub(crate) fn version_skew_outcomes() -> Vec<(Outcome, Option<Advice>)> {
     let cli_version = env!("CARGO_PKG_VERSION");
     let mut results = Vec::new();
 
     // 1) pi-lean-ctx npm package version
     if let Some(pi_ver) = detect_pi_lean_ctx_version() {
-        let ok = versions_compatible(cli_version, &pi_ver);
-        let status = if ok {
-            format!("{GREEN}{pi_ver}{RST}")
-        } else {
-            format!(
-                "{RED}{pi_ver} (CLI is {cli_version}){RST}  {DIM}update: pi install npm:pi-lean-ctx@latest{RST}"
-            )
-        };
-        results.push(Outcome {
-            ok,
-            line: format!("{BOLD}Bridge version: pi-lean-ctx{RST}  {status}"),
-        });
+        results.push(bridge_version_outcome(Bridge::Pi, &pi_ver, cli_version));
     }
 
     // 2) Cursor extension version (from package.json in known paths)
     if let Some(ext_ver) = detect_cursor_extension_version() {
-        let ok = versions_compatible(cli_version, &ext_ver);
-        let status = if ok {
-            format!("{GREEN}{ext_ver}{RST}")
-        } else {
-            format!(
-                "{RED}{ext_ver} (CLI is {cli_version}){RST}  {DIM}update the lean-ctx extension in Cursor{RST}"
-            )
-        };
-        results.push(Outcome {
-            ok,
-            line: format!("{BOLD}Bridge version: Cursor extension{RST}  {status}"),
-        });
+        results.push(bridge_version_outcome(
+            Bridge::Cursor,
+            &ext_ver,
+            cli_version,
+        ));
     }
 
     results
+}
+
+/// An agent bridge whose version doctor compares with the CLI's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Bridge {
+    Pi,
+    Cursor,
+}
+
+/// The bridge version line, with [`Advice`] when the bridge is out of step
+/// with the CLI. Pure, so the texts are covered without the bridge installed.
+pub(crate) fn bridge_version_outcome(
+    bridge: Bridge,
+    bridge_version: &str,
+    cli_version: &str,
+) -> (Outcome, Option<Advice>) {
+    let name = match bridge {
+        Bridge::Pi => "pi-lean-ctx",
+        Bridge::Cursor => "Cursor extension",
+    };
+    // The Cursor extension has its own version line (0.x) and declares no CLI
+    // range, so there is nothing to compare: its version is shown, never a skew
+    // (bd !693). pi-lean-ctx is released with the CLI and must match it.
+    if bridge == Bridge::Cursor || versions_compatible(cli_version, bridge_version) {
+        let outcome = Outcome {
+            ok: true,
+            line: format!("{BOLD}Bridge version: {name}{RST}  {GREEN}{bridge_version}{RST}"),
+        };
+        return (outcome, None);
+    }
+    // only pi-lean-ctx can be out of step
+    let advice = Advice {
+        id: "bridge_version_pi",
+        title: "pi-lean-ctx is out of date".to_string(),
+        severity: Severity::Warning,
+        detail: format!(
+            "pi uses pi-lean-ctx {bridge_version}, but this computer runs lean-ctx \
+                 {cli_version}, so pi may miss tools or send requests lean-ctx no longer reads."
+        ),
+        actions: vec![FixAction {
+            label: "Update pi-lean-ctx".to_string(),
+            changes: "pi installs the newest pi-lean-ctx; restart pi afterwards.".to_string(),
+            commands: vec!["pi install npm:pi-lean-ctx@latest".to_string()],
+        }],
+    };
+    let outcome = Outcome {
+        ok: false,
+        line: format!(
+            "{BOLD}Bridge version: {name}{RST}  {RED}{}{RST}  {DIM}({bridge_version}, CLI is {cli_version}){RST}",
+            advice.title
+        ),
+    };
+    (outcome, Some(advice))
 }
 
 /// Two versions are "compatible" if their major.minor match.
@@ -1283,28 +1321,54 @@ fn detect_cursor_extension_version() -> Option<String> {
         return None;
     }
 
+    // Cursor keeps old extension directories after an update and read_dir has
+    // no order: the highest version is the one Cursor runs (bd !693).
     let entries = std::fs::read_dir(&ext_dir).ok()?;
-    for entry in entries.flatten() {
+    let versions = entries.flatten().filter_map(|entry| {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.contains("lean-ctx") || name_str.contains("leanctx") {
-            let pkg_json = entry.path().join("package.json");
-            if let Ok(content) = std::fs::read_to_string(&pkg_json) {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(ver) = json.get("version").and_then(|v| v.as_str()) {
-                        return Some(ver.to_string());
-                    }
-                }
-            }
+        if !(name_str.contains("lean-ctx") || name_str.contains("leanctx")) {
+            return None;
         }
-    }
+        let content = std::fs::read_to_string(entry.path().join("package.json")).ok()?;
+        let json = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+        json.get("version")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    });
+    highest_version(versions)
+}
 
-    None
+/// The highest of dotted versions, compared number by number ("0.10.0" above
+/// "0.9.3"); a part that is not a number counts as 0.
+fn highest_version(versions: impl IntoIterator<Item = String>) -> Option<String> {
+    let key = |v: &str| -> Vec<u64> {
+        v.split(['.', '-', '+'])
+            .take(3)
+            .map(|p| p.parse().unwrap_or(0))
+            .collect()
+    };
+    versions.into_iter().max_by(|a, b| key(a).cmp(&key(b)))
 }
 
 #[cfg(test)]
 mod version_skew_tests {
     use super::*;
+
+    #[test]
+    fn the_highest_cursor_extension_version_wins() {
+        let found = ["0.3.9", "0.10.0", "0.4.0"].map(String::from);
+        assert_eq!(highest_version(found).as_deref(), Some("0.10.0"));
+        assert_eq!(highest_version(Vec::new()), None);
+    }
+
+    #[test]
+    fn the_current_cursor_extension_is_in_step() {
+        let (outcome, advice) = bridge_version_outcome(Bridge::Cursor, "0.4.0", "3.12.8");
+        assert!(outcome.ok, "{}", outcome.line);
+        assert!(advice.is_none());
+        assert!(outcome.line.contains("0.4.0"));
+    }
 
     #[test]
     fn compatible_same_version() {

@@ -162,6 +162,10 @@ struct JsonCheck {
     /// A scored check that failed (rendered ✗). An unscored entry that is
     /// not ok is optional (rendered –) and never needs attention.
     needs_attention: bool,
+    /// What the person can do about it (rc4-220), for checks that know.
+    /// Absent otherwise, so older readers see the same four fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    advice: Option<Advice>,
 }
 
 impl JsonCheck {
@@ -171,8 +175,44 @@ impl JsonCheck {
             name,
             scored,
             needs_attention: scored && !ok,
+            advice: None,
         }
     }
+}
+
+/// A finding as a person reads it (rc4-220): a short title, one sentence on
+/// what is wrong, and the ways to fix it, each saying what it changes.
+/// Commands sit in their own field, so a client can show them on demand.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct Advice {
+    /// Stable id of the finding; a client may key its own copy on it.
+    pub id: &'static str,
+    pub title: String,
+    pub severity: Severity,
+    /// One sentence: what is wrong and why it matters.
+    pub detail: String,
+    /// The ways to fix it; more than one means "one of these".
+    pub actions: Vec<FixAction>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Severity {
+    /// Something does not work as set up.
+    Error,
+    /// It works, but something is out of date or at risk.
+    Warning,
+}
+
+/// One way to fix a finding.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct FixAction {
+    /// What a button would say, e.g. "Turn off the proxy".
+    pub label: String,
+    /// What it changes, in one sentence.
+    pub changes: String,
+    /// The terminal commands, in order; empty when it is done in an app.
+    pub commands: Vec<String>,
 }
 
 /// The tally of a doctor run, derived from its emitted entries only.
@@ -242,6 +282,21 @@ impl Scoreboard {
         if !self.json_mode {
             print_check(outcome, true);
         }
+    }
+
+    /// A scored check that may carry [`Advice`]: counted like
+    /// [`Scoreboard::check`]; the advice goes into `--json` and is printed
+    /// below the line in text mode.
+    fn check_advised(&mut self, outcome: &Outcome, advice: Option<Advice>) {
+        if !self.json_mode {
+            print_check(outcome, true);
+            if let Some(advice) = &advice {
+                print_advice(advice);
+            }
+        }
+        let mut entry = JsonCheck::new(outcome.ok, strip_ansi(&outcome.line), true);
+        entry.advice = advice;
+        self.entries.push(entry);
     }
 
     /// An optional/advisory line: render it but never count it toward the score.
@@ -842,8 +897,8 @@ fn run_inner(json: bool) -> u32 {
 
     // GH #1470: Version-skew detection between CLI and agent bridges
     let skew_outcomes = version_skew_outcomes();
-    for skew_check in &skew_outcomes {
-        board.check(&skew_check);
+    for (skew_check, advice) in skew_outcomes {
+        board.check_advised(&skew_check, advice);
     }
 
     // Plan mode (advisory)
@@ -985,9 +1040,8 @@ fn run_inner(json: bool) -> u32 {
     }
 
     // 21) Claude Pro/Max subscription routed through the proxy without an API key
-    let subscription_conflict = proxy_subscription_conflict_outcome();
-    if let Some(ref check) = subscription_conflict {
-        board.check(check);
+    if let Some((check, advice)) = proxy_subscription_conflict_outcome() {
+        board.check_advised(&check, Some(advice));
     }
 
     // 21a) Removed automatic model routing: a leftover tier table routes nothing.
@@ -1333,6 +1387,179 @@ mod tests {
         assert!(plain.contains("1/3 checks passed"), "{plain}");
         assert!(plain.contains("2 check(s) need attention"), "{plain}");
         assert!(plain.contains("1 optional item(s)"), "{plain}");
+    }
+
+    /// rc4-220: the app showed the Claude auth and bridge version findings as
+    /// raw terminal text. `--json` now carries each as title, severity, one
+    /// sentence and named fixes with their commands in a field of their own;
+    /// entries without advice keep exactly the four old fields.
+    #[test]
+    fn doctor_json_carries_advice_for_the_claude_auth_and_bridge_findings() {
+        use super::checks::{Bridge, bridge_version_outcome, subscription_conflict};
+        use super::{Outcome, Scoreboard};
+        let mut board = Scoreboard::new(true);
+        board.check(&Outcome {
+            ok: true,
+            line: "Version ok".to_owned(),
+        });
+        let (auth, auth_advice) = subscription_conflict();
+        board.check_advised(&auth, Some(auth_advice));
+        let (pi, pi_advice) = bridge_version_outcome(Bridge::Pi, "3.11.2", "3.12.7");
+        board.check_advised(&pi, pi_advice);
+        // the current Cursor extension (packages/vscode-lean-ctx 0.4.0) is in step
+        let (cursor, cursor_advice) = bridge_version_outcome(Bridge::Cursor, "0.4.0", "3.12.7");
+        assert!(cursor.ok && cursor_advice.is_none());
+        board.check_advised(&cursor, cursor_advice);
+        let (pi_now, pi_now_advice) = bridge_version_outcome(Bridge::Pi, "3.12.7", "3.12.7");
+        assert!(pi_now.ok && pi_now_advice.is_none());
+
+        let document = board.report_json();
+        let checks = document["checks"].as_array().expect("checks array");
+        assert_eq!(document["needs_attention"], 2, "{document}");
+        for plain in [&checks[0], &checks[3]] {
+            let keys: Vec<&str> = plain
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(keys.len(), 4, "{plain}");
+            assert!(plain.get("advice").is_none(), "{plain}");
+        }
+
+        let auth = &checks[1]["advice"];
+        assert_eq!(auth["id"], "claude_subscription_via_proxy");
+        assert_eq!(auth["title"], "Claude subscription goes through the proxy");
+        assert_eq!(auth["severity"], "error");
+        assert!(auth["detail"].as_str().unwrap().ends_with('.'), "{auth}");
+        let actions = auth["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 2, "{auth}");
+        assert_eq!(actions[0]["label"], "Turn off the proxy");
+        assert_eq!(actions[0]["commands"][0], "lean-ctx proxy disable");
+        assert!(
+            actions[0]["changes"].as_str().unwrap().contains("Codex"),
+            "proxy disable turns it off for every client: {auth}"
+        );
+        // only runnable commands: the key step is in words, not a placeholder export
+        assert_eq!(
+            actions[1]["commands"].as_array().unwrap().len(),
+            1,
+            "{auth}"
+        );
+        assert_eq!(actions[1]["commands"][0], "lean-ctx proxy enable");
+        assert!(
+            actions[1]["changes"]
+                .as_str()
+                .unwrap()
+                .contains("ANTHROPIC_API_KEY"),
+            "{auth}"
+        );
+        // The check line is the title, not the old multi-line terminal block.
+        let name = checks[1]["name"].as_str().unwrap();
+        assert_eq!(
+            name,
+            "Claude auth  Claude subscription goes through the proxy"
+        );
+
+        let pi = &checks[2]["advice"];
+        assert_eq!(pi["id"], "bridge_version_pi");
+        assert_eq!(pi["severity"], "warning");
+        let detail = pi["detail"].as_str().unwrap();
+        assert!(
+            detail.contains("3.11.2") && detail.contains("3.12.7"),
+            "{pi}"
+        );
+        assert_eq!(pi["actions"][0]["label"], "Update pi-lean-ctx");
+        assert_eq!(
+            pi["actions"][0]["commands"][0],
+            "pi install npm:pi-lean-ctx@latest"
+        );
+        for entry in checks {
+            if let Some(advice) = entry.get("advice") {
+                for action in advice["actions"].as_array().unwrap() {
+                    assert!(
+                        action["changes"].as_str().unwrap().ends_with('.'),
+                        "{action}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// rc4-220, text mode: the advice is printed below its check line as a
+    /// sentence and the fixes, each with what it changes, commands indented.
+    #[test]
+    fn doctor_text_prints_advice_as_sentence_fixes_and_commands() {
+        use super::checks::subscription_conflict;
+        use super::common::advice_lines;
+        let (_, advice) = subscription_conflict();
+        let plain: Vec<String> = advice_lines(&advice)
+            .iter()
+            .map(|l| strip_ansi(l))
+            .collect();
+        assert!(
+            plain[0]
+                .trim()
+                .starts_with("Claude Code sends its requests"),
+            "{plain:?}"
+        );
+        assert_eq!(plain[1].trim(), "Fix it one of these ways:");
+        assert!(
+            plain[2]
+                .trim()
+                .starts_with("Turn off the proxy  The proxy goes off for every client"),
+            "{plain:?}"
+        );
+        assert_eq!(plain[3].trim(), "$ lean-ctx proxy disable");
+        assert!(
+            plain.iter().any(|l| l.trim() == "$ lean-ctx proxy enable"),
+            "{plain:?}"
+        );
+    }
+
+    /// rc4-220, text mode: a single fix has no "one of these ways" line, and a
+    /// fix without commands prints no `$` line.
+    #[test]
+    fn doctor_text_prints_a_single_fix_and_a_fix_without_commands() {
+        use super::checks::{Bridge, bridge_version_outcome};
+        use super::common::advice_lines;
+        use super::{Advice, FixAction, Severity};
+        let (_, advice) = bridge_version_outcome(Bridge::Pi, "3.11.2", "3.12.7");
+        let plain: Vec<String> = advice_lines(&advice.expect("pi is out of step"))
+            .iter()
+            .map(|l| strip_ansi(l))
+            .collect();
+        assert_eq!(plain.len(), 3, "{plain:?}");
+        assert!(
+            plain.iter().all(|l| !l.contains("one of these ways")),
+            "{plain:?}"
+        );
+        assert!(
+            plain[1].trim().starts_with("Update pi-lean-ctx  "),
+            "{plain:?}"
+        );
+        assert_eq!(plain[2].trim(), "$ pi install npm:pi-lean-ctx@latest");
+
+        let words_only = Advice {
+            id: "words_only",
+            title: "A step without commands".to_string(),
+            severity: Severity::Warning,
+            detail: "Only words.".to_string(),
+            actions: vec![FixAction {
+                label: "Do it by hand".to_string(),
+                changes: "Nothing to type.".to_string(),
+                commands: Vec::new(),
+            }],
+        };
+        let plain: Vec<String> = advice_lines(&words_only)
+            .iter()
+            .map(|l| strip_ansi(l))
+            .collect();
+        assert_eq!(plain.len(), 2, "{plain:?}");
+        assert!(
+            plain.iter().all(|l| !l.trim().starts_with('$')),
+            "{plain:?}"
+        );
     }
 
     /// rc3-32: Claude Code installed but attached per session (no lean-ctx

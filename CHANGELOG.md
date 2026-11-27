@@ -105,6 +105,14 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   token no longer pairs the chat key; connect from LeanCTX Code for that.
 
 ### Fixed
+- **`lean-ctx doctor --json` explains what to do (rc4-220).** A finding about
+  Claude sign-in or bridge versions now carries an `advice` object (id, title,
+  severity, a one-sentence detail, and named fixes with what each changes and
+  its commands), so LeanCTX Code shows it instead of raw terminal text; other
+  entries keep their four fields, and the text output prints the same advice
+  under the check. The Cursor extension is versioned on its own and is shown,
+  never reported as out of date.
+
 - **Readable task lists on request.** `lean-ctx cloud tasks list` and `show` take `--plain` to print task texts without the data markers; without it the texts stay marked as data, so agents never read a task as an instruction. `lean-ctx cloud stop --help` now explains stopping, releasing and checking a team stop on its own page, and the release message no longer claims a two-factor step.
 
 - **Your team chat messages are never sent unsigned.** The service accepts

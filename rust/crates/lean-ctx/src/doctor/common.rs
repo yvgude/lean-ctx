@@ -67,6 +67,33 @@ pub(super) fn print_check(outcome: &Outcome, scored: bool) {
     println!("  {mark}  {}", tildify_home(&outcome.line));
 }
 
+/// The text lines of an [`super::Advice`] below its check line (rc4-220):
+/// the sentence, then each fix with what it changes and its commands.
+pub(super) fn advice_lines(advice: &super::Advice) -> Vec<String> {
+    let mut lines = vec![format!("       {DIM}{}{RST}", advice.detail)];
+    if advice.actions.len() > 1 {
+        lines.push(format!("       {DIM}Fix it one of these ways:{RST}"));
+    }
+    for action in &advice.actions {
+        lines.push(format!(
+            "       {}{}{RST}  {DIM}{}{RST}",
+            super::YELLOW,
+            action.label,
+            action.changes
+        ));
+        for command in &action.commands {
+            lines.push(format!("         {DIM}${RST} {command}"));
+        }
+    }
+    lines
+}
+
+pub(super) fn print_advice(advice: &super::Advice) {
+    for line in advice_lines(advice) {
+        super::emit_line(&line);
+    }
+}
+
 pub(super) fn status_mark(ok: bool, scored: bool, line: &str) -> String {
     match (ok, scored) {
         (false, true) => format!("{RED}✗{RST}"),
