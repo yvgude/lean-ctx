@@ -54,7 +54,10 @@ pub(crate) fn status_of(code: Option<Code>) -> StatusCode {
             | Code::SsoRequired
             | Code::EmailUnverified
             | Code::PolicyDenied
-            | Code::AppOnly,
+            | Code::AppOnly
+            | Code::ChatKeyMissing
+            | Code::SignatureInvalid
+            | Code::SignatureRequired,
         ) => StatusCode::FORBIDDEN,
         // `knowledge verify` refused: the anchored code is gone, so the
         // fact has to be rewritten or removed, not confirmed; a local
@@ -65,7 +68,9 @@ pub(crate) fn status_of(code: Option<Code>) -> StatusCode {
             | Code::Conflict
             | Code::InvalidState
             | Code::ComputerExists
-            | Code::ComputerBusy,
+            | Code::ComputerBusy
+            | Code::FrameExpired
+            | Code::FrameUnknown,
         ) => StatusCode::CONFLICT,
         Some(
             Code::NotConnected
@@ -126,9 +131,13 @@ async fn respond(
     route: &'static Route,
     segment: Option<String>,
     inputs: Vec<(String, Value)>,
+    from_app: bool,
 ) -> Response {
-    let work =
-        tokio::task::spawn_blocking(move || routes::answer(route, segment.as_deref(), &inputs));
+    let work = tokio::task::spawn_blocking(move || {
+        local_read::chat_sign::with_app(from_app, || {
+            routes::answer(route, segment.as_deref(), &inputs)
+        })
+    });
     match tokio::time::timeout(state.timeout, work).await {
         Ok(Ok(answer)) => answer_response(&answer),
         Ok(Err(_)) => failure_response(&Failure::new(Code::Internal, "the read failed")),
@@ -182,18 +191,32 @@ async fn app_admitted_off_loop(route: &'static Route, headers: &HeaderMap) -> bo
         .unwrap_or(false)
 }
 
+/// Whether a person post (rc4-32) comes from LeanCTX Code: the app key, for
+/// the wording of `signature_required` only, never as proof.
+async fn from_app_off_loop(route: &'static Route, headers: &HeaderMap) -> bool {
+    if !local_read::chat_sign::PERSON_POST_KINDS.contains(&route.kind) {
+        return false;
+    }
+    let given = headers
+        .get(local_read::app_key::HEADER)
+        .map(|v| v.as_bytes().to_vec());
+    tokio::task::spawn_blocking(move || local_read::app_key::admits(given.as_deref()))
+        .await
+        .unwrap_or(false)
+}
+
 fn method_router(route: &'static Route) -> MethodRouter<AppState> {
     match (route.method, route.segment().is_some()) {
         (Method::Get, true) => get(
             move |State(state): State<AppState>,
                   Path(segment): Path<String>,
                   Query(q): Query<Vec<(String, String)>>| async move {
-                respond(state, route, Some(segment), query_inputs(q)).await
+                respond(state, route, Some(segment), query_inputs(q), false).await
             },
         ),
         (Method::Get, false) => get(
             move |State(state): State<AppState>, Query(q): Query<Vec<(String, String)>>| async move {
-                respond(state, route, None, query_inputs(q)).await
+                respond(state, route, None, query_inputs(q), false).await
             },
         ),
         (Method::Post, _) => post(
@@ -201,8 +224,9 @@ fn method_router(route: &'static Route) -> MethodRouter<AppState> {
                 if !app_admitted_off_loop(route, &headers).await {
                     return failure_response(&local_read::app_key::refusal());
                 }
+                let from_app = from_app_off_loop(route, &headers).await;
                 match body_inputs(&body) {
-                    Ok(inputs) => respond(state, route, None, inputs).await,
+                    Ok(inputs) => respond(state, route, None, inputs, from_app).await,
                     Err(failure) => failure_response(&failure),
                 }
             },
@@ -921,7 +945,7 @@ mod error_status_tests {
 
     /// Every error code; the match fails to compile when a code is added
     /// without being listed here.
-    const ALL: [Code; 27] = [
+    const ALL: [Code; 32] = [
         Code::InvalidArgument,
         Code::NoProject,
         Code::NotConnected,
@@ -949,6 +973,11 @@ mod error_status_tests {
         Code::ComputerNotAvailable,
         Code::ConfirmationRequired,
         Code::AppOnly,
+        Code::ChatKeyMissing,
+        Code::SignatureInvalid,
+        Code::FrameExpired,
+        Code::FrameUnknown,
+        Code::SignatureRequired,
     ];
 
     const fn listed(code: Code) {
@@ -979,7 +1008,12 @@ mod error_status_tests {
             | Code::ComputerProviderUnavailable
             | Code::ComputerNotAvailable
             | Code::ConfirmationRequired
-            | Code::AppOnly => {}
+            | Code::AppOnly
+            | Code::ChatKeyMissing
+            | Code::SignatureInvalid
+            | Code::FrameExpired
+            | Code::FrameUnknown
+            | Code::SignatureRequired => {}
         }
     }
 

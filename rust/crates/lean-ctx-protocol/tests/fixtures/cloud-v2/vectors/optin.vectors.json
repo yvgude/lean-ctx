@@ -1,0 +1,26 @@
+{
+  "description": "presence_signature on an instance's PUT /v1/me/optin with active true (docs/API.md §13): \"leanctx.cloud.optin.v1\\n\" followed by canonical_json(body without presence_signature, plus instance_id: the instance UUID in lower case with hyphens, not inst_…). The body's prev_optin_id is the optin_id GET /v1/me/optin showed (null while it shows none); it binds the signature to that opt-in. Test key only: ed25519 seed = sha256(\"leanctx-cloud test presence key: optin\")",
+  "cases": [
+    {
+      "alg": "ed25519",
+      "seed": "46da4b21837ca6e42b4e8f26541d12a8152f962c97ee51f52eb4d00b5c2cbc58",
+      "public_key": "cObEBUZadcPFAVcsbLmC8fbvcdofrWlOc_v1bhvwRMU",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "body": {
+        "schema": "leanctx.cloud.instance-optin-on/v1",
+        "active": true,
+        "prev_optin_id": "opt_7a1d4c2e9b3f4e6a8c5d0f1e2a3b4c5d",
+        "vaults": [
+          "0f3c2b6a8d4e4a7b9c105e2f6a7b8c01"
+        ],
+        "daily_budget": {
+          "tasks": 3,
+          "tokens": 1000000
+        },
+        "presence_signature": "tKv5Z23pifLgCDpvE2jqgMR9uih1A-9lukZt8ko_inLa2DqoQ0uqUW0wfJV6B-IuP3QFyRyj66zZdxeFhxuIBQ"
+      },
+      "signing_input": "leanctx.cloud.optin.v1\n{\"active\":true,\"daily_budget\":{\"tasks\":3,\"tokens\":1000000},\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"prev_optin_id\":\"opt_7a1d4c2e9b3f4e6a8c5d0f1e2a3b4c5d\",\"schema\":\"leanctx.cloud.instance-optin-on/v1\",\"vaults\":[\"0f3c2b6a8d4e4a7b9c105e2f6a7b8c01\"]}",
+      "signature": "tKv5Z23pifLgCDpvE2jqgMR9uih1A-9lukZt8ko_inLa2DqoQ0uqUW0wfJV6B-IuP3QFyRyj66zZdxeFhxuIBQ"
+    }
+  ]
+}

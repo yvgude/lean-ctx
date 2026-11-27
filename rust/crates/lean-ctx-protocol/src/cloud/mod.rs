@@ -26,6 +26,7 @@
 //!   stay covered by the signature.
 
 pub mod anchor;
+pub mod app_keys;
 pub mod bus;
 pub mod codegraph;
 pub mod ctxpkg;

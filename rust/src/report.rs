@@ -10,6 +10,14 @@ const DIM: &str = "\x1b[2m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
 
+/// Shown before the submit prompt with `--include-tee`: the tee section then
+/// carries real command output from the state dir, and the preview above is
+/// cut at 2000 characters, so it may not show that excerpt at all.
+const INCLUDE_TEE_NOTICE: &str = "--include-tee: this report attaches the saved full output of \
+your latest command (up to 3000 characters). It can contain file contents and paths. Secrets \
+are redacted, but the preview above is truncated: run with --dry-run and review the saved \
+report before sending it.";
+
 pub fn run(args: &[String]) {
     let title = extract_flag(args, "--title");
     let description = extract_flag(args, "--description");
@@ -33,6 +41,10 @@ pub fn run(args: &[String]) {
     println!("{preview}");
     if body.len() > 2000 {
         println!("{DIM}... ({} more characters){RST}", body.len() - 2000);
+    }
+
+    if include_tee {
+        println!("\n{YELLOW}{INCLUDE_TEE_NOTICE}{RST}");
     }
 
     if dry_run {
@@ -293,8 +305,7 @@ fn section_slow_commands() -> String {
 
 fn section_tee_logs(include_content: bool) -> String {
     let mut out = String::from("## Tee Logs (last 24h)\n\n");
-    if let Some(dir) = lean_ctx_dir() {
-        let tee_dir = dir.join("tee");
+    if let Some(tee_dir) = tee_dir() {
         if tee_dir.is_dir() {
             let cutoff = std::time::SystemTime::now() - std::time::Duration::from_hours(24);
             let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)
@@ -568,6 +579,15 @@ fn lean_ctx_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".lean-ctx"))
 }
 
+/// The tee store every writer uses (`<state>/tee`, honouring
+/// `LEAN_CTX_STATE_DIR`), resolved without creating directories. The legacy
+/// `~/.lean-ctx/tee` holds no live tee logs.
+fn tee_dir() -> Option<PathBuf> {
+    crate::core::paths::state_dir_read_only()
+        .ok()
+        .map(|state| state.join("tee"))
+}
+
 fn which_lean_ctx() -> Option<PathBuf> {
     let cmd = if cfg!(windows) { "where" } else { "which" };
     std::process::Command::new(cmd)
@@ -668,6 +688,60 @@ mod tests {
         let body = build_report_body("t", &description, true);
         assert!(!body.contains(&github), "GitHub token leaked into report");
         assert!(!body.contains(&aws), "AWS key leaked into report");
+        assert!(body.contains("[REDACTED"), "no redaction marker in report");
+    }
+
+    /// The report lists the tee logs the writers produced: under
+    /// `LEAN_CTX_STATE_DIR/tee`, not the legacy `~/.lean-ctx/tee`.
+    #[test]
+    fn tee_section_reads_the_state_dir_tee_store() {
+        let state = tempfile::tempdir().expect("state dir");
+        // Holds the test env lock and restores the previous value on drop.
+        let _state_env = crate::test_env::EnvVarGuard::set(
+            "LEAN_CTX_STATE_DIR",
+            state.path().to_str().expect("utf-8 temp path"),
+        );
+        let tee = state.path().join("tee");
+        std::fs::create_dir_all(&tee).expect("tee dir");
+        std::fs::write(tee.join("proxy_0123456789abcdef.log"), "state tee body\n")
+            .expect("tee log");
+
+        let resolved = tee_dir();
+        let section = section_tee_logs(true);
+
+        assert_eq!(resolved.as_deref(), Some(tee.as_path()));
+        assert!(
+            section.contains("proxy_0123456789abcdef.log") && section.contains("state tee body"),
+            "report must list the state-dir tee log: {section}"
+        );
+    }
+
+    /// `--include-tee` puts real command output from the state dir into the
+    /// issue body; a secret in that output must be redacted like the rest.
+    #[test]
+    fn include_tee_content_is_redacted_in_the_report_body() {
+        let state = tempfile::tempdir().expect("state dir");
+        let _state_env = crate::test_env::EnvVarGuard::set(
+            "LEAN_CTX_STATE_DIR",
+            state.path().to_str().expect("utf-8 temp path"),
+        );
+        let tee = state.path().join("tee");
+        std::fs::create_dir_all(&tee).expect("tee dir");
+        // Obviously fake, built at runtime so no literal token sits in source.
+        let fake = format!("sk-test-{}", "FAKEFAKEFAKE");
+        std::fs::write(
+            tee.join("shell_fedcba9876543210.log"),
+            format!("$ env\nOPENAI_API_KEY={fake}\nok\n"),
+        )
+        .expect("tee log");
+
+        let body = build_report_body("t", "d", true);
+
+        assert!(
+            body.contains("shell_fedcba9876543210.log") && body.contains("Latest tee content"),
+            "tee excerpt missing from report: {body}"
+        );
+        assert!(!body.contains(&fake), "tee secret leaked into report");
         assert!(body.contains("[REDACTED"), "no redaction marker in report");
     }
 }

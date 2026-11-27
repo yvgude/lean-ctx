@@ -73,7 +73,7 @@ outcome quality.
   ],
   "required_text": {
     "README.md": ["Get started", "Real-world scenarios"],
-    ".github/workflows/release.yml": ["desc \"Local engine for the LeanCTX Context Gateway for AI Systems\""],
+    "scripts/homebrew-formula.py": ["desc \"Local LeanCTX Context Gateway for AI systems\""],
     "aur/lean-ctx/.SRCINFO": ["pkgdesc = LeanCTX | OSS — open-source Context Gateway for AI Systems. Context selection, supported controls, and evidence through local integration paths."]
   },
   "forbidden_text": {

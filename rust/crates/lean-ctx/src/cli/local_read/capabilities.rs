@@ -81,6 +81,19 @@ pub(crate) const COMMANDS: &[(&str, &[&str])] = &[
         "cloud.computer",
         &["list", "show", "add", "create", "start", "stop"],
     ),
+    // rc4-32/rc4-67/rc4-16: what LeanCTX Code may pass to `cloud connect`
+    // (`optin_key`: a member of `--app-keys -`); listed whether or not a key
+    // is bound (that is state, not a verb).
+    (
+        "cloud.connect",
+        &[
+            "app_keys",
+            "chat_key",
+            "optin_key",
+            "print_instance_key",
+            "task_propose_key",
+        ],
+    ),
     ("cloud.exchange", &["audit"]),
     ("cloud.gateway", &["key"]),
     ("cloud.docs", &["list", "show"]),
@@ -329,5 +342,23 @@ mod tests {
                 .all(|r| r["via"] == json!(["cli"]))
         );
         assert!(cli_only.get("docs").is_none());
+    }
+
+    /// rc4-32/rc4-67: LeanCTX Code learns from this row that `cloud connect`
+    /// takes `--app-keys` (with `optin_key`, rc4-16), `--chat-key`,
+    /// `--print-instance-key` and `--task-propose-key`, before any key is
+    /// bound.
+    #[test]
+    fn cloud_connect_lists_its_chat_key_verbs_without_a_bound_key() {
+        assert_eq!(
+            commands_of(&Value::Null)["cloud.connect"],
+            json!([
+                {"verb": "app_keys", "via": ["cli"]},
+                {"verb": "chat_key", "via": ["cli"]},
+                {"verb": "optin_key", "via": ["cli"]},
+                {"verb": "print_instance_key", "via": ["cli"]},
+                {"verb": "task_propose_key", "via": ["cli"]},
+            ])
+        );
     }
 }

@@ -25,6 +25,153 @@ fn research_prose_cap() -> usize {
         .unwrap_or(RESEARCH_PROSE_CAP)
 }
 
+/// A tool result up to this size reaches the model whole, from every tool.
+///
+/// Derived from the budgets of the compressors behind this funnel: the
+/// `log_dedup` pattern cuts any block above 30 unique lines to its first 5
+/// and last 10, and the shell engine shows at most 40 lines (`SHOWN`) of an
+/// output it cannot classify — so without a floor every result above ~35
+/// lines left as a fragment, whatever tool produced it. The fragment of a
+/// result the model asked for is followed by a re-read that carries the
+/// whole original again plus a turn of its own; below ~1k tokens (4 KiB,
+/// eight tee floors of [`ccr::MIN_TEE_BYTES`]) the pruning cannot save what
+/// that re-read costs.
+pub(crate) const VERBATIM_MAX_BYTES: usize = 4 * 1024;
+/// A result of at most this many lines also stays whole: one bounded view
+/// (`head -60`, `sed -n 'A,Bp'`, a page of a listing) is what the caller
+/// sized it to be, and twice log_dedup's 30-line block is room for it.
+pub(crate) const VERBATIM_MAX_LINES: usize = 60;
+/// Few long lines (minified JSON, a bundle) are no bounded view: past this
+/// size the line rule no longer holds and the result is compressed.
+const VERBATIM_LINES_MAX_BYTES: usize = 16 * 1024;
+/// The output of a filtering command stays whole up to this size: the
+/// engine's own verbatim budget for verbatim commands (`MAX_VERBATIM_TOKENS`
+/// = 4000 tokens, ~16 KiB). A larger filtered output is compressed and
+/// carries its re-read path like any other.
+const FILTERED_VERBATIM_MAX_BYTES: usize = 16 * 1024;
+
+fn fits_verbatim(content: &str) -> bool {
+    content.len() <= VERBATIM_MAX_BYTES
+        || (content.len() <= VERBATIM_LINES_MAX_BYTES
+            && content.lines().count() <= VERBATIM_MAX_LINES)
+}
+
+thread_local! {
+    /// The command line of the shell tool call whose result is compressed
+    /// ([`with_tool_command`]).
+    static TOOL_COMMAND: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Run `f` — a compression of one tool result — knowing the command line of
+/// the tool call that produced it: the `command` input of the matching
+/// `tool_use` (Bash and other shell tools). A result of a filtering command
+/// ([`is_filtering_command`]) is then not pruned again: the caller already
+/// chose the lines it wants. The previous scope is restored afterwards, also
+/// on unwind.
+pub fn with_tool_command<R>(command: Option<&str>, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            TOOL_COMMAND.with(|command| *command.borrow_mut() = previous);
+        }
+    }
+    let previous = TOOL_COMMAND.with(|current| current.replace(command.map(str::to_owned)));
+    let _restore = Restore(previous);
+    f()
+}
+
+fn keeps_filtered_output(command: &str, output: &str) -> bool {
+    output.len() <= FILTERED_VERBATIM_MAX_BYTES && is_filtering_command(command)
+}
+
+/// True when `command` already selects the lines its output shows: a
+/// verbatim command of the engine's classifier
+/// (`shell::compress::is_verbatim_output`: head/tail, `sed`/`awk`, `jq`,
+/// `wc`, file viewers, as the whole command or its last stage), or a
+/// filter — the grep family, `head`/`tail`, `sed -n`, `awk`, `cut`, `wc`,
+/// `jq`/`yq`, `sort`, `uniq` — as the leading command or the last pipeline
+/// stage of any segment of a compound command.
+///
+/// One filtering segment exempts the whole command line (`cd x && rg …`,
+/// `sed -n … | cut; ls`, but also `cargo build; wc -l f`). Deliberate: the
+/// exemption is bounded by `FILTERED_VERBATIM_MAX_BYTES`, and without it
+/// the result is compressed with its re-read hint, so either side is
+/// lossless — a too-wide match costs tokens, never content, while a strict
+/// every-segment rule would prune the bounded views the caller chained.
+pub fn is_filtering_command(command: &str) -> bool {
+    if lean_ctx::shell::compress::is_verbatim_output(command) {
+        return true;
+    }
+    command
+        .split(['\n', ';'])
+        .flat_map(|part| part.split("&&"))
+        .flat_map(|part| part.split("||"))
+        .any(|segment| {
+            let mut stages = segment.split('|').map(str::trim).filter(|s| !s.is_empty());
+            let first = stages.next();
+            let last = stages.next_back().or(first);
+            first.is_some_and(is_filter_stage) || last.is_some_and(is_filter_stage)
+        })
+}
+
+fn is_filter_stage(stage: &str) -> bool {
+    let mut words = stage
+        .split_whitespace()
+        .skip_while(|word| word.contains('=') && !word.starts_with('-'))
+        .skip_while(|word| matches!(*word, "sudo" | "command" | "env" | "time" | "nice"));
+    let Some(program) = words.next() else {
+        return false;
+    };
+    let program = program.rsplit('/').next().unwrap_or(program);
+    let args: Vec<&str> = words.collect();
+    match program {
+        "grep" | "egrep" | "fgrep" | "rg" | "ag" | "ack" | "awk" | "gawk" | "cut" | "wc" | "jq"
+        | "yq" | "sort" | "uniq" | "nl" | "head" => true,
+        "tail" => !args
+            .iter()
+            .any(|arg| *arg == "-f" || *arg == "-F" || arg.starts_with("--follow")),
+        "sed" => args
+            .iter()
+            .any(|arg| arg.starts_with("-n") || *arg == "--quiet" || *arg == "--silent"),
+        _ => false,
+    }
+}
+
+/// The hint a result compressed against a tee copy ends with. It names the
+/// copy once: `~/…` under the home (no account name, the rules of
+/// `session_elide::locator`, which hold for Bash and PowerShell alike), else
+/// the shell-quoted absolute path — plus the store-relative name
+/// `ctx_expand` resolves. A pure function of the handle and the home, so
+/// byte-stable (#498).
+pub(crate) fn tee_hint(handle: &str) -> String {
+    let path = std::path::Path::new(handle);
+    let location =
+        super::session_elide::home_location(path).unwrap_or_else(|| shell_quoted(handle));
+    let name = path.file_name().map_or_else(
+        || handle.to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    format!(
+        "[lean-ctx: full original at {location} — `cat` it to re-read it exactly (no MCP), \
+         or ctx_expand(id=\"{name}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
+    )
+}
+
+/// `path` as one shell word: unquoted when it is plain, single-quoted
+/// otherwise. Pure, so the hint that embeds it stays byte-stable (#498).
+fn shell_quoted(path: &str) -> String {
+    if !path.is_empty()
+        && path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/._-+:@%".contains(&b))
+    {
+        path.to_owned()
+    } else {
+        format!("'{}'", path.replace('\'', r"'\''"))
+    }
+}
+
 /// Proxy compression funnel: routes a tool result to the right compressor.
 ///
 /// 1. Already-cited research output (from `ctx_url_read` / the web layer) is kept
@@ -41,16 +188,19 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
 }
 
 /// Compresses a tool result under a task-aware policy.
+///
+/// A result the policy leaves uncompressed (`compress_tool_output` off,
+/// `log_compression_level` 0, code under `code_preserve`) leaves as every
+/// funnel leaves a result it keeps whole (`policy_whole`): without its
+/// `<lc_safe>` markers, under protection on record under the lineage of its
+/// original (bd M1 on !646).
 pub fn compress_tool_result_with_policy(
     content: &str,
     tool_name: Option<&str>,
     policy: lean_ctx::core::adaptive_policy::CompressionPolicy,
 ) -> String {
-    if !policy.compress_tool_output || policy.log_compression_level == 0 {
-        return content.to_owned();
-    }
-    if policy.code_preserve && looks_like_code(content) {
-        return content.to_owned();
+    if policy_keeps_whole(content, policy) {
+        return policy_whole(content, tool_name);
     }
     compress_tool_result(content, tool_name)
 }
@@ -62,13 +212,33 @@ pub fn compress_tool_result_gateway_with_policy(
     family: TokenizerFamily,
     policy: lean_ctx::core::adaptive_policy::CompressionPolicy,
 ) -> String {
-    if !policy.compress_tool_output || policy.log_compression_level == 0 {
-        return content.to_owned();
-    }
-    if policy.code_preserve && looks_like_code(content) {
-        return content.to_owned();
+    if policy_keeps_whole(content, policy) {
+        return policy_whole(content, tool_name);
     }
     compress_tool_result_gateway_for(content, tool_name, family)
+}
+
+/// Whether `policy` compresses nothing of `content`.
+fn policy_keeps_whole(
+    content: &str,
+    policy: lean_ctx::core::adaptive_policy::CompressionPolicy,
+) -> bool {
+    !policy.compress_tool_output
+        || policy.log_compression_level == 0
+        || policy.code_preserve && looks_like_code(content)
+}
+
+/// `content` as a policy wrapper leaves it uncompressed: the bytes the
+/// funnels pass through untouched stay untouched — a result that already
+/// carries its way back ([`carries_recovery_stub`]) and the result of an
+/// Engine tool ([`is_lean_ctx_tool`]); see [`compress_inner`] for why —
+/// and every other result is kept whole without its `<lc_safe>` markers
+/// ([`whole_without_markers`]).
+fn policy_whole(content: &str, tool_name: Option<&str>) -> String {
+    if carries_recovery_stub(content) || tool_name.is_some_and(is_lean_ctx_tool) {
+        return content.to_owned();
+    }
+    whole_without_markers(content)
 }
 
 fn looks_like_code(content: &str) -> bool {
@@ -88,6 +258,7 @@ pub fn compress_tool_result_for(
     tool_name: Option<&str>,
     family: TokenizerFamily,
 ) -> String {
+    // Untouched, `<lc_safe>` markers included: see `carries_recovery_stub`.
     if carries_recovery_stub(content) {
         return content.to_owned();
     }
@@ -116,9 +287,17 @@ pub fn compress_tool_result_for(
 /// then: the output stays whole with `recovery.handle_not_followable`, and
 /// nothing is stored. Unprotected, the Community tee handle is unchanged.
 pub fn shape_command_output(command: &str, output: &str, exit_code: Option<i32>) -> String {
-    if output.trim().is_empty() || output.len() < 200 {
-        return output.to_string();
+    if output.trim().is_empty()
+        || output.len() < 200
+        || fits_verbatim(output)
+        || keeps_filtered_output(command, output)
+    {
+        // Whole, but without its `<lc_safe>` markers, as the engine and the
+        // wire funnel leave every marked output — below 200 bytes as well
+        // (bd N3 on !646).
+        return whole_without_markers(output);
     }
+    // Untouched, `<lc_safe>` markers included: see `carries_recovery_stub`.
     if carries_recovery_stub(output) {
         return output.to_string();
     }
@@ -165,6 +344,7 @@ pub fn compress_tool_result_gateway_for(
     family: TokenizerFamily,
 ) -> String {
     // Before the footer strip below: a local stub has the footer's shape.
+    // Untouched, `<lc_safe>` markers included: see `carries_recovery_stub`.
     if carries_recovery_stub(content) {
         return content.to_owned();
     }
@@ -264,6 +444,20 @@ thread_local! {
     static OBSERVATION: RefCell<Option<Observation>> = const { RefCell::new(None) };
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Every call of [`note_kept_whole`] on this thread. [`KeptWhole`]
+    /// counts a block once however often it is noted, so only this shows a
+    /// note made twice.
+    static NOTE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The calls of [`note_kept_whole`] on this thread so far.
+#[cfg(all(test, feature = "http-server"))]
+pub(crate) fn note_calls() -> usize {
+    NOTE_CALLS.with(std::cell::Cell::get)
+}
+
 /// Run one synchronous compression pass for `reader` and return, next to its
 /// result, the blocks it left whole under protection. An inner pass reports
 /// to its own caller only.
@@ -298,6 +492,8 @@ fn observed_reader() -> Option<Reader> {
 /// `block` stays whole under protection for the content-free reason `code`.
 /// Counted for the route that observes the pass; logged otherwise.
 pub(crate) fn note_kept_whole(block: &str, code: &'static str) {
+    #[cfg(test)]
+    NOTE_CALLS.with(|calls| calls.set(calls.get() + 1));
     OBSERVATION.with(|slot| {
         if let Some(observation) = slot.borrow_mut().as_mut() {
             observation.kept.note(block, code);
@@ -369,6 +565,17 @@ const STUB_MAX_BYTES: usize = 256;
 /// Text that already ends with a way back to its original. A second pass
 /// passes it through: compressing it again could drop the handle, and the
 /// local stubs have the shape of a savings footer the gateway funnel strips.
+///
+/// It passes through byte for byte, `<lc_safe>` markers included (bd S1 on
+/// !646). Such a text is what an earlier pass of a funnel sent, and that
+/// pass already left it without the markers it handled: the stub is
+/// appended to a compressed form, which the marker handling of
+/// [`compress_inner`] produced. Marker text that is still there is content
+/// of the original block itself, not a marker of this pass. And the bytes
+/// are those on record: under protection the earlier pass recorded exactly
+/// them under the original's lineage (`delivered::record_derived`), and the
+/// provider's cache prefix holds them (#448). A rewrite here would make the
+/// text one of unknown lineage and break that prefix, for no gain.
 fn carries_recovery_stub(content: &str) -> bool {
     let last = content
         .trim_end_matches('\n')
@@ -394,22 +601,32 @@ fn carries_recovery_stub(content: &str) -> bool {
 /// When no recovery copy can be written (an active policy keeps no originless
 /// copies, or the store fails) the original is returned instead of the lossy
 /// form: a fresh result is never shortened without a way back.
+/// "The original" on every such path is the original kept whole as it leaves
+/// a funnel: without its `<lc_safe>` markers ([`keep_whole`]).
 fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
     use super::sticky_tools;
     if result == original {
         return result;
     }
+    // Every path below that keeps the original keeps it whole, but without
+    // its `<lc_safe>` markers (bd N1 on !646): the form a marked result
+    // leaves the funnel in when nothing of it is shortened.
+    let unmarked = unmarked_form(original);
+    let whole = || keep_whole(original, unmarked.as_deref());
+    // Only the `<lc_safe>` markers were dropped: nothing was lost, so no way
+    // back is needed, and the rule below must not hand the markers back.
+    if unmarked.as_deref() == Some(result.as_str()) {
+        return whole();
+    }
     let shrink = original.len().saturating_sub(result.len());
     if original.len() < ccr::MIN_TEE_BYTES || shrink < ccr::MIN_TEE_BYTES {
-        // Too small for a tee: unprotected, the result leaves as it is.
-        if !protected() {
-            return result;
-        }
-        // Under protection a changed block leaves only with the stub of a
-        // recovery copy. Where the stub costs more than this pass saved,
-        // nothing is gained and nothing is changed — not a refusal, no code.
-        if shrink <= STUB_MAX_BYTES {
-            return original.to_string();
+        // Too small for a tee, so no way back could be named. Before, an
+        // unprotected result left here shortened as it was — a lossy one
+        // (`[N lines omitted]` from a dedup of short lines) without any
+        // re-read path. A shrink this small is not worth a loss: the
+        // original leaves whole, as it already did under protection.
+        if !protected() || shrink <= STUB_MAX_BYTES {
+            return whole();
         }
     }
     // The gateway funnel on a route whose reader is a model (the forward
@@ -426,7 +643,7 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
         tool.is_some() || observed_reader() == Some(Reader::GatewayCaller) || !protected();
     if !followable {
         note_kept_whole(original, HANDLE_NOT_FOLLOWABLE);
-        return original.to_string();
+        return whole();
     }
     match recovery_copy(original) {
         Some(RecoveryCopy::Bound {
@@ -441,7 +658,7 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
             };
             let sent = format!("{result}\n{stub}");
             if sent.len() >= original.len() {
-                return original.to_string();
+                return whole();
             }
             // The one record a site other than an Engine release point makes
             // (`delivered::record_derived`). Guaranteed here:
@@ -467,8 +684,7 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
             } else {
                 // The shortened block would be of unknown lineage for every
                 // later turn; the original is not.
-                note_kept_whole(original, DERIVED_NOT_RECORDED);
-                original.to_string()
+                kept_after_refused_record(original, unmarked.as_deref())
             }
         }
         // Gateway (#702): the reader is a model behind a LiteLLM-style gateway.
@@ -493,14 +709,113 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
                     "{result}\n[lean-ctx: full original elided to save tokens — echo {marker} \
                      on your next turn to get the verbatim original spliced back inline]"
                 ),
-                None => format!(
-                    "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
-                     ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
-                ),
+                None => format!("{result}\n{}", tee_hint(&handle)),
             }
         }
-        None => original.to_string(),
+        None => whole(),
     }
+}
+
+/// The text `original` leaves as when it carries `<lc_safe>` markers and is
+/// kept whole: the markers dropped, every byte between them verbatim.
+/// `None`: there are no markers.
+fn unmarked_form(original: &str) -> Option<String> {
+    lean_ctx::core::protect::has_markers(original)
+        .then(|| lean_ctx::core::protect::compress_preserving(original, str::to_owned))
+}
+
+/// `original` kept whole, as it leaves a funnel: without its `<lc_safe>`
+/// markers (`unmarked`, from [`unmarked_form`]) — [`whole_form`], with a
+/// refused record noted `DERIVED_NOT_RECORDED`.
+fn keep_whole(original: &str, unmarked: Option<&str>) -> String {
+    let whole = whole_form(original, unmarked);
+    if whole.record_refused {
+        note_kept_whole(original, DERIVED_NOT_RECORDED);
+    }
+    whole.text
+}
+
+/// What [`whole_form`] keeps.
+struct WholeForm {
+    text: String,
+    /// The unmarked form could not be put on record, so `text` is
+    /// `original` with its markers. Not noted yet.
+    record_refused: bool,
+}
+
+/// `original` kept whole, without its `<lc_safe>` markers where that keeps
+/// its lineage. Notes nothing: the caller notes a refused record, once.
+///
+/// Under protection the unmarked form is a text derived from `original`,
+/// and a derived text without a record is of unknown lineage for every
+/// later turn (`sealed_origin::Lineage::Unknown`) even where `original`
+/// is not. So (bd N2 on !646):
+/// - `original` has a complete lineage in the proxy's project: the unmarked
+///   form is put on record under it (`delivered::record_derived`). Its
+///   preconditions hold — the lineage is `lineage_of` for exactly
+///   `original`, in this request and inside the proxy's project scope; the
+///   unmarked form derives from that one block alone, with no text added.
+///   Without the record `original` stays with its markers
+///   (`record_refused`): a known lineage is never traded for a cosmetic
+///   change.
+/// - `original` has no lineage, or only an incomplete one (bd N5): there is
+///   nothing to keep. An incomplete lineage makes a text as unknown as none
+///   does (`Lineage::is_complete`; `record_derived` would refuse it too), so
+///   both are treated alike: the unmarked form is no less known than the
+///   original, and nothing is recorded or stored.
+/// - The proxy has no project (bd S2): nothing is looked up or recorded, as
+///   in [`bound_copy`], which refuses a copy then (`NO_PROJECT`). Without a
+///   project no lineage can be bound for this request at all — a lookup
+///   outside a project scope is no lineage of it, and `record_derived`
+///   records nothing without a request project — so the case is that of no
+///   lineage: the unmarked form leaves, unrecorded. Nothing is noted: no
+///   shorter form was refused, and nothing of the block was lost.
+///
+/// The record is written again whenever the same block is kept whole again
+/// (each request, each block). That is idempotent (bd N6):
+/// `delivered::record_derived` is `record_lineage`, whose `store_at` keeps
+/// one entry per derived digest and project and joins a repeat into it
+/// (`Lineage::join`). A union with the same lineage adds no source, and the
+/// presenter reference only moves to the newest place, so a repeat adds
+/// nothing but a fresh time.
+fn whole_form(original: &str, unmarked: Option<&str>) -> WholeForm {
+    let kept = |text: &str, record_refused| WholeForm {
+        text: text.to_owned(),
+        record_refused,
+    };
+    let Some(unmarked) = unmarked else {
+        return kept(original, false);
+    };
+    if !protected() {
+        return kept(unmarked, false);
+    }
+    let Some(project) = super::request_project::current_source_project() else {
+        return kept(unmarked, false);
+    };
+    let recorded = super::request_project::in_project(&project, || {
+        delivered::lineage_of(&delivered::digest(original))
+            .filter(delivered::Lineage::is_complete)
+            .map(|lineage| delivered::record_derived(&delivered::digest(unmarked), &lineage))
+    });
+    if recorded == Some(false) {
+        return kept(original, true);
+    }
+    kept(unmarked, false)
+}
+
+/// `original` kept whole because the record of its shortened form was
+/// refused: noted `DERIVED_NOT_RECORDED` once (bd S3 on !646). The note
+/// stands for the refused shorter form, so it is made whatever happens to
+/// the unmarked form; [`whole_form`] notes nothing, so a refused record of
+/// the unmarked form as well adds no second note.
+fn kept_after_refused_record(original: &str, unmarked: Option<&str>) -> String {
+    note_kept_whole(original, DERIVED_NOT_RECORDED);
+    whole_form(original, unmarked).text
+}
+
+/// [`keep_whole`] for a text whose unmarked form is not at hand yet.
+fn whole_without_markers(original: &str) -> String {
+    keep_whole(original, unmarked_form(original).as_deref())
 }
 
 /// The one place a compressed result gets its way back: store a recovery
@@ -661,16 +976,26 @@ enum RecoveryCopy {
 }
 
 fn compress_inner(content: &str, tool_name: Option<&str>, family: TokenizerFamily) -> String {
-    if content.trim().is_empty() || content.len() < 200 {
+    if content.trim().is_empty() {
         return content.to_string();
     }
-
     // #479: lean-ctx's own MCP tools already applied their compression policy at
     // the tool boundary — honouring `raw=true`/`bypass`, `<lc_safe>` spans and
     // the configured aggressiveness. Their `raw` intent lives in the originating
     // `tool_use` input, which is invisible here, so re-compressing on the wire
     // would silently undo an explicit `raw=true` and double-compress everything
     // else. Pass results from `ctx_*` tools through untouched.
+    //
+    // Untouched includes any `<lc_safe>` text in them (bd S1 on !646). The
+    // Engine handles its markers at the tool boundary: its shell compressor
+    // splices protected spans and drops the markers
+    // (`shell::compress::engine`), so a `ctx_shell` result leaves without
+    // them. Marker text that remains is content the tool was asked to
+    // deliver — e.g. a `ctx_read` of a file that itself contains
+    // `<lc_safe>`, verbatim under `raw=true` — and under protection the
+    // Engine recorded exactly these bytes with their lineage
+    // (`delivered::record_tool_delivery`). Stripping it here would alter a
+    // raw read and turn a known lineage into an unknown one.
     if tool_name.is_some_and(is_lean_ctx_tool) {
         return content.to_string();
     }
@@ -682,6 +1007,21 @@ fn compress_inner(content: &str, tool_name: Option<&str>, family: TokenizerFamil
         return lean_ctx::core::protect::compress_preserving(content, |seg| {
             compress_inner(seg, tool_name, family)
         });
+    }
+
+    // After the marker handling, so a result of any size leaves without its
+    // `<lc_safe>` markers — below 200 bytes as well (bd N3 on !646): each
+    // unprotected segment meets these rules itself.
+    if content.len() < 200 || fits_verbatim(content) {
+        return content.to_string();
+    }
+    if TOOL_COMMAND.with(|command| {
+        command
+            .borrow()
+            .as_deref()
+            .is_some_and(|command| keeps_filtered_output(command, content))
+    }) {
+        return content.to_string();
     }
 
     if is_cited_research_output(content) {

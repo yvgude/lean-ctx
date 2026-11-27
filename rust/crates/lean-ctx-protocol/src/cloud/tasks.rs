@@ -176,7 +176,9 @@ pub enum TaskOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskOriginKind {
-    /// A person, on the web.
+    /// A person: on the web, or in LeanCTX Code, whose engine relays the
+    /// person's own proposal (the Cloud names the person the engine is
+    /// linked to, never one from the request).
     Person,
     /// An engine, for its agent.
     Agent,
@@ -203,14 +205,17 @@ pub struct TaskOriginV1 {
 }
 
 impl TaskOriginV1 {
-    /// What an engine may send: `agent`, or `contradiction` with two facts.
+    /// What an engine may send: `agent`, `person` (a person's proposal
+    /// from LeanCTX Code, only to a Cloud that announces
+    /// `task_person_origin`), or `contradiction` with two facts.
     pub fn validate_from_engine(&self) -> Result<(), ValidationError> {
         if self.message.is_some() {
             return Err(ValidationError::new("engines do not create question tasks"));
         }
         match self.kind {
-            TaskOriginKind::Agent if self.facts.is_empty() => Ok(()),
+            TaskOriginKind::Agent | TaskOriginKind::Person if self.facts.is_empty() => Ok(()),
             TaskOriginKind::Agent => Err(ValidationError::new("an agent task names no facts")),
+            TaskOriginKind::Person => Err(ValidationError::new("a person's task names no facts")),
             TaskOriginKind::Contradiction => {
                 if self.facts.len() != 2 || self.facts[0] == self.facts[1] {
                     return Err(ValidationError::new(
@@ -222,7 +227,7 @@ impl TaskOriginV1 {
                     .try_for_each(|id| validate_id(id, "facts"))
             }
             _ => Err(ValidationError::new(
-                "engines propose agent or contradiction tasks only",
+                "a proposal is an agent, person or contradiction task only",
             )),
         }
     }
@@ -248,6 +253,11 @@ pub struct TaskActorV1 {
     /// 1.9 (section 5): the agent's profile, for instances.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    /// rc4-79/rc4-67: whether this actor is the person the asking instance
+    /// is linked to (the Cloud compares person ids, which it never sends).
+    /// Absent from a Cloud that does not say: not known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -424,12 +434,26 @@ pub struct TaskProposeRequestV1 {
     pub origin: TaskOriginV1,
     /// Opaque, per-session id (no host or user data).
     pub session_ref: String,
+    /// rc4-67: when the person signed their own proposal in the app
+    /// (RFC 3339, second precision `Z`); only with origin `person`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_at: Option<String>,
+    /// rc4-67: the app's task-propose key over
+    /// `leanctx.cloud.task_propose_person.v1\n` + canonical JSON of this
+    /// body without the signature, plus `instance_id` and `vault_id`.
+    /// Base64url, no padding; only with origin `person`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_signature: Option<String>,
 }
+
+/// The longest base64url text an Ed25519 signature takes (86 characters).
+const TASK_SIGNATURE_CHARS: usize = 86;
 
 impl TaskProposeRequestV1 {
     pub fn validate(&self) -> Result<(), ValidationError> {
         require_schema(&self.schema, TASK_PROPOSE_SCHEMA)?;
         self.origin.validate_from_engine()?;
+        self.validate_signed()?;
         validate_id(&self.session_ref, "session_ref")?;
         if let Some(role) = &self.role {
             validate_role(role)?;
@@ -449,6 +473,44 @@ impl TaskProposeRequestV1 {
             )?;
         }
         Ok(())
+    }
+
+    /// A person's proposal carries the app's signature and its time; any
+    /// other origin carries neither (the Cloud refuses both mismatches).
+    fn validate_signed(&self) -> Result<(), ValidationError> {
+        let person = self.origin.kind == TaskOriginKind::Person;
+        match (&self.signed_at, &self.task_signature) {
+            (None, None) if !person => Ok(()),
+            (Some(at), Some(signature)) if person => {
+                let at_ok = at.len() == 20
+                    && at.ends_with('Z')
+                    && at.bytes().enumerate().all(|(i, b)| match i {
+                        4 | 7 => b == b'-',
+                        10 => b == b'T',
+                        13 | 16 => b == b':',
+                        19 => b == b'Z',
+                        _ => b.is_ascii_digit(),
+                    });
+                if !at_ok {
+                    return Err(ValidationError::new("signed_at is not a UTC time"));
+                }
+                let sig_ok = signature.len() == TASK_SIGNATURE_CHARS
+                    && signature
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+                if sig_ok {
+                    Ok(())
+                } else {
+                    Err(ValidationError::new("task_signature is not a signature"))
+                }
+            }
+            _ if person => Err(ValidationError::new(
+                "a person's proposal carries signed_at and task_signature",
+            )),
+            _ => Err(ValidationError::new(
+                "only a person's proposal carries signed_at and task_signature",
+            )),
+        }
     }
 }
 
@@ -1190,7 +1252,29 @@ mod tests {
                 message: None,
             },
             session_ref: "s-1".into(),
+            signed_at: None,
+            task_signature: None,
         }
+    }
+
+    /// rc4-67: a person's proposal needs the app's signature and its
+    /// time; an agent's may carry neither.
+    #[test]
+    fn only_a_signed_person_proposal_carries_a_task_signature() {
+        let signature = "OGzdIhUg_HO7JT0XJssV-pqSkN2WBu6SL6dGN2fuXzs5fZxT-fF0X865cAoJIWCz_9bzCsJpyeewB4hiiDpqAg";
+        let mut person = propose();
+        person.origin.kind = TaskOriginKind::Person;
+        assert!(person.validate().is_err(), "unsigned person proposal");
+        person.signed_at = Some("2026-11-24T09:30:00Z".into());
+        person.task_signature = Some(signature.into());
+        person.validate().unwrap();
+        person.signed_at = Some("2026-11-24 09:30:00".into());
+        assert!(person.validate().is_err(), "bad time");
+        let mut agent = propose();
+        agent.validate().unwrap();
+        agent.signed_at = Some("2026-11-24T09:30:00Z".into());
+        agent.task_signature = Some(signature.into());
+        assert!(agent.validate().is_err(), "agent with signature");
     }
 
     fn claim() -> ClaimRefV1 {
@@ -1209,12 +1293,56 @@ mod tests {
         assert_eq!(origin.kind, TaskOriginKind::Unknown);
     }
 
+    /// rc4-67: a person's origin is the bare kind on the wire, the same
+    /// shape an agent's has, so an older reader parses it unchanged.
     #[test]
-    fn engines_propose_only_agent_or_contradiction_tasks() {
+    fn a_person_origin_is_the_bare_kind_on_the_wire() {
+        let person = TaskOriginV1 {
+            kind: TaskOriginKind::Person,
+            facts: Vec::new(),
+            message: None,
+        };
+        let wire = serde_json::to_value(&person).unwrap();
+        assert_eq!(wire, serde_json::json!({"kind": "person"}));
+        let back: TaskOriginV1 = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, person);
+        assert!(person.validate_from_engine().is_ok());
+    }
+
+    /// rc4-79/rc4-67: `created_by.own` is the Cloud's word that the creator
+    /// is the asking machine's person; absent (an older Cloud) is unknown.
+    #[test]
+    fn an_actor_says_own_only_when_the_cloud_does() {
+        let said: TaskActorV1 = serde_json::from_value(serde_json::json!({
+            "kind": "person", "label": "Yves", "mine": false, "own": true,
+        }))
+        .unwrap();
+        assert_eq!(said.own, Some(true));
+        let older: TaskActorV1 = serde_json::from_value(serde_json::json!({
+            "kind": "person", "label": "Yves", "mine": false,
+        }))
+        .unwrap();
+        assert_eq!(older.own, None);
+        assert!(serde_json::to_value(&older).unwrap().get("own").is_none());
+    }
+
+    #[test]
+    fn engines_propose_only_agent_person_or_contradiction_tasks() {
         assert!(propose().validate().is_ok());
         let mut person = propose();
         person.origin.kind = TaskOriginKind::Person;
-        assert!(person.validate().is_err());
+        assert!(person.validate().is_err(), "a person's proposal is signed");
+        person.signed_at = Some("2026-11-24T09:30:00Z".into());
+        person.task_signature = Some("A".repeat(86));
+        assert!(
+            person.validate().is_ok(),
+            "a person's proposal via LeanCTX Code"
+        );
+        person.origin.facts = vec!["f-1".into()];
+        assert!(person.validate().is_err(), "a person's task names no facts");
+        let mut question = propose();
+        question.origin.kind = TaskOriginKind::Question;
+        assert!(question.validate().is_err());
         let mut contradiction = propose();
         contradiction.origin = TaskOriginV1 {
             kind: TaskOriginKind::Contradiction,

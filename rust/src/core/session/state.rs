@@ -2,7 +2,7 @@ use lean_ctx_time::UtcDateTime;
 
 use crate::core::intent_protocol::{IntentRecord, IntentSource};
 
-use super::paths::{extract_cd_target, generate_session_id};
+use super::paths::generate_session_id;
 #[allow(clippy::wildcard_imports)]
 use super::types::*;
 
@@ -697,6 +697,11 @@ impl SessionState {
 
     /// Returns the effective working directory for shell commands.
     /// Priority: explicit cwd arg > session shell_cwd > project_root > process cwd.
+    ///
+    /// `shell_cwd` is the directory the client started the session in (or the
+    /// root a session switch installed). `ctx_shell` never moves it (#2262): an
+    /// explicit `cwd` and any `cd` inside a command apply to that one call, so
+    /// agents sharing one MCP connection cannot redirect each other.
     /// Explicit CWD and stored shell_cwd are jail-checked against the project root
     /// to prevent MCP clients from escaping the workspace.
     pub fn effective_cwd(&self, explicit_cwd: Option<&str>) -> String {
@@ -779,49 +784,6 @@ impl SessionState {
         match crate::core::pathjail::jail_path(p, std::path::Path::new(fallback_root)) {
             Ok(jailed) => (jailed.to_string_lossy().to_string(), None),
             Err(reason) => (fallback_root.to_string(), Some(reason.to_string())),
-        }
-    }
-
-    /// Persist an explicit, jail-accepted `cwd` argument as the live shell
-    /// cwd (#707). `update_shell_cwd` only tracks `cd` inside the command
-    /// text, but clients that switch checkouts mid-session (Claude Code
-    /// after `EnterWorktree`) pass the new directory as the `cwd` *param* of
-    /// every subsequent call — without persisting it, the worktree-divergence
-    /// detection in path resolution never sees the switch. Callers must pass
-    /// a cwd that already passed the project-root jail.
-    pub fn note_explicit_cwd(&mut self, cwd: &str) {
-        let path = std::path::Path::new(cwd);
-        if path.is_absolute() && path.is_dir() {
-            self.shell_cwd = Some(
-                crate::core::pathutil::safe_canonicalize_or_self(path)
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-    }
-
-    /// Updates shell_cwd by detecting `cd` in the command.
-    /// Handles: `cd /abs/path`, `cd rel/path` (relative to current cwd),
-    /// `cd ..`, and chained commands like `cd foo && ...`.
-    /// The new CWD is jail-checked against the project root.
-    pub fn update_shell_cwd(&mut self, command: &str) {
-        let base = self.effective_cwd(None);
-        if let Some(new_cwd) = extract_cd_target(command, &base) {
-            let path = std::path::Path::new(&new_cwd);
-            if path.exists() && path.is_dir() {
-                let canonical = crate::core::pathutil::safe_canonicalize_or_self(path)
-                    .to_string_lossy()
-                    .to_string();
-                let root = self.project_root.as_deref().unwrap_or(".");
-                if crate::core::pathjail::jail_path(
-                    std::path::Path::new(&canonical),
-                    std::path::Path::new(root),
-                )
-                .is_ok()
-                {
-                    self.shell_cwd = Some(canonical);
-                }
-            }
         }
     }
 }

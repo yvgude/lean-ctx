@@ -10,9 +10,16 @@
 //! `GET /v1/me/optin` (instance token) → [`EngineOptinV1`]. The owner
 //! changes it on the web; every change gets a new `optin_id`, and
 //! `active: false` (the stop) ends every claim of that engine at once.
-//! The engine may stop itself, never start: `PUT /v1/me/optin`
-//! [`EngineOptinStopV1`] → [`EngineOptinV1`]; `active: true` there is
-//! `403 forbidden_right` reason `owner_only`.
+//! The engine may stop itself: `PUT /v1/me/optin` [`EngineOptinStopV1`] →
+//! [`EngineOptinV1`]. It turns task pickup on only with the person at the
+//! computer (rc4-16): `PUT /v1/me/optin` [`EngineOptinOnV1`], signed with
+//! the app's bound opt-in key (no per-turn-on prompt) over [`OPTIN_SIGNING_DOMAIN`] ‖
+//! canonical JSON of the body without `presence_signature`, plus
+//! `instance_id`. Only the bound opt-in key signs it; there is no
+//! presence-key fallback. The instance token alone never turns it on
+//! (`403 forbidden_right` reason `person_unproven`); without a bound opt-in
+//! key the engine refuses it before sending (`no_optin_key`: pair LeanCTX
+//! Code with the computer first). Turning it off needs no key.
 //!
 //! Cloud is the source of truth and enforces it on every claim:
 //! - a claim carries the `optin_id` the engine last read (section 1
@@ -77,6 +84,10 @@ fn validate_channel(channel: &str) -> Result<(), ValidationError> {
 
 pub const ENGINE_OPTIN_SCHEMA: &str = "leanctx.cloud.instance-optin/v1";
 pub const ENGINE_OPTIN_STOP_SCHEMA: &str = "leanctx.cloud.instance-optin-stop/v1";
+/// `PUT /v1/me/optin` with `active: true` (rc4-16).
+pub const ENGINE_OPTIN_ON_SCHEMA: &str = "leanctx.cloud.instance-optin-on/v1";
+/// The domain the person's presence signature of a turn-on is made under.
+pub const OPTIN_SIGNING_DOMAIN: &str = "leanctx.cloud.optin.v1\n";
 pub const DEFAULT_DAILY_TASKS: u32 = 5;
 pub const MAX_DAILY_TASKS: u32 = 100;
 pub const MAX_OPTIN_VAULTS: usize = 200;
@@ -93,6 +104,31 @@ pub struct DailyBudgetV1 {
     pub tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usd_micros: Option<u64>,
+}
+
+impl DailyBudgetV1 {
+    /// The budget task pickup starts with when it is turned on for the
+    /// person's own vaults without a budget of theirs (owner decision rc3-72
+    /// part 4): 3 tasks and 1M tokens a day, no cost limit.
+    pub const AUTO: Self = Self {
+        tasks: Some(3),
+        tokens: Some(1_000_000),
+        usd_micros: None,
+    };
+
+    /// 1-100 tasks or none, and a non-zero token limit or none.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self
+            .tasks
+            .is_some_and(|t| !(1..=MAX_DAILY_TASKS).contains(&t))
+            || self.tokens == Some(0)
+        {
+            return Err(ValidationError::new(
+                "daily_budget is 1-100 tasks or none, and a non-zero token limit",
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Default for DailyBudgetV1 {
@@ -173,16 +209,7 @@ impl EngineOptinV1 {
                 ));
             }
         }
-        if self
-            .daily_budget
-            .tasks
-            .is_some_and(|t| !(1..=MAX_DAILY_TASKS).contains(&t))
-            || self.daily_budget.tokens == Some(0)
-        {
-            return Err(ValidationError::new(
-                "daily_budget is 1-100 tasks or none, and a non-zero token limit",
-            ));
-        }
+        self.daily_budget.validate()?;
         if !day_ok(&self.used_today.day) {
             return Err(ValidationError::new("used_today.day is YYYY-MM-DD"));
         }
@@ -200,7 +227,7 @@ impl EngineOptinV1 {
 #[serde(deny_unknown_fields)]
 pub struct EngineOptinStopV1 {
     pub schema: String,
-    /// Always `false`; only the owner turns an opt-in on.
+    /// Always `false`; turning on is [`EngineOptinOnV1`].
     pub active: bool,
 }
 
@@ -211,5 +238,101 @@ impl EngineOptinStopV1 {
             return Err(ValidationError::new("an engine can only stop its opt-in"));
         }
         Ok(())
+    }
+}
+
+/// `PUT /v1/me/optin`: task pickup turned on from the computer, with the
+/// person at it (rc4-16). `presence_signature` is the signature of the
+/// app's bound opt-in key only (never the presence key; the field keeps its
+/// name on the wire) (base64url, no padding) over [`OPTIN_SIGNING_DOMAIN`] ‖
+/// canonical JSON of the body without it, plus `"instance_id"` (the
+/// instance UUID, lowercase with hyphens). Cloud refuses a `prev_optin_id`
+/// that is not the opt-in's current one (`409 invalid_state` reason
+/// `optin_changed`), so a signature works at most once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EngineOptinOnV1 {
+    pub schema: String,
+    /// Always `true`.
+    pub active: bool,
+    /// The `optin_id` `GET /v1/me/optin` showed when the person signed;
+    /// `null` only while there is none. Always sent.
+    pub prev_optin_id: Option<String>,
+    /// Vaults (project ids); left out means none (it replaces the list).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vaults: Option<Vec<String>>,
+    pub daily_budget: DailyBudgetV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_signature: Option<String>,
+}
+
+impl EngineOptinOnV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        require_schema(&self.schema, ENGINE_OPTIN_ON_SCHEMA)?;
+        if !self.active {
+            return Err(ValidationError::new(
+                "a turn-on is active; a stop is the stop schema",
+            ));
+        }
+        if let Some(id) = &self.prev_optin_id {
+            validate_id(id, "prev_optin_id")?;
+        }
+        let vaults = self.vaults.as_deref().unwrap_or_default();
+        if vaults.len() > MAX_OPTIN_VAULTS {
+            return Err(ValidationError::new(format!(
+                "at most {MAX_OPTIN_VAULTS} vaults"
+            )));
+        }
+        for vault in vaults {
+            super::validate_vault_id(vault)?;
+        }
+        self.daily_budget.validate()
+    }
+}
+
+#[cfg(test)]
+mod on_tests {
+    use super::*;
+
+    fn on() -> EngineOptinOnV1 {
+        EngineOptinOnV1 {
+            schema: ENGINE_OPTIN_ON_SCHEMA.into(),
+            active: true,
+            prev_optin_id: None,
+            vaults: Some(vec!["0f3c2b6a8d4e4a7b9c105e2f6a7b8c01".into()]),
+            daily_budget: DailyBudgetV1::AUTO,
+            presence_signature: None,
+        }
+    }
+
+    #[test]
+    fn pickup_turn_on_body_keeps_a_null_prev_optin_id_and_the_auto_budget() {
+        let body = serde_json::to_value(on()).unwrap();
+        assert!(body["prev_optin_id"].is_null());
+        assert!(body.as_object().unwrap().contains_key("prev_optin_id"));
+        assert!(!body.as_object().unwrap().contains_key("presence_signature"));
+        assert_eq!(
+            body["daily_budget"],
+            serde_json::json!({"tasks": 3, "tokens": 1_000_000})
+        );
+        on().validate().unwrap();
+    }
+
+    #[test]
+    fn pickup_turn_on_refuses_a_stop_a_bad_vault_and_a_bad_budget() {
+        let mut stop = on();
+        stop.active = false;
+        assert!(stop.validate().is_err());
+        let mut vault = on();
+        vault.vaults = Some(vec!["notes".into()]);
+        assert!(vault.validate().is_err());
+        let mut budget = on();
+        budget.daily_budget.tasks = Some(0);
+        assert!(budget.validate().is_err());
+        let extra = serde_json::json!({
+            "schema": ENGINE_OPTIN_ON_SCHEMA, "active": true, "prev_optin_id": null,
+            "daily_budget": {"tasks": 3}, "networks": []
+        });
+        assert!(serde_json::from_value::<EngineOptinOnV1>(extra).is_err());
     }
 }

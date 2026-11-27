@@ -203,16 +203,64 @@
         }
       ]
     },
-    "create_response": {
+    "create_request_browser": {
+      "description": "rc3-70 E35 POST /v1/consents bound to the browser instead of a pairing code (link_vault only, no code_hash/code_expires_at): the instance opens `url` itself, the account owner confirms there like pairing (security code with two-step sign-in, else the current password or a link mailed for this request); expires_at is clamped to now + 15 min",
       "type": "object",
       "required": [
-        "url"
+        "consent_id",
+        "kind",
+        "subject",
+        "subject_digest",
+        "expires_at",
+        "binding"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "kind": {
+          "const": "link_vault"
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subject_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "binding": {
+          "const": "browser"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/kind_subject"
+        }
+      ]
+    },
+    "create_response": {
+      "description": "E35 POST /v1/consents → 201; rc3-70: `expires_at` (RFC 3339, the request's end, for a browser binding at most now + 15 min) and `interval_s` (seconds between E35 status polls) for every binding",
+      "type": "object",
+      "required": [
+        "url",
+        "expires_at",
+        "interval_s"
       ],
       "additionalProperties": false,
       "properties": {
         "url": {
           "type": "string",
-          "pattern": "^https://[a-z0-9.:-]+/consent/cns_[a-z2-7]{16}/$"
+          "pattern": "^https://[a-z0-9.:-]+/consent/cns_[a-z2-7]{16,40}/$"
+        },
+        "expires_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "interval_s": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -261,7 +309,7 @@
       }
     },
     "state_response": {
-      "description": "E35 GET /v1/consents/{id}",
+      "description": "E35 GET /v1/consents/{id} (instance token, no step-up; another instance's id → 404); final states approved | denied | expired; rc3-70 adds expires_at and interval_s",
       "type": "object",
       "required": [
         "state"
@@ -278,6 +326,13 @@
         },
         "statement": {
           "$ref": "#/$defs/statement"
+        },
+        "expires_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "interval_s": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "if": {
@@ -386,7 +441,7 @@
       }
     },
     "w49_response": {
-      "description": "W49 GET /api/v1/consents/{id}: only the stored first subject; the web shows the first 16 hex of subject_digest as \"Request fingerprint\"; RFC 3339 times (S17)",
+      "description": "W49 GET /api/v1/consents/{id}: only the stored first subject; the web shows the first 16 hex of subject_digest as \"Request fingerprint\"; RFC 3339 times (S17); rc3-70: `into` = the destination team ({slug, name}, null when the instance has no team) and `confirm_with` = how this account confirms an answer (authenticator with two-step sign-in, else password and link)",
       "type": "object",
       "required": [
         "id",
@@ -431,7 +486,14 @@
           "$ref": "web.schema.json#/$defs/time"
         },
         "code_expires_at": {
-          "$ref": "web.schema.json#/$defs/time"
+          "anyOf": [
+            {
+              "$ref": "web.schema.json#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "state": {
           "enum": [
@@ -444,9 +506,44 @@
         "binding": {
           "enum": [
             "code",
-            "device"
+            "device",
+            "browser"
           ],
-          "description": "C0 2.1: device = answered on the device approval page only"
+          "description": "C0 2.1: device = answered on the device approval page only; rc3-70: browser = no pairing code, the instance opened the page itself"
+        },
+        "into": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "slug",
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "slug": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "confirm_with": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "authenticator",
+              "password",
+              "link"
+            ]
+          },
+          "uniqueItems": true
         }
       },
       "allOf": [
@@ -456,12 +553,10 @@
       ]
     },
     "w50_request": {
-      "description": "W50 POST /api/v1/consents/{id} (class F): pairing code shown as XXXX-XXXX in the terminal, sent without the dash or with it",
+      "description": "W50 POST /api/v1/consents/{id} (class F): `pairing_code` (XXXX-XXXX from the terminal, with or without the dash) only for a code-bound request, never for a browser-bound one; the confirmation is `totp_code` when the account has two-step sign-in, else exactly one of `password` (current password) or `link_code` (the code of a link mailed for this request by POST /api/v1/consents/{id}/link)",
       "type": "object",
       "required": [
-        "pairing_code",
-        "answer",
-        "totp_code"
+        "answer"
       ],
       "additionalProperties": false,
       "properties": {
@@ -477,7 +572,21 @@
         },
         "totp_code": {
           "$ref": "web.schema.json#/$defs/totp_code"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1
+        },
+        "link_code": {
+          "type": "string",
+          "minLength": 1
         }
+      },
+      "not": {
+        "required": [
+          "password",
+          "link_code"
+        ]
       }
     },
     "w50_response": {

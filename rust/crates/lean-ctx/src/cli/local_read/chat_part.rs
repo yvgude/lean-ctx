@@ -35,7 +35,7 @@ use super::routes::{Method, Param, Project, Route, Shape};
 use super::{Answer, Code, Failure, Via};
 
 /// The release tool of every chat document (people's messages, like the bus).
-const TOOL: &str = "ctx_agent";
+pub(crate) const TOOL: &str = "ctx_agent";
 
 /// The largest Cloud answer read (a page of 500 channels with members).
 const MAX_ANSWER_BYTES: usize = 8 * 1024 * 1024;
@@ -56,6 +56,15 @@ const fn switch(name: &'static str, flag: &'static str) -> Param {
     }
 }
 
+/// `--flag true|false`: a JSON bool passed either way (`false` is kept).
+const fn boolean(name: &'static str, flag: &'static str) -> Param {
+    Param {
+        name,
+        flag,
+        shape: Shape::Bool,
+    }
+}
+
 const fn repeat(name: &'static str, flag: &'static str) -> Param {
     Param {
         name,
@@ -68,6 +77,11 @@ const TAIL: Param = value("tail", "--tail");
 const BEFORE_SEQ: Param = value("before_seq", "--before-seq");
 const AFTER_SEQ: Param = value("after_seq", "--after-seq");
 const CHANNEL: Param = value("channel", "--channel");
+/// The signed form of a person post (rc4-32, [`super::chat_sign`]).
+pub(crate) const FRAME_B64: Param = value("frame_b64", super::chat_sign::FRAME_FLAG);
+pub(crate) const PRESENCE_SIGNATURE: Param =
+    value("presence_signature", super::chat_sign::SIGNATURE_FLAG);
+pub(crate) const KEY_ID: Param = value("key_id", super::chat_sign::KEY_ID_FLAG);
 
 /// This part's routes (Route as in `routes.rs`). No project: the chat is
 /// the person's, not a repository's.
@@ -124,6 +138,41 @@ pub(crate) const ROUTES: &[Route] = &[
             value("parent_id", "--parent-id"),
             repeat("mentions", "--mention"),
             switch("orchestrator", "--orchestrator"),
+            FRAME_B64,
+            PRESENCE_SIGNATURE,
+            KEY_ID,
+        ],
+        project: Project::None,
+        names: None,
+    },
+    Route {
+        kind: "chat.prepare",
+        method: Method::Post,
+        path: "/v1/local/chat/prepare",
+        cli: &["cloud", "chat", "prepare", "--json"],
+        action: &["prepare"],
+        params: &[
+            value("kind", "--kind"),
+            CHANNEL,
+            value("body", "--body"),
+            value("parent_id", "--parent-id"),
+            repeat("mentions", "--mention"),
+            // Kept as given, `false` included (p43 !782 signs it so).
+            boolean("orchestrator", super::chat_sign::ORCHESTRATOR_FLAG),
+            repeat("members", "--member"),
+            repeat("to", "--to"),
+            value("message", "--message"),
+            value("thread", "--thread"),
+            value("category", "--category"),
+            value("task_id", "--task-id"),
+            // rc4-32: the app's own fields (p43 !782). `client_msg_id`:
+            // a post's or DM's UUID v4, a bus post's ULID, kept as given.
+            value("client_msg_id", super::chat_sign::CLIENT_MSG_ID_FLAG),
+            value("thread_id", "--thread-id"),
+            value("reply_to", "--reply-to"),
+            value("deadline", "--deadline"),
+            // bus: the project the post is filed in (`bus.post` takes it too).
+            value("project_root", "--project-root"),
         ],
         project: Project::None,
         names: None,
@@ -144,7 +193,12 @@ pub(crate) const ROUTES: &[Route] = &[
         path: "/v1/local/chat/dm",
         cli: &["cloud", "chat", "dm", "--json"],
         action: &["dm"],
-        params: &[repeat("members", "--member")],
+        params: &[
+            repeat("members", "--member"),
+            FRAME_B64,
+            PRESENCE_SIGNATURE,
+            KEY_ID,
+        ],
         project: Project::None,
         names: None,
     },
@@ -169,6 +223,7 @@ pub(crate) const KINDS: &[&str] = &[
     "chat.messages",
     "chat.replies",
     "chat.post",
+    "chat.prepare",
     "chat.read",
     "chat.dm",
     "chat.mentions",
@@ -178,7 +233,7 @@ pub(crate) const KINDS: &[&str] = &[
 pub(crate) const COMMANDS: &[(&str, &[&str])] = &[(
     "cloud.chat",
     &[
-        "channels", "dm", "mentions", "messages", "post", "read", "replies",
+        "channels", "dm", "mentions", "messages", "post", "prepare", "read", "replies",
     ],
 )];
 
@@ -294,6 +349,17 @@ fn ids(args: &[String], flag: &str, name: &str) -> Result<Vec<Value>, Failure> {
         .collect()
 }
 
+/// A person's id as the Cloud takes a direct message's member (p37
+/// `NewDm.members`, UUIDs): lowercase and hyphenated, as LeanCTX Code signs it.
+fn is_person_uuid(raw: &str) -> bool {
+    let b = raw.as_bytes();
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => *c == b'-',
+            _ => c.is_ascii_digit() || (b'a'..=b'f').contains(c),
+        })
+}
+
 /// The Cloud call of `kind` for its arguments (the verb first, then the
 /// channel id of `chat.messages`, then the flags). Nothing is sent here.
 pub(crate) fn call_of(kind: &str, args: &[String]) -> Result<Call, Failure> {
@@ -374,6 +440,14 @@ pub(crate) fn call_of(kind: &str, args: &[String]) -> Result<Call, Failure> {
             if members.is_empty() {
                 return Err(Failure::invalid("members is required"));
             }
+            if !members
+                .iter()
+                .all(|m| m.as_str().is_some_and(is_person_uuid))
+            {
+                return Err(Failure::invalid(
+                    "members are people's ids (lowercase UUIDs)",
+                ));
+            }
             let mut body = Map::new();
             body.insert("members".into(), Value::Array(members));
             Ok(post("/chat/dms".to_owned(), body))
@@ -440,6 +514,10 @@ pub(crate) fn outcome(status: u16, body: Value) -> Result<Value, Failure> {
         };
     }
     let code = body["error"]["code"].as_str().unwrap_or_default();
+    // rc4-32: the Cloud wants a person post signed by the chat key.
+    if code == "person_unproven" || body["error"]["reason"].as_str() == Some("person_unproven") {
+        return Err(super::chat_sign::signature_required());
+    }
     let said = body["error"]["message"].as_str().and_then(safe_message);
     // The Cloud's code first; without a known one (a proxy's page, a code
     // such as `totp_required`), the HTTP status.
@@ -511,21 +589,42 @@ pub(crate) fn outcome(status: u16, body: Value) -> Result<Value, Failure> {
 
 /// Make `call` as the connected instance.
 fn run(call: &Call) -> Result<Value, Failure> {
+    let (status, body) = run_raw(call)?;
+    outcome(status, body)
+}
+
+/// [`run`] without the mapping: the Cloud's status and body.
+pub(crate) fn run_raw(call: &Call) -> Result<(u16, Value), Failure> {
     let store = CloudStore::open()?;
     let instance = store.instance()?.ok_or(CloudError::NotConnected)?;
     let config = lean_ctx::core::config::Config::load().cloud.clone();
     let trust = lean_ctx_cloud::root_cert::trust_root(&store, &config, &instance.url)
         .map_err(connection_failure)?;
     let session = lean_ctx_cloud::auth::Session::load(store, trust).map_err(connection_failure)?;
-    let (status, body) = session
+    session
         .with_client(|client| exchange(client, call))
-        .map_err(connection_failure)?;
-    outcome(status, body)
+        .map_err(connection_failure)
 }
 
 /// The released document of `kind`, for the CLI or the socket. A write's
 /// request goes through the release point before anything is sent.
 pub(crate) fn answer(kind: &str, args: &[String], via: Via) -> Answer {
+    // rc4-32: person posts leave only signed by LeanCTX Code's chat key;
+    // an unsigned one is refused and nothing is sent.
+    if kind == super::chat_sign::PREPARE {
+        // App-only (the Local Service checks the app key first): a frame
+        // prepared by a one-shot CLI process could never be sent.
+        if via == Via::Cli {
+            return Answer::failure(&super::app_key::refusal());
+        }
+        return super::chat_sign::prepare_answer(args);
+    }
+    if matches!(kind, "chat.post" | "chat.dm") {
+        if super::chat_sign::is_signed(args) {
+            return super::chat_sign::rest_answer(kind, args, via);
+        }
+        return Answer::failure(&super::chat_sign::signature_required());
+    }
     let call = match call_of(kind, args) {
         Ok(call) => call,
         Err(failure) => return Answer::failure(&failure),
@@ -550,7 +649,7 @@ pub(crate) fn try_run(command: &str, rest: &[String]) -> bool {
     let answer = match kind_of(verb) {
         Some(kind) => answer(kind, args, Via::Cli),
         None => Answer::failure(&Failure::invalid(format!(
-            "unknown chat command {verb:?}: channels, messages, replies, post, read, dm or mentions"
+            "unknown chat command {verb:?}: channels, messages, replies, post, prepare, read, dm or mentions"
         ))),
     };
     super::print(&answer);
@@ -621,7 +720,11 @@ mod tests {
                 .unwrap_or_else(|| panic!("{kind} is not routed"));
             assert!(route.path.starts_with("/v1/local/chat/"), "{}", route.path);
             assert_eq!(route.project, Project::None);
-            assert!(text.contains(route.path), "{} is listed", route.path);
+            // `chat.prepare` is listed only while a chat key is bound to the
+            // connected instance (rc4-32); hidden otherwise.
+            let listed =
+                *kind != super::super::chat_sign::PREPARE || super::super::chat_sign::offered();
+            assert_eq!(text.contains(route.path), listed, "{} listed", route.path);
         }
         let post = super::super::routes::all()
             .find(|r| r.kind == "chat.post")
@@ -741,14 +844,47 @@ mod tests {
         assert_eq!(
             call(
                 "chat.dm",
-                &["dm", "--json", "--member", "u1", "--member", "u2"]
+                &[
+                    "dm",
+                    "--json",
+                    "--member",
+                    "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+                    "--member",
+                    "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"
+                ]
             ),
             Call {
                 method: "POST",
                 path: "/chat/dms".into(),
-                body: Some(json!({"members": ["u1", "u2"]}))
+                body: Some(
+                    json!({"members": ["0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f", "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"]})
+                )
             }
         );
+        // p37 NewDm.members are UUIDs: anything else is refused here.
+        for bad in [
+            "u1",
+            "usr_2",
+            "0C1D2E3F-4A5B-4C6D-8E7F-9A0B1C2D3E4F",
+            "0c1d2e3f4a5b4c6d8e7f9a0b1c2d3e4f",
+        ] {
+            let refused = call_of(
+                "chat.dm",
+                &[
+                    "dm",
+                    "--json",
+                    "--member",
+                    "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+                    "--member",
+                    bad,
+                ]
+                .iter()
+                .map(|a| (*a).to_owned())
+                .collect::<Vec<_>>(),
+            )
+            .unwrap_err();
+            assert_eq!(refused.code, Code::InvalidArgument, "{bad}");
+        }
     }
 
     #[test]
@@ -807,12 +943,14 @@ mod tests {
         let args = super::super::routes::args_of(
             route("chat.dm"),
             None,
-            &inputs(json!({"members": ["u1", "u2"]})),
+            &inputs(json!({"members": ["0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f", "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"]})),
         )
         .unwrap();
         assert_eq!(
             call_of("chat.dm", &args).unwrap().body,
-            Some(json!({"members": ["u1", "u2"]}))
+            Some(
+                json!({"members": ["0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f", "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"]})
+            )
         );
     }
 

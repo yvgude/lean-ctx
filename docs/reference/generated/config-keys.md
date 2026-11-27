@@ -295,6 +295,7 @@ Claude Code governor (`hook govern`): rule modes (env LEAN_CTX_GOVERNOR_* overri
 - `r3` (enum: on | shadow | off, default `shadow` — env `LEAN_CTX_GOVERNOR_R3`) — Governor rule r3: output already in context (never above shadow). Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
 - `r4` (enum: on | shadow | off, default `shadow` — env `LEAN_CTX_GOVERNOR_R4`) — Governor rule r4: template collapse of large Bash output. Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
 - `r5` (enum: on | shadow | off, default `on` — env `LEAN_CTX_GOVERNOR_R5`) — Governor rule r5: outline instead of a first whole read of a large code file (Read, `cat <file>`, Code Mode script reads). Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
+- `r6` (enum: on | shadow | off, default `shadow` — env `LEAN_CTX_GOVERNOR_R6`) — Governor rule r6: large Grep content result grouped by file (ripgrep --heading layout, lossless). Unset = built-in default; a governor install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule
 
 ## `[ide_paths]`
 

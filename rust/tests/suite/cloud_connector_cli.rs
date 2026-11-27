@@ -234,7 +234,7 @@ fn connect_status_disconnect_round_trip() {
     let human = text(&machine.run(&["status"]).stdout);
     assert!(human.contains("Lease:        valid until"), "{human}");
     assert!(
-        human.contains("Plan:         Team · 25 instances connected at once"),
+        human.contains("Plan:         Team · up to 25 hosts connected at once"),
         "{human}"
     );
     assert!(
@@ -280,10 +280,16 @@ fn connect_status_disconnect_round_trip() {
 
     let output = machine.run(&["disconnect"]);
     assert!(output.status.success(), "{output:?}");
+    let said = text(&output.stdout);
     assert!(
-        text(&output.stdout).contains("no longer counts as connected"),
-        "{output:?}"
+        said.contains("revoked this host. Its connection is free now."),
+        "{said}"
     );
+    assert!(
+        said.contains("on Personal it stays registered for 7 days"),
+        "{said}"
+    );
+    assert!(!said.contains("seat is free"), "{said}");
     assert_eq!(fake.seats_used(), 0);
     let status = machine.status_json();
     assert!(!status.connected && status.instance.is_none());
@@ -475,6 +481,76 @@ fn connect_takes_the_sharing_answer_from_the_approval_page() {
         assert_eq!(decided["shared"], share);
         assert_eq!(decided["source"], "browser");
     }
+}
+
+/// rc4-81: a "no" on the approval page switches every upload off; a later
+/// yes on the page turns them back on (and the page lists what it turns
+/// on), instead of recording a yes that still shares nothing.
+#[test]
+fn a_yes_after_a_no_on_the_approval_page_turns_sharing_back_on() {
+    let machine = Machine::new();
+    let repo = git_project(&machine, "payments", "git@github.com:acme/payments.git");
+    let config = machine.home.path().join("config/config.toml");
+    let connect = |fake: &FakeCloud| {
+        let out = machine.run_in(
+            &repo,
+            &[
+                "cloud",
+                "connect",
+                "--url",
+                &fake.url,
+                "--no-browser",
+                "--label",
+                "test-box",
+                "--yes",
+            ],
+        );
+        assert!(out.status.success(), "{out:?}");
+        text(&out.stdout)
+    };
+
+    let no = FakeCloud::start_with(FakeOptions {
+        device_setup: Some(false),
+        ..FakeOptions::default()
+    });
+    let said = connect(&no);
+    assert!(
+        said.contains("answered in the browser: not shared"),
+        "{said}"
+    );
+    let off = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        off.contains("bus = \"off\""),
+        "a no turns the bus off: {off}"
+    );
+    assert!(machine.run(&["disconnect"]).status.success());
+
+    let yes = FakeCloud::start_with(FakeOptions {
+        device_setup: Some(true),
+        ..FakeOptions::default()
+    });
+    let said = connect(&yes);
+    assert!(
+        said.contains("answered in the browser: shared with"),
+        "{said}"
+    );
+    let on = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        !on.contains("bus = \"off\""),
+        "the yes turned the bus on: {on}"
+    );
+    let requests = yes.requests();
+    let setup = requests
+        .iter()
+        .find(|r| r.path == "/v1/device/setup")
+        .expect("the project is announced");
+    let body: serde_json::Value = serde_json::from_str(&setup.body).unwrap();
+    assert!(
+        body["shares"]
+            .as_array()
+            .is_some_and(|s| s.iter().any(|v| v == "bus")),
+        "the page lists what its yes turns on: {body}"
+    );
 }
 
 /// The folder name and git remote reach Cloud only after a yes: without a
@@ -726,7 +802,7 @@ fn plan_and_seat_limits_are_explained_without_retrying() {
     let output = second.connect(&fake);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        text(&output.stderr).contains("all instances of the workspace are in use (1 of 1)"),
+        text(&output.stderr).contains("all hosts the plan includes are registered (1 of 1)"),
         "{output:?}"
     );
     assert!(!second.status_json().connected);
@@ -738,7 +814,7 @@ fn plan_and_seat_limits_are_explained_without_retrying() {
     let output = Machine::new().connect(&no_plan);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        text(&output.stderr).contains("Personal 3 instances, 2 connected at once; Team and Enterprise 3 per seat, 2 connected at once per seat"),
+        text(&output.stderr).contains("Personal up to 3 hosts registered, up to 2 connected at once; Team and Enterprise up to 3 hosts registered, up to 2 connected at once per seat"),
         "{output:?}"
     );
 
@@ -772,18 +848,15 @@ fn a_cooling_engine_slot_points_to_the_web_recovery_and_stays_in_status() {
     let stderr = text(&output.stderr);
     assert!(
         stderr.contains(&format!(
-            "this workspace has used all its instance slots (1 of 1); nothing is charged for more; \
-             a revoked instance's slot frees at {reset} (7-day cool-down), or for a lost or broken \
-             device, recover its slot now on the LeanCTX Cloud web (Settings › Connected instances › Recover, with your \
+            "all hosts the plan includes are registered (1 of 1); nothing is charged for more; \
+             a revoked host stays registered until {reset} (7-day cool-down), or for a lost or broken \
+             device, recover its slot now on the LeanCTX Cloud web (Hosts › Recover the slot now, with your \
              second factor; once per 30 days)"
         )),
         "{output:?}"
     );
     assert!(
-        text(&output.stdout).contains(&format!(
-            "Instances:    {} (Settings › Connected instances)",
-            fake.url
-        )),
+        text(&output.stdout).contains(&format!("Hosts:        {} (Hosts page)", fake.url)),
         "{output:?}"
     );
     let status = second.run(&["status"]);

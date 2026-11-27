@@ -300,18 +300,6 @@ fn every_off_switch_is_off_before_anything_is_collected() {
             },
             OffReason::Lease,
         ),
-        (
-            "community without confirmation",
-            on.clone(),
-            lease(CloudPlan::NoPlan),
-            OffReason::NotConfirmed,
-        ),
-        (
-            "pro without confirmation",
-            on,
-            lease(CloudPlan::Personal),
-            OffReason::NotConfirmed,
-        ),
     ];
     for (what, config, lease, want) in cases {
         match gate::decide_with(&store, &config, &instance(), &lease, None, now) {

@@ -514,15 +514,27 @@ fn every_switch_must_allow_it_and_community_needs_a_person() {
             ..
         }
     ));
-    // no-plan: off until the person confirmed (Cloud answers the state).
+    // Every plan is on by default, without a prompt (owner decision 23.11.).
     let community = lease(CloudPlan::NoPlan, vec![CloudRight::MetricsUpload]);
-    assert!(matches!(
-        gate::decide_with(&store, &on, &instance("personal"), &community, None, now),
-        Sharing::Off {
-            reason: OffReason::NotConfirmed,
-            ..
-        }
-    ));
+    let personal = lease(CloudPlan::Personal, vec![CloudRight::MetricsUpload]);
+    for plan_lease in [&community, &personal] {
+        assert!(
+            gate::decide_with(&store, &on, &instance("personal"), plan_lease, None, now).is_on(),
+            "{:?} is on by default",
+            plan_lease.plan
+        );
+        assert!(!gate::needs_confirmation(plan_lease.plan));
+        let state = gate::plan_state(plan_lease.plan);
+        assert!(matches!(
+            state.state,
+            lean_ctx_protocol::cloud::metrics_v2::SharingValue::On
+        ));
+        assert!(matches!(
+            state.plan_default,
+            lean_ctx_protocol::cloud::metrics_v2::PlanDefault::On
+        ));
+    }
+    // An explicit answer from Cloud that still waits for a person is honoured.
     let waiting: SharingStateV2 =
         fixture("routes/metrics_sharing.needs_confirmation.response.json");
     assert!(
@@ -576,6 +588,117 @@ fn every_switch_must_allow_it_and_community_needs_a_person() {
             assert_eq!(level.map(PolicyLevel::label), Some("Workspace"));
         }
         other @ Sharing::On { .. } => panic!("{other:?}"),
+    }
+}
+
+/// Owner decision 24.11. "local no stays": a person who said no on this
+/// instance (`[cloud] metrics_upload = false`, e.g. connect "without
+/// sharing") stays off. Neither the Cloud's default-on for every Personal
+/// workspace nor an old Cloud still answering `needs_confirmation` may
+/// override it or turn it into "waiting for your confirmation".
+#[test]
+fn personal_local_no_stays_off_even_when_cloud_default_on_or_needs_confirmation() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store(dir.path());
+    install_policy(
+        store.data_dir(),
+        &serde_json::json!({}),
+        &serde_json::json!([]),
+        "2026-10-27T00:00:00Z",
+    );
+    let local_no = CloudConfig {
+        metrics_upload: false,
+        ..CloudConfig::default()
+    };
+    let personal = lease(CloudPlan::Personal, vec![CloudRight::MetricsUpload]);
+    let now = at(17, 0);
+    let off_by_local_choice = |sharing: Option<&SharingStateV2>, case: &str| {
+        let decided = gate::decide_with(
+            &store,
+            &local_no,
+            &instance("personal"),
+            &personal,
+            sharing,
+            now,
+        );
+        assert_eq!(
+            decided,
+            Sharing::Off {
+                reason: OffReason::Engine,
+                level: Some(PolicyLevel::Instance),
+            },
+            "{case}: the local no stays"
+        );
+        assert!(!decided.waits_for_confirmation(), "{case}: no prompt");
+    };
+    // Cloud default-on: not asked yet (plan default) and an explicit `on`.
+    assert!(matches!(
+        gate::plan_state(CloudPlan::Personal).state,
+        lean_ctx_protocol::cloud::metrics_v2::SharingValue::On
+    ));
+    off_by_local_choice(None, "plan default on");
+    let cloud_on: SharingStateV2 = fixture("routes/metrics_sharing_confirm.response.json");
+    assert!(matches!(
+        cloud_on.state,
+        lean_ctx_protocol::cloud::metrics_v2::SharingValue::On
+    ));
+    off_by_local_choice(Some(&cloud_on), "Cloud answers on");
+    // An old Cloud that still waits for the person's confirmation.
+    let waiting: SharingStateV2 =
+        fixture("routes/metrics_sharing.needs_confirmation.response.json");
+    assert!(matches!(
+        waiting.state,
+        lean_ctx_protocol::cloud::metrics_v2::SharingValue::NeedsConfirmation
+    ));
+    off_by_local_choice(Some(&waiting), "old Cloud needs_confirmation");
+    // Control: the same answers with the local switch on behave as before.
+    let on = CloudConfig::default();
+    assert!(gate::decide_with(&store, &on, &instance("personal"), &personal, None, now).is_on());
+    assert!(
+        gate::decide_with(
+            &store,
+            &on,
+            &instance("personal"),
+            &personal,
+            Some(&waiting),
+            now
+        )
+        .waits_for_confirmation()
+    );
+}
+
+/// Owner decision 24.11. "local no stays", same rule for a Team workspace.
+#[test]
+fn team_local_no_stays_off_even_when_cloud_default_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store(dir.path());
+    install_policy(
+        store.data_dir(),
+        &serde_json::json!({}),
+        &serde_json::json!([]),
+        "2026-10-27T00:00:00Z",
+    );
+    let local_no = CloudConfig {
+        metrics_upload: false,
+        ..CloudConfig::default()
+    };
+    let team = lease(CloudPlan::Team, vec![CloudRight::MetricsUpload]);
+    let cloud_on: SharingStateV2 = fixture("routes/metrics_sharing_confirm.response.json");
+    for sharing in [None, Some(&cloud_on)] {
+        assert_eq!(
+            gate::decide_with(
+                &store,
+                &local_no,
+                &instance("team"),
+                &team,
+                sharing,
+                at(17, 0)
+            ),
+            Sharing::Off {
+                reason: OffReason::Engine,
+                level: Some(PolicyLevel::Instance),
+            }
+        );
     }
 }
 
@@ -1257,5 +1380,40 @@ fn a_cloud_with_instance_metrics_switched_off_keeps_the_hours_and_stays_quiet() 
     assert_eq!(
         held_back(&limited, soon, false),
         Some(MetricsV2Run::Waiting)
+    );
+}
+
+/// p37 !251: a confirmation the plan does not need is `409 invalid_state`
+/// (`not_required`); `cloud metrics confirm` takes it as nothing to do.
+#[test]
+fn a_confirmation_that_is_not_required_is_nothing_to_do() {
+    let not_required = crate::CloudError::from_response(
+        409,
+        &serde_json::json!({"error": {"code": "invalid_state",
+            "message": "sharing is on by default for this plan", "reason": "not_required"}}),
+    );
+    assert!(super::upload::not_required(&not_required));
+    let other = crate::CloudError::from_response(
+        403,
+        &serde_json::json!({"error": {"code": "upload_disabled", "message": "x"}}),
+    );
+    assert!(!super::upload::not_required(&other));
+    // bd: a state Cloud sent (a team rule turned it off) is kept; a stored
+    // `needs_confirmation` is stale once Cloud no longer waits.
+    let off: SharingStateV2 = fixture("routes/metrics_sharing.response.json");
+    assert_eq!(
+        super::upload::nothing_to_confirm(Some(&off), CloudPlan::Personal),
+        off
+    );
+    let stale: SharingStateV2 = fixture("routes/metrics_sharing.needs_confirmation.response.json");
+    let now = super::upload::nothing_to_confirm(Some(&stale), CloudPlan::Personal);
+    assert_eq!(now, gate::plan_state(CloudPlan::Personal));
+    assert_eq!(
+        now.state,
+        lean_ctx_protocol::cloud::metrics_v2::SharingValue::On
+    );
+    assert_eq!(
+        super::upload::nothing_to_confirm(None, CloudPlan::Personal),
+        gate::plan_state(CloudPlan::Personal)
     );
 }

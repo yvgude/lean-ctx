@@ -287,6 +287,55 @@ fn in_linked_vaults<'a>(map: &VaultMap, agents: Vec<&'a AgentEntry>) -> Vec<&'a 
         .collect()
 }
 
+/// The vaults each worker works in (worker id → addresses): those of its
+/// agents' checkouts. The relay subscribes every linked vault (rc4-82), but
+/// a worker is present only where one of its agents works (rc4-86).
+fn worker_places(
+    map: &VaultMap,
+    agents: &[AgentEntry],
+    workers: &BTreeMap<String, LocalWorker>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for agent in agents {
+        if let (Some(worker), Some(record)) = (
+            workers.get(&agent.agent_id),
+            relay_v2::record_for(map, &agent.project_root),
+        ) {
+            out.entry(worker.worker_id.clone())
+                .or_default()
+                .insert(relay_v2::address_of(record));
+        }
+    }
+    out
+}
+
+/// The subscribed vaults `worker_id` works in, in subscription order.
+fn places_in<'a>(
+    places: &BTreeMap<String, BTreeSet<String>>,
+    worker_id: &str,
+    subscribe: &'a [String],
+) -> Vec<&'a String> {
+    let Some(own) = places.get(worker_id) else {
+        return Vec::new();
+    };
+    subscribe.iter().filter(|a| own.contains(*a)).collect()
+}
+
+/// The entries a hello may carry: Cloud upserts each one into every vault
+/// the hello subscribes, so only workers that work in all of them. The
+/// others follow as a `presence.update` per vault of theirs.
+fn hello_presence(
+    announced: &[PresenceEntry],
+    places: &BTreeMap<String, BTreeSet<String>>,
+    subscribe: &[String],
+) -> Vec<PresenceEntry> {
+    announced
+        .iter()
+        .filter(|entry| places_in(places, &entry.worker_id, subscribe).len() == subscribe.len())
+        .cloned()
+        .collect()
+}
+
 /// What the relay sees of this machine's local bus.
 struct LocalView {
     /// Active agents in linked vaults: the only ones that get a worker,
@@ -307,13 +356,19 @@ fn local_view(map: &VaultMap) -> LocalView {
 }
 
 fn view_of(map: &VaultMap, all: Vec<&AgentEntry>) -> LocalView {
+    // rc4-86: an MCP server's own `context-engine` presence is no agent;
+    // it never becomes a worker, linked or not.
+    let all: Vec<&AgentEntry> = all
+        .into_iter()
+        .filter(|agent| !agent.is_engine_placeholder())
+        .collect();
     let active = in_linked_vaults(map, all.clone());
     let unlinked = all
         .into_iter()
         .filter(|agent| relay_v2::record_for(map, &agent.project_root).is_none())
         .cloned()
         .collect();
-    let subscribe = relay_v2::subscriptions(map, &active);
+    let subscribe = relay_v2::subscriptions(map);
     let agents = active.into_iter().cloned().collect();
     LocalView {
         agents,
@@ -362,6 +417,14 @@ fn publish_hold(code: &str, quota: Option<&Value>) -> Option<CloudError> {
     };
     let status = if code == "policy_denied" { 403 } else { 429 };
     Some(CloudError::from_response(status, &body))
+}
+
+/// Whether the metrics sharing a hello named (`Some`, only for a Cloud with
+/// the capability) differs from `[cloud] metrics_upload` now. A hello that
+/// named nothing never asks for a fresh one: the next connect reads the
+/// capability again.
+fn sharing_changed(sent: Option<bool>, now: &CloudConfig) -> bool {
+    sent.is_some_and(|sent| sent != now.metrics_upload)
 }
 
 fn now_ms() -> u64 {
@@ -441,10 +504,37 @@ pub(super) async fn session_once(
     let (mut sink, mut stream) = socket.split();
     let text = |frame: &Value| Message::Text(frame.to_string().into());
     let offline = |e: tokio_tungstenite::tungstenite::Error| CloudError::Offline(e.to_string());
+    // A person's post leaves only signed by the bound presence key: the
+    // hello names `person_publish` only while it can be signed here.
+    let person_signer = crate::consent::person_sign::person_signer(store, &instance.instance_id);
+    // rc4-32: LeanCTX Code's chat key signs a person's post ahead; with it
+    // bound, a prepared and signed post can leave too.
+    state.chat_key = crate::consent::chat_key::ChatKeyCheck::load(store, &instance.instance_id);
     let mut announced = presence(&state, &agents, &workers, &instance);
-    sink.send(text(&relay_v2::hello(&subscribe, &state, &announced)))
-        .await
-        .map_err(offline)?;
+    // rc4-86: Cloud marks each hello entry present in every subscribed
+    // vault; a worker of fewer vaults is announced in its own ones only.
+    let places = worker_places(&map, &agents, &workers);
+    let in_hello = hello_presence(&announced, &places, &subscribe);
+    // F29: whether this machine shares metrics, named only for a Cloud that
+    // announced `instance_metrics_sharing`; a change re-announces (tick).
+    let sent_sharing = relay_v2::metrics_sharing(store, config);
+    sink.send(text(&relay_v2::with_metrics_sharing(
+        relay_v2::hello(
+            &subscribe,
+            &state,
+            &in_hello,
+            person_signer.is_some() || state.chat_key.is_some(),
+        ),
+        sent_sharing,
+    )))
+    .await
+    .map_err(offline)?;
+    for entry in announced.iter().filter(|e| !in_hello.contains(e)) {
+        for address in places_in(&places, &entry.worker_id, &subscribe) {
+            let update = presence_update(address, entry, None, now_ms());
+            sink.send(text(&update)).await.map_err(offline)?;
+        }
+    }
     let local_workers: BTreeSet<String> = workers.values().map(|w| w.worker_id.clone()).collect();
     let mut screen = Screen::for_installation();
     let mut tick = tokio::time::interval(TICK);
@@ -849,6 +939,11 @@ pub(super) async fn session_once(
                         if let Err(error) = delivered {
                             store.record_error(&format!("bus decision: {error}"));
                         }
+                        // rc4-69: recorded for an older Cloud that lists no
+                        // `sent_at`, so agents that start later get it too.
+                        if let Err(error) = crate::team_decisions::note_sent(store.data_dir(), &event) {
+                            store.record_error(&format!("bus decision record: {error}"));
+                        }
                     }
                     Inbound::Other(_) => {}
                 }
@@ -856,10 +951,17 @@ pub(super) async fn session_once(
             }
             _ = tick.tick() => {
                 // Switched off in `[cloud]` meanwhile: close; `run` waits.
-                if super::super::relay_config().is_none() {
+                let Some(now_config) = super::super::relay_config() else {
                     state.save(&data)?;
                     let _ = sink.send(Message::Close(None)).await;
                     return Ok(SessionEnd::Closed);
+                };
+                // F29: `cloud.metrics_upload` changed since the hello named
+                // it: a fresh hello carries the new value.
+                if sharing_changed(sent_sharing, &now_config) {
+                    state.save(&data)?;
+                    let _ = sink.send(Message::Close(None)).await;
+                    return Ok(SessionEnd::Reannounce);
                 }
                 map = crate::resolution::current_view(&data);
                 let LocalView {
@@ -887,8 +989,9 @@ pub(super) async fn session_once(
                                     != sent_identity.get(&e.worker_id)
                         })
                         .collect();
-                    for address in &subscribe {
-                        for entry in &changed {
+                    let places = worker_places(&map, &fresh_agents, &workers);
+                    for entry in &changed {
+                        for address in places_in(&places, &entry.worker_id, &subscribe) {
                             let update = presence_update(
                                 address,
                                 entry,
@@ -916,7 +1019,7 @@ pub(super) async fn session_once(
                     let registry = AgentRegistry::load_or_create();
                     let worker_of = |agent: &AgentEntry| workers.get(&agent.agent_id).map(|w| w.worker_id.clone());
                     let records = super::super::person_rules::Records::load(&data);
-                    for item in relay_v2::outgoing(&registry, &map, &mut state, &mut screen, &worker_of, &records) {
+                    for item in relay_v2::outgoing(&registry, &map, &mut state, &mut screen, &worker_of, &records, person_signer.as_deref()) {
                         sink.send(text(&item.frame)).await.map_err(offline)?;
                     }
                     for frame in relay_v2::queued_frames(&data, &mut state) {
@@ -1023,7 +1126,7 @@ mod tests {
         let entries = presence(&state, &view.agents, &workers, &instance);
         let names = identities(true, &view.agents, &workers, &instance);
         let outgoing = [
-            relay_v2::hello(&view.subscribe, &state, &entries).to_string(),
+            relay_v2::hello(&view.subscribe, &state, &entries, false).to_string(),
             serde_json::to_string(&entries).unwrap(),
             serde_json::to_string(&names).unwrap(),
             view.subscribe.join(","),
@@ -1055,6 +1158,58 @@ mod tests {
                 .any(|line| line.contains("could not be registered")),
             "{lines:?}"
         );
+    }
+
+    /// rc4-86: an MCP server's own `context-engine` presence in a linked
+    /// project showed up in the team as an "unknown" agent.
+    #[test]
+    fn an_engine_placeholder_is_neither_announced_nor_a_worker() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let shared = tempfile::tempdir().unwrap();
+        let shared_root = shared.path().to_string_lossy().into_owned();
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "s".repeat(64),
+            crate::vault::VaultRecord {
+                vault_id: "vlt_shared".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![shared_root.clone()],
+            },
+        );
+        let mut registry = AgentRegistry::new();
+        registry
+            .register("claude", Some("coder"), &shared_root, None)
+            .unwrap();
+        let mut engine = registry.agents[0].clone();
+        engine.agent_id = "mcp-engine".into();
+        engine.agent_type = "mcp".into();
+        engine.role = Some("context-engine".into());
+        engine.role_source = Some(lean_ctx::core::agents::RoleSource::Assumed);
+        registry.agents.push(engine);
+
+        let view = view_of(&map, registry.agents.iter().collect());
+        let ids: Vec<&str> = view.agents.iter().map(|a| a.agent_id.as_str()).collect();
+        assert_eq!(ids, vec![registry.agents[0].agent_id.as_str()]);
+        assert!(view.unlinked.is_empty(), "nor reported as off the bus");
+    }
+
+    /// F29: switching `cloud.metrics_upload` re-announces only a session
+    /// whose hello named it (a Cloud with the capability).
+    #[test]
+    fn a_metrics_sharing_change_needs_a_fresh_hello_only_where_it_was_named() {
+        let on = CloudConfig::default();
+        let off = CloudConfig {
+            metrics_upload: false,
+            ..CloudConfig::default()
+        };
+        assert!(sharing_changed(Some(true), &off));
+        assert!(sharing_changed(Some(false), &on));
+        assert!(!sharing_changed(Some(true), &on));
+        assert!(!sharing_changed(Some(false), &off));
+        assert!(!sharing_changed(None, &off));
+        assert!(!sharing_changed(None, &on));
     }
 
     /// Walk 02.11.: the MCP connection registers as `coder`, then
@@ -1243,6 +1398,64 @@ mod tests {
             unlinked[0].contains("no active agent works in a checkout linked"),
             "{unlinked:?}"
         );
+    }
+
+    /// rc4-86 under rc4-82: the relay subscribes every linked vault, and
+    /// Cloud marks each hello entry present in all of them. A worker of one
+    /// vault is announced there only, by a `presence.update`; with a single
+    /// subscription the hello carries it as before.
+    #[test]
+    fn a_worker_is_present_only_in_the_vaults_its_agents_work_in() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let (pay, docs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let pay_root = pay.path().to_string_lossy().into_owned();
+        let mut map = VaultMap::default();
+        for (key, name, root) in [
+            ("p", "payments", pay_root.clone()),
+            ("d", "docs", docs.path().to_string_lossy().into_owned()),
+        ] {
+            map.vaults.insert(
+                key.repeat(64),
+                crate::vault::VaultRecord {
+                    vault_id: format!("vlt_{name}"),
+                    ns: "acme".into(),
+                    name: name.into(),
+                    sealed: false,
+                    roots: vec![root],
+                },
+            );
+        }
+        let mut registry = AgentRegistry::new();
+        registry
+            .register("claude", Some("coder"), &pay_root, None)
+            .unwrap();
+        let agent = registry.agents[0].clone();
+        let workers = BTreeMap::from([(agent.agent_id.clone(), coder_worker())]);
+        let entry = PresenceEntry {
+            worker_id: "wkr_coder".into(),
+            role: "coder".into(),
+            state: super::super::super::v2::PresenceState::Active,
+            display_name: None,
+            instance_id: None,
+            instance_name: None,
+        };
+        let announced = vec![entry];
+        let places = worker_places(&map, std::slice::from_ref(&agent), &workers);
+
+        let both = relay_v2::subscriptions(&map);
+        assert_eq!(
+            both,
+            vec!["#acme/docs".to_string(), "#acme/payments".into()]
+        );
+        assert!(hello_presence(&announced, &places, &both).is_empty());
+        assert_eq!(
+            places_in(&places, "wkr_coder", &both),
+            vec!["#acme/payments"]
+        );
+        assert!(places_in(&places, "wkr_other", &both).is_empty());
+
+        let one = vec!["#acme/payments".to_string()];
+        assert_eq!(hello_presence(&announced, &places, &one), announced);
     }
 
     fn coder_worker() -> LocalWorker {

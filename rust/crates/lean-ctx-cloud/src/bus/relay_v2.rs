@@ -126,6 +126,11 @@ pub struct StateV2 {
     /// stored: a restart forgives the last minute.
     #[serde(skip)]
     pub budget: super::queen_kinds::RelayBudget,
+    /// LeanCTX Code's chat key (rc4-32): a person's post the app prepared
+    /// and signed leaves with the app's signature, checked against it. Not
+    /// stored: loaded per connection.
+    #[serde(skip)]
+    pub chat_key: Option<crate::consent::chat_key::ChatKeyCheck>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -135,8 +140,66 @@ fn is_zero(n: &u32) -> bool {
 /// The local bus sender of a person's post (`lean-ctx bus post`, Cloud
 /// Desktop): no registered agent, no worker id.
 pub const PERSON_SENDER: &str = "cloud-person";
-/// The `hello.ack` feature that says the Cloud accepts a person's publish.
+/// The feature of a person's publish: the hello names it only while this
+/// machine can sign one ([`crate::consent::person_sign::PersonSigner`]), and the
+/// `hello.ack` names it when the Cloud accepts it.
 pub const PERSON_PUBLISH: &str = "person_publish";
+/// Domain of the person's signature over a publish (C0 `person_publish.v1`).
+pub const PERSON_PUBLISH_DOMAIN: &str = "leanctx.cloud.person_publish.v1\n";
+/// Entry metadata of a person's post LeanCTX Code prepared and signed
+/// (rc4-32): the exact frame (JSON) as prepared…
+pub const PERSON_FRAME_KEY: &str = "person_frame";
+/// …and the chat key's signature over it (base64url).
+pub const PERSON_SIGNATURE_KEY: &str = "presence_signature";
+
+/// The `place.publish` frame of a person's post `entry` to the vault at
+/// `address`, without its signature: exactly what the relay sends for it,
+/// so LeanCTX Code can sign it ahead (`chat.prepare`). `None` when such a
+/// post never leaves (answers, findings, offers, handoffs).
+pub fn person_frame(
+    entry: &lean_ctx::core::agents::ScratchpadEntry,
+    address: &str,
+) -> Option<serde_json::Map<String, Value>> {
+    let text = if MessageType::parse(&entry.category.trim().to_ascii_lowercase())
+        == Some(MessageType::Question)
+    {
+        super::person_rules::cut_to_fit(entry.message.trim(), super::v2::TEXT_MAX)
+    } else {
+        entry.message.clone()
+    };
+    let publish = publish_for(entry, &text, address, PERSON_VALIDATION_WORKER)?;
+    let Ok(Value::Object(mut frame)) = serde_json::to_value(&publish) else {
+        return None;
+    };
+    if let Some(fields) = super::queen_kinds::frame_fields(
+        &entry.metadata,
+        entry.task_id.as_deref(),
+        entry
+            .metadata
+            .get(super::queen_kinds::THREAD_KEY)
+            .map(String::as_str),
+    ) {
+        frame.extend(fields);
+    }
+    frame.insert("t".into(), "place.publish".into());
+    frame.remove("worker_id");
+    frame.insert("sender".into(), json!({"kind": "person"}));
+    Some(frame)
+}
+
+/// The app-signed frame of a person's post, when the entry carries one.
+fn app_signed(
+    entry: &lean_ctx::core::agents::ScratchpadEntry,
+) -> Option<(serde_json::Map<String, Value>, String)> {
+    let frame = entry.metadata.get(PERSON_FRAME_KEY)?;
+    let signature = entry.metadata.get(PERSON_SIGNATURE_KEY)?;
+    if let Ok(Value::Object(frame)) = serde_json::from_str(frame) {
+        return Some((frame, signature.clone()));
+    }
+    // Withheld (an empty frame never matches), and said so.
+    tracing::warn!("cloud bus v2: an app-signed frame that is not a JSON object is withheld");
+    Some((serde_json::Map::new(), signature.clone()))
+}
 
 /// The hello feature that asks Cloud for `hello.ack.policy_version` and the
 /// `policy.advanced` nudge.
@@ -150,14 +213,25 @@ pub const POLICY_APPLIED: &str = "policy_applied";
 /// that is when Cloud shows them to members of the same team only, and
 /// only while `[cloud] presence_names` is on. Never part of the hello.
 pub const PRESENCE_IDENTITY: &str = "presence_identity";
-/// The features this Instance names in its hello (Cloud answers with the
-/// ones it speaks too).
+/// The features this Instance always names in its hello (Cloud answers
+/// with the ones it speaks too); see [`hello_features`].
 pub const HELLO_FEATURES: &[&str] = &[
     POLICY_ADVANCED,
     POLICY_APPLIED,
     PRESENCE_IDENTITY,
     super::plan_events::PLAN_UPDATES,
 ];
+
+/// The hello's features: [`HELLO_FEATURES`], plus [`PERSON_PUBLISH`] only
+/// when a person's post can be signed here. Named without a signature, the
+/// Cloud would refuse every person's post (`person_unproven`).
+pub fn hello_features(person_signing: bool) -> Vec<&'static str> {
+    let mut features = HELLO_FEATURES.to_vec();
+    if person_signing {
+        features.push(PERSON_PUBLISH);
+    }
+    features
+}
 
 /// Whether a `hello.ack` names `feature` among its `features`.
 pub fn acks_feature(ack: &Value, feature: &str) -> bool {
@@ -468,7 +542,7 @@ pub(crate) fn settle_queued(data_dir: &Path, client_msg_id: &str) -> Result<bool
 
 /// Which bus protocol the enrolled Cloud speaks, as the instance card
 /// found out (E44 exists only on a C0 2.0 Cloud): `<config>/bus_protocol.json`.
-const PROTOCOL_FILE: &str = "bus_protocol.json";
+pub(crate) const PROTOCOL_FILE: &str = "bus_protocol.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct ProtocolRecord {
@@ -537,13 +611,15 @@ pub(crate) fn record_for<'a>(map: &'a VaultMap, root: &str) -> Option<&'a VaultR
     })
 }
 
-/// The vault buses to subscribe: linked vaults that have an active local
-/// session in one of their roots (SPEC-ENGINE §3.7.3: presence only where
-/// a session is bound), sorted, at most [`MAX_SUBSCRIBE`].
-pub(crate) fn subscriptions(map: &VaultMap, agents: &[&AgentEntry]) -> Vec<String> {
-    let set: BTreeSet<String> = agents
-        .iter()
-        .filter_map(|agent| record_for(map, &agent.project_root))
+/// The vault buses to subscribe: every linked vault, sorted, at most
+/// [`MAX_SUBSCRIBE`]. A person reads and writes a vault's chat with no
+/// agent running (rc4-82: without one the hello subscribed nothing and the
+/// machine never received a message); SPEC-ENGINE §3.7.3 limits presence
+/// and workers to agents in linked roots, not what this machine listens to.
+pub(crate) fn subscriptions(map: &VaultMap) -> Vec<String> {
+    let set: BTreeSet<String> = map
+        .vaults
+        .values()
         .map(address_of)
         // Only slugs that fit the bus address grammar.
         .filter(|address| Address::parse(Some(address)).is_ok_and(|a| a.is_remote()))
@@ -553,8 +629,13 @@ pub(crate) fn subscriptions(map: &VaultMap, agents: &[&AgentEntry]) -> Vec<Strin
 
 /// The C0 2.0 hello: subscriptions, their cursors, and the presence of the
 /// local workers (`held` while a control holds them), and the
-/// [`HELLO_FEATURES`] this Instance speaks.
-pub fn hello(subscribe: &[String], state: &StateV2, presence: &[PresenceEntry]) -> Value {
+/// features this Instance speaks ([`hello_features`]).
+pub fn hello(
+    subscribe: &[String],
+    state: &StateV2,
+    presence: &[PresenceEntry],
+    person_signing: bool,
+) -> Value {
     let cursors: BTreeMap<&String, u64> = subscribe
         .iter()
         .filter_map(|a| state.cursors.get(a).map(|seq| (a, *seq)))
@@ -565,8 +646,33 @@ pub fn hello(subscribe: &[String], state: &StateV2, presence: &[PresenceEntry]) 
         "subscribe": subscribe,
         "cursors": cursors,
         "presence": presence,
-        "features": HELLO_FEATURES,
+        "features": hello_features(person_signing),
     })
+}
+
+/// The `GET /v1/capabilities` feature of a Cloud that reads
+/// `hello.metrics_sharing` (F29). Without it the hello stays as it was.
+pub const FEATURE_METRICS_SHARING: &str = "instance_metrics_sharing";
+
+/// What the hello says about metrics sharing (F29): `[cloud] metrics_upload`
+/// (the switch the metrics uploader obeys, `false` after "connect without
+/// sharing" or `config set cloud.metrics_upload false`), only while the
+/// enrolled Cloud announced [`FEATURE_METRICS_SHARING`]; `None` otherwise.
+pub fn metrics_sharing(
+    store: &crate::CloudStore,
+    config: &crate::config::CloudConfig,
+) -> Option<bool> {
+    crate::session_ref::announced(store, FEATURE_METRICS_SHARING).then_some(config.metrics_upload)
+}
+
+/// `hello` with the top-level `metrics_sharing` member when `sharing` is
+/// `Some` ([`metrics_sharing`]); with `None` the frame is unchanged, byte for
+/// byte, so a Cloud without the capability sees the hello it always saw.
+pub fn with_metrics_sharing(mut hello: Value, sharing: Option<bool>) -> Value {
+    if let (Some(sharing), Some(frame)) = (sharing, hello.as_object_mut()) {
+        frame.insert("metrics_sharing".into(), Value::Bool(sharing));
+    }
+    hello
 }
 
 /// What [`adopt_ack_cursors`] changed.
@@ -825,8 +931,9 @@ pub struct OutgoingV2 {
 }
 
 /// The local posts still to publish, oldest first. `worker_of` names the
-/// registered worker of a local agent (none: the post waits). Posts that
-/// may never leave are decided once.
+/// registered worker of a local agent (none: the post waits). A person's
+/// post leaves only signed by `person_signer` (none: it waits). Posts that may
+/// never leave are decided once.
 pub(crate) fn outgoing(
     registry: &AgentRegistry,
     map: &VaultMap,
@@ -834,6 +941,7 @@ pub(crate) fn outgoing(
     screen: &mut Screen,
     worker_of: &dyn Fn(&AgentEntry) -> Option<String>,
     records: &super::person_rules::Records,
+    person_signer: Option<&dyn crate::consent::person_sign::PersonSigner>,
 ) -> Vec<OutgoingV2> {
     let now = lean_ctx_time::UtcDateTime::now();
     let queen_mode = super::person_rules::QueenMode::current();
@@ -908,14 +1016,18 @@ pub(crate) fn outgoing(
                 Err(_) => continue,
             }
         }
-        // A person's post waits until the Cloud accepts it; an agent's until
-        // its worker is registered.
+        // A person's post waits until the Cloud accepts it and this machine
+        // can sign it; an agent's until its worker is registered.
         let worker_id = match agent {
             Some(agent) => match worker_of(agent) {
                 Some(worker_id) => worker_id,
                 None => continue,
             },
-            None if state.person_publish => PERSON_VALIDATION_WORKER.to_owned(),
+            None if state.person_publish
+                && (person_signer.is_some() || state.chat_key.is_some()) =>
+            {
+                PERSON_VALIDATION_WORKER.to_owned()
+            }
             None => continue,
         };
         // A bus-wide hold holds a person's post too.
@@ -995,16 +1107,56 @@ pub(crate) fn outgoing(
         ) {
             frame.extend(fields);
         }
+        frame.insert("t".into(), "place.publish".into());
         if person {
             // The Cloud attributes it to the account that owns this
-            // Instance; the frame names no worker and no user.
+            // Instance; the frame names no worker and no user. The presence
+            // key signs the frame as sent (its `t` included); unsigned, the
+            // post waits.
             frame.remove("worker_id");
             frame.insert("sender".into(), json!({"kind": "person"}));
+            if let Some((signed, signature)) = app_signed(entry) {
+                // rc4-32: LeanCTX Code signed this frame with its chat key;
+                // it leaves unchanged with that signature, or never (a
+                // frame for another vault, or a signature that does not
+                // verify). The engine signs nothing here.
+                let ours =
+                    signed.get("to").and_then(Value::as_str) == Some(address_of(record).as_str());
+                let verified = state.chat_key.as_ref().is_some_and(|check| {
+                    check.admits(
+                        PERSON_PUBLISH_DOMAIN,
+                        &Value::Object(signed.clone()),
+                        &signature,
+                    )
+                });
+                if !(ours && verified) {
+                    state.decide(&entry.id);
+                    state.withheld += 1;
+                    continue;
+                }
+                frame = signed;
+                frame.insert(
+                    crate::consent::person_sign::SIGNATURE_FIELD.into(),
+                    signature.into(),
+                );
+            } else {
+                let Some(signer) = person_signer else {
+                    continue;
+                };
+                if !crate::consent::person_sign::sign_frame(
+                    signer,
+                    PERSON_PUBLISH_DOMAIN,
+                    &mut frame,
+                ) {
+                    continue;
+                }
+            }
         }
-        frame.insert("t".into(), "place.publish".into());
-        state
-            .in_flight
-            .insert(publish.client_msg_id.clone(), entry.id.clone());
+        let client_msg_id = frame
+            .get("client_msg_id")
+            .and_then(Value::as_str)
+            .map_or_else(|| publish.client_msg_id.clone(), str::to_owned);
+        state.in_flight.insert(client_msg_id, entry.id.clone());
         out.push(OutgoingV2 {
             entry_id: entry.id.clone(),
             frame: Value::Object(frame),

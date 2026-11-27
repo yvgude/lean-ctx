@@ -404,7 +404,7 @@ Parameters: `background_action`, `command`, `cwd`, `env`, `inline`, `job_id`, `r
 ## `ctx_tasks`
 
 Tasks of this project: LeanCTX Cloud's when linked to a vault, else local.
-list|show, claim, update (one-line summary), submit with evidence (outcome=failed if it failed),
+list|show, claim, update (needs summary), submit (summary + evidence; outcome=failed if failed),
 release, propose; verify another agent's result: accept, or reject with findings (it reopens).
 amend: the submitter corrects a result, no claim (submitted: evidence, summary; done: merge_commit
 once, by submitter or coordinator session, never the reviewer); history keeps both. Vault: refused.

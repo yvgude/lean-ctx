@@ -828,6 +828,16 @@ pub fn spawn(store: CloudStore, config: CloudConfig) {
     }
 }
 
+/// A folder the person unlinked is no sync root; a damaged opt-out store
+/// holds every root back (fail closed, bd 39936).
+fn without_unlinked(data: &Path, map: &mut VaultMap) {
+    for record in map.vaults.values_mut() {
+        record
+            .roots
+            .retain(|root| !crate::unlinked::contains(data, Path::new(root)));
+    }
+}
+
 fn run(store: &CloudStore, mut config: CloudConfig) {
     let data = store.data_dir().to_path_buf();
     let mut status = load_status(&data);
@@ -851,7 +861,8 @@ fn run(store: &CloudStore, mut config: CloudConfig) {
         unpark_link(&mut status, &link_state(store, &config));
         let interval = Duration::from_secs(u64::from(config.pull_interval()) * 60);
         status.interval_s = interval.as_secs();
-        let map = current_map(store);
+        let mut map = current_map(store);
+        without_unlinked(&data, &mut map);
         let active = config.enabled != Some(false) && crate::bus::relay_v2::speaks_v2(store);
         let due_now = plan_pass(
             &map,

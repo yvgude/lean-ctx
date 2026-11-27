@@ -165,3 +165,33 @@ fn old_days_and_claims_are_pruned() {
         assert_eq!(mode & 0o077, 0);
     }
 }
+
+/// bd 40060 MUST: a worktree the person unlinked counts no usage for the
+/// vault of its main checkout.
+#[test]
+fn unlink_of_a_worktree_counts_no_usage_for_the_main_vault() {
+    let base = tempfile::tempdir().unwrap();
+    let base = base.path().canonicalize().unwrap();
+    let (main, wt) = crate::unlinked::fake_worktree(&base);
+    let store = CloudStore::at(base.join("config"), base.join("data"));
+    let mut map = crate::vault::VaultMap::default();
+    map.vaults.insert(
+        "s".into(),
+        crate::vault::VaultRecord {
+            vault_id: "vlt_1".into(),
+            ns: "acme".into(),
+            name: "payments".into(),
+            sealed: false,
+            roots: vec![main.to_string_lossy().into_owned()],
+        },
+    );
+    map.save(store.data_dir()).unwrap();
+    let wt_text = wt.to_string_lossy();
+    assert_eq!(project_of(&store, &wt_text).as_deref(), Some("vlt_1"));
+    crate::unlinked::add(store.data_dir(), &wt).unwrap();
+    assert_eq!(project_of(&store, &wt_text), None);
+    assert_eq!(
+        project_of(&store, &main.to_string_lossy()).as_deref(),
+        Some("vlt_1")
+    );
+}

@@ -88,40 +88,168 @@ impl TaskEvent {
     }
 }
 
-/// The local posts an event asks for: `(to, text)`, `None` = every agent
-/// of the project. `local` are the project's active agents.
-pub fn notices(event: &TaskEvent, local: &[String]) -> Vec<(Option<String>, String)> {
+/// Metadata key of a task notice on the local bus (additive, rc3-57): the
+/// task and what may be done with it, as JSON
+/// `{"task":7,"actions":["show","claim"]}`. The notice's text is plain
+/// language for people (the app renders the actions as buttons); an agent
+/// is shown the exact `ctx_tasks` call built from this field
+/// ([`TaskAction::call`]), never one taken from the text.
+pub const TASK_ACTION_KEY: &str = "lean_ctx.task_action";
+
+/// Who posts the notices of Cloud task events on the local bus.
+pub const SENDER: &str = "cloud";
+
+/// One thing that may be done with a task named by a notice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskVerb {
+    Show,
+    Claim,
+    Verify,
+    Accept,
+    Decline,
+}
+
+impl TaskVerb {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskVerb::Show => "show",
+            TaskVerb::Claim => "claim",
+            TaskVerb::Verify => "verify",
+            TaskVerb::Accept => "accept",
+            TaskVerb::Decline => "decline",
+        }
+    }
+}
+
+/// The structured part of a task notice ([`TASK_ACTION_KEY`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskAction {
+    /// The task number (of the project's vault, or its local tasks).
+    pub task: u64,
+    /// What may be done with it, `show` first.
+    pub actions: Vec<TaskVerb>,
+}
+
+impl TaskAction {
+    pub fn new(task: u64, actions: &[TaskVerb]) -> Self {
+        Self {
+            task,
+            actions: actions.to_vec(),
+        }
+    }
+
+    /// The exact `ctx_tasks` call(s) for an agent, e.g.
+    /// `ctx_tasks action=show number=7, then action=claim number=7`.
+    ///
+    /// Invariant: the call (the `next:` line `ctx_agent action=read` shows)
+    /// is built ONLY from the task number (`u64`) and the known
+    /// [`TaskVerb`]s, never from message text or any other string.
+    pub fn call(&self) -> String {
+        let n = self.task;
+        let mut out = format!("ctx_tasks action=show number={n}");
+        let next: Vec<String> = self
+            .actions
+            .iter()
+            .filter(|verb| **verb != TaskVerb::Show)
+            .map(|verb| match verb {
+                TaskVerb::Verify => format!(
+                    "action=verify number={n} verdict=accept|reject (not by the agent that did the work)"
+                ),
+                other => format!("action={} number={n}", other.as_str()),
+            })
+            .collect();
+        if !next.is_empty() {
+            out.push_str(", then ");
+            out.push_str(&next.join(" or "));
+        }
+        out
+    }
+
+    /// The action a bus entry carries, if any (an unreadable one: none).
+    /// Only the two task-notice senders ([`SENDER`] for Cloud task events,
+    /// [`crate::tasks::local::SENDER`] for local tasks) carry one: the same
+    /// metadata on any other sender's entry is ignored, so no agent can
+    /// make `read` show another agent a `next:` call.
+    pub fn of(entry: &lean_ctx::core::agents::ScratchpadEntry) -> Option<Self> {
+        if entry.from_agent != SENDER && entry.from_agent != crate::tasks::local::SENDER {
+            return None;
+        }
+        entry
+            .metadata
+            .get(TASK_ACTION_KEY)
+            .and_then(|value| serde_json::from_str(value).ok())
+    }
+
+    /// Store this action on the bus entry `id` of `registry`.
+    pub fn attach(&self, registry: &mut lean_ctx::core::agents::AgentRegistry, id: &str) {
+        let Ok(value) = serde_json::to_string(self) else {
+            return;
+        };
+        if let Some(entry) = registry.scratchpad.iter_mut().find(|e| e.id == id) {
+            entry.metadata.insert(TASK_ACTION_KEY.to_owned(), value);
+        }
+    }
+}
+
+/// One post a task change asks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    /// `None` = every agent of the project.
+    pub to: Option<String>,
+    /// Plain language for people: no tool syntax.
+    pub text: String,
+    /// What an agent or a person may do next, when anything.
+    pub action: Option<TaskAction>,
+}
+
+impl Notice {
+    pub fn new(to: Option<String>, text: String, action: Option<TaskAction>) -> Self {
+        Self { to, text, action }
+    }
+}
+
+/// A result to check goes to every agent of the project except `worker`,
+/// the one that did the work (no self-verify); when that agent is not on
+/// this bus, to every agent.
+pub fn to_checkers(notice: Notice, worker: &str, local: &[String]) -> Vec<Notice> {
+    if !local.iter().any(|agent| agent == worker) {
+        return vec![notice];
+    }
+    local
+        .iter()
+        .filter(|agent| agent.as_str() != worker)
+        .map(|agent| Notice {
+            to: Some(agent.clone()),
+            ..notice.clone()
+        })
+        .collect()
+}
+
+/// The local posts an event asks for. `local` are the project's active
+/// agents.
+pub fn notices(event: &TaskEvent, local: &[String]) -> Vec<Notice> {
     let n = event.number;
     match event.event {
         TaskEventKind::Opened | TaskEventKind::Released | TaskEventKind::Rejected => {
-            let why = match event.event {
-                TaskEventKind::Opened => "is open",
-                TaskEventKind::Released => "is open again (its claim ended)",
-                _ => "is open again (a check rejected its result)",
+            let text = match event.event {
+                TaskEventKind::Opened => format!("Task #{n} is open and can be claimed."),
+                TaskEventKind::Released => format!("Task #{n} is open again: its claim ended."),
+                _ => format!("Task #{n} is open again: a check rejected its result."),
             };
-            vec![(
-                None,
-                format!(
-                    "LeanCTX Cloud task #{n} {why}: read it with ctx_tasks action=show number={n}, claim it with action=claim."
-                ),
-            )]
+            let action = TaskAction::new(n, &[TaskVerb::Show, TaskVerb::Claim]);
+            vec![Notice::new(None, text, Some(action))]
         }
         TaskEventKind::Submitted => {
-            let text = format!(
-                "LeanCTX Cloud task #{n} has a result to check: read it with ctx_tasks action=show number={n}, then action=verify verdict=accept|reject (another agent than the one that did the work)."
+            let notice = Notice::new(
+                None,
+                format!("Task #{n} has a result to check."),
+                Some(TaskAction::new(n, &[TaskVerb::Show, TaskVerb::Verify])),
             );
             // `by.worker_id` is the agent id the claim and result named
             // (Cloud compares the same string for self_verify).
             let worker = event.by.worker_id.as_deref().unwrap_or_default();
-            if !local.iter().any(|agent| agent == worker) {
-                // The result came from another agent: any agent here may check it.
-                return vec![(None, text)];
-            }
-            local
-                .iter()
-                .filter(|agent| agent.as_str() != worker)
-                .map(|agent| (Some(agent.clone()), text.clone()))
-                .collect()
+            to_checkers(notice, worker, local)
         }
         _ => Vec::new(),
     }
@@ -235,18 +363,21 @@ pub(crate) fn apply(
         event.event,
         event.at
     );
-    for (i, (to, text)) in notices(event, &local).into_iter().enumerate() {
-        registry.post_message_keyed(
+    for (i, notice) in notices(event, &local).into_iter().enumerate() {
+        let id = registry.post_message_keyed(
             Some(root),
-            "cloud",
-            to.as_deref(),
+            SENDER,
+            notice.to.as_deref(),
             "status",
-            &text,
+            &notice.text,
             PrivacyLevel::Team,
             MessagePriority::Normal,
             None,
             Some(&format!("{key}:{i}")),
         )?;
+        if let Some(action) = &notice.action {
+            action.attach(registry, &id);
+        }
     }
     Ok(())
 }
@@ -368,30 +499,104 @@ mod tests {
         let opened = frame("opened");
         let out = notices(&opened, &["a1".to_string()]);
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].0, None);
-        assert!(
-            out[0].1.starts_with("LeanCTX Cloud task #7 is open:"),
-            "{}",
-            out[0].1
+        assert_eq!(out[0].to, None);
+        // People read plain language; the call travels in the structured field.
+        assert_eq!(out[0].text, "Task #7 is open and can be claimed.");
+        let action = out[0].action.clone().unwrap();
+        assert_eq!(
+            action,
+            TaskAction::new(7, &[TaskVerb::Show, TaskVerb::Claim])
+        );
+        assert_eq!(
+            action.call(),
+            "ctx_tasks action=show number=7, then action=claim number=7"
+        );
+        assert_eq!(
+            notices(&frame("released"), &[])[0].text,
+            "Task #7 is open again: its claim ended."
         );
 
         let submitted = frame("submitted");
         let worker = submitted.by.worker_id.clone().unwrap();
         let others = vec!["a1".to_string(), "a3".to_string()];
         // Another agent's result: every agent here may check it.
-        assert_eq!(notices(&submitted, &others)[0].0, None);
+        assert_eq!(notices(&submitted, &others)[0].to, None);
         // This machine's agent did the work: never that agent (no self-verify).
         let local = vec!["a1".to_string(), worker, "a3".to_string()];
         let to: Vec<_> = notices(&submitted, &local)
             .into_iter()
-            .map(|(to, text)| {
-                assert!(text.contains("action=verify"), "{text}");
-                to.unwrap()
+            .map(|notice| {
+                assert_eq!(notice.text, "Task #7 has a result to check.");
+                let call = notice.action.unwrap().call();
+                assert_eq!(
+                    call,
+                    "ctx_tasks action=show number=7, then action=verify number=7 verdict=accept|reject (not by the agent that did the work)"
+                );
+                notice.to.unwrap()
             })
             .collect();
         assert_eq!(to, ["a1", "a3"]);
 
         assert!(notices(&frame("verified"), &local).is_empty());
+    }
+
+    #[test]
+    fn notice_texts_carry_no_tool_syntax_or_product_name() {
+        let local = vec!["a1".to_string()];
+        for name in ["opened", "released", "submitted"] {
+            for notice in notices(&frame(name), &local) {
+                for banned in ["ctx_tasks", "action=", "LeanCTX Cloud"] {
+                    assert!(!notice.text.contains(banned), "{name}: {}", notice.text);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_task_action_round_trips_through_bus_metadata() {
+        let action = TaskAction::new(3, &[TaskVerb::Show, TaskVerb::Accept, TaskVerb::Decline]);
+        let mut entry = lean_ctx::core::agents::ScratchpadEntry {
+            id: "m1".into(),
+            from_agent: "local-tasks".into(),
+            to_agent: None,
+            task_id: None,
+            category: "status".into(),
+            priority: lean_ctx::core::a2a::message::MessagePriority::Normal,
+            privacy: lean_ctx::core::a2a::message::PrivacyLevel::Team,
+            message: "Local task #3 was proposed.".into(),
+            metadata: Default::default(),
+            project_root: None,
+            timestamp: lean_ctx_time::UtcDateTime::now(),
+            read_by: Vec::new(),
+            expires_at: None,
+        };
+        assert_eq!(TaskAction::of(&entry), None);
+        entry.metadata.insert(
+            TASK_ACTION_KEY.into(),
+            serde_json::to_string(&action).unwrap(),
+        );
+        assert_eq!(
+            entry.metadata[TASK_ACTION_KEY],
+            r#"{"task":3,"actions":["show","accept","decline"]}"#
+        );
+        assert_eq!(TaskAction::of(&entry), Some(action.clone()));
+        assert_eq!(
+            action.call(),
+            "ctx_tasks action=show number=3, then action=accept number=3 or action=decline number=3"
+        );
+        // A Cloud task-event notice carries it as well.
+        entry.from_agent = SENDER.into();
+        assert_eq!(TaskAction::of(&entry), Some(action.clone()));
+        // The same metadata from any other sender (an agent): ignored.
+        entry.from_agent = "claude-42".into();
+        assert_eq!(TaskAction::of(&entry), None);
+        entry.from_agent = crate::tasks::local::SENDER.into();
+        // An unknown verb: no action, never a guessed call.
+        entry.metadata.insert(
+            TASK_ACTION_KEY.into(),
+            r#"{"task":3,"actions":["rm"]}"#.into(),
+        );
+        assert_eq!(TaskAction::of(&entry), None);
     }
 
     /// Task 7 of the fixture vault in `state` at `at` (unix ms).

@@ -26,6 +26,7 @@ pub(crate) mod bus;
 pub(crate) mod bus_presence;
 pub(crate) mod capabilities;
 pub(crate) mod chat_part;
+pub(crate) mod chat_sign;
 pub(crate) mod cloud_cpao;
 pub(crate) mod cloud_exchange;
 pub(crate) mod cloud_gateway;
@@ -44,6 +45,7 @@ pub(crate) mod lease_part;
 pub(crate) mod leases;
 pub(crate) mod link;
 pub(crate) mod members_part;
+pub(crate) mod pickup_part;
 pub(crate) mod plan_part;
 pub(crate) mod policies;
 pub(crate) mod policy_layers;
@@ -59,7 +61,9 @@ pub(crate) mod sync;
 pub(crate) mod task_receipt;
 pub(crate) mod tasks;
 pub(crate) mod tasks_part;
+pub(crate) mod tasks_sign;
 pub(crate) mod team_stop_part;
+pub(crate) mod unlink_part;
 pub(crate) mod usage;
 pub(crate) mod vaults;
 
@@ -89,6 +93,12 @@ pub(crate) const PARTS: &[Part] = &[
         kinds: tasks_part::KINDS,
         commands: tasks_part::COMMANDS,
         answer: tasks_part::answer,
+    },
+    Part {
+        routes: pickup_part::ROUTES,
+        kinds: pickup_part::KINDS,
+        commands: pickup_part::COMMANDS,
+        answer: pickup_part::answer,
     },
     Part {
         routes: team_stop_part::ROUTES,
@@ -186,6 +196,12 @@ pub(crate) const PARTS: &[Part] = &[
         commands: plan_part::COMMANDS,
         answer: plan_part::answer,
     },
+    Part {
+        routes: unlink_part::ROUTES,
+        kinds: unlink_part::KINDS,
+        commands: unlink_part::COMMANDS,
+        answer: unlink_part::answer,
+    },
 ];
 
 /// The part that answers `kind`, if any.
@@ -260,6 +276,21 @@ pub(crate) enum Code {
     /// A route only LeanCTX Code may ask for (`app_key`), asked without the
     /// app key; nothing was done. A `403` like `forbidden`.
     AppOnly,
+    /// A person's post needs the device chat key, and none is bound here
+    /// (rc4-32). A `403`.
+    ChatKeyMissing,
+    /// A signed person post whose signature or key does not check out; nothing
+    /// was sent. A `403`.
+    SignatureInvalid,
+    /// A prepared person post older than its time to live; prepare it again.
+    /// A `409`.
+    FrameExpired,
+    /// A signed person post this process did not prepare, or already sent.
+    /// A `409`.
+    FrameUnknown,
+    /// A person's post without the device's signature; nothing was sent
+    /// (rc4-32). A `403`.
+    SignatureRequired,
 }
 
 impl Code {
@@ -292,6 +323,11 @@ impl Code {
             Self::ComputerNotAvailable => "computer_not_available",
             Self::ConfirmationRequired => "confirmation_required",
             Self::AppOnly => "app_only",
+            Self::ChatKeyMissing => "chat_key_missing",
+            Self::SignatureInvalid => "signature_invalid",
+            Self::FrameExpired => "frame_expired",
+            Self::FrameUnknown => "frame_unknown",
+            Self::SignatureRequired => "signature_required",
         }
     }
 

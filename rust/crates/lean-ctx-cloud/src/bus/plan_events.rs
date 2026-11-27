@@ -14,8 +14,12 @@
 //!   team decision in LeanCTX Code, so the frame is the release: each active
 //!   agent of the checkout gets the decision directive on the bus at once
 //!   (`deliver_decision`). The same decision, status and successor again (a
-//!   frame delivered twice) posts nothing. Only the frame delivers one: no
-//!   catch-up, sync or list does.
+//!   frame delivered twice) posts nothing. Only the frame posts a bus
+//!   directive: no catch-up, sync or list does. Agents that start later get
+//!   the sent text from `crate::team_decisions` (rc4-69): a sync keeps a
+//!   decision only when the same list entry is `active` with a Cloud
+//!   `sent_at`, which Cloud clears on every later change, so text edited
+//!   after the send is never delivered.
 //!
 //! Agents get a plan update only after a person clicked "Send to agents" in
 //! LeanCTX Code and confirmed it (owner decision). A plan frame or a pulled

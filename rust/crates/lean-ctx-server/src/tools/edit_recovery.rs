@@ -34,6 +34,30 @@ const MAX_FILE_SIZE: u64 = 512_000;
 /// so trivial lines like `}` or `{` never trigger noisy matches.
 const MIN_NEEDLE_LEN: usize = 12;
 
+thread_local! {
+    /// The calling session's project root while an edit runs (see
+    /// [`with_project_root`]); `None` outside one.
+    static PROJECT_ROOT: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` (a synchronous edit) with `project_root` as the scope of the
+/// missing-file suggestion, the scope ctx_read substitutes within (#2262).
+/// An empty root leaves the enclosing git repository as the scope.
+pub(crate) fn with_project_root<T>(project_root: &str, f: impl FnOnce() -> T) -> T {
+    /// Restores the outer scope even when `f` unwinds.
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            PROJECT_ROOT.with(|cell| *cell.borrow_mut() = previous);
+        }
+    }
+    let root = (!project_root.is_empty()).then(|| PathBuf::from(project_root));
+    let _restore = Restore(PROJECT_ROOT.with(|cell| cell.replace(root)));
+    f()
+}
+
 /// #331 point 3: the target file does not exist. Search the enclosing repo for
 /// a file with the same name so the agent learns whether it moved or the
 /// path/name is simply wrong. Returns a leading-newline hint, or empty if the
@@ -51,6 +75,22 @@ pub(crate) fn moved_or_deleted_hint(target: &Path) -> String {
             target.display()
         );
     };
+
+    // #2262: the one file ctx_read would read in place of this path (other
+    // case, doubled or missing prefix) is named first, in ctx_read's words, so
+    // a read and an edit of the same path agree on which file it means. Like
+    // ctx_read, the lookup is scoped to the calling session's project root. An
+    // edit never follows the guess itself.
+    let suggest_root = PROJECT_ROOT
+        .with(|cell| cell.borrow().clone())
+        .unwrap_or_else(|| root.clone());
+    if let Some(found) = lean_ctx::core::path_suggest::unambiguous_match_in(target, &suggest_root) {
+        return format!(
+            "\n[lean-ctx: {} does not exist — edit {} instead]",
+            target.display(),
+            found.display()
+        );
+    }
 
     let mut hits: Vec<PathBuf> = Vec::new();
     let mut scanned = 0usize;
@@ -238,6 +278,32 @@ mod tests {
         let hint = moved_or_deleted_hint(&root.join("src/old/widget.rs"));
         assert!(hint.contains("same-named file was found"), "got: {hint}");
         assert!(hint.contains("widget.rs"), "got: {hint}");
+    }
+
+    /// #2262: a path one prefix off names the file ctx_read substitutes, in
+    /// ctx_read's words, scoped to the session's project root.
+    #[test]
+    fn missing_path_hint_names_the_file_ctx_read_would_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        repo(root);
+        fs::create_dir_all(root.join("rust/src/core")).unwrap();
+        fs::write(root.join("rust/src/core/thing.rs"), "fn thing() {}\n").unwrap();
+        let wanted = root.join("src/core/thing.rs");
+
+        let read_would = lean_ctx::core::path_suggest::unambiguous_match_in(&wanted, root)
+            .expect("ctx_read substitutes this path");
+        let hint = with_project_root(&root.to_string_lossy(), || moved_or_deleted_hint(&wanted));
+        assert_eq!(
+            hint,
+            format!(
+                "\n[lean-ctx: {} does not exist — edit {} instead]",
+                wanted.display(),
+                read_would.display()
+            )
+        );
+        // The scope ends with the call.
+        assert!(PROJECT_ROOT.with(|cell| cell.borrow().is_none()));
     }
 
     #[test]

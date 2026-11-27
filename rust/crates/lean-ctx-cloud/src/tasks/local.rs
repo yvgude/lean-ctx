@@ -23,6 +23,7 @@ use lean_ctx_tasks::{Actor, Board, Change, LocalTask, Store, TaskError, TaskEven
 
 use super::EvidenceInput;
 use super::render::{origin, state_with};
+use crate::bus::task_events::{Notice, TaskAction, TaskVerb, to_checkers};
 use crate::state::CloudStore;
 use crate::untrusted::{UntrustedKind, wrap};
 use crate::vault::VaultMap;
@@ -118,50 +119,57 @@ pub fn evidence(root: &Path, inputs: Vec<EvidenceInput>) -> Result<Vec<EvidenceV
         .collect()
 }
 
-/// The posts `change` asks for: `(to, text)`, `None` = every agent of the
-/// project. `local` are the project's active agents.
-pub fn notices(change: &Change, local: &[String]) -> Vec<(Option<String>, String)> {
+/// The posts `change` asks for. `local` are the project's active agents.
+/// The text is plain language for people; what may be done next travels in
+/// the notice's [`TaskAction`] (agents are shown the exact call from it).
+pub fn notices(change: &Change, local: &[String]) -> Vec<Notice> {
     let n = change.number;
-    let show = format!("ctx_tasks action=show number={n}");
-    let text = match change.event {
-        TaskEvent::Proposed => format!(
-            "Local task #{n} was proposed: read it with {show}, then action=accept or action=decline."
+    let act = |verbs: &[TaskVerb]| Some(TaskAction::new(n, verbs));
+    let claimable = act(&[TaskVerb::Show, TaskVerb::Claim]);
+    let (text, action) = match change.event {
+        TaskEvent::Proposed => (
+            format!("Local task #{n} was proposed and waits to be accepted or declined."),
+            act(&[TaskVerb::Show, TaskVerb::Accept, TaskVerb::Decline]),
         ),
-        TaskEvent::Accepted => {
-            format!("Local task #{n} is open: read it with {show}, claim it with action=claim.")
-        }
-        TaskEvent::Released => format!(
-            "Local task #{n} is open again (its claim ended): read it with {show}, claim it with action=claim."
+        TaskEvent::Accepted => (
+            format!("Local task #{n} is open and can be claimed."),
+            claimable,
         ),
-        TaskEvent::Rejected => format!(
-            "Local task #{n} is open again (a check rejected its result): read it with {show}, claim it with action=claim."
+        TaskEvent::Released => (
+            format!("Local task #{n} is open again: its claim ended."),
+            claimable,
+        ),
+        TaskEvent::Rejected => (
+            format!("Local task #{n} is open again: a check rejected its result."),
+            claimable,
         ),
         TaskEvent::Submitted => {
-            let text = format!(
-                "Local task #{n} has a result to check: read it with {show}, then action=verify verdict=accept|reject (another agent than the one that did the work)."
+            let notice = Notice::new(
+                None,
+                format!("Local task #{n} has a result to check."),
+                act(&[TaskVerb::Show, TaskVerb::Verify]),
             );
             let worker = change.worker.as_deref().unwrap_or_default();
-            if !local.iter().any(|agent| agent == worker) {
-                return vec![(None, text)];
-            }
-            return local
-                .iter()
-                .filter(|agent| agent.as_str() != worker)
-                .map(|agent| (Some(agent.clone()), text.clone()))
-                .collect();
+            return to_checkers(notice, worker, local);
         }
-        TaskEvent::Declined => format!("Local task #{n} was declined."),
-        TaskEvent::Claimed => format!("Local task #{n} was claimed."),
-        TaskEvent::Updated => format!("Local task #{n} has a progress update."),
-        TaskEvent::Failed => format!("Local task #{n} ended as failed."),
-        TaskEvent::Verified => format!("Local task #{n} is done: its result was accepted."),
-        TaskEvent::Stopped => format!("Local task #{n} was stopped."),
-        TaskEvent::Amended => format!(
-            "Local task #{n}: its result was amended or its merge recorded (the history keeps old and new): read it with {show}."
+        TaskEvent::Declined => (format!("Local task #{n} was declined."), None),
+        TaskEvent::Claimed => (format!("Local task #{n} was claimed."), None),
+        TaskEvent::Updated => (format!("Local task #{n} has a progress update."), None),
+        TaskEvent::Failed => (format!("Local task #{n} ended as failed."), None),
+        TaskEvent::Verified => (
+            format!("Local task #{n} is done: its result was accepted."),
+            None,
+        ),
+        TaskEvent::Stopped => (format!("Local task #{n} was stopped."), None),
+        TaskEvent::Amended => (
+            format!(
+                "Local task #{n}: its result was amended or its merge recorded (the history keeps old and new)."
+            ),
+            act(&[TaskVerb::Show]),
         ),
         TaskEvent::Shared | TaskEvent::Fields => return Vec::new(),
     };
-    vec![(None, text)]
+    vec![Notice::new(None, text, action)]
 }
 
 /// Post the notices of `changes` on the project's bus; whether the bus
@@ -199,19 +207,24 @@ pub fn post_notices(registry: &mut AgentRegistry, root: &str, changes: &[Change]
             change.event.as_str(),
             change.seq
         );
-        for (i, (to, text)) in notices(change, &local).into_iter().enumerate() {
-            if let Err(error) = registry.post_message_keyed(
+        for (i, notice) in notices(change, &local).into_iter().enumerate() {
+            match registry.post_message_keyed(
                 Some(root),
                 SENDER,
-                to.as_deref(),
+                notice.to.as_deref(),
                 "status",
-                &text,
+                &notice.text,
                 PrivacyLevel::Team,
                 MessagePriority::Normal,
                 None,
                 Some(&format!("{key}:{i}")),
             ) {
-                tracing::warn!("local tasks: notice {key} not posted: {error}");
+                Ok(id) => {
+                    if let Some(action) = &notice.action {
+                        action.attach(registry, &id);
+                    }
+                }
+                Err(error) => tracing::warn!("local tasks: notice {key} not posted: {error}"),
             }
         }
     }
@@ -490,16 +503,88 @@ mod tests {
         let local = vec!["queen".to_owned(), "w1".to_owned(), "w2".to_owned()];
         let to: Vec<_> = notices(&change(TaskEvent::Submitted, Some("w1")), &local)
             .into_iter()
-            .map(|(to, _)| to)
+            .map(|notice| notice.to)
             .collect();
         assert_eq!(to, [Some("queen".to_owned()), Some("w2".to_owned())]);
         // A worker not on this bus: everyone may check it.
         let to: Vec<_> = notices(&change(TaskEvent::Submitted, Some("gone")), &local)
             .into_iter()
-            .map(|(to, _)| to)
+            .map(|notice| notice.to)
             .collect();
         assert_eq!(to, [None]);
         assert_eq!(notices(&change(TaskEvent::Proposed, None), &local).len(), 1);
         assert!(notices(&change(TaskEvent::Shared, None), &local).is_empty());
+    }
+
+    #[test]
+    fn notices_read_plainly_and_carry_the_call_for_agents() {
+        let local = vec!["w1".to_owned()];
+        let only = |event, worker| {
+            let mut out = notices(&change(event, worker), &local);
+            assert_eq!(out.len(), 1);
+            out.remove(0)
+        };
+        let proposed = only(TaskEvent::Proposed, None);
+        assert_eq!(
+            proposed.text,
+            "Local task #7 was proposed and waits to be accepted or declined."
+        );
+        assert_eq!(
+            proposed.action.unwrap().call(),
+            "ctx_tasks action=show number=7, then action=accept number=7 or action=decline number=7"
+        );
+        let open = only(TaskEvent::Accepted, None);
+        assert_eq!(open.text, "Local task #7 is open and can be claimed.");
+        assert_eq!(
+            open.action.unwrap().call(),
+            "ctx_tasks action=show number=7, then action=claim number=7"
+        );
+        let check = only(TaskEvent::Submitted, Some("gone"));
+        assert_eq!(check.text, "Local task #7 has a result to check.");
+        assert_eq!(
+            check.action.unwrap().actions,
+            [TaskVerb::Show, TaskVerb::Verify]
+        );
+        assert_eq!(only(TaskEvent::Claimed, None).action, None);
+        for event in [
+            TaskEvent::Proposed,
+            TaskEvent::Accepted,
+            TaskEvent::Released,
+            TaskEvent::Rejected,
+            TaskEvent::Submitted,
+            TaskEvent::Amended,
+        ] {
+            for notice in notices(&change(event, Some("gone")), &local) {
+                for banned in ["ctx_tasks", "action=", "LeanCTX Cloud"] {
+                    assert!(!notice.text.contains(banned), "{}", notice.text);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_posted_notice_carries_its_action_on_the_bus() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let _policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().expect("project");
+        let root = dir.path().to_string_lossy().into_owned();
+        let mut registry = AgentRegistry::new();
+        post_notices(&mut registry, &root, &[change(TaskEvent::Proposed, None)]);
+        let entry = registry
+            .scratchpad
+            .iter()
+            .find(|e| e.from_agent == SENDER)
+            .expect("posted");
+        assert_eq!(
+            entry.message,
+            "Local task #7 was proposed and waits to be accepted or declined."
+        );
+        assert_eq!(
+            TaskAction::of(entry),
+            Some(TaskAction::new(
+                7,
+                &[TaskVerb::Show, TaskVerb::Accept, TaskVerb::Decline]
+            ))
+        );
     }
 }

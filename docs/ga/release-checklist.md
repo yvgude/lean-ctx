@@ -259,5 +259,13 @@ mismatch.
 - If a checksum fails, discard the downloaded asset set and fetch every asset
   again; see [Release Integrity v1](../contracts/release-integrity-v1.md).
 - If CI omits an expected platform, correct the build matrix before publishing.
+- If `Release gates (Homebrew bottles)` fails, the release stays a draft:
+  `Publish GitHub Release` and every later publishing job (crates, npm, PyPI,
+  the Homebrew tap) wait for it (owner decision 25.11. (F57): fail closed), so no release goes out whose tap
+  formula would fall back to a source build that needs Command Line Tools on
+  macOS. Fix the cause (for example a missing Cockpit bundle or signature) and
+  re-run the failed jobs of the same workflow run. Bottles are reproducible, so
+  a rerun replaces them on the draft with identical files; it never replaces
+  assets of a published release. Do not publish the draft by hand.
 - For a post-publication integrity incident, use
   [RB-05](runbook-index.md#rb-05-release-integrity-verification-failed).

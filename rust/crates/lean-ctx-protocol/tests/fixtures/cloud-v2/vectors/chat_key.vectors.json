@@ -1,0 +1,139 @@
+{
+  "description": "The app's chat key (rc4-32): bound at POST /v1/device/token (worker.schema.json $defs/chat_key_bind) by bind_signature over \"leanctx.cloud.chat_key_bind.v1\\n\" followed by canonical_json({alg, instance_public_key (the request's string), key_id, public_key, scope: \"person_publish.v1\"}); it then signs the person's own posts only (\"leanctx.cloud.person_publish.v1\\n\" followed by canonical_json): the relay place.publish (frame without presence_signature, plus instance_id) and the engine-token chat routes (body without presence_signature, plus instance_id, t \"chat.message\" with channel_id, or t \"chat.dm\"; the body carries client_msg_id, a UUID v4; the same signed post again answers the first post for as long as it exists, the same client_msg_id with another signed body is refused). The Cloud refuses it on any other check (refused_on_optin). A chat_key member set to null is refused (refused_null_chat_key), never read as absent. Test keys only: chat key ed25519 seed = sha256(\"leanctx-cloud test chat key: rc4-32\"); instance_public_key = standard base64 of the ed25519 public key of seed sha256(\"leanctx-cloud test instance key: rc4-32\"). Cases engine_*: chat key seed = sha256(\"leanctx test chat key: rc4-32\"), the engine's test key. engine_bind is the engine's bind vector (p5 !622 chat_key.rs, instance_public_key its fixed test string), cross-checked byte for byte; engine_chat_dm and engine_relay_person_publish are p37's vectors in the shapes the engine sends (a DM body with member UUIDs; the whole person place.publish frame with schema and type), signed with that key, for the engine to pin (pending in p5 !622). Each carries its own seed, public_key, signing_input and signature.",
+  "alg": "ed25519",
+  "seed": "b2e7a6d259e614e4e2d6bcfc8c26bc75736060aed603594f8f7742569458bf76",
+  "public_key": "33VQ9vFAO9KFXtb-tljRZ5EQhnUZlvFvjOu6fNEYsys",
+  "key_id": "06febbe349ba0270",
+  "cases": [
+    {
+      "name": "bind",
+      "instance_public_key": "vC5qB4MoA02T2VMf8tgsT8CyZaTBftVFen2G3NQsRWs=",
+      "chat_key": {
+        "alg": "ed25519",
+        "public_key": "33VQ9vFAO9KFXtb-tljRZ5EQhnUZlvFvjOu6fNEYsys",
+        "key_id": "06febbe349ba0270",
+        "bind_signature": "tnU_VuKuMeDjHevz8k97PQL5Bxo3ZtMIAz6C3l9lYocsG47UIJW-9KetpF4lB-32Hij-nPXCwsiN3u74GoXoBQ"
+      },
+      "signing_input": "leanctx.cloud.chat_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"vC5qB4MoA02T2VMf8tgsT8CyZaTBftVFen2G3NQsRWs=\",\"key_id\":\"06febbe349ba0270\",\"public_key\":\"33VQ9vFAO9KFXtb-tljRZ5EQhnUZlvFvjOu6fNEYsys\",\"scope\":\"person_publish.v1\"}"
+    },
+    {
+      "name": "refused_null_chat_key",
+      "route": "POST /v1/device/token",
+      "instance_public_key": "vC5qB4MoA02T2VMf8tgsT8CyZaTBftVFen2G3NQsRWs=",
+      "chat_key": null,
+      "expect": "400 invalid_field field chat_key: a present chat_key is an object (chat_key_bind); leave the member out to bind no chat key, null is never read as absent"
+    },
+    {
+      "name": "relay_person_publish",
+      "fixture": "bus/frame.place_publish.person.json",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "signing_input": "leanctx.cloud.person_publish.v1\n{\"body\":{\"deadline\":1792803600000,\"text\":\"Can the export wait until the ledger close is done?\"},\"client_msg_id\":\"01M5NKA2Z8B000000000000002\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"schema\":\"leanctx.cloud.bus/v2\",\"sender\":{\"kind\":\"person\"},\"t\":\"place.publish\",\"to\":\"#acme/payments\",\"type\":\"question\"}",
+      "signature": "UL3ySdJ6byEuJky8lQGwUZbXkWYg6sYPSt5r3ZeQCGwgKaSX8KWUPGPf6qTeosp5o6eMI-COCDJq21CrGsFxCg"
+    },
+    {
+      "name": "rest_chat_message",
+      "route": "POST /v1/chat/channels/{id}/messages",
+      "channel_id": "6b2d9c4e-1f3a-4b5c-8d7e-9f0a1b2c3d4e",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "body": {
+        "body": "Can the export wait until the ledger close is done?",
+        "client_msg_id": "8a6f0c3e-2b1d-4e5f-9a7b-3c4d5e6f7a8b",
+        "mentions": [
+          "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+        ],
+        "presence_signature": "4mqwn6xue3NGUCPfacN4KkG1lUmPPV9arsKERwDGSqkxJSHkmsdDN41tVs8i8Kp2OEWDKyOjaty5bXDa03IQAg"
+      },
+      "signing_input": "leanctx.cloud.person_publish.v1\n{\"body\":\"Can the export wait until the ledger close is done?\",\"channel_id\":\"6b2d9c4e-1f3a-4b5c-8d7e-9f0a1b2c3d4e\",\"client_msg_id\":\"8a6f0c3e-2b1d-4e5f-9a7b-3c4d5e6f7a8b\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"mentions\":[\"0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f\"],\"t\":\"chat.message\"}"
+    },
+    {
+      "name": "rest_chat_dm",
+      "route": "POST /v1/chat/dms",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "body": {
+        "members": [
+          "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+        ],
+        "client_msg_id": "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a",
+        "presence_signature": "w41hfwk24zvBLsejX2m0q57yDTJFv0Isj830Da7slUeLvmaVg1nmsX-A-_KTT8EFebrs_ScCPOWNZi2gKFEfBA"
+      },
+      "signing_input": "leanctx.cloud.person_publish.v1\n{\"client_msg_id\":\"5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"members\":[\"0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f\"],\"t\":\"chat.dm\"}"
+    },
+    {
+      "name": "refused_on_optin",
+      "route": "PUT /v1/me/optin",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "body": {
+        "schema": "leanctx.cloud.instance-optin-on/v1",
+        "active": true,
+        "prev_optin_id": "opt_7a1d4c2e9b3f4e6a8c5d0f1e2a3b4c5d",
+        "vaults": [
+          "0f3c2b6a8d4e4a7b9c105e2f6a7b8c01"
+        ],
+        "daily_budget": {
+          "tasks": 3,
+          "tokens": 1000000
+        },
+        "presence_signature": "Fn_Juq__lv6O9tV4p6fi94No7k3ATE5xD77IzKlBmn79kmiXTrWqkUhU7hjlMYI7ig7ejsJanXgP-YlcMuD3Dg"
+      },
+      "signing_input": "leanctx.cloud.optin.v1\n{\"active\":true,\"daily_budget\":{\"tasks\":3,\"tokens\":1000000},\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"prev_optin_id\":\"opt_7a1d4c2e9b3f4e6a8c5d0f1e2a3b4c5d\",\"schema\":\"leanctx.cloud.instance-optin-on/v1\",\"vaults\":[\"0f3c2b6a8d4e4a7b9c105e2f6a7b8c01\"]}",
+      "expect": "403 forbidden_right reason person_unproven: a chat key signs leanctx.cloud.person_publish.v1 inputs only"
+    },
+    {
+      "name": "engine_bind",
+      "source": "engine p5 !622 chat_key.rs",
+      "seed_derivation": "sha256(\"leanctx test chat key: rc4-32\")",
+      "seed": "cc99f03d9f3c6cf400cd99437dafde5679e9bb8a3ef47f55d1cc4d5250be5e55",
+      "public_key": "-uq_H2bZ-l58clOy_DlWn_CAv7D-Kr3pCrtG0SNSvis",
+      "key_id": "b87ae058e7c0c071",
+      "instance_public_key": "Vt7FhcqVvGkAq4sRk6m0Kx8wQ2c1mF0lJj3p9aYb5Zs",
+      "chat_key": {
+        "alg": "ed25519",
+        "public_key": "-uq_H2bZ-l58clOy_DlWn_CAv7D-Kr3pCrtG0SNSvis",
+        "key_id": "b87ae058e7c0c071",
+        "bind_signature": "GEc1nMaKbFix_W43sPHpSnXHDtx-a3JFtXgOHSPI8v8cKqwcmn-8n-QG4C2m5MccM5LUlV8jjvxJ0dyzGXURAA"
+      },
+      "signing_input": "leanctx.cloud.chat_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"Vt7FhcqVvGkAq4sRk6m0Kx8wQ2c1mF0lJj3p9aYb5Zs\",\"key_id\":\"b87ae058e7c0c071\",\"public_key\":\"-uq_H2bZ-l58clOy_DlWn_CAv7D-Kr3pCrtG0SNSvis\",\"scope\":\"person_publish.v1\"}",
+      "signature": "GEc1nMaKbFix_W43sPHpSnXHDtx-a3JFtXgOHSPI8v8cKqwcmn-8n-QG4C2m5MccM5LUlV8jjvxJ0dyzGXURAA"
+    },
+    {
+      "name": "engine_chat_dm",
+      "source": "p37 (engine pin pending in p5 !622)",
+      "route": "POST /v1/chat/dms",
+      "seed": "cc99f03d9f3c6cf400cd99437dafde5679e9bb8a3ef47f55d1cc4d5250be5e55",
+      "public_key": "-uq_H2bZ-l58clOy_DlWn_CAv7D-Kr3pCrtG0SNSvis",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "body": {
+        "members": [
+          "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+        ],
+        "client_msg_id": "0b3f5c4e-8d7a-4c21-b5e9-2a6d1f0c9e88",
+        "presence_signature": "boynUSaEEuL59eNmYwxMPoOUTu3Y-KK9UOgPZ4xshFEa9zLYtOdt_6X_EzmWpmrEMbDEODszAyJIqsIykxcVCQ"
+      },
+      "signing_input": "leanctx.cloud.person_publish.v1\n{\"client_msg_id\":\"0b3f5c4e-8d7a-4c21-b5e9-2a6d1f0c9e88\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"members\":[\"0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f\"],\"t\":\"chat.dm\"}",
+      "signature": "boynUSaEEuL59eNmYwxMPoOUTu3Y-KK9UOgPZ4xshFEa9zLYtOdt_6X_EzmWpmrEMbDEODszAyJIqsIykxcVCQ"
+    },
+    {
+      "name": "engine_relay_person_publish",
+      "source": "p37 (engine pin pending in p5 !622)",
+      "seed": "cc99f03d9f3c6cf400cd99437dafde5679e9bb8a3ef47f55d1cc4d5250be5e55",
+      "public_key": "-uq_H2bZ-l58clOy_DlWn_CAv7D-Kr3pCrtG0SNSvis",
+      "instance_id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09",
+      "frame": {
+        "schema": "leanctx.cloud.bus/v2",
+        "t": "place.publish",
+        "to": "#team/main",
+        "type": "progress",
+        "sender": {
+          "kind": "person"
+        },
+        "body": {
+          "step": "deploy done"
+        },
+        "client_msg_id": "01JT0000000000000000000000",
+        "presence_signature": "AqzpM-19emMnPpA2N6aZUL53U6T032zglNA37LKuNQDJsGr2_ymgO4JyJpR82TiwCNzUuLRrXQYtiY67DsDMDg"
+      },
+      "signing_input": "leanctx.cloud.person_publish.v1\n{\"body\":{\"step\":\"deploy done\"},\"client_msg_id\":\"01JT0000000000000000000000\",\"instance_id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09\",\"schema\":\"leanctx.cloud.bus/v2\",\"sender\":{\"kind\":\"person\"},\"t\":\"place.publish\",\"to\":\"#team/main\",\"type\":\"progress\"}",
+      "signature": "AqzpM-19emMnPpA2N6aZUL53U6T032zglNA37LKuNQDJsGr2_ymgO4JyJpR82TiwCNzUuLRrXQYtiY67DsDMDg"
+    }
+  ]
+}

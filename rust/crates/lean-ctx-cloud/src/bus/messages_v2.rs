@@ -198,6 +198,11 @@ pub(crate) fn send_in(
     text: &str,
     extras: Extras<'_>,
 ) -> Result<String, String> {
+    // A folder the person stopped sharing sends nothing, not even through
+    // its main checkout or another checkout's record (rc4-6, bd 39657).
+    if crate::unlinked::contains(store.data_dir(), std::path::Path::new(project_root)) {
+        return Err(crate::unlinked::refusal(store.data_dir()));
+    }
     if let Some(refusal) = super::control::admission(store, Some(agent_id)) {
         return Err(refusal.message());
     }

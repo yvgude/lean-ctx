@@ -1,0 +1,1251 @@
+{
+  "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+  "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+  "device_code_sha256": "b4f2081ce464fe05e0eac3c130842cf7b1cde6290c144ab82e8f9c36e3c370c1",
+  "feature": "device_app_keys",
+  "keys": {
+    "chat_seed_hex": "4343434343434343434343434343434343434343434343434343434343434343",
+    "instance_ed25519_pub": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+    "instance_seed_hex": "4949494949494949494949494949494949494949494949494949494949494949",
+    "optin_seed_hex": "5050505050505050505050505050505050505050505050505050505050505050",
+    "other_app_key_seed_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+    "task_propose_seed_hex": "5454545454545454545454545454545454545454545454545454545454545454"
+  },
+  "labels": {
+    "chat": "Chat messages",
+    "optin": "Task pickup",
+    "task_propose": "Task proposals"
+  },
+  "negative": [
+    {
+      "case": "unknown_kind",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "share",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "duplicate_kind",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "unsorted",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "too_many",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "wrong_alg",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed448",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "padded_public_key",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY="
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "standard_base64_public_key",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "6a3803d5f059902a",
+            "kind": "chat",
+            "public_key": "gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "noncanonical_trailing_bits",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLZ"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "unknown_member",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "label": "Chat messages",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "short_public_key",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "7db0b01f39d179aa",
+            "kind": "chat",
+            "public_key": "Q0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQw"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "case": "key_id_mismatch",
+      "request": {
+        "app_keys": [
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "chat",
+            "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "ef1bd9c792ccc768",
+            "kind": "optin",
+            "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+          },
+          {
+            "alg": "ed25519",
+            "key_id": "9ebdc850b1afad78",
+            "kind": "task_propose",
+            "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+          }
+        ],
+        "client_id": "lean-ctx-engine",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-code-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys",
+          "message": "app_keys is invalid."
+        }
+      },
+      "route": "POST /v1/device/code"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "bind_signature_missing",
+      "request": {
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys_bind_signature",
+          "message": "app_keys_bind_signature does not verify.",
+          "reason": "app_key_bind_invalid"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "nothing_offered",
+      "request": {
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys_bind_signature",
+          "message": "app_keys_bind_signature does not verify.",
+          "reason": "app_key_bind_invalid"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "bind_signature_other_device_code",
+      "request": {
+        "app_keys_bind_signature": "lwfor6fSbYG2KUtvM0XZHfK4uQQWtnPOq9zACByprzg1V_Chv78vDA7yFEMhDNQUoBTtqkzea7IrbpedMcxqBA",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys_bind_signature",
+          "message": "app_keys_bind_signature does not verify.",
+          "reason": "app_key_bind_invalid"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "bind_signature_not_by_instance_key",
+      "request": {
+        "app_keys_bind_signature": "gzaaY-EGky-lXfu81_-0kIF0Xu8hG3mlxzS33Rt7v7fa5xUf_G1Yngd3UeqbntKNrimVRu4sC6EDAzRKACgRBg",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys_bind_signature",
+          "message": "app_keys_bind_signature does not verify.",
+          "reason": "app_key_bind_invalid"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "offer_bind_signature_forged",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "3Ac7p61RYds7hotdkV5_Zoy82jrELxZK96UqL9qADYJ1fegOOvMN7PdxA-worcczsKptGpeWBsUyS-w9aswpBQ",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "chat_key.bind_signature",
+          "message": "chat_key.bind_signature does not verify."
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "announced_key_not_offered",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "task_propose_key",
+          "message": "The offered app keys differ from the announced ones.",
+          "reason": "app_key_not_announced"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "offered_key_swapped",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "3Ac7p61RYds7hotdkV5_Zoy82jrELxZK96UqL9qADYJ1fegOOvMN7PdxA-worcczsKptGpeWBsUyS-w9aswpBQ",
+          "key_id": "790901b82a89fe50",
+          "public_key": "DXVQdU4IAKXSN-71gmA1dmubPloVhoqUCrKJlYeI47A"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "chat_key",
+          "message": "The offered app keys differ from the announced ones.",
+          "reason": "app_key_not_announced"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        }
+      ],
+      "case": "offered_key_not_announced",
+      "request": {
+        "app_keys_bind_signature": "vpa1uZ3kEy4vMCm4brD3AuChMOsopfb6ZLdiqQkM4FMi4egUIgLPib7N8TZPl9UEHlgxOphrG9-3QeUZ8_olDw",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "task_propose_key",
+          "message": "The offered app keys differ from the announced ones.",
+          "reason": "app_key_not_announced"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [],
+      "case": "offers_without_announcement",
+      "request": {
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "chat_key",
+          "message": "The offered app keys differ from the announced ones.",
+          "reason": "app_key_not_announced"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [],
+      "case": "signature_without_announcement",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1"
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "app_keys_bind_signature",
+          "message": "app_keys_bind_signature does not verify.",
+          "reason": "app_key_bind_invalid"
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "offer_unknown_member",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY",
+          "scope": "person_publish.v1"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "chat_key",
+          "message": "chat_key is invalid."
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "01d0fabd251fcbbe",
+          "kind": "chat",
+          "public_key": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "offer_small_order_key",
+      "request": {
+        "app_keys_bind_signature": "u-a3qc4T2-_mKalU-K0emBfulA9YFE2pUyj1QDx1wY0bFsJoRh0juLAHRxRxfHPSLyR27N70_bCuDZxlwTG1Cw",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "WGZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmYBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "key_id": "01d0fabd251fcbbe",
+          "public_key": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "invalid_field",
+          "field": "chat_key.bind_signature",
+          "message": "chat_key.bind_signature does not verify."
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [],
+      "case": "device_code_unknown",
+      "request": {
+        "app_keys_bind_signature": "kycHQHWbcsbvTOs2cBin6Nr9FZMt7UzzEJMiXfxNcV3gyk5SdzI2cZ4AGqu29jfW3wQFsYGuXSVTgXSSXhfJCQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_unknown_device_code",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "expired_token",
+          "message": "The code is unknown, expired or used; start again."
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "device_code_expired",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "expired_token",
+          "message": "The code is unknown, expired or used; start again."
+        }
+      },
+      "route": "POST /v1/device/token"
+    },
+    {
+      "announced": [
+        {
+          "alg": "ed25519",
+          "key_id": "7db0b01f39d179aa",
+          "kind": "chat",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "ef1bd9c792ccc768",
+          "kind": "optin",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        {
+          "alg": "ed25519",
+          "key_id": "9ebdc850b1afad78",
+          "kind": "task_propose",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      ],
+      "case": "device_code_used",
+      "request": {
+        "app_keys_bind_signature": "5XlZ01WYk47YXsYamzyRuxkRjndUG_B4Iq3xsbUTZLDvvCQ-PyO7nJ9a_I-b0SmET4dx5uTBJBvtGzO7ZMeIBQ",
+        "chat_key": {
+          "alg": "ed25519",
+          "bind_signature": "nCr6sfQwKAh-PdwoLxHgFj1j2Y1SjC7FW-cNVHhLJwQD3hshYriJgxnZQGE4yGSKYX1GBK4Tr1QGVaU54xJsAg",
+          "key_id": "7db0b01f39d179aa",
+          "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+        },
+        "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+        "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+        "instance_label": "studio-mac",
+        "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+        "instance_version": "3.12.9",
+        "optin_key": {
+          "alg": "ed25519",
+          "bind_signature": "nnAG78ySBT3oJimwFK1M-4SBm-qH-yrliU-PFGfTse8q5yP17A5rPBruNrqTKsmEqf3MOI_xHPKrlt-NNCAjBA",
+          "key_id": "ef1bd9c792ccc768",
+          "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+        },
+        "os": "macos",
+        "schema": "leanctx.cloud.device-token-request/v1",
+        "task_propose_key": {
+          "alg": "ed25519",
+          "bind_signature": "87FjOfxlTpRnadwnmNmjoemK6EbXeyA0YzOzrZTAHG0gD149p9oYonoyBVEqrd80t2zPrYpRN6bDgDGyAqi_Cw",
+          "key_id": "9ebdc850b1afad78",
+          "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+        }
+      },
+      "response": {
+        "error": {
+          "code": "expired_token",
+          "message": "The code is unknown, expired or used; start again."
+        }
+      },
+      "route": "POST /v1/device/token"
+    }
+  ],
+  "note": "Test-only keys; never valid outside fixtures and the fake Cloud service.",
+  "offer_bind_inputs": {
+    "chat": "leanctx.cloud.chat_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=\",\"key_id\":\"7db0b01f39d179aa\",\"public_key\":\"Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY\",\"scope\":\"person_publish.v1\"}",
+    "optin": "leanctx.cloud.optin_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=\",\"key_id\":\"ef1bd9c792ccc768\",\"public_key\":\"PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs\",\"scope\":\"optin.v1\"}",
+    "task_propose": "leanctx.cloud.task_propose_key_bind.v1\n{\"alg\":\"ed25519\",\"instance_public_key\":\"dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=\",\"key_id\":\"9ebdc850b1afad78\",\"public_key\":\"n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA\",\"scope\":\"task_propose_person.v1\"}"
+  },
+  "signing_input": "leanctx.cloud.app_key_bind.v1\n{\"device_code_sha256\":\"b4f2081ce464fe05e0eac3c130842cf7b1cde6290c144ab82e8f9c36e3c370c1\",\"instance_public_key\":\"dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=\",\"keys\":[{\"alg\":\"ed25519\",\"key_id\":\"7db0b01f39d179aa\",\"kind\":\"chat\",\"public_key\":\"Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY\"},{\"alg\":\"ed25519\",\"key_id\":\"ef1bd9c792ccc768\",\"kind\":\"optin\",\"public_key\":\"PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs\"},{\"alg\":\"ed25519\",\"key_id\":\"9ebdc850b1afad78\",\"kind\":\"task_propose\",\"public_key\":\"n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA\"}]}",
+  "statement": {
+    "device_code_sha256": "b4f2081ce464fe05e0eac3c130842cf7b1cde6290c144ab82e8f9c36e3c370c1",
+    "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+    "keys": [
+      {
+        "alg": "ed25519",
+        "key_id": "7db0b01f39d179aa",
+        "kind": "chat",
+        "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+      },
+      {
+        "alg": "ed25519",
+        "key_id": "ef1bd9c792ccc768",
+        "kind": "optin",
+        "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+      },
+      {
+        "alg": "ed25519",
+        "key_id": "9ebdc850b1afad78",
+        "kind": "task_propose",
+        "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+      }
+    ]
+  },
+  "user_text": "Pairing failed, please start connecting again."
+}

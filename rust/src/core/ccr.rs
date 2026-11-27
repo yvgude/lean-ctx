@@ -100,9 +100,43 @@ pub fn persist_once(content: &str) -> Option<String> {
     }
     let path = tee_path(content, "proxy")?;
     if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_file()) {
+        keep_alive(&path);
         return Some(path.to_string_lossy().to_string());
     }
     persist(content)
+}
+
+/// Expiry rule of the tee store: the 24h TTL of the shared cleanup
+/// (`shell::cleanup_old_tee_logs`, run by every process that writes a tee)
+/// counts from the last time a handle was **handed out**, not from when the
+/// file was first written. [`persist`] already refreshes the mtime on an
+/// identical rewrite; a handle named without a rewrite ([`persist_once`] on a
+/// hit) refreshes it here. A conversation that still carries the handle
+/// re-sends it every turn, so its file stays younger than the TTL as long as
+/// the session is live — even when another process runs the cleanup. The
+/// cleanup itself is unchanged: it cannot know which sessions of other
+/// processes hold a handle, but this rule needs no such knowledge.
+///
+/// No-follow and best-effort: a link is never touched, a failure only means
+/// the copy may expire and be rewritten by the next [`persist_once`].
+fn keep_alive(path: &Path) {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    if let Ok(file) = options.open(path)
+        && file.metadata().is_ok_and(|meta| meta.is_file())
+    {
+        let _ = file.set_modified(SystemTime::now());
+    }
 }
 
 /// Persist a dropped conversation message under a compact `conv_` handle.
@@ -473,6 +507,75 @@ pub(crate) mod tests {
         assert!(read_tee_detailed(path).is_ok(), "developer mode unchanged");
     }
 
+    /// Every in-process tee writer resolves its store through
+    /// `paths::state_dir()`, so `LEAN_CTX_STATE_DIR` alone moves it — the
+    /// proxy/json store (`persist`), the resolver (`resolve_tee_checked`) and
+    /// the shell tee (`shell::save_tee`). A `proxy_*.log` in the real
+    /// `~/.local/state/lean-ctx/tee` while the variable is set was written by
+    /// another process: the global proxy daemon, whose LaunchAgent pins the
+    /// layout of the CLI that installed it (`tcc_guard_sandbox`).
+    #[test]
+    fn every_tee_writer_honours_lean_ctx_state_dir() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let state = tempfile::tempdir().expect("state dir");
+        let other = tempfile::tempdir().expect("other categories");
+        for var in [
+            "LEAN_CTX_DATA_DIR",
+            "LEAN_CTX_CONFIG_DIR",
+            "LEAN_CTX_CACHE_DIR",
+        ] {
+            crate::test_env::set_var(var, other.path());
+        }
+        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
+        let tee = state.path().join("tee");
+
+        let proxy = persist(&big("proxy line under an explicit state dir"));
+        let json = persist_json(&big("{\"k\": \"json line under an explicit state dir\"}"));
+        let resolved = proxy.as_deref().map(resolve_tee_checked);
+        let shell = crate::shell::save_tee(
+            "cargo test --lib",
+            &big("shell line under an explicit state dir"),
+        );
+
+        for var in [
+            "LEAN_CTX_STATE_DIR",
+            "LEAN_CTX_DATA_DIR",
+            "LEAN_CTX_CONFIG_DIR",
+            "LEAN_CTX_CACHE_DIR",
+        ] {
+            crate::test_env::remove_var(var);
+        }
+
+        for (writer, handle) in [
+            ("persist", &proxy),
+            ("persist_json", &json),
+            ("save_tee", &shell),
+        ] {
+            let handle = handle
+                .as_deref()
+                .unwrap_or_else(|| panic!("{writer} must write a tee copy"));
+            assert_eq!(
+                Path::new(handle).parent(),
+                Some(tee.as_path()),
+                "{writer} must write under LEAN_CTX_STATE_DIR/tee: {handle}"
+            );
+            assert!(Path::new(handle).is_file(), "{writer}: {handle}");
+        }
+        let resolved = resolved.expect("handle").expect("resolves");
+        assert!(
+            std::fs::canonicalize(&resolved)
+                .expect("resolved file")
+                .starts_with(std::fs::canonicalize(&tee).expect("tee dir")),
+            "resolver must look under LEAN_CTX_STATE_DIR/tee: {}",
+            resolved.display()
+        );
+        assert!(
+            std::fs::read_dir(other.path().join("tee")).is_err(),
+            "nothing lands in the data/config/cache directories"
+        );
+    }
+
     #[test]
     fn handle_is_content_addressed_and_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
@@ -829,5 +932,44 @@ pub(crate) mod tests {
         assert_eq!(inband_marker(&handle), Some(format!("<lc_expand:{hash}>")));
         // A non-tee handle has no marker.
         assert!(inband_marker("/tmp/not-a-tee.txt").is_none());
+    }
+
+    /// A handle a live session still carries must survive the shared 24h
+    /// cleanup: naming it again (`persist_once` on a hit, as session elision
+    /// does every turn) restarts its TTL, so a cleanup run by any process
+    /// right after leaves it in place. A copy no session named again expires.
+    #[test]
+    fn a_handle_named_again_is_not_expired_by_the_cleanup() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let stale_time = SystemTime::now() - std::time::Duration::from_hours(30);
+        let age = |path: &Path| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .expect("tee file")
+                .set_modified(stale_time)
+                .expect("age the tee file");
+        };
+
+        let live = big("line of a session that is still running");
+        let live_handle = persist_once(&live).expect("first copy");
+        let gone = big("line of a session that ended a day ago");
+        let gone_handle = persist_once(&gone).expect("first copy");
+        age(Path::new(&live_handle));
+        age(Path::new(&gone_handle));
+
+        assert_eq!(persist_once(&live).as_deref(), Some(live_handle.as_str()));
+        let tee_dir = Path::new(&live_handle).parent().expect("tee dir");
+        crate::shell::cleanup_old_tee_logs(tee_dir);
+
+        assert!(
+            Path::new(&live_handle).is_file(),
+            "a handle named again keeps its file"
+        );
+        assert!(
+            !Path::new(&gone_handle).exists(),
+            "a copy nobody named for longer than the TTL expires"
+        );
     }
 }

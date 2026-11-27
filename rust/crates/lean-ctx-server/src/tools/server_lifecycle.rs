@@ -403,7 +403,6 @@ impl LeanCtxServer {
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_list_attempts: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             bm25_cache,
-            progress_sender: Arc::new(std::sync::Mutex::new(None)),
             _eviction_target: eviction_target,
             last_tools_config_hash: Arc::new(std::sync::atomic::AtomicU64::new(
                 crate::server::tools_config_watch::current_hash(),

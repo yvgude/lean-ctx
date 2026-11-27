@@ -191,6 +191,8 @@ tokio-rustls = "0.26"
 lean-ctx-engine = { path = "../..", version = "=3.12.8", default-features = false, features = ["test-support"] }
 # The server's fixtures (isolation canary, work-graph delivery API) for this crate's tests.
 lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.8", default-features = false, features = ["test-support"] }
+# Cloud fixtures (the git worktree layout of `unlinked::fake_worktree`).
+lean-ctx-cloud = { path = "../lean-ctx-cloud", version = "=3.12.8", default-features = false, features = ["test-support"] }
 lean-ctx-ocla = { path = "../lean-ctx-ocla" }
 lean-ctx-protocol = { path = "../lean-ctx-protocol" }
 axum = { version = "0.8", features = ["ws"] }

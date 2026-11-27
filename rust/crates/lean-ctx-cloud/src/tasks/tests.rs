@@ -1469,6 +1469,7 @@ fn proposals_have_one_key_and_are_validated_before_queueing() {
         session_ref: None,
         local_number: None,
         ref_keyed: true,
+        signed: None,
     };
     let a = proposal(["f-1", "f-2"]);
     // Two local tasks of one title brought on link stay two vault tasks.
@@ -2546,6 +2547,142 @@ fn proposals_carry_the_keyed_ref_or_are_not_queued() {
     );
 }
 
+/// Cloud v2 ids: a UUID instance and a 32-hex vault (rc4-67).
+const PERSON_INSTANCE: &str = "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09";
+const PERSON_VAULT: &str = "0123456789abcdef0123456789abcdef";
+
+/// rc4-67: only the app-only route queues a person's proposal;
+/// `propose_agent_task` (`ctx_tasks`, `cloud tasks propose`) has no way to
+/// name one. A person's origin goes out only signed by the app's key and
+/// only to a Cloud that announced `task_person_origin`; an unsigned one, or
+/// an older Cloud, gets the agent's origin without a signature.
+#[test]
+fn only_a_persons_proposal_carries_origin_person_and_older_clouds_get_agent() {
+    use lean_ctx_protocol::cloud::tasks::TaskOriginKind;
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let place = Place::new();
+    let root = place.root.path();
+    for args in [
+        &["init", "-q"][..],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/payments.git",
+        ],
+    ] {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+    let data = place.data.path();
+    propose::propose_agent_task(data, root, "Fix the login", None, "Green", None, "ses-1").unwrap();
+    propose::propose_person_task(data, root, "Fix the login", Some("Why"), "Green", None).unwrap();
+    let queued: Vec<QueuedProposal> = crate::outbox::Outbox::at(data)
+        .list(crate::outbox::CHANNEL_TASKS)
+        .into_iter()
+        .map(|item| serde_json::from_value(item.payload).unwrap())
+        .collect();
+    assert_eq!(queued.len(), 2, "one task each: the keys differ by origin");
+    let agent = queued
+        .iter()
+        .find(|p| p.kind == ProposalKind::Agent)
+        .unwrap();
+    let person = queued
+        .iter()
+        .find(|p| p.kind == ProposalKind::Person)
+        .unwrap();
+    assert_ne!(agent.idempotency_key(), person.idempotency_key());
+    assert_eq!(
+        serde_json::to_value(person).unwrap()["kind"],
+        json!("person"),
+        "the outbox payload"
+    );
+
+    for announced in [false, true] {
+        let sent = agent.request_for(announced);
+        assert_eq!(
+            sent.origin.kind,
+            TaskOriginKind::Agent,
+            "an agent never sends person"
+        );
+        assert!(sent.validate().is_ok());
+    }
+    for announced in [false, true] {
+        let unsigned = person.request_for(announced);
+        assert_eq!(
+            serde_json::to_value(&unsigned.origin).unwrap(),
+            json!({"kind": "agent"}),
+            "never an unsigned person"
+        );
+        assert!(unsigned.signed_at.is_none() && unsigned.task_signature.is_none());
+        assert!(unsigned.validate().is_ok());
+    }
+
+    // Signed: the app signs the prepared bytes; the engine only queues.
+    use crate::consent::task_key::{self, tests as keys};
+    let key = keys::test_key();
+    let bound = keys::offer(&key, &keys::instance_public_key()).public();
+    let at = lean_ctx_time::UtcDateTime::from_timestamp(1_795_000_000, 0).unwrap();
+    let fields = propose::Fields {
+        title: "Fix the login",
+        goal: Some("Why"),
+        acceptance: "Green",
+        role: None,
+    };
+    let prepared =
+        propose::prepare_person_task(data, root, &fields, PERSON_INSTANCE, PERSON_VAULT, at)
+            .unwrap();
+    assert_eq!(
+        prepared.body["signed_at"],
+        json!(at.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true))
+    );
+    assert!(prepared.body.get("task_signature").is_none());
+    assert!(
+        prepared
+            .signing_input
+            .starts_with(task_key::PERSON_TASK_DOMAIN.as_bytes())
+    );
+    let signature = keys::sign(&key, &prepared.signing_input);
+    assert!(bound.verifies(&prepared.signing_input, &signature));
+    let id = propose::enqueue_signed_person(data, &prepared, &signature).unwrap();
+    let signed: QueuedProposal = crate::outbox::Outbox::at(data)
+        .list(crate::outbox::CHANNEL_TASKS)
+        .into_iter()
+        .find(|item| item.id == id)
+        .map(|item| serde_json::from_value(item.payload).unwrap())
+        .unwrap();
+    let new_cloud = signed.request_for(true);
+    assert_eq!(
+        serde_json::to_value(&new_cloud.origin).unwrap(),
+        json!({"kind": "person"})
+    );
+    assert_eq!(
+        new_cloud.task_signature.as_deref(),
+        Some(signature.as_str())
+    );
+    assert!(new_cloud.validate().is_ok());
+    // What is sent, less its signature, is exactly what the app signed.
+    assert_eq!(
+        task_key::person_task_signing_input(&new_cloud, PERSON_INSTANCE, PERSON_VAULT).unwrap(),
+        prepared.signing_input
+    );
+    let old_cloud = signed.request_for(false);
+    assert_eq!(
+        serde_json::to_value(&old_cloud.origin).unwrap(),
+        json!({"kind": "agent"})
+    );
+    assert!(old_cloud.signed_at.is_none() && old_cloud.task_signature.is_none());
+    assert!(old_cloud.validate().is_ok());
+    assert_eq!(old_cloud.title, new_cloud.title);
+}
+
 /// !406 follow-up: without a readable local key a task claim is not sent
 /// at all (no unsalted session ref leaves the machine) and nothing is held
 /// locally; with the key back the same claim goes out under the keyed ref.
@@ -2585,4 +2722,96 @@ fn a_claim_without_the_local_key_sends_nothing_and_holds_nothing() {
         crate::session_ref::uploaded_ses_ref(link.data_dir, "session-1").unwrap()
     );
     assert!(claims::find(link.data_dir, PROJECT, 7).is_some());
+}
+
+/// rc4-103: a path that leaves the project folder, by a prefix, a root or
+/// a link, gets one answer whether or not something exists out there.
+#[cfg(unix)]
+#[test]
+fn a_path_out_of_the_project_reveals_nothing_outside() {
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "x").unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let link = |name: &str, to: std::path::PathBuf| {
+        std::os::unix::fs::symlink(to, root.path().join(name)).unwrap();
+    };
+    link("there.txt", outside.path().join("secret.txt"));
+    link("gone.txt", outside.path().join("missing.txt"));
+    link("dir", outside.path().to_path_buf());
+    std::fs::write(root.path().join("inner.txt"), "x").unwrap();
+    link("near.txt", root.path().join("inner.txt"));
+
+    let out = "the path must be relative to the project folder and stay inside it";
+    for path in [
+        "there.txt",
+        "gone.txt",
+        "dir/secret.txt",
+        "dir/missing.txt",
+        "/etc/hosts",
+        "a/../b",
+    ] {
+        assert_eq!(super::anchor_refusal(root.path(), path, ""), out, "{path}");
+    }
+    assert_ne!(super::anchor_refusal(root.path(), "near.txt", ""), out);
+    assert!(
+        super::anchor_refusal(root.path(), "absent.txt", "")
+            .starts_with("there is no file absent.txt")
+    );
+}
+
+/// rc4-103: a refused piece of evidence says in plain words what its
+/// reference should be, and README.md at the project root is a valid anchor.
+#[test]
+fn a_refused_evidence_names_the_expected_form() {
+    let root = tempfile::tempdir().unwrap();
+    let refusal = |kind: &str, reference: &str| {
+        super::EvidenceInput {
+            kind: kind.into(),
+            reference: reference.into(),
+        }
+        .into_evidence(root.path())
+        .unwrap_err()
+        .to_string()
+    };
+    let fact = refusal("fact", "the tests pass on main");
+    assert!(fact.contains("\"the tests pass on main\""), "{fact}");
+    assert!(fact.contains("ctx_knowledge"), "{fact}");
+    assert!(fact.contains("not a sentence"), "{fact}");
+    assert!(fact.contains("write it in the summary"), "{fact}");
+    assert!(!fact.contains("does not fit kind"), "{fact}");
+
+    let long = refusal("commit", &"x".repeat(300));
+    assert!(long.contains('…') && long.len() < 300, "{long}");
+
+    let missing = refusal("file_anchor", "README.md");
+    assert!(
+        missing.contains(&format!(
+            "there is no file README.md in the project folder {}",
+            root.path().display()
+        )),
+        "{missing}"
+    );
+    assert!(!missing.contains("store."), "{missing}");
+    let outside = refusal("file_anchor", "../README.md");
+    assert!(
+        outside.contains("relative to the project folder"),
+        "{outside}"
+    );
+
+    std::fs::write(
+        root.path().join("README.md"),
+        "# Demo\n\nA small project.\n",
+    )
+    .unwrap();
+    let readme = super::EvidenceInput {
+        kind: "file_anchor".into(),
+        reference: "README.md".into(),
+    };
+    assert!(readme.into_evidence(root.path()).is_ok());
+
+    let commit = super::EvidenceInput {
+        kind: "commit".into(),
+        reference: "abc1234".into(),
+    };
+    assert!(commit.into_evidence(root.path()).is_ok());
 }

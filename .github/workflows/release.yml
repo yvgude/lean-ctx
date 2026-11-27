@@ -1146,9 +1146,11 @@ jobs:
         working-directory: cockpit
         run: |
           set -euo pipefail
+          # Exact identity: only cockpit-release.yml on main of the Cockpit
+          # repository signs the Cockpit checksums (no other ref, no branch).
           cosign verify-blob \
             --signature COCKPIT_SHA256SUMS.sig --certificate COCKPIT_SHA256SUMS.pem \
-            --certificate-identity-regexp "^https://github\\.com/${COCKPIT_REPOSITORY}/\\.github/workflows/cockpit-release\\.yml@" \
+            --certificate-identity "https://github.com/${COCKPIT_REPOSITORY}/.github/workflows/cockpit-release.yml@refs/heads/main" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             COCKPIT_SHA256SUMS
           test "$(wc -l < COCKPIT_SHA256SUMS)" -eq 7
@@ -1186,10 +1188,113 @@ jobs:
           PY
           done
 
-  publish-release:
-    name: Publish GitHub Release
+  homebrew-bottles:
+    # The tap formula installs prebuilt binaries, but without a bottle Homebrew
+    # treats it as a source build and refuses it on macOS unless current
+    # Command Line Tools are installed (F57). Repack the verified engine and
+    # Cockpit archives into one bottle per platform and attach them to the
+    # draft; update-homebrew lists them in the formula.
+    #
+    # Owner decision 25.11. (F57): fail closed. publish-release waits for this job, so
+    # a Homebrew failure holds the whole release (GitHub, crates, npm, PyPI)
+    # on the draft instead of publishing a release whose tap formula falls back
+    # to a source build. Recovery: fix the cause and re-run this job (or "Re-run
+    # failed jobs"); bottles are reproducible, so a rerun replaces them with
+    # identical files, and publish-release continues. See
+    # docs/ga/release-checklist.md.
+    name: Release gates (Homebrew bottles)
     needs: [release, cockpit-assets]
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.cockpit-assets.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The formula pins these digests. update-homebrew takes them from here,
+    # computed from the bytes this job verified and built, never from files
+    # downloaded again from the release (anyone who can write release assets
+    # could swap a bottle and its checksum file together).
+    outputs:
+      engine_sha256sums: ${{ steps.bottles.outputs.engine_sha256sums }}
+      cockpit_sha256sums: ${{ steps.bottles.outputs.cockpit_sha256sums }}
+      bottle_sha256sums: ${{ steps.bottles.outputs.bottle_sha256sums }}
+    permissions:
+      contents: write # read and extend the draft release's assets
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COCKPIT_REPOSITORY: ${{ vars.LEANCTX_COCKPIT_RELEASE_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+
+      - name: Download the signed engine and Cockpit archives
+        run: |
+          set -euo pipefail
+          [[ "$COCKPIT_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+            || { echo "::error::Set the repository variable LEANCTX_COCKPIT_RELEASE_REPOSITORY"; exit 1; }
+          mkdir -p homebrew-in
+          patterns=(--pattern SHA256SUMS --pattern SHA256SUMS.sig --pattern SHA256SUMS.pem
+                    --pattern COCKPIT_SHA256SUMS --pattern COCKPIT_SHA256SUMS.sig --pattern COCKPIT_SHA256SUMS.pem)
+          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
+            patterns+=(--pattern "lean-ctx-${target}.tar.gz" --pattern "lean-ctx-cockpit-${target}.tar.gz")
+          done
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --dir homebrew-in "${patterns[@]}"
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify both checksum signatures
+        working-directory: homebrew-in
+        run: |
+          set -euo pipefail
+          [[ "$COCKPIT_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+            || { echo "::error::Set the repository variable LEANCTX_COCKPIT_RELEASE_REPOSITORY"; exit 1; }
+          # Exact identities: SHA256SUMS was signed by this run's release job
+          # (release.yml on this tag), the Cockpit checksums by
+          # cockpit-release.yml on main. A signature from any other ref fails.
+          cosign verify-blob \
+            --signature SHA256SUMS.sig --certificate SHA256SUMS.pem \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            SHA256SUMS
+          cosign verify-blob \
+            --signature COCKPIT_SHA256SUMS.sig --certificate COCKPIT_SHA256SUMS.pem \
+            --certificate-identity "https://github.com/${COCKPIT_REPOSITORY}/.github/workflows/cockpit-release.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            COCKPIT_SHA256SUMS
+
+      - name: Build the bottles
+        id: bottles
+        run: |
+          set -euo pipefail
+          # The script checks every archive against the verified checksums.
+          python3 -I scripts/homebrew-formula.py bottles \
+            --version "${GITHUB_REF_NAME#v}" \
+            --engine-dir homebrew-in --cockpit-dir homebrew-in \
+            --sha256sums homebrew-in/SHA256SUMS \
+            --cockpit-sha256sums homebrew-in/COCKPIT_SHA256SUMS \
+            --out homebrew-bottles
+          cat homebrew-bottles/HOMEBREW_BOTTLES_SHA256SUMS
+          test "$(wc -l < homebrew-bottles/HOMEBREW_BOTTLES_SHA256SUMS)" -eq 4
+          # Single-line job outputs (base64) of the verified checksum files.
+          {
+            echo "engine_sha256sums=$(base64 -w0 homebrew-in/SHA256SUMS)"
+            echo "cockpit_sha256sums=$(base64 -w0 homebrew-in/COCKPIT_SHA256SUMS)"
+            echo "bottle_sha256sums=$(base64 -w0 homebrew-bottles/HOMEBREW_BOTTLES_SHA256SUMS)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attach the bottles to the draft
+        run: |
+          set -euo pipefail
+          # Bottles are byte-for-byte reproducible, so a rerun replaces them
+          # with identical files. Replacing is allowed only on the draft: a
+          # published release's assets are never overwritten.
+          draft="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)"
+          [[ "$draft" == "true" ]] \
+            || { echo "::error::${GITHUB_REF_NAME} is no longer a draft; not replacing its assets"; exit 1; }
+          gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber \
+            homebrew-bottles/*.bottle.tar.gz homebrew-bottles/HOMEBREW_BOTTLES_SHA256SUMS
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [release, cockpit-assets, homebrew-bottles]
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.cockpit-assets.result == 'success' && needs.homebrew-bottles.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
     permissions:
@@ -1621,108 +1726,49 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew
-    needs: publish-release
-    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
+    needs: [publish-release, homebrew-bottles]
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' && needs.homebrew-bottles.result == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # attach the macOS bottles to the published release
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
 
-      - name: Download checksums and extract platform hashes
-        id: checksums
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-          gh release download "${GITHUB_REF_NAME}" \
-            --repo yvgude/lean-ctx --pattern "SHA256SUMS" --dir .
-
-          AARCH64_DARWIN=$(grep "aarch64-apple-darwin\.tar\.gz" SHA256SUMS | awk '{print $1}')
-          X86_64_DARWIN=$(grep "x86_64-apple-darwin\.tar\.gz" SHA256SUMS | awk '{print $1}')
-          AARCH64_LINUX_GNU=$(grep "aarch64-unknown-linux-gnu\.tar\.gz" SHA256SUMS | awk '{print $1}')
-          X86_64_LINUX_GNU=$(grep "x86_64-unknown-linux-gnu\.tar\.gz" SHA256SUMS | awk '{print $1}')
-          # Never publish a formula with an empty or ambiguous digest.
-          for sha in "$AARCH64_DARWIN" "$X86_64_DARWIN" "$AARCH64_LINUX_GNU" "$X86_64_LINUX_GNU"; do
-            printf '%s\n' "$sha" | grep -Eqx '[0-9a-f]{64}' \
-              || { echo "::error::SHA256SUMS lacks a unique Homebrew platform digest"; exit 1; }
-          done
-
-          echo "aarch64_darwin_sha=${AARCH64_DARWIN}" >> "$GITHUB_OUTPUT"
-          echo "x86_64_darwin_sha=${X86_64_DARWIN}" >> "$GITHUB_OUTPUT"
-          echo "aarch64_linux_sha=${AARCH64_LINUX_GNU}" >> "$GITHUB_OUTPUT"
-          echo "x86_64_linux_sha=${X86_64_LINUX_GNU}" >> "$GITHUB_OUTPUT"
-
-          # The Cockpit bundles were verified (cosign + checksums) by cockpit-assets.
-          gh release download "${GITHUB_REF_NAME}" \
-            --repo yvgude/lean-ctx --pattern "COCKPIT_SHA256SUMS" --dir .
-          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
-            sha=$(awk -v f="lean-ctx-cockpit-${target}.tar.gz" '$2 == f { print $1 }' COCKPIT_SHA256SUMS)
-            [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no Cockpit checksum for ${target}"; exit 1; }
-            echo "cockpit_${target//-/_}_sha=${sha}" >> "$GITHUB_OUTPUT"
-          done
+      - name: Take the verified checksums and check the published bottles
         env:
           GH_TOKEN: ${{ github.token }}
-
-      # Without a bottle for the running macOS, `brew install` takes the
-      # build-from-source path and refuses outdated Command Line Tools before
-      # the formula only copies the prebuilt binary (Air test F57). The bottles
-      # hold exactly the keg of the checked release archives and are attached
-      # to the release before the formula points at them.
-      - name: Build and attach the macOS bottles
-        id: bottles
+          ENGINE_SHA256SUMS: ${{ needs.homebrew-bottles.outputs.engine_sha256sums }}
+          COCKPIT_SHA256SUMS: ${{ needs.homebrew-bottles.outputs.cockpit_sha256sums }}
+          BOTTLE_SHA256SUMS: ${{ needs.homebrew-bottles.outputs.bottle_sha256sums }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.checksums.outputs.version }}"
-          DIST="${RUNNER_TEMP}/bottle-inputs"
-          OUT="${RUNNER_TEMP}/bottles"
-          mkdir -p "$DIST" "$OUT"
-          for target in aarch64-apple-darwin x86_64-apple-darwin; do
-            gh release download "${GITHUB_REF_NAME}" --repo yvgude/lean-ctx --dir "$DIST" \
-              --pattern "lean-ctx-${target}.tar.gz" --pattern "lean-ctx-cockpit-${target}.tar.gz"
-          done
-          cp SHA256SUMS COCKPIT_SHA256SUMS "$DIST/"
-          (cd "$DIST" \
-            && grep -E '  lean-ctx-(aarch64|x86_64)-apple-darwin\.tar\.gz$' SHA256SUMS > engine.sums \
-            && grep -E '  lean-ctx-cockpit-(aarch64|x86_64)-apple-darwin\.tar\.gz$' COCKPIT_SHA256SUMS > cockpit.sums \
-            && test "$(wc -l < engine.sums)" -eq 2 && test "$(wc -l < cockpit.sums)" -eq 2 \
-            && sha256sum --check --strict engine.sums cockpit.sums)
-          python3 scripts/homebrew-bottles.py --version "$VERSION" --dist "$DIST" --out "$OUT" \
-            --block "${RUNNER_TEMP}/bottle-block.rb"
-          gh release upload "${GITHUB_REF_NAME}" --repo yvgude/lean-ctx --clobber "$OUT"/*.bottle.tar.gz
-          # Read every bottle back from the URL Homebrew will use.
-          for bottle in "$OUT"/*.bottle.tar.gz; do
-            name="$(basename "$bottle")"
-            curl -fsSL --retry 5 --retry-all-errors -o "${RUNNER_TEMP}/readback" \
-              "https://github.com/yvgude/lean-ctx/releases/download/${GITHUB_REF_NAME}/${name}"
-            cmp "$bottle" "${RUNNER_TEMP}/readback" \
-              || { echo "::error::${name} on the release differs from the built bottle"; exit 1; }
-          done
-        env:
-          GH_TOKEN: ${{ github.token }}
+          mkdir homebrew-sums && cd homebrew-sums
+          # The digests the formula pins come from homebrew-bottles (signature
+          # verified, bottles built from those bytes), not from checksum files
+          # downloaded again from the release.
+          printf '%s' "$ENGINE_SHA256SUMS" | base64 -d > SHA256SUMS
+          printf '%s' "$COCKPIT_SHA256SUMS" | base64 -d > COCKPIT_SHA256SUMS
+          printf '%s' "$BOTTLE_SHA256SUMS" | base64 -d > HOMEBREW_BOTTLES_SHA256SUMS
+          test "$(wc -l < HOMEBREW_BOTTLES_SHA256SUMS)" -eq 4
+          gh release download "${GITHUB_REF_NAME}" --repo yvgude/lean-ctx --pattern '*.bottle.tar.gz'
+          # Every bottle the formula lists must be the published file.
+          sha256sum --check --strict HOMEBREW_BOTTLES_SHA256SUMS
 
       - name: Clone and generate binary formula
         env:
           HOMEBREW_SSH_KEY: ${{ secrets.HOMEBREW_SSH_KEY }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.checksums.outputs.version }}"
-          AARCH64_DARWIN_SHA="${{ steps.checksums.outputs.aarch64_darwin_sha }}"
-          X86_64_DARWIN_SHA="${{ steps.checksums.outputs.x86_64_darwin_sha }}"
-          AARCH64_LINUX_SHA="${{ steps.checksums.outputs.aarch64_linux_sha }}"
-          X86_64_LINUX_SHA="${{ steps.checksums.outputs.x86_64_linux_sha }}"
-          COCKPIT_AARCH64_DARWIN_SHA="${{ steps.checksums.outputs.cockpit_aarch64_apple_darwin_sha }}"
-          COCKPIT_X86_64_DARWIN_SHA="${{ steps.checksums.outputs.cockpit_x86_64_apple_darwin_sha }}"
-          COCKPIT_AARCH64_LINUX_SHA="${{ steps.checksums.outputs.cockpit_aarch64_unknown_linux_gnu_sha }}"
-          COCKPIT_X86_64_LINUX_SHA="${{ steps.checksums.outputs.cockpit_x86_64_unknown_linux_gnu_sha }}"
+          VERSION="${GITHUB_REF_NAME#v}"
           RELEASE_URL="https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}"
-          # Written by the bottles step after the bottles were read back.
-          BOTTLE_BLOCK="$(cat "${RUNNER_TEMP}/bottle-block.rb")"
-          if ! grep -q ' arm64_big_sur: ' <<< "$BOTTLE_BLOCK" || ! grep -q ' big_sur: ' <<< "$BOTTLE_BLOCK"; then
-            echo "::error::the macOS bottle block is missing"; exit 1
-          fi
+
+          # Fails on a missing or ambiguous digest, so no formula is published
+          # with an empty one.
+          python3 -I scripts/homebrew-formula.py formula \
+            --version "${VERSION}" --release-url "${RELEASE_URL}" \
+            --sha256sums homebrew-sums/SHA256SUMS \
+            --cockpit-sha256sums homebrew-sums/COCKPIT_SHA256SUMS \
+            --bottle-sha256sums homebrew-sums/HOMEBREW_BOTTLES_SHA256SUMS > lean-ctx.rb
 
           KEY_DIR="${RUNNER_TEMP}/homebrew-ssh"
           install -d -m 700 "${KEY_DIR}"
@@ -1733,89 +1779,7 @@ jobs:
 
           git clone "git@github.com:yvgude/homebrew-lean-ctx.git"
           cd homebrew-lean-ctx
-
-          cat > Formula/lean-ctx.rb <<EOF
-          class LeanCtx < Formula
-            desc "Local engine for the LeanCTX Context Gateway for AI Systems"
-            homepage "https://leanctx.com"
-            version "${VERSION}"
-            # Engine: Apache-2.0. Bundled LeanCTX Cockpit binary: LeanCTX Cockpit
-            # EULA (LicenseRef-LeanCTX-Cockpit-EULA), which SPDX cannot express.
-            license all_of: ["Apache-2.0", :cannot_represent]
-
-          ${BOTTLE_BLOCK}
-
-            # Semantic search (ctx_semantic_search / embeddings) loads
-            # libonnxruntime at runtime; the engine resolves it from the
-            # Homebrew prefix lib dir. Without this dependency the dylib is
-            # absent and ORT init fails. See issue #544.
-            depends_on "onnxruntime"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "${RELEASE_URL}/lean-ctx-aarch64-apple-darwin.tar.gz"
-                sha256 "${AARCH64_DARWIN_SHA}"
-
-                resource "cockpit" do
-                  url "${RELEASE_URL}/lean-ctx-cockpit-aarch64-apple-darwin.tar.gz"
-                  sha256 "${COCKPIT_AARCH64_DARWIN_SHA}"
-                end
-              else
-                url "${RELEASE_URL}/lean-ctx-x86_64-apple-darwin.tar.gz"
-                sha256 "${X86_64_DARWIN_SHA}"
-
-                resource "cockpit" do
-                  url "${RELEASE_URL}/lean-ctx-cockpit-x86_64-apple-darwin.tar.gz"
-                  sha256 "${COCKPIT_X86_64_DARWIN_SHA}"
-                end
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "${RELEASE_URL}/lean-ctx-aarch64-unknown-linux-gnu.tar.gz"
-                sha256 "${AARCH64_LINUX_SHA}"
-
-                resource "cockpit" do
-                  url "${RELEASE_URL}/lean-ctx-cockpit-aarch64-unknown-linux-gnu.tar.gz"
-                  sha256 "${COCKPIT_AARCH64_LINUX_SHA}"
-                end
-              else
-                url "${RELEASE_URL}/lean-ctx-x86_64-unknown-linux-gnu.tar.gz"
-                sha256 "${X86_64_LINUX_SHA}"
-
-                resource "cockpit" do
-                  url "${RELEASE_URL}/lean-ctx-cockpit-x86_64-unknown-linux-gnu.tar.gz"
-                  sha256 "${COCKPIT_X86_64_LINUX_SHA}"
-                end
-              end
-            end
-
-            def install
-              bin.install "lean-ctx"
-              # The signed Cockpit bundle; lean-ctx verifies and imports it from
-              # share/lean-ctx/cockpit on the first \`lean-ctx cockpit\`.
-              resource("cockpit").stage do
-                (share/"lean-ctx/cockpit").install "channel.json", "channel.sig",
-                                                   "archive.tar.gz", "manifest.json", "manifest.sig"
-              end
-            end
-
-            def caveats
-              <<~TEXT
-                The lean-ctx engine is licensed under Apache-2.0.
-                The bundled LeanCTX Cockpit (lean-ctx cockpit) is free to use, including
-                commercially, under the LeanCTX Cockpit EULA; it is not open source.
-              TEXT
-            end
-
-            test do
-              assert_match "lean-ctx ${VERSION}", shell_output("#{bin}/lean-ctx --version")
-              assert_path_exists share/"lean-ctx/cockpit/manifest.json"
-            end
-          end
-          EOF
-          sed -i 's/^          //' Formula/lean-ctx.rb
+          cp ../lean-ctx.rb Formula/lean-ctx.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

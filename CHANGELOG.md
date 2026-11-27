@@ -6,24 +6,194 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
-## [3.12.8] — 2026-11-23
+## [3.12.8] — 2026-11-27
 
 ### Upgrade notes
-
 - **Usage metrics are on by default after `lean-ctx cloud connect`.** Connect no longer asks; it confirms the metrics only when nobody has decided yet. An off chosen in Settings, by a team policy, by a project setting, or after access ended or was revoked stays off. To switch them off: `lean-ctx config set cloud.metrics_upload false`, or Settings in the app. What is sent: `docs/guides/cloud-engine-metrics.md`.
 - **The Intelligence runtime is installed at connect and setup without a question**, also without a terminal (`setup --non-interactive`, `onboard`). A failed install is reported and never fails connect or setup; `setup runtime deactivate` stays off, and update refreshes do not install.
 - **Local LeanCTX Cloud data now belongs to one server and team.** It is stamped at connect; connecting this computer to another team or server removes the previous team's local Cloud data and the knowledge pulled from it before anything reads them. Local Cloud data from before 3.12.8 is kept by the connection it was created under; at the next connect to another team it is removed. `lean-ctx cloud disconnect` always removes the knowledge pulled from LeanCTX Cloud, also with `--keep-local`, and also from folders deleted since. A damaged local knowledge store never locks Cloud out for good: Cloud stays off until it is removed, and `lean-ctx cloud disconnect` still cleans every other folder and names the damaged file.
 
+### Added
+- **Seamit answers in `ctx_search`.** When `LEANCTX_SEAMIT_CMD` names the Seamit answer program (an absolute path to an executable file that only you can change, in folders only you or the system can change), `ctx_search` shows its answer below the search result, marked as data from Seamit. The program gets the search on stdin, a cleared environment (only `PATH` with its absolute entries, `HOME`, `USER`, `LANG`, `LC_ALL`, `TMPDIR`) and 300 ms; an answer that is late, larger than 2 KB or not a `seamit.answer/1` answer is left out, and the search result is unchanged. Without the variable nothing runs. On Windows the answer is off for now: no program runs there. If you also use the Seamit hook, run `seamit hook print --embedded-in lean-ctx` once after installing this version so the answer is not shown twice; with an older version the hook still needs the search tools. Why an answer was skipped is in the debug log.
+
+- **Each computer tells the Cloud whether it shares metrics.** When the Cloud supports it, a computer now says on every connect whether metrics sharing is on (`cloud.metrics_upload`, off after connecting without sharing). The web can then show "sharing is off" for that computer instead of guessing from missing numbers. A change to the setting is sent within a few seconds while the computer is connected. With an older Cloud nothing changes.
+
+- **Rules can be replaced or withdrawn from LeanCTX Code.** A rule your team keeps in your Cloud can now be replaced by a new one or withdrawn with a short reason, right from the app.
+- **Sending a rule to agents can check that it has not changed.** When the app passes the version you saw and someone changed the rule since, you are asked to open it again before sending.
+
+- Team chat posts and person posts to a vault are now sent from the LeanCTX Code app, which signs them on your device. Posting them from the terminal tells you to use the app instead.
+- Only the LeanCTX Code app can link its chat key when connecting a computer, so no other program can sign team messages for you. A program that points lean-ctx at folders of its own is refused as well.
+- On a computer that is already connected, LeanCTX Code can now pair its chat key without connecting again; the connection and its shared projects stay as they are.
+- `lean-ctx cloud connect` now refuses an option it does not know instead of starting a connect.
+- A team post that could not reach LeanCTX Cloud can be sent again; one that arrived is not sent twice.
+
+- **How much of this month's usage is used.** The app can now show the
+  share of this month's usage that is used, as a whole percent, when the
+  service reports it.
+
+- **`lean-ctx cloud worker status --json`.** Prints the worker-mode state (`not_opted_in`, `stopped`, `paused`, `active`), whether it is paused on this computer, and the opt-in as LeanCTX Cloud returned it, including the ids of the vaults whose tasks agents may pick up, so the app limits automatic pickup to them.
+
+- **LeanCTX Code pairs its opt-in key with the other app keys (rc4-16).**
+  `lean-ctx cloud connect --json --app-keys -` now takes `optin_key` beside
+  `chat_key` and `task_key`. The key's bind is checked before anything is
+  sent, travels on the same pairing the person approves in the browser, and
+  is kept as taken once the Cloud accepts it, so task pickup can be turned on
+  from LeanCTX Code. A refused, already bound or removed opt-in key keeps its
+  own reason (`optin_key_invalid`, `optin_key_bound`, `optin_key_cleared`).
+
+- **LeanCTX Code can turn task pickup on and off for this computer (rc4-16).**
+  Three app-only Local Service routes (`cloud.pickup`, `cloud.pickup.set`,
+  `cloud.pickup.key`) report the state and daily budget, stop task pickup, and
+  turn it on with a request the app signs with its own opt-in key; the engine
+  checks that signature and forwards it unchanged. A first turn-on proposes
+  3 tasks and 1M tokens a day with no cost limit, for the person's own vaults;
+  a stop or a pause by the person is never turned on again. `lean-ctx cloud
+  worker on --json` forwards the same signed request, and `cloud worker status
+  --json` advertises it with `capabilities.worker_on` once the key is bound.
+
+- **`lean-ctx cloud unlink`: stop sharing a project folder.** It removes the folder's link to its vault on this machine and keeps everything stored locally: knowledge, tasks and the files in the folder stay as they are, and the vault in the cloud is not changed. Notes queued for the vault from this folder are dropped, and nothing from the folder is shared again, also not through another checkout of the same repository, until you run `lean-ctx cloud link` in it. It works while this machine is disconnected, running it twice changes nothing, and `--json` prints the Local Read kind `cloud.unlink` (local-read-v1 §20a).
+
 ### Changed
+- **A `ctx_shell` `cwd` or `cd` applies to that call only, and relative
+  `ctx_read`/`ctx_patch` paths always name the project root (#2262).** Claude
+  Code subagents share one MCP connection, so one agent's `cwd` (an
+  EnterWorktree worktree, say) used to move where the next agent's shell ran
+  and what its relative paths named, and a path that worked a moment earlier
+  came back doubled. Now neither the `cwd` argument nor a `cd` inside the
+  command is remembered: a call without `cwd` runs in the session's start
+  directory, a session without a project root learns it from its start
+  directory, never from one call's `cwd`, and a read and an edit of one
+  relative path reach one file; an edit of a missing path names the file
+  `ctx_read` would read in its place.
+  **Breaking for worktree users:** this reverses the #707 preference for the
+  active worktree and the 3.12.7 entry "`ctx_read` and `ctx_patch` say which
+  base a relative path used": the `[lean-ctx: path base moved: …]` line and
+  the doubled-path resolution are gone, because the base no longer moves. A
+  caller that relied on a remembered directory passes `cwd` on each
+  `ctx_shell` call. In a git worktree, pass absolute paths; `ctx_shell` notes
+  once when a `cwd` lies in another checkout. To make the worktree itself the
+  project root, start the agent in it or pin it with `LEAN_CTX_PROJECT_ROOT`.
+
+- **macOS Login Items show LeanCTX, not "sandbox-exec" (rc2-2).** The daemon,
+  proxy and auto-update LaunchAgents start the lean-ctx binary directly and
+  name the LeanCTX app (`AssociatedBundleIdentifiers`); each process still puts
+  itself under the deny-`~/Documents` seatbelt (#356) at start-up. Existing
+  plists are rewritten on the next update or `daemon`/`proxy` install.
+
+- **`LEAN_CTX_AGENT_ROLE` names an agent on the bus; it no longer narrows its permissions.** A host that wants a narrower permission role for an agent sets `LEAN_CTX_ROLE`. LeanCTX's own background presence is no longer shown as a team agent or a worker.
 
 - **Connect and setup without questions, plain output.** No step counter, the computer name as the default label, terminal links where the terminal supports them, and a short closing line when no project is linked. `cloud connect --json` reports the runtime install as a `runtime` member of `connected`. Runtime errors name their cause: expired channel catalog, channel mismatch, package manifest, or platform not available yet. `setup runtime install` without flags installs from the signed channel; usage errors list the valid forms. Uninstall leftovers are printed as plain lines, and the summary no longer claims a full removal when something remains.
 
+- **A refusal with code `invalid_field` now keeps its code.** The engine
+  reports such a 400 as `Server { status: 400, code: "invalid_field" }`
+  instead of `unknown`, so its `event_code` is now `invalid_field` on every
+  route that answers it, not only in pairing.
+- **`lean-ctx-protocol` names the error code `CloudErrorCode::InvalidField`
+  (wire `invalid_field`, 400).** On the wire this is additive: a code the
+  engine does not know still decodes as `Unknown`. `CloudErrorCode` is not
+  `#[non_exhaustive]`, so Rust code that matches it without a wildcard arm
+  needs one more arm.
+
+- **The keys of LeanCTX Code are paired only as announced and signed.**
+  When LeanCTX Code pairs its keys with a computer, lean-ctx now names
+  those keys when the pairing starts and signs them with the computer's
+  own key when it finishes. The service accepts only the named and signed
+  keys, so no other key can be slipped into the pairing. If the service
+  cannot pair the keys yet, nothing is paired and lean-ctx says so before
+  you approve anything. If the service refuses the keys, the connect ends
+  with "Pairing failed, please start connecting again." An enrollment
+  token no longer pairs the chat key; connect from LeanCTX Code for that.
+
 ### Fixed
+- **`lean-ctx doctor --json` explains what to do (rc4-220).** A finding about
+  Claude sign-in or bridge versions now carries an `advice` object (id, title,
+  severity, a one-sentence detail, and named fixes with what each changes and
+  its commands), so LeanCTX Code shows it instead of raw terminal text; other
+  entries keep their four fields, and the text output prints the same advice
+  under the check. The Cursor extension is versioned on its own and is shown,
+  never reported as out of date.
+
+- **Readable task lists on request.** `lean-ctx cloud tasks list` and `show` take `--plain` to print task texts without the data markers; without it the texts stay marked as data, so agents never read a task as an instruction. `lean-ctx cloud stop --help` now explains stopping, releasing and checking a team stop on its own page, and the release message no longer claims a two-factor step.
+
+- **Your team chat messages are never sent unsigned.** The service accepts
+  a message you write to a team chat only with your signature, which tells
+  it apart from your agents' messages. LeanCTX now prepares that signature,
+  but no computer can sign such a message yet. Until it can, the message
+  stays queued and is not sent.
+
+- **Homebrew installs LeanCTX without Command Line Tools.** The tap formula
+  already downloaded the signed release binary, but it had no bottle, so
+  Homebrew handled it as a source build and stopped on macOS until current
+  Command Line Tools were installed. Each release now attaches one bottle per
+  platform, repacked from the verified release archives, and the formula lists
+  them: `brew install lean-ctx` pours the prebuilt binary on macOS Monterey and
+  later (Apple silicon and Intel) and on Linux. The `onnxruntime` dependency
+  still comes from Homebrew's own bottles.
+
+- Task messages in Messages now read as plain sentences such as "Task #3 is open and can be claimed." instead of showing tool commands; agents still get the exact next step.
+
+- **The name typed for a computer on the approval page is now its name
+  (rc4-1).** `lean-ctx cloud connect` kept the name it sent (the `--label` or
+  the host name) even when the person changed it in the browser. When the Cloud
+  returns the chosen name on connect, that name is stored and shown everywhere
+  the computer's name appears (status, team chat, agent presence, worker
+  names). The name must be 1-64 characters of printable text without spaces at
+  either end; any other value is ignored and the sent name stays. A Cloud that
+  does not return it keeps today's behaviour.
+
+- **Task tools explain what they need.** `ctx_tasks` marks `summary` as required for `update` and `submit` in its tool description, and a missing summary says what to send with an example. A refused piece of evidence quotes it and says in plain words what the reference should be (a `fact` is the id of a fact saved with `ctx_knowledge`, not a sentence; a sentence goes into the summary). A refused `file_anchor` says why (no such file in the project folder, a path outside it, or a private file) instead of internal reason codes; `README.md` at the project root is a valid anchor.
+
+- `lean-ctx cloud` now names device counts the way the web does: "hosts registered 2 of 3" and "hosts connected at once 1 of 2", with how to free one when a count is full, and `cloud disconnect` says what a revoke frees (the connection at once; on Personal the registration after 7 days unless the slot is recovered).
+
+- **Team rules sent to agents now reach every agent in the project, not only
+  sessions started from the LeanCTX Code app (rc4-69).** Each
+  `lean-ctx cloud sync` (and the scheduled sync) lists the project's
+  decisions and keeps exactly those that are active and marked as sent to
+  agents, with the text that was sent; a rule changed after sending is left
+  out until it is sent again, and the rules are removed when access to the
+  project ends. Any MCP agent linked to the project, such as Claude Code in a
+  terminal, then sees them at the start of its session (up to five, ordered by
+  id, with the count of the rest) and can recall them with ctx_knowledge. The
+  text comes from your team: it is marked as a team rule, kept short and
+  delivered as data, never as system instructions. `lean-ctx cloud decisions`
+  now names `list --json` in its usage text.
+
+- **Agents show only where they work.** A machine whose bus follows several vaults showed every one of its workers in each of those vaults; now a worker appears only in the vaults its agents work in, and its changes reach only those.
+
+- **Sharing from the app explains clearly when the Cloud does not offer
+  browser confirmation yet.** `lean-ctx cloud connect --share --json` then ends
+  its `share` event with the reason "This Cloud does not offer the confirmation
+  in the browser yet. Try again after its next update." instead of a raw field
+  error. Every other refusal is reported as before.
+
+- **Sharing a project whose vault your role may not create says who can.** `lean-ctx cloud connect` now says that your role or your team's plan does not allow creating the vault, that a team owner, admin or maintainer can, and that `lean-ctx cloud link <workspace>/<vault>` links an existing one, instead of a bare refusal. The team-stop notice says the team's cloud requests, landings and running Code sessions are held until the stop is released.
+
+- **A vault's chat reaches this computer with no agent running.** The bus relay subscribed only to vaults that had an active local agent in one of their folders, so a person who opened a vault's chat without an agent never received a message there. It now subscribes to every linked vault (at most 64); presence and workers are still announced only for running agents.
+
+- **`lean-ctx update` names a full disk as such, not as a bad signature.** When the temp directory was full or over quota, the extra check with an installed `cosign` could not write its files and the update reported `cosign release signature verification failed: Disk quota exceeded`, which read like a tampered release. The update still refuses to install, but now says `could not run the cosign release signature check: <error>. Free disk space or set TMPDIR to a directory with room, then retry`; a rejection from cosign itself is still reported as a failed signature.
+- **Governor: native Grep results are shaped (R6).** Under the Claude
+  Code governor, `hook rewrite-enforce` is security only and never rewrites a
+  Grep, and `hook govern` neither matched nor handled Grep, so no Grep result
+  was ever compressed (Seamit bench: 63 Grep calls in one session). Grep now
+  reaches `hook govern`, and a large `content` result comes in ripgrep's
+  `--heading` layout (each path once, then its `N:`/`N-` lines), strictly
+  lossless. A governor install writes `[governor] r6 = "on"`;
+  `LEAN_CTX_GOVERNOR_R6=shadow|off` overrides it.
 
 - **`lean-ctx cockpit install` no longer aborts the archive download after two minutes** (#2270). The archive gets its own 30-minute transfer limit; the manifest and signature keep two minutes. A failed download is reported as such, with a retry hint and `lean-ctx cockpit install --from <bundle>` as an offline alternative, instead of "not installed".
 - **Homebrew on macOS pours a bottle instead of building from source.** Without a bottle, `brew install lean-ctx` took the build-from-source path and stopped on outdated Command Line Tools before installing the prebuilt binary. Releases now attach deterministic arm64 and x86_64 bottles, verified against the release checksums.
 - **Only agents in checkouts linked to a LeanCTX Cloud vault are announced and registered.** Agents in unlinked checkouts no longer appear in presence, registrations or subscriptions; the local relay report still names them, with the reason that their checkout is not linked to a vault.
 - **Release evidence:** the pinned digest of the release workflow is refreshed and now checked on every merge request.
+
+- **A task a person proposes in LeanCTX Code now shows as theirs (rc4-67).**
+  The app sent the proposal as an agent's, so the team saw "from an agent".
+  LeanCTX Code now signs the proposal with its own task key, kept in the
+  Keychain and set up when you pair this computer, without asking for Touch
+  ID each time. The project then records the task as proposed by the person
+  this computer is linked to. Nothing in the request names anyone, agents
+  keep proposing as agents, and a proposal without that signature is still
+  recorded as an agent's. A task's `created_by` also says `own` when the
+  project tells whether the creator is the person this computer is linked to.
 
 ## [3.12.7] — 2026-11-22
 
@@ -3951,7 +4121,6 @@ Updater and security hotfix for 3.11.1. Agent Tools protocol, configuration and 
 - **`redirect_exclude` works again.** The key was loaded but never applied, so listing a file there changed nothing. Matching paths (globs on the trailing path components, e.g. `CLAUDE.md`, `*.json`, `docs/**`) now skip the native-read hook redirect and are returned in full by automatic `ctx_read` modes; `LEAN_CTX_HOOK_EXCLUDE` (comma-separated) takes precedence, as documented since 2.17.4.
 - **`lean-ctx index build` / `build-full` no longer stop after 5 minutes** while graph and BM25 are still building, which ended the process before the index was saved. A build worker that fails unexpectedly now always releases its slot, so the command reports the failure instead of waiting.
 
-
 ## [3.11.0] — 2026-10-07
 
 ### Highlights
@@ -5516,7 +5685,6 @@ Updater and security hotfix for 3.11.1. Agent Tools protocol, configuration and 
   exact scenario as a regression test, including that a single file operand
   never produces a hint at all.
 
-
 ### Added — the dashboard asks how you use lean-ctx
 
 - A form in the dashboard's Settings view asks four questions: what you use
@@ -6569,7 +6737,6 @@ documented lossless escape hatch, and corrupting the read-dedup contract.
 - Distinguished deterministic/local OSS capabilities from pending trained
   models, configured live providers, adaptive commercial routing, verified
   attribution, settlement and customer-POC claims.
-
 
 ## [3.9.18] — 2026-08-08
 
@@ -14779,7 +14946,6 @@ After updating, run `lean-ctx init` to regenerate the shell hooks with the pipe 
 
 #### Changed
 - MCP tool count: 25 → 28 across all documentation, READMEs, SKILL.md, and 11 website locales
-
 
 ## [2.17.6] — 2026-04-07
 

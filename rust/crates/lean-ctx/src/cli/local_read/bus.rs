@@ -9,6 +9,7 @@ use lean_ctx::core::a2a::message::{MessagePriority, PrivacyLevel};
 use lean_ctx::core::agents::{AgentRegistry, ScratchpadEntry};
 
 use lean_ctx_cloud::bus::queen_kinds::{self, KIND_KEY, QueenKind};
+use lean_ctx_cloud::bus::task_events::TaskAction;
 
 use super::{Code, Failure, rfc3339};
 use crate::cli::common::{CliToolRun, Records};
@@ -66,6 +67,11 @@ pub(crate) struct MessageRow {
     pub kind: Option<String>,
     /// The Cloud bus address a relay-delivered message came from.
     pub remote_address: Option<String>,
+    /// A task notice's task and what may be done with it (rc3-57,
+    /// additive): the app shows them as buttons, the text stays plain.
+    /// Absent for every other message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_action: Option<TaskAction>,
     pub category: String,
     pub priority: String,
     pub privacy: String,
@@ -124,6 +130,7 @@ pub(crate) fn row(e: &ScratchpadEntry, reader_project: Option<&str>) -> MessageR
             .filter(|k| QueenKind::parse(k).is_some())
             .cloned(),
         remote_address: e.cloud_inbound_address().map(str::to_owned),
+        task_action: TaskAction::of(e),
         category: e.category.clone(),
         priority: e.priority.to_string(),
         privacy: format!("{:?}", e.privacy).to_lowercase(),
@@ -778,6 +785,11 @@ impl<'a> PostFlags<'a> {
 pub(crate) fn build_post(args: &[String]) -> Result<Posted, Failure> {
     let (to, message, project_root) = post_args(args, "agent post")?;
     let flags = PostFlags::of(args)?;
+    // rc4-32: the same rule as `bus.post`; this kind has no signed form.
+    let targets: Vec<&str> = to.iter().map(String::as_str).collect();
+    if needs_app_signature(flags.sender, &targets) {
+        return Err(super::chat_sign::signature_required());
+    }
     let options = flags.options(project_root.as_deref(), None);
     let (ids, stored_at) = post_locked(&to, message, &options)?;
     Ok(Posted {
@@ -1034,6 +1046,78 @@ pub(crate) fn build_bus_post(args: &[String]) -> Result<BusPosted, Failure> {
     })
 }
 
+/// `bus.post` under rc4-32: a person's post to a vault leaves only signed
+/// by LeanCTX Code's chat key (`chat.prepare`, then `frame_b64`,
+/// `presence_signature`, `key_id`). An unsigned one is refused at once
+/// (`signature_required`) and nothing is written; entries already queued
+/// unsigned stay held. Agent posts and local-only posts are unchanged.
+pub(crate) fn bus_post_checked(args: &[String]) -> Result<BusPosted, Failure> {
+    use super::chat_sign;
+    if chat_sign::is_signed(args) {
+        let ready = chat_sign::take_signed(&[chat_sign::Kind::Bus], args)?;
+        let chat_sign::Send::Bus { args: mut filed } = ready.send.clone() else {
+            return Err(Failure::new(Code::FrameUnknown, "not a bus frame"));
+        };
+        if !filed.iter().any(|a| a == "--project-root")
+            && let Some(root) = super::flag(args, "--project-root")?
+        {
+            filed.push("--project-root".into());
+            filed.push(root.to_owned());
+        }
+        // Nothing filed: the frame can be sent again (S1).
+        let posted = build_bus_post(&filed).inspect_err(|_| chat_sign::release_signed(args))?;
+        sign_entries(&posted.ids, &ready.frame, &ready.signature)?;
+        return Ok(posted);
+    }
+    let flags = PostFlags::of(args)?;
+    if needs_app_signature(flags.sender, &super::flags(args, "--to")?) {
+        return Err(chat_sign::signature_required());
+    }
+    build_bus_post(args)
+}
+
+/// rc4-32 scope: only the person's own post (no `--as`) to a vault needs
+/// LeanCTX Code's signature. A post `--as` a local agent stays an unsigned
+/// agent entry ([`check_sender`] unchanged); a local-only post is unchanged.
+pub(crate) fn needs_app_signature(sender: &str, to: &[&str]) -> bool {
+    sender == PERSON && to_a_vault(to)
+}
+
+/// Whether any of `to` is a vault address (a post the relay would send).
+pub(crate) fn to_a_vault(to: &[&str]) -> bool {
+    use lean_ctx_cloud::bus::address::Address;
+    to.iter()
+        .any(|t| matches!(Address::parse(Some(t)), Ok(Address::Vault { .. })))
+}
+
+/// Attach the app-signed frame to the entries `ids`: the relay sends that
+/// frame unchanged with its signature, after checking both again.
+fn sign_entries(
+    ids: &[String],
+    frame: &serde_json::Map<String, serde_json::Value>,
+    signature: &str,
+) -> Result<(), Failure> {
+    use lean_ctx_cloud::bus::relay_v2::{PERSON_FRAME_KEY, PERSON_SIGNATURE_KEY};
+    let frame =
+        serde_json::to_string(frame).map_err(|e| Failure::new(Code::Internal, e.to_string()))?;
+    AgentRegistry::mutate_locked(|registry| {
+        for entry in registry
+            .scratchpad
+            .iter_mut()
+            .filter(|e| ids.contains(&e.id))
+        {
+            entry
+                .metadata
+                .insert(PERSON_FRAME_KEY.into(), frame.clone());
+            entry
+                .metadata
+                .insert(PERSON_SIGNATURE_KEY.into(), signature.to_owned());
+        }
+    })
+    .map(|_| ())
+    .map_err(|e| Failure::new(Code::Internal, e))
+}
+
 /// The sender row of a post by `id`, and who it is to the relay.
 fn sender_of(id: &str) -> (SenderRow, CloudSender) {
     if id == PERSON {
@@ -1160,7 +1244,7 @@ pub(crate) fn bus_answer(action: &str, args: &[String], via: super::Via) -> supe
                 via,
                 &preview,
                 || match action {
-                    "post" => build_bus_post(args).and_then(to_value),
+                    "post" => bus_post_checked(args).and_then(to_value),
                     "claim" => super::leases::build_claim(args).and_then(to_value),
                     _ => super::leases::build_release(args).and_then(to_value),
                 },

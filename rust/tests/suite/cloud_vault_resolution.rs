@@ -324,12 +324,11 @@ fn into_vault(fake: &FakeCloud, vault_id: &str, skip: usize) -> Vec<String> {
 }
 
 /// Team-knowledge e2e: on a connected machine a linked project needs no
-/// second connect. Link names the hosted Cloud and this machine is connected
-/// to the test Cloud, so link cannot share it here: link and status both ask
-/// for `cloud sync`, never `cloud connect`, and that sync resolves the
-/// project to the linked vault.
+/// second connect. A `ws/vault` without `@<server>` is on the Cloud this
+/// machine is connected to (rc4-56), so link shares it there at once and
+/// never asks for `cloud connect`; status and sync agree.
 #[test]
-fn link_on_a_connected_machine_asks_for_a_sync_and_the_sync_resolves_it() {
+fn link_on_a_connected_machine_shares_into_the_connected_cloud() {
     let fake = fake();
     let pounce = Machine::new();
     let home = pounce.home.path().to_path_buf();
@@ -340,31 +339,17 @@ fn link_on_a_connected_machine_asks_for_a_sync_and_the_sync_resolves_it() {
     let link = pounce.cloud(&repo, &["link", "yves/leanctx-cloud"]);
     assert!(link.status.success(), "{link:?}");
     let out = said(&link);
-    assert!(
-        out.contains("Not shared with yves/leanctx-cloud yet"),
-        "{out}"
-    );
-    assert!(out.contains("lean-ctx cloud sync"), "{out}");
+    assert!(out.contains("Shared with yves/leanctx-cloud"), "{out}");
+    assert!(!out.contains("is on https://"), "{out}");
     assert!(!out.contains("cloud connect"), "{out}");
-    assert_eq!(pounce.recorded(&repo), None);
-
-    let status = said(&pounce.cloud(&repo, &["status"]));
-    let line = status
-        .lines()
-        .find(|l| l.contains("leanctx-cloud →"))
-        .unwrap_or_else(|| panic!("{status}"));
-    assert!(
-        line.contains("linked to yves/leanctx-cloud, not shared yet"),
-        "{line}"
-    );
-    assert!(line.contains("lean-ctx cloud sync"), "{line}");
-    assert!(!line.contains("cloud connect"), "{line}");
-
-    pounce.sync(&fake, &repo);
-    let (vault, _) = pounce.recorded(&repo).expect("resolved by sync");
+    let (vault, _) = pounce.recorded(&repo).expect("shared by link");
     assert_eq!(vault, "yves/leanctx-cloud");
+
     let status = said(&pounce.cloud(&repo, &["status"]));
     assert!(status.contains("→ yves/leanctx-cloud (shared)"), "{status}");
+    pounce.sync(&fake, &repo);
+    let (vault, _) = pounce.recorded(&repo).expect("still shared after sync");
+    assert_eq!(vault, "yves/leanctx-cloud");
 }
 
 /// Acceptance (1) and (2): old link file → connect → link. Cloud keeps the

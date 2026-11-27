@@ -96,6 +96,18 @@ pub fn sources_at<S: AsRef<str>>(project: &str, paths: &[S], tool: &str) -> Opti
         .collect()
 }
 
+/// The one source `path` names in `project`, or why it cannot be bound
+/// (missing, outside the project, not permitted, restricted).
+pub fn source_at(project: &str, path: &str, tool: &str) -> Result<SourceRef, String> {
+    let joined = std::path::Path::new(project).join(path);
+    let Some(joined) = joined.to_str() else {
+        return Err("the path is not UTF-8".to_owned());
+    };
+    SourceRef::read(joined, project, tool)
+        .map(|(_, source)| source)
+        .map_err(|withheld| withheld.codes().join(", "))
+}
+
 /// The sources of an item that was derived from the output of the current
 /// call: the call's captured source set, which the caller passes only for a
 /// tool that declares every source. Each file is read again now and must

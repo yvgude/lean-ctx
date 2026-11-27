@@ -33,9 +33,17 @@ const TOKENS: Param = value("tokens", "--tokens");
 /// A linked project's own local tasks that are not shared (`--local`, §3c).
 const LOCAL: Param = switch("local", "--local");
 
+/// rc4-67: a task the person proposed in LeanCTX Code (app-only,
+/// `app_key`); the CLI has no verb for it.
+pub(crate) const PERSON_PROPOSE: &str = crate::cli::tasks_cmd::PERSON_PROPOSE_KIND;
+
 /// The kinds only this part prints (`tasks.list` and `tasks.task` are the
 /// core kinds of `cloud tasks`, which print the same documents).
-pub(crate) const KINDS: &[&str] = &["tasks.ack"];
+pub(crate) const KINDS: &[&str] = &["tasks.ack", PERSON_PROPOSE, PERSON_PREPARE];
+
+/// rc4-67: the bytes LeanCTX Code signs with its task-propose key before
+/// `tasks.propose` (app-only).
+pub(crate) const PERSON_PREPARE: &str = super::tasks_sign::PREPARE;
 
 /// Command path → CLI verbs, as `capabilities::COMMANDS`.
 pub(crate) const COMMANDS: &[(&str, &[&str])] = &[(
@@ -244,6 +252,48 @@ pub(crate) const ROUTES: &[Route] = &[
             BY,
         ],
     ),
+    // App-only (`app_key`): the person's own proposal, origin `person`. No
+    // CLI words, no agent and no name: the Cloud names the person this
+    // machine is linked to. Listed as a socket verb of `cloud.tasks`.
+    Route {
+        kind: PERSON_PROPOSE,
+        method: Method::Post,
+        path: "/v1/local/cloud/tasks/propose",
+        cli: &[],
+        action: &["propose"],
+        params: &[
+            PROJECT_ROOT,
+            value("title", "--title"),
+            value("goal", "--goal"),
+            value("acceptance", "--acceptance"),
+            value("role", "--role"),
+            // The signed form (rc4-67): a prepared body and the app's
+            // signature over its bytes; the words come from the body.
+            value("body_b64", super::tasks_sign::BODY_FLAG),
+            value("task_signature", super::tasks_sign::SIGNATURE_FLAG),
+            value("key_id", super::tasks_sign::KEY_ID_FLAG),
+        ],
+        project: Project::Required,
+        names: Some(("cloud.tasks", "propose")),
+    },
+    // App-only: the exact body of the person's proposal and the bytes the
+    // app signs; nothing is queued or sent.
+    Route {
+        kind: PERSON_PREPARE,
+        method: Method::Post,
+        path: "/v1/local/cloud/tasks/propose/prepare",
+        cli: &[],
+        action: &["prepare"],
+        params: &[
+            PROJECT_ROOT,
+            value("title", "--title"),
+            value("goal", "--goal"),
+            value("acceptance", "--acceptance"),
+            value("role", "--role"),
+        ],
+        project: Project::Required,
+        names: Some(("cloud.tasks", "prepare")),
+    },
 ];
 
 const LABELS: Param = Param {
@@ -256,8 +306,18 @@ const LABELS: Param = Param {
 /// (`kind` is one of the routes' kinds; the verb is in `args`). On the
 /// socket the reader is a person (Cloud Desktop): an agent acts only when
 /// the body names it (`agent`), as `--agent` does on the CLI.
-pub(crate) fn answer(_kind: &str, args: &[String], via: Via) -> Answer {
-    use crate::cli::tasks_cmd::{Caller, caller, json_answer};
+pub(crate) fn answer(kind: &str, args: &[String], via: Via) -> Answer {
+    use crate::cli::tasks_cmd::{
+        Caller, caller, json_answer, person_prepare_answer, person_propose_answer,
+    };
+    if kind == PERSON_PROPOSE || kind == PERSON_PREPARE {
+        // The service admits them only with the app key; the CLI never.
+        return match via {
+            Via::Cli => Answer::failure(&super::app_key::refusal()),
+            Via::Socket if kind == PERSON_PREPARE => person_prepare_answer(args),
+            Via::Socket => person_propose_answer(args),
+        };
+    }
     let who = match via {
         Via::Cli => caller(),
         Via::Socket => Caller::Person,

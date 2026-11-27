@@ -27,7 +27,7 @@ pub use lean_ctx_protocol::cloud::usage::FEATURE_USAGE;
 use crate::CloudError;
 use crate::auth::Session;
 use crate::config::CloudConfig;
-use crate::error::{NextStep, amount_text, quota_label};
+use crate::error::{FREE_CONNECTED, FREE_REGISTERED, NextStep, amount_text, quota_label};
 use crate::gateway::BALANCE_RESOURCE;
 use crate::state::{CloudStore, write_private};
 
@@ -48,8 +48,9 @@ const ORDER: [&str; 7] = [
     "connected_instances",
 ];
 
-/// Width of the label column of the status lines.
-const LABEL_WIDTH: usize = 22;
+/// Width of the label column of the status lines ("hosts connected at
+/// once" and a space).
+const LABEL_WIDTH: usize = 24;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -188,6 +189,9 @@ pub fn rises(seen: &BTreeMap<String, CloudQuotaStateV1>, usage: &CloudUsageV1) -
 #[must_use]
 pub fn rise_line(resource: &str, q: &CloudQuotaV1) -> String {
     let what = quota_label(resource);
+    if is_host_count(resource) {
+        return host_rise_line(what, resource, q);
+    }
     let amounts = format!(
         "{} of {}",
         amount_text(resource, q.used),
@@ -211,6 +215,51 @@ pub fn rise_line(resource: &str, q: &CloudQuotaV1) -> String {
         line.push_str(hint);
     }
     line
+}
+
+/// The two host counts (rc4-58): registered, and connected at once.
+fn is_host_count(resource: &str) -> bool {
+    matches!(resource, "registered_instances" | "connected_instances")
+}
+
+/// The rise of a host count, worded like the status line: "hosts
+/// registered 3 of 3: all in use; …".
+fn host_rise_line(what: &str, resource: &str, q: &CloudQuotaV1) -> String {
+    let head = format!("{what} {} of {}", q.used, q.limit);
+    if q.state == CloudQuotaStateV1::Full {
+        format!(
+            "{head}: all in use; nothing is charged for more{}",
+            host_full_tail(resource, q)
+        )
+    } else {
+        let mut line = format!("{head}: {} % in use", percent(q));
+        if let Some(hint) = hint(q) {
+            line.push_str("; ");
+            line.push_str(hint);
+        }
+        line
+    }
+}
+
+/// What a full host count says after "FULL" (rc4-62): when the next
+/// registration frees, how to free one now, and the service's next step.
+fn host_full_tail(resource: &str, q: &CloudQuotaV1) -> String {
+    let mut tail = String::new();
+    if resource == "registered_instances" {
+        if let Some(at) = reset_text(q) {
+            tail.push_str(&format!("; the next registration frees at {at}"));
+        }
+        tail.push_str("; ");
+        tail.push_str(FREE_REGISTERED);
+    } else {
+        tail.push_str("; ");
+        tail.push_str(FREE_CONNECTED);
+    }
+    if let Some(hint) = hint(q) {
+        tail.push_str("; ");
+        tail.push_str(hint);
+    }
+    tail
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +380,11 @@ pub fn quota_line(resource: &str, q: &CloudQuotaV1) -> String {
         amount_text(resource, q.limit)
     );
     match q.state {
+        CloudQuotaStateV1::Full if is_host_count(resource) => {
+            line.push_str(" · FULL");
+            line.push_str(&host_full_tail(resource, q));
+            return line;
+        }
         CloudQuotaStateV1::Full => {
             line.push_str(" · FULL");
             if let Some(at) = reset_text(q) {
@@ -436,17 +490,17 @@ mod tests {
             lines,
             [
                 "Usage:        LeanCTX Cloud, Personal",
-                "  storage               34 GiB of 40 GiB · warn (85 %); Team gives every seat its own allowance",
-                "  monthly transfer      40 GiB of 40 GiB · FULL until 2026-12-01T00:00:00Z; Team gives every seat its own allowance",
-                "  monthly bus messages  1200 of 200000",
-                "  model credit          $1.25 of $8.00",
-                "  private vaults        3 of 20",
-                "  instance slots        2 of 3",
-                "  connected instances   1 of 2",
+                "  storage                 34 GiB of 40 GiB · warn (85 %); Team gives every seat its own allowance",
+                "  monthly transfer        40 GiB of 40 GiB · FULL until 2026-12-01T00:00:00Z; Team gives every seat its own allowance",
+                "  monthly bus messages    1200 of 200000",
+                "  model credit            $1.25 of $8.00",
+                "  private vaults          3 of 20",
+                "  hosts registered        2 of 3",
+                "  hosts connected at once 1 of 2",
             ]
         );
         for line in &lines {
-            for word in ["engine", "Queen", "workspace"] {
+            for word in ["engine", "Queen", "workspace", "instance", "slot"] {
                 assert!(!line.contains(word), "{line}");
             }
         }
@@ -533,7 +587,7 @@ mod tests {
         // A reset that is no timestamp is left out.
         assert_eq!(
             lines.last().unwrap(),
-            "  agent_seats           4 of 4 · FULL; contact us to extend your Enterprise contract"
+            "  agent_seats             4 of 4 · FULL; contact us to extend your Enterprise contract"
         );
     }
 
@@ -595,8 +649,64 @@ mod tests {
         };
         assert_eq!(
             quota_line("connected_instances", &seats),
-            "  connected instances   4 of 4 · FULL; every seat you add in LeanCTX Cloud brings its own allowance"
+            "  hosts connected at once 4 of 4 · FULL; to free one, disconnect a host (`lean-ctx cloud disconnect` on that machine); every seat you add in LeanCTX Cloud brings its own allowance"
         );
+    }
+
+    /// rc4-58/rc4-62: the registered count says "hosts registered U of L",
+    /// when the next registration frees and how to free one, in the status
+    /// line and in the rise alike; no "instance" or "slot" count.
+    #[test]
+    fn host_counts_read_as_the_web_names_them() {
+        let registered = CloudQuotaV1 {
+            limit: 3,
+            used: 3,
+            reset_at: Some("2026-12-01T00:00:00Z".into()),
+            state: CloudQuotaStateV1::Full,
+            next_step: Some("upgrade_team".into()),
+        };
+        assert_eq!(
+            quota_line("registered_instances", &registered),
+            "  hosts registered        3 of 3 · FULL; the next registration frees at 2026-12-01T00:00:00Z; \
+             to free one, revoke a host you no longer use on the Hosts page; Team gives every seat its own allowance"
+        );
+        assert_eq!(
+            rise_line("registered_instances", &registered),
+            "hosts registered 3 of 3: all in use; nothing is charged for more; the next registration frees \
+             at 2026-12-01T00:00:00Z; to free one, revoke a host you no longer use on the Hosts page; \
+             Team gives every seat its own allowance"
+        );
+        let connected = CloudQuotaV1 {
+            limit: 2,
+            used: 2,
+            reset_at: None,
+            state: CloudQuotaStateV1::Full,
+            next_step: None,
+        };
+        assert_eq!(
+            rise_line("connected_instances", &connected),
+            "hosts connected at once 2 of 2: all in use; nothing is charged for more; \
+             to free one, disconnect a host (`lean-ctx cloud disconnect` on that machine)"
+        );
+        let warn = CloudQuotaV1 {
+            used: 1,
+            state: CloudQuotaStateV1::Warn,
+            ..connected
+        };
+        assert_eq!(
+            rise_line("connected_instances", &warn),
+            "hosts connected at once 1 of 2: 50 % in use"
+        );
+        for line in [
+            quota_line("registered_instances", &registered),
+            rise_line("registered_instances", &registered),
+            rise_line("connected_instances", &warn),
+        ] {
+            // Counts only: "slot" stays for the web's "Recover the slot now".
+            for word in ["instance", "slot", "seat is free"] {
+                assert!(!line.contains(word), "{word} in {line}");
+            }
+        }
     }
 
     #[test]

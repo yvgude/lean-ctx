@@ -1,0 +1,406 @@
+{
+  "description": "rc4-1 / rc4-10: a computer's name as the cloud takes it (cloud_wire::engine::instance_label, the server's device code, enrollment, approval and rename routes, and the web console's hostName). input is the raw text; name is what is stored after trimming Unicode whitespace (White_Space, as Rust str::trim), or null when refused: empty, more than max_chars characters (Unicode scalar values), a control character, or a character cloud_wire::knowledge::invisible refuses. The joiners U+200C/U+200D and U+FE00-FE0F stay.",
+  "max_chars": 64,
+  "cases": [
+    {
+      "input": "devbox",
+      "name": "devbox",
+      "why": "plain"
+    },
+    {
+      "input": "  Ada's laptop ",
+      "name": "Ada's laptop",
+      "why": "trimmed"
+    },
+    {
+      "input": "\ud83d\udc69\u200d\ud83d\udcbb devbox",
+      "name": "\ud83d\udc69\u200d\ud83d\udcbb devbox",
+      "why": "emoji ZWJ sequence keeps U+200D"
+    },
+    {
+      "input": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
+      "name": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
+      "why": "Persian keeps U+200C"
+    },
+    {
+      "input": "\ud83d\udda5\ufe0f Studio",
+      "name": "\ud83d\udda5\ufe0f Studio",
+      "why": "variation selector U+FE0F stays"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "why": "64 characters"
+    },
+    {
+      "input": "\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4",
+      "name": "\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4\u00e4",
+      "why": "64 characters, two bytes each"
+    },
+    {
+      "input": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+      "name": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+      "why": "64 astral characters (counted as characters, not UTF-16 units)"
+    },
+    {
+      "input": " xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ",
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "why": "length counted after trimming"
+    },
+    {
+      "input": "\u2003Wide\u00a0space\u3000",
+      "name": "Wide\u00a0space",
+      "why": "Unicode whitespace trimmed, inner no-break space kept"
+    },
+    {
+      "input": "\u0085devbox\u0085",
+      "name": "devbox",
+      "why": "NEL is whitespace: trimmed at the ends"
+    },
+    {
+      "input": "devbox\u2028",
+      "name": "devbox",
+      "why": "a trailing line separator is whitespace: trimmed"
+    },
+    {
+      "input": "\u2029devbox",
+      "name": "devbox",
+      "why": "a leading paragraph separator is whitespace: trimmed"
+    },
+    {
+      "input": "a\u2027b",
+      "name": "a\u2027b",
+      "why": "U+2027 is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "a\u202fb",
+      "name": "a\u202fb",
+      "why": "U+202F is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "a\u205fb",
+      "name": "a\u205fb",
+      "why": "U+205F is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "a\u2070b",
+      "name": "a\u2070b",
+      "why": "U+2070 is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "a\u200ab",
+      "name": "a\u200ab",
+      "why": "U+200A is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "a\u0600b",
+      "name": "a\u0600b",
+      "why": "U+0600 is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "a\u070fb",
+      "name": "a\u070fb",
+      "why": "U+070F is visible or plain whitespace inside: kept"
+    },
+    {
+      "input": "",
+      "name": null,
+      "why": "empty"
+    },
+    {
+      "input": "   ",
+      "name": null,
+      "why": "only spaces"
+    },
+    {
+      "input": "\t\n ",
+      "name": null,
+      "why": "only whitespace"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "name": null,
+      "why": "65 characters"
+    },
+    {
+      "input": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+      "name": null,
+      "why": "65 astral characters"
+    },
+    {
+      "input": "line\nbreak",
+      "name": null,
+      "why": "newline"
+    },
+    {
+      "input": "tab\there",
+      "name": null,
+      "why": "tab"
+    },
+    {
+      "input": "cr\rhere",
+      "name": null,
+      "why": "carriage return"
+    },
+    {
+      "input": "a\u0000b",
+      "name": null,
+      "why": "control U+0000"
+    },
+    {
+      "input": "a\u001fb",
+      "name": null,
+      "why": "control U+001F"
+    },
+    {
+      "input": "a\u007fb",
+      "name": null,
+      "why": "control U+007F"
+    },
+    {
+      "input": "a\u0080b",
+      "name": null,
+      "why": "control U+0080"
+    },
+    {
+      "input": "a\u009fb",
+      "name": null,
+      "why": "control U+009F"
+    },
+    {
+      "input": "a\u0085b",
+      "name": null,
+      "why": "NEL inside is a control character"
+    },
+    {
+      "input": "dev\u2028box",
+      "name": null,
+      "why": "line separator inside"
+    },
+    {
+      "input": "dev\u2029box",
+      "name": null,
+      "why": "paragraph separator inside"
+    },
+    {
+      "input": "\ufeffdevbox",
+      "name": null,
+      "why": "a leading byte-order mark is no whitespace: refused, not trimmed"
+    },
+    {
+      "input": "devbox\ufeff",
+      "name": null,
+      "why": "a trailing byte-order mark"
+    },
+    {
+      "input": "a\u00adb",
+      "name": null,
+      "why": "invisible U+00AD"
+    },
+    {
+      "input": "a\u034fb",
+      "name": null,
+      "why": "invisible U+034F"
+    },
+    {
+      "input": "a\u061cb",
+      "name": null,
+      "why": "invisible U+061C"
+    },
+    {
+      "input": "a\u115fb",
+      "name": null,
+      "why": "invisible U+115F"
+    },
+    {
+      "input": "a\u1160b",
+      "name": null,
+      "why": "invisible U+1160"
+    },
+    {
+      "input": "a\u17b4b",
+      "name": null,
+      "why": "invisible U+17B4"
+    },
+    {
+      "input": "a\u17b5b",
+      "name": null,
+      "why": "invisible U+17B5"
+    },
+    {
+      "input": "a\u180eb",
+      "name": null,
+      "why": "invisible U+180E"
+    },
+    {
+      "input": "a\u200bb",
+      "name": null,
+      "why": "invisible U+200B"
+    },
+    {
+      "input": "a\u200eb",
+      "name": null,
+      "why": "invisible U+200E"
+    },
+    {
+      "input": "a\u200fb",
+      "name": null,
+      "why": "invisible U+200F"
+    },
+    {
+      "input": "a\u202ab",
+      "name": null,
+      "why": "invisible U+202A"
+    },
+    {
+      "input": "a\u202cb",
+      "name": null,
+      "why": "invisible U+202C"
+    },
+    {
+      "input": "a\u202eb",
+      "name": null,
+      "why": "invisible U+202E"
+    },
+    {
+      "input": "a\u2060b",
+      "name": null,
+      "why": "invisible U+2060"
+    },
+    {
+      "input": "a\u2064b",
+      "name": null,
+      "why": "invisible U+2064"
+    },
+    {
+      "input": "a\u2065b",
+      "name": null,
+      "why": "invisible U+2065"
+    },
+    {
+      "input": "a\u2066b",
+      "name": null,
+      "why": "invisible U+2066"
+    },
+    {
+      "input": "a\u2069b",
+      "name": null,
+      "why": "invisible U+2069"
+    },
+    {
+      "input": "a\u206ab",
+      "name": null,
+      "why": "invisible U+206A"
+    },
+    {
+      "input": "a\u206fb",
+      "name": null,
+      "why": "invisible U+206F"
+    },
+    {
+      "input": "a\u3164b",
+      "name": null,
+      "why": "invisible U+3164"
+    },
+    {
+      "input": "a\ufeffb",
+      "name": null,
+      "why": "invisible U+FEFF"
+    },
+    {
+      "input": "a\uffa0b",
+      "name": null,
+      "why": "invisible U+FFA0"
+    },
+    {
+      "input": "a\ufff9b",
+      "name": null,
+      "why": "invisible U+FFF9"
+    },
+    {
+      "input": "a\ufffab",
+      "name": null,
+      "why": "invisible U+FFFA"
+    },
+    {
+      "input": "a\ufffbb",
+      "name": null,
+      "why": "invisible U+FFFB"
+    },
+    {
+      "input": "a\ud80d\udc30b",
+      "name": null,
+      "why": "invisible U+13430"
+    },
+    {
+      "input": "a\ud80d\udc3fb",
+      "name": null,
+      "why": "invisible U+1343F"
+    },
+    {
+      "input": "a\ud82f\udca0b",
+      "name": null,
+      "why": "invisible U+1BCA0"
+    },
+    {
+      "input": "a\ud82f\udca3b",
+      "name": null,
+      "why": "invisible U+1BCA3"
+    },
+    {
+      "input": "a\ud834\udd73b",
+      "name": null,
+      "why": "invisible U+1D173"
+    },
+    {
+      "input": "a\ud834\udd7ab",
+      "name": null,
+      "why": "invisible U+1D17A"
+    },
+    {
+      "input": "a\udb40\udc00b",
+      "name": null,
+      "why": "invisible U+E0000"
+    },
+    {
+      "input": "a\udb40\udc01b",
+      "name": null,
+      "why": "invisible U+E0001"
+    },
+    {
+      "input": "a\udb40\udc41b",
+      "name": null,
+      "why": "invisible U+E0041"
+    },
+    {
+      "input": "a\udb40\udc7fb",
+      "name": null,
+      "why": "invisible U+E007F"
+    },
+    {
+      "input": "a\udb40\udd00b",
+      "name": null,
+      "why": "invisible U+E0100"
+    },
+    {
+      "input": "a\udb40\uddefb",
+      "name": null,
+      "why": "invisible U+E01EF"
+    },
+    {
+      "input": "\u180edevbox",
+      "name": null,
+      "why": "Mongolian vowel separator is no whitespace: refused, not trimmed"
+    },
+    {
+      "input": "\u3164",
+      "name": null,
+      "why": "only a Hangul filler"
+    },
+    {
+      "input": "dev\udb40\udc64\udb40\udc65\udb40\udc76box",
+      "name": null,
+      "why": "tag characters (ASCII smuggling)"
+    }
+  ]
+}

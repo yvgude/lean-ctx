@@ -282,6 +282,7 @@ pub fn task_proposal(local: &LocalTask, stable: &str, root: &Path) -> QueuedProp
         session_ref: Some(crate::knowledge::draft::session_ref("cloud-link")),
         local_number: Some(task.number),
         ref_keyed: true,
+        signed: None,
     }
 }
 

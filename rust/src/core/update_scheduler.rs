@@ -146,16 +146,17 @@ fn install_macos_launchagent(
     let stdout_log = log_dir.join("autoupdate-stdout.log");
     let stderr_log = log_dir.join("autoupdate-stderr.log");
 
-    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
-    // so the scheduled updater (a TCC-standalone process) can never trip the
-    // privacy prompt.
+    // rc2-2: the binary itself is ProgramArguments[0], so Login Items name
+    // LeanCTX, not sandbox-exec. The updater applies the #356 deny-~/Documents
+    // seatbelt to itself at start-up (`reexec_under_seatbelt_if_needed`).
     let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
-        &crate::core::tcc_guard_sandbox::wrap_launchd_args(
+        &crate::core::tcc_guard_sandbox::launchd_program_args(
             &binary_str,
             &["update", "--quiet", "--scheduled"],
         ),
         "    ",
     );
+    let bundle_ids = crate::core::tcc_guard_sandbox::associated_bundle_ids_xml("  ");
 
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -168,7 +169,7 @@ fn install_macos_launchagent(
   <array>
 {program_args}
   </array>
-  <key>StartInterval</key>
+{bundle_ids}  <key>StartInterval</key>
   <integer>{interval_secs}</integer>
   <key>RunAtLoad</key>
   <false/>

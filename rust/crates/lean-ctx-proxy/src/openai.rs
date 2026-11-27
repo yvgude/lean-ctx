@@ -117,6 +117,8 @@ fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usi
 
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
         let tool_names = tool_kind::openai_tool_names(messages);
+        // The shell command of each call (`compress::with_tool_command`).
+        let tool_commands = tool_kind::openai_tool_commands(messages);
 
         // OpenAI's automatic prompt caching is prefix-based like Anthropic's,
         // so history is pruned at the same frozen, cache-aware boundary. `mode`
@@ -149,10 +151,15 @@ fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usi
             if !live_compress || name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
                 continue;
             }
+            let command = call_id
+                .and_then(|id| tool_commands.get(id))
+                .map(String::as_str);
             if let Some(mut content) = msg
                 .get_mut("content")
                 .and_then(|c| c.as_str().map(String::from))
-                && super::tool_output::compress_text(&mut content, name, kind)
+                && super::compress::with_tool_command(command, || {
+                    super::tool_output::compress_text(&mut content, name, kind)
+                })
             {
                 msg["content"] = Value::String(content);
                 modified = true;
@@ -298,7 +305,7 @@ mod tests {
         let mut s = String::from(
             "$ git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n",
         );
-        for i in 0..80 {
+        for i in 0..200 {
             s.push_str(&format!("\tmodified:   src/module_{i}/file_{i}.rs\n"));
         }
         s.push_str("\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n");
@@ -427,6 +434,50 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<Value>(&on).unwrap()["reasoning_effort"],
             "low"
+        );
+    }
+
+    /// A filtered result past the size floor (>60 lines, >4 KiB, <16 KiB) that
+    /// the shell compressors would otherwise shorten.
+    fn filtered_grep_output() -> String {
+        (1..=300)
+            .map(|i| format!("build.log:{i}:[info] processed item {i:04} ok"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn a_shell_grep_result_keeps_its_filtered_output_whole() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let output = filtered_grep_output();
+        let result = |arguments: &str| {
+            let body = serde_json::json!({
+                "model": "gpt-5",
+                "messages": [
+                    {"role": "assistant", "tool_calls": [{
+                        "id": "call_g",
+                        "type": "function",
+                        "function": {"name": "Bash", "arguments": arguments}
+                    }]},
+                    {"role": "tool", "tool_call_id": "call_g", "content": output}
+                ]
+            });
+            let bytes = serde_json::to_vec(&body).unwrap();
+            let (out, _, _) = compress_request_body(body, bytes.len());
+            let parsed: Value = serde_json::from_slice(&out).unwrap();
+            parsed["messages"][1]["content"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        let filtered = result(r#"{"command":"rg -n processed build.log | head -400"}"#);
+        assert_eq!(filtered, output, "the grep call keeps its result whole");
+        assert_ne!(
+            result(r#"{"command":"make build"}"#),
+            output,
+            "an unfiltered command is still compressed"
         );
     }
 }

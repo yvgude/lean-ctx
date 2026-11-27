@@ -408,6 +408,12 @@ mod tests {
 
     #[test]
     fn search_roots_hybrid_skips_empty_roots_and_warns_nothing() {
+        // Each root is judged under its own source view, whose policy is the
+        // process-wide test override when one is set: another test holding
+        // `TestPolicyOverride::set(Some(..))` made this root "withheld". Hold
+        // a fixed "no policy" (with the environment lock it takes) so no
+        // other test decides.
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let dir = tempfile::tempdir().unwrap();
         let roots = vec![("empty".to_string(), dir.path().to_path_buf())];
         let (fused, searched, warnings) = search_roots_hybrid("query", &roots, 10, 60.0);

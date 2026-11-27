@@ -30,7 +30,7 @@ impl McpTool for CtxEditTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "File path to edit" },
+                    "path": { "type": "string", "description": "File to edit: absolute, or relative to project root (in a git worktree use absolute paths)" },
                     "old_string": { "type": "string", "description": "Text to replace (unique unless replace_all=true)" },
                     "new_string": { "type": "string", "description": "Replacement text" },
                     "replace_all": { "type": "boolean", "description": "Replace all occurrences (default false)", "default": false },
@@ -157,7 +157,10 @@ fn handle_edit_scoped(
 
             // Heavy disk I/O — no global cache lock held here.
             let before = std::fs::read(&path).unwrap_or_default();
-            let (output, effect) = crate::tools::ctx_edit::run_io(&edit_params, &last_mode);
+            let (output, effect) =
+                crate::tools::edit_recovery::with_project_root(&ctx.project_root, || {
+                    crate::tools::ctx_edit::run_io(&edit_params, &last_mode)
+                });
             let written = matches!(effect, crate::tools::ctx_edit::CacheEffect::Invalidate);
             // The file already holds the requested text: nothing written, and
             // nothing failed either.

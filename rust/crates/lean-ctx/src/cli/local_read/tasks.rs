@@ -78,6 +78,10 @@ pub(crate) struct TaskRow {
 pub(crate) struct ActorRow {
     pub kind: String,
     pub label: String,
+    /// rc4-79/rc4-67: the Cloud's `own`: this is the person this machine is
+    /// linked to. Left out when the Cloud does not say (not known).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub own: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -140,6 +144,7 @@ fn actor(a: &TaskActorV1) -> ActorRow {
     ActorRow {
         kind: wire(&a.kind),
         label: a.label.clone(),
+        own: a.own,
     }
 }
 

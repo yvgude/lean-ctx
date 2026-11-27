@@ -58,7 +58,7 @@ impl McpTool for CtxPatchTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
+                    "path": { "type": "string", "description": "Absolute, or relative to project root (in a git worktree use absolute paths)" },
                     "op": { "type": "string", "enum": ["set_line", "replace_lines", "insert_after", "delete", "replace_unique", "replace_symbol", "create", "replace_all"] },
                     "line": { "type": "integer" },
                     "hash": { "type": "string" },
@@ -104,97 +104,12 @@ impl McpTool for CtxPatchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        // #2262: relative paths resolve against the active base (#707). When it
-        // moved off the project root, the output says so, and a root-relative
-        // path into the active checkout (the doubled path) is resolved by the
-        // same rule ctx_read applies.
-        let moved_base = names_relative_path(args)
-            .then(|| crate::tools::path_base::active_base(ctx))
-            .flatten();
-        // A batch resolves every op's path itself (`resolve_op_path`), so the
-        // substitution applies to a single op only; a batch keeps its own
-        // resolution and never claims a file it did not patch.
-        let substituted = moved_base
-            .as_ref()
-            .filter(|_| !args.contains_key("ops"))
-            .zip(get_str(args, "path"))
-            .zip(ctx.resolved_path("path"))
-            .and_then(|((base, raw), resolved)| {
-                crate::tools::path_base::doubled_path_fallback(ctx, base, &raw, resolved)
-                    .filter(|found| ctx.ensure_writable(found).is_ok())
-                    .map(|found| (resolved.to_string(), found))
-            });
-        let swapped;
-        let ctx = match &substituted {
-            Some((_, found)) => {
-                let mut sub = ctx.clone();
-                sub.resolved_paths.insert("path".to_string(), found.clone());
-                swapped = sub;
-                &swapped
-            }
-            None => ctx,
-        };
-        // The substituted file's bytes before the call: the "patched … instead"
-        // note is only true when the call actually rewrote that file, not on a
-        // dry run, a no-op or a refusal reported as text.
-        let before = substituted
-            .as_ref()
-            .filter(|_| !get_bool(args, "dry_run").unwrap_or(false))
-            .map(|(_, found)| std::fs::read(found).ok());
-
         // Unit claims (A-claims): every write below checks other agents'
         // claims on the units it touches and claims them for this agent.
-        let result = crate::tools::claims_gate::scoped(ctx, || handle_patch(args, ctx));
-        match result {
-            Ok(mut output) => {
-                let written = substituted
-                    .as_ref()
-                    .zip(before)
-                    .filter(|((_, found), before)| std::fs::read(found).ok() != *before)
-                    .map(|((requested, found), _)| {
-                        crate::tools::path_base::substitution_note(requested, found, "patched")
-                    });
-                let notes: Vec<String> = written
-                    .into_iter()
-                    .chain(
-                        moved_base
-                            .as_ref()
-                            .and_then(crate::tools::path_base::ActiveBase::note_once),
-                    )
-                    .collect();
-                if !notes.is_empty() {
-                    output.text = format!(
-                        "{}\n{}",
-                        output.text.trim_end_matches('\n'),
-                        notes.join("\n")
-                    );
-                }
-                Ok(output)
-            }
-            // A refusal always names the base: it is what explains the refusal.
-            Err(mut error) => {
-                if let Some(base) = &moved_base {
-                    base.mark_noted();
-                    error.message = format!("{}\n{}", error.message, base.note()).into();
-                }
-                Err(error)
-            }
-        }
+        // Relative paths name the project root (#2262): a ctx_shell `cwd`
+        // never moves their base, so there is no doubled path to resolve here.
+        crate::tools::claims_gate::scoped(ctx, || handle_patch(args, ctx))
     }
-}
-
-/// True when the call names a relative path: the top-level `path` or any
-/// `ops[]` entry's own `path`.
-fn names_relative_path(args: &Map<String, Value>) -> bool {
-    let relative = |v: Option<&Value>| {
-        v.and_then(Value::as_str)
-            .is_some_and(crate::tools::path_base::is_relative)
-    };
-    relative(args.get("path"))
-        || args
-            .get("ops")
-            .and_then(Value::as_array)
-            .is_some_and(|ops| ops.iter().any(|op| relative(op.get("path"))))
 }
 
 fn handle_patch(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
@@ -743,12 +658,9 @@ fn plan_groups(
 }
 
 /// A batch op's own `path`, resolved like the top-level `path`: against the
-/// active base (#707, #2262), so a batch and a single op name the same file.
+/// project root (#2262), so a batch and a single op name the same file.
 fn resolve_op_path(ctx: &ToolContext, raw: &str) -> Result<String, String> {
-    let base = crate::tools::path_base::is_relative(raw)
-        .then(|| crate::tools::path_base::active_base(ctx))
-        .flatten();
-    crate::tools::path_base::resolve_against_base(ctx, base.as_ref(), raw)
+    ctx.resolve_path_sync(raw)
 }
 
 /// Pure grouping: bucket batch op objects by their own `path` (or the batch's
@@ -839,7 +751,10 @@ fn apply_one(
 
         // Heavy disk I/O — no global cache lock held here.
         let before = std::fs::read(&path).unwrap_or_default();
-        let (output, effect) = crate::tools::ctx_patch::run_io(params, &last_mode);
+        let (output, effect) =
+            crate::tools::edit_recovery::with_project_root(&ctx.project_root, || {
+                crate::tools::ctx_patch::run_io(params, &last_mode)
+            });
         let written = matches!(effect, crate::tools::ctx_edit::CacheEffect::Invalidate);
 
         if written {

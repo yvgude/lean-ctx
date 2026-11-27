@@ -28,7 +28,11 @@ pub(crate) fn wants_yes(args: &[String]) -> bool {
 /// Confirm a consequential change.
 ///
 /// - `assume_yes` short-circuits to `true` (for `--yes` / scripted use).
-/// - On a TTY we prompt `[y/N]` and accept only `y`/`yes`.
+/// - On a TTY we prompt `[y/N]`: `y`/`yes` is a yes, `n`/`no` or an empty
+///   line (Enter) a no. Any other answer is no answer: it is named and the
+///   question is asked again, so a mistyped key never counts as a no
+///   without a word (rc4-63). After [`MAX_ATTEMPTS`] unclear answers, or
+///   when input ends, the answer is no and the person is told so.
 /// - With **no** TTY and **no** `--yes` we print a refusal hint and return
 ///   `false`, so the caller leaves state untouched.
 pub(crate) fn confirm(prompt: &str, assume_yes: bool) -> bool {
@@ -41,13 +45,51 @@ pub(crate) fn confirm(prompt: &str, assume_yes: bool) -> bool {
         );
         return false;
     }
-    print!("{prompt} [y/N] ");
-    let _ = std::io::stdout().flush();
-    let mut input = String::new();
-    if std::io::stdin().read_line(&mut input).is_err() {
-        return false;
+    for _ in 0..MAX_ATTEMPTS {
+        print!("{prompt} [y/N] ");
+        let _ = std::io::stdout().flush();
+        let mut input = String::new();
+        match std::io::stdin().read_line(&mut input) {
+            Ok(0) | Err(_) => {
+                println!();
+                println!("No answer, so that is a no.");
+                return false;
+            }
+            Ok(_) => {}
+        }
+        match answer(&input) {
+            Some(yes) => return yes,
+            None => println!(
+                "\"{}\" is not an answer. Type y for yes or n for no.",
+                shown(&input)
+            ),
+        }
     }
-    matches!(input.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+    println!("No clear answer, so that is a no.");
+    false
+}
+
+/// How often an unclear answer is asked again before it counts as a no.
+const MAX_ATTEMPTS: usize = 3;
+
+/// A typed line as an answer: `Some(true)` for y/yes, `Some(false)` for
+/// n/no or Enter alone, `None` for anything else.
+fn answer(input: &str) -> Option<bool> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => Some(true),
+        "" | "n" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+/// The unclear answer as it is shown back: printable, at most 20 chars.
+fn shown(input: &str) -> String {
+    input
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(20)
+        .collect()
 }
 
 #[cfg(test)]
@@ -62,6 +104,26 @@ mod tests {
         assert!(wants_yes(&["-f".to_string()]));
         assert!(!wants_yes(&["open".to_string()]));
         assert!(!wants_yes(&[]));
+    }
+
+    #[test]
+    fn only_yes_and_no_are_answers() {
+        assert_eq!(answer("y\n"), Some(true));
+        assert_eq!(answer(" YES "), Some(true));
+        assert_eq!(answer("n\n"), Some(false));
+        assert_eq!(answer("No"), Some(false));
+        assert_eq!(answer("\n"), Some(false));
+        // rc4-63: a stray key is no answer, so the question is asked again.
+        assert_eq!(answer("a\n"), None);
+        assert_eq!(answer("ja"), None);
+        assert_eq!(answer("yy"), None);
+    }
+
+    #[test]
+    fn an_unclear_answer_is_shown_back_printable_and_short() {
+        assert_eq!(shown("a\n"), "a");
+        assert_eq!(shown("\x1b[Aab"), "[Aab");
+        assert_eq!(shown(&"x".repeat(50)).len(), 20);
     }
 
     #[test]

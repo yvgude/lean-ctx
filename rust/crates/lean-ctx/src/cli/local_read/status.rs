@@ -126,6 +126,10 @@ pub(crate) struct LocalFacts {
     pub project_root: Option<String>,
     pub linked_vault: Option<String>,
     pub auto_capture: bool,
+    /// Why no project is shared: the opt-out list of `cloud unlink` cannot
+    /// be read (fail closed, bd 39936); shown as `problem` when the
+    /// enrollment has none.
+    pub sharing_problem: Option<String>,
 }
 
 /// The counts of every vault summed; `None` when none are recorded.
@@ -171,7 +175,12 @@ pub(crate) fn of_report(report: &CloudStatusReport, facts: LocalFacts) -> LocalR
         trial_ends_at: trial_ends_at.clone(),
         capture: facts.capture,
         enabled: report.enabled,
-        problem: report.problem.clone(),
+        // A damaged opt-out list stops all sharing: it is never hidden
+        // behind another problem (bd 40060).
+        problem: match (facts.sharing_problem, report.problem.clone()) {
+            (Some(damage), Some(other)) => Some(format!("{damage}; {other}")),
+            (damage, other) => damage.or(other),
+        },
         workspace: lease.map(|l| WorkspaceRow {
             org_id: l.org_id.clone(),
             name: report.instance.as_ref().map(|i| i.org_name.clone()),
@@ -223,15 +232,15 @@ pub(crate) fn print(
 
 /// The Local Read status document of `report` for `project_root` (`None`:
 /// the folder-less document).
-fn of_state(
+pub(crate) fn of_state(
     report: &CloudStatusReport,
     data_dir: &std::path::Path,
     auto_capture: bool,
     project_root: Option<String>,
 ) -> super::Answer {
     let linked_vault = project_root.as_deref().and_then(|root| {
-        lean_ctx_cloud::vault::VaultMap::load(data_dir)
-            .for_root(root)
+        let map = lean_ctx_cloud::vault::VaultMap::load(data_dir);
+        lean_ctx_cloud::unlinked::shared_record(data_dir, &map, root)
             .map(|record| format!("{}/{}", record.ns, record.name))
     });
     let facts = LocalFacts {
@@ -239,6 +248,7 @@ fn of_state(
         project_root,
         linked_vault,
         auto_capture,
+        sharing_problem: lean_ctx_cloud::unlinked::damage(data_dir),
     };
     match serde_json::to_string(&of_report(report, facts)) {
         Ok(text) => super::Answer {

@@ -1,0 +1,26 @@
+{
+  "app_keys": [
+    {
+      "alg": "ed25519",
+      "key_id": "7db0b01f39d179aa",
+      "kind": "chat",
+      "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY"
+    },
+    {
+      "alg": "ed25519",
+      "key_id": "ef1bd9c792ccc768",
+      "kind": "optin",
+      "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+    },
+    {
+      "alg": "ed25519",
+      "key_id": "9ebdc850b1afad78",
+      "kind": "task_propose",
+      "public_key": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA"
+    }
+  ],
+  "client_id": "lean-ctx-engine",
+  "instance_version": "3.12.9",
+  "os": "macos",
+  "schema": "leanctx.cloud.device-code-request/v1"
+}

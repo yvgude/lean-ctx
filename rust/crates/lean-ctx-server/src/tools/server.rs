@@ -130,7 +130,6 @@ pub struct LeanCtxServer {
     pub(crate) bm25_cache:
         Arc<std::sync::Mutex<Option<lean_ctx::core::bm25_cache::Bm25CacheEntry>>>,
     pub(crate) _eviction_target: Arc<lean_ctx::core::eviction_orchestrator::EvictionOrchestrator>,
-    pub(crate) progress_sender: crate::server::progress::SharedProgressSender,
     pub(crate) last_tools_config_hash: Arc<std::sync::atomic::AtomicU64>,
     /// Current IDE interaction mode (Agent/Plan). Updated from `_meta.interactionMode`
     /// on each tool call; controls tool visibility and destructive-tool guards.

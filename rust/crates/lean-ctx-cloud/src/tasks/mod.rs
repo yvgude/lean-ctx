@@ -438,11 +438,94 @@ impl EvidenceInput {
             reference: Some(self.reference.trim().to_owned()),
             anchor: None,
         };
-        evidence
-            .validate()
-            .map_err(|e| CloudError::Refused(format!("evidence: {e}")))?;
+        evidence.validate().map_err(|_| {
+            CloudError::Refused(format!(
+                "{} evidence {:?} was refused: {}",
+                self.kind,
+                shown(self.reference.trim()),
+                reference_form(&self.kind)
+            ))
+        })?;
         Ok(evidence)
     }
+}
+
+/// What a reference of `kind` looks like, in plain words (rc4-103: an agent
+/// needed four tries because a refusal never said which form was expected).
+fn reference_form(kind: &str) -> &'static str {
+    match kind {
+        "commit" => "a commit reference is a commit SHA, 7 to 64 lowercase hex characters.",
+        "receipt" => "a receipt reference is a LeanCTX receipt id, 64 lowercase hex characters.",
+        "ci_run" => "a ci_run reference is an https:// link to the CI run, or its run id.",
+        "url" => "a url reference is an https:// link without spaces.",
+        "fact" => {
+            "a fact reference is the short id of a fact saved with ctx_knowledge (letters, digits and . _ : - only, no spaces), not a sentence. To cite a sentence, write it in the summary instead."
+        }
+        _ => "see the evidence kinds in the ctx_tasks tool description.",
+    }
+}
+
+/// A reference as a refusal quotes it: at most 80 characters.
+fn shown(reference: &str) -> String {
+    const MAX: usize = 80;
+    if reference.chars().count() <= MAX {
+        return reference.to_owned();
+    }
+    let mut cut: String = reference.chars().take(MAX).collect();
+    cut.push('…');
+    cut
+}
+
+/// Whether every link on the way to `path` (relative, plain names) leads
+/// to a place inside `root`. A link that leads out, or nowhere, is refused
+/// whatever its target is, so the answer never depends on what exists
+/// outside the folder.
+fn links_stay_inside(root: &Path, path: &str) -> bool {
+    let Ok(base) = std::fs::canonicalize(root) else {
+        return true;
+    };
+    let mut at = root.to_path_buf();
+    for part in Path::new(path).components() {
+        at.push(part);
+        match std::fs::symlink_metadata(&at) {
+            Ok(meta) if meta.file_type().is_symlink() => match std::fs::canonicalize(&at) {
+                Ok(target) if target.starts_with(&base) => {}
+                _ => return false,
+            },
+            Ok(_) => {}
+            // Nothing exists here, so nothing below it does either.
+            Err(_) => return true,
+        }
+    }
+    true
+}
+
+/// Why `path` cannot be cited, in plain words; `codes` are the reason codes
+/// of the refused read.
+fn anchor_refusal(root: &Path, path: &str, codes: &str) -> String {
+    use std::path::Component;
+    // Only plain names (and `.`): a Windows prefix like `C:foo`, a root or
+    // `..` never names a file inside the project folder.
+    let relative = !path.is_empty()
+        && Path::new(path)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+    let joined = root.join(path);
+    let inside = relative && links_stay_inside(root, path);
+    if !relative || !inside {
+        return "the path must be relative to the project folder and stay inside it".to_owned();
+    }
+    if !std::fs::symlink_metadata(&joined).is_ok_and(|m| m.is_file() || m.file_type().is_symlink())
+    {
+        return format!(
+            "there is no file {path} in the project folder {}",
+            root.display()
+        );
+    }
+    if codes.contains("restricted") {
+        return "the project's rules keep this file's content private".to_owned();
+    }
+    "the project's rules do not allow citing this file, or it is not a text file".to_owned()
 }
 
 /// The anchor of `spec` in `root`: the file is admitted like a source
@@ -452,9 +535,11 @@ fn file_anchor(root: &Path, spec: &str) -> Result<EvidenceV1, CloudError> {
     use lean_ctx::core::knowledge::anchors;
     let (path, symbol) = anchors::parse_spec(spec);
     let root_text = root.to_string_lossy();
-    if lean_ctx::core::archive::bindings::sources_at(&root_text, &[path], "ctx_tasks").is_none() {
+    if let Err(codes) = lean_ctx::core::archive::bindings::source_at(&root_text, path, "ctx_tasks")
+    {
         return Err(CloudError::Refused(format!(
-            "{path}: not an admitted project file"
+            "file_anchor {path:?} was refused: {}. Name a file by its path inside the project folder, for example README.md or src/main.rs (add ::name to point at one function or type).",
+            anchor_refusal(root, path, &codes)
         )));
     }
     let anchor = anchors::capture(root, path, symbol).map_err(CloudError::Refused)?;

@@ -412,7 +412,7 @@ fn bash_tool_result_still_compresses() {
         let mut s = String::from(
             "$ git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n",
         );
-        for i in 0..90 {
+        for i in 0..200 {
             s.push_str(&format!("\tmodified:   src/module_{i}/file_{i}.rs\n"));
         }
         s.push_str("\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n");
@@ -471,7 +471,7 @@ fn long_git_status() -> String {
     let mut s = String::from(
         "$ git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n",
     );
-    for i in 0..80 {
+    for i in 0..200 {
         s.push_str(&format!("\tmodified:   src/module_{i}/file_{i}.rs\n"));
     }
     s.push_str("\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n");
@@ -1296,5 +1296,50 @@ fn tool_search_fields_survive_rewrites() {
     assert_eq!(
         parsed["messages"][2], body["messages"][2],
         "tool_reference blocks must reach the provider unchanged"
+    );
+}
+
+/// A filtered result past the size floor (>60 lines, >4 KiB, <16 KiB) that
+/// the shell compressors would otherwise shorten.
+fn filtered_grep_output() -> String {
+    (1..=300)
+        .map(|i| format!("build.log:{i}:[info] processed item {i:04} ok"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn bash_body(input: &Value, output: &str) -> Value {
+    serde_json::json!({
+        "model": "claude-opus-4-8",
+        "messages": [
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "g1", "name": "Bash", "input": input}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "g1", "content": output}]}
+        ]
+    })
+}
+
+#[test]
+fn a_bash_grep_result_keeps_its_filtered_output_whole() {
+    let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    let output = filtered_grep_output();
+    assert!(output.len() > 4 * 1024 && output.lines().count() > 60);
+    let result = |input: Value| {
+        let body = bash_body(&input, &output);
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, _, _) = compress_request_body(body, bytes.len());
+        let parsed: Value = serde_json::from_slice(&out).unwrap();
+        parsed["messages"][1]["content"][0]["content"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    let filtered = result(serde_json::json!({"command": "grep -n 'processed' build.log"}));
+    assert_eq!(filtered, output, "the grep tool_use keeps its result whole");
+    let unfiltered = result(serde_json::json!({"command": "make build"}));
+    assert_ne!(
+        unfiltered, output,
+        "an unfiltered command is still compressed"
     );
 }

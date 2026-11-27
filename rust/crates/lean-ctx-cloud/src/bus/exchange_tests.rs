@@ -577,3 +577,33 @@ fn a_send_whose_audit_cannot_be_written_never_leaves() {
     );
     assert_eq!(last.agent.as_deref(), Some(agent.as_str()));
 }
+
+/// bd 39657 S-a: a message from a folder the person unlinked is not sent,
+/// although the vault record still names the folder's repository.
+#[test]
+fn a_send_after_unlink_is_refused_and_never_leaves() {
+    use crate::bus::messages_v2::{Extras, send_in};
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let store = crate::CloudStore::at(dir.path().join("config"), dir.path().join("cloud"));
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+    linked(project.path()).save(store.data_dir()).unwrap();
+    crate::unlinked::add(store.data_dir(), project.path()).unwrap();
+    let data = store.data_dir().to_path_buf();
+
+    let refused = send_in(
+        &store,
+        &root,
+        "agent-1",
+        Some("question"),
+        "Which retry budget does the export use?",
+        Extras::default(),
+    )
+    .unwrap_err();
+    assert_eq!(refused, crate::unlinked::REFUSAL);
+    assert_eq!(
+        crate::bus::relay_v2::queued_frames(&data, &mut StateV2::default()).len(),
+        0
+    );
+}

@@ -323,3 +323,30 @@ fn the_budget_skips_whole_items_and_never_truncates() {
     assert!(all.contains(&long), "rendered in full");
     assert_eq!(render("acme/x", &[], 100), "");
 }
+
+/// bd 40060: a recall in an unlinked folder delivers no vault section: the
+/// bound vault is not found for it, while it is before the unlink.
+#[test]
+fn unlink_hides_the_bound_vault_from_recall() {
+    let data = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".lean-ctx-id"), "payments-repo").unwrap();
+    let stable = lean_ctx_protocol::cloud::vault::stable_identity(
+        &crate::vault::project_identity(repo.path()).unwrap(),
+    );
+    let mut map = crate::vault::VaultMap::default();
+    map.vaults.insert(
+        stable,
+        crate::vault::VaultRecord {
+            vault_id: "v1".into(),
+            ns: "acme".into(),
+            name: "payments".into(),
+            sealed: false,
+            roots: vec![repo.path().to_string_lossy().into_owned()],
+        },
+    );
+    map.save(data.path()).unwrap();
+    assert!(bound_vault(data.path(), repo.path()).is_some());
+    crate::unlinked::add(data.path(), repo.path()).unwrap();
+    assert!(bound_vault(data.path(), repo.path()).is_none());
+}

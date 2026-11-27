@@ -120,15 +120,15 @@ fn a_cooling_pro_slot_holds_connect_and_points_to_the_web_recovery() {
     assert_eq!(
         error.to_string(),
         format!(
-            "this workspace has used all its instance slots (3 of 3); nothing is charged for more; \
-             a revoked instance's slot frees at 2026-11-02T08:00:00Z (7-day cool-down), or {}",
+            "all hosts the plan includes are registered (3 of 3); nothing is charged for more; \
+             a revoked host stays registered until 2026-11-02T08:00:00Z (7-day cool-down), or {}",
             crate::error::RECOVER_HINT
         )
     );
     let _ = note(&store, Scope::Connect, error, now);
     let held = holding(&store, Scope::Connect, now).unwrap();
     assert_eq!(held.until, "2026-11-02T08:00:00Z");
-    assert!(status_lines(&store, now)[0].contains("Settings › Connected instances › Recover"));
+    assert!(status_lines(&store, now)[0].contains("Hosts › Recover the slot now"));
     clear_connect(&store);
     assert!(holding(&store, Scope::Connect, now).is_none());
 }

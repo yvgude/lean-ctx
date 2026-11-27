@@ -111,6 +111,12 @@ fn read_link_file(root: &Path) -> Result<Option<VaultLink>, CloudError> {
     }
 }
 
+/// The link file of `root` itself (no main-checkout fallback), for
+/// [`crate::unlink`].
+pub(crate) fn read_link_file_at(root: &Path) -> Result<Option<VaultLink>, CloudError> {
+    read_link_file(root)
+}
+
 fn parse(path: &Path, text: &str) -> Result<VaultLink, CloudError> {
     parse_link(text).map_err(|why| CloudError::Local(format!("{} {why}", path.display())))
 }
@@ -200,6 +206,41 @@ pub fn link(root: &Path, vault: &str) -> Result<LinkOutcome, CloudError> {
     })
 }
 
+/// The bytes of `root`'s own link file for [`undo`], when it is a regular
+/// file (a planted symlink is never read through).
+pub fn prior_link(root: &Path) -> Option<Vec<u8>> {
+    let path = root.join(LINK_FILE);
+    let meta = std::fs::symlink_metadata(&path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    std::fs::read(&path).ok()
+}
+
+/// Undo a [`link`] whose vault Cloud refused (rc4-56): the link file gets
+/// back `prior` (its bytes before; `None`: there was none) and a
+/// `.lean-ctx-id` the link created is removed, so a refused link leaves
+/// the checkout as it was.
+pub fn undo(root: &Path, outcome: &LinkOutcome, prior: Option<&[u8]>) -> Result<(), CloudError> {
+    match prior {
+        Some(bytes) => write_file(&outcome.file, bytes)?,
+        None => remove_if_present(&outcome.file)?,
+    }
+    if outcome.created_identity {
+        remove_if_present(&root.join(IDENTITY_FILE))?;
+    }
+    Ok(())
+}
+
+fn remove_if_present(path: &Path) -> Result<(), CloudError> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(CloudError::Local(format!("remove {}: {e}", path.display())))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Write `path` in a checkout someone else may have prepared: the bytes are
 /// staged in a fresh, never pre-existing temp file (create_new, random
 /// name) and renamed over `path`, so a planted symlink at the temp or the
@@ -210,23 +251,10 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), CloudError> {
 }
 
 /// A main checkout and a linked worktree laid out as `git worktree add`
-/// writes them: `<main>/.git/worktrees/wt/{gitdir,commondir}` and
-/// `<wt>/.git` (a file).
+/// writes them; the shared fixture [`crate::unlinked::fake_worktree`].
 #[cfg(test)]
 pub(crate) fn worktree_layout(base: &Path) -> (PathBuf, PathBuf) {
-    let main = base.join("main");
-    let wt = base.join("wt");
-    let admin = main.join(".git").join("worktrees").join("wt");
-    std::fs::create_dir_all(&admin).unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
-    std::fs::write(
-        admin.join("gitdir"),
-        format!("{}\n", wt.join(".git").display()),
-    )
-    .unwrap();
-    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
-    (main, wt)
+    crate::unlinked::fake_worktree(base)
 }
 
 #[cfg(test)]

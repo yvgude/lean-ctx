@@ -135,6 +135,8 @@ pub const MAX_ORCHESTRATOR_SESSIONS: u64 = 1000;
 /// (its `x-server` point), this engine does not.
 pub const SERVER_MEMBERS: &[&str] = &[
     "security.excluded_paths",
+    // C0 sync 2026-11-24: Cloud refuses a bus message of a kind outside it.
+    "sharing.agent_exchange",
     "sharing.allowed_vaults",
     "sharing.consent_required_for",
     "sharing.cross_team_sharing",

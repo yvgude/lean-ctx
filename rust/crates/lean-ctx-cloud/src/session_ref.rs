@@ -40,7 +40,7 @@ pub const FEATURE_SESSION_REF: &str = "session_ref";
 /// first half of the receipt's `hmac-sha256:` value for the same input.
 pub const EVENT_REF_PREFIX: &str = "hs_";
 
-const CAPABILITIES_FILE: &str = "capabilities.json";
+pub(crate) const CAPABILITIES_FILE: &str = "capabilities.json";
 /// Bounds what a cached answer may hold.
 const MAX_FEATURES: usize = 64;
 const MAX_FEATURE_LEN: usize = 64;

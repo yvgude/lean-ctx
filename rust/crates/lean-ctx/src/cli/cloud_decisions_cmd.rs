@@ -37,8 +37,11 @@ pub(crate) const MAX_FILES: usize = 500;
 /// Largest Cloud answer read.
 const MAX_ANSWER_BYTES: usize = 1024 * 1024;
 
-const USAGE: &str =
-    "Usage: lean-ctx cloud decisions push [--project-root P] [--dry-run] [--allow-empty] [--json]
+const USAGE: &str = "Usage: lean-ctx cloud decisions list --json [--project-root P]
+  List the team's decisions of the linked project. The active ones that were
+  sent to agents reach every agent here after `lean-ctx cloud sync`.
+
+Usage: lean-ctx cloud decisions push [--project-root P] [--dry-run] [--allow-empty] [--json]
   Share the project's decision records (.leanctx/decisions/*.toml) with your
   team in LeanCTX Cloud. Only those records are sent, never code. Requires a
   team account and a project linked to a Cloud vault.

@@ -112,3 +112,39 @@ fn a_worker_that_ends_by_panic_lets_the_next_write_start_one() {
     assert!(ended.is_err());
     assert!(!STARTED.load(Ordering::SeqCst));
 }
+
+/// bd 39657 M: a write in a folder the person unlinked is not pushed through
+/// the record another checkout of the same repository keeps.
+#[test]
+fn a_write_after_unlink_is_not_pushed_through_another_checkout() {
+    let base = tempfile::tempdir().unwrap();
+    let store = CloudStore::at(base.path().join("config"), base.path().join("data"));
+    std::fs::create_dir_all(store.data_dir()).unwrap();
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    crate::link::link(a.path(), "acme/payments").unwrap();
+    // The second checkout carries the same identity.
+    std::fs::copy(a.path().join(".lean-ctx-id"), b.path().join(".lean-ctx-id")).unwrap();
+    let identity = crate::vault::project_identity(a.path()).unwrap();
+    assert_eq!(
+        crate::vault::project_identity(b.path()),
+        Some(identity.clone())
+    );
+    let mut map = crate::vault::VaultMap::default();
+    map.vaults.insert(
+        lean_ctx_protocol::cloud::vault::stable_identity(&identity),
+        VaultRecord {
+            vault_id: "vlt_1".into(),
+            ns: "acme".into(),
+            name: "payments".into(),
+            sealed: false,
+            roots: vec![b.path().to_string_lossy().into_owned()],
+        },
+    );
+    map.save(store.data_dir()).unwrap();
+    assert!(bound_record(&store, a.path()).is_some());
+
+    crate::unlinked::add(store.data_dir(), a.path()).unwrap();
+    assert!(bound_record(&store, a.path()).is_none());
+    assert!(bound_record(&store, b.path()).is_some());
+}

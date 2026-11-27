@@ -23,8 +23,8 @@ use super::{
 use crate::CloudStore;
 use crate::state::{lock_state, write_private};
 
-const DIR: &str = "consent";
-const KEY_FILE: &str = "consent.key";
+pub(crate) const DIR: &str = "consent";
+pub(crate) const KEY_FILE: &str = "consent.key";
 /// The presence key bound through the device flow (§3.8.4).
 pub(crate) const PRESENCE_KEY_FILE: &str = "presence_key.json";
 /// The instance owner's account, from E44 (§3.6).

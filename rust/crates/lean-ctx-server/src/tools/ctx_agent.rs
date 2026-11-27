@@ -227,6 +227,19 @@ pub(crate) const READ_PAGE_BYTES: usize = 6_000;
 
 /// One unread message as `read` shows it.
 fn render_message(m: &ScratchpadEntry, project_root: &str) -> String {
+    // A task notice reads plainly for people; its agent shows the exact
+    // `ctx_tasks` call from the notice's structured action (rc3-57).
+    // Invariant: `next:` is built ONLY from the task number and the known
+    // verbs (`TaskAction::call`), never from text, and only for the two
+    // task-notice senders (`TaskAction::of`).
+    let next = lean_ctx_cloud::bus::task_events::TaskAction::of(m)
+        .map(|action| format!("    next: {}\n", action.call()))
+        .unwrap_or_default();
+    format!("{}{next}", render_text(m, project_root))
+}
+
+/// The message itself as `read` shows it.
+fn render_text(m: &ScratchpadEntry, project_root: &str) -> String {
     let age = (lean_ctx_time::UtcDateTime::now() - m.timestamp).num_minutes();
     // A new delivery: re-authorized under the current policy. One from
     // another instance carries its sender and kind inside the fence.

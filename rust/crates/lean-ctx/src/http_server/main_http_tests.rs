@@ -328,7 +328,16 @@ async fn local_routes_answer_the_cli_document_on_the_socket_only() {
     assert_eq!(caps, again, "the capabilities document is deterministic");
     let caps: Value = serde_json::from_str(&caps).expect("json");
     assert_eq!(caps["kind"], "capabilities");
-    for route in local_read::routes::all() {
+    // rc4-32: `chat.prepare` is listed only with a bound chat key; this
+    // machine has none.
+    let rows = caps["routes"].as_array().unwrap();
+    assert!(
+        !rows
+            .iter()
+            .any(|r| r["kind"] == local_read::chat_sign::PREPARE),
+        "chat.prepare without a chat key"
+    );
+    for route in local_read::routes::all().filter(|r| r.kind != local_read::chat_sign::PREPARE) {
         assert!(
             caps["routes"]
                 .as_array()

@@ -178,18 +178,31 @@ impl Share {
             message,
         }
     }
+
+    /// Cloud said no for good (`refused`) or the address is on another
+    /// Cloud (`other_cloud`): the link must not stay written.
+    pub(crate) fn unlinks(&self) -> bool {
+        matches!(self.state, "refused" | "other_cloud")
+    }
 }
 
 /// The vault `value` names: an address `<ws>/<vault>[@<server>]`, else the
-/// id or name of a vault this Instance shared with.
+/// id or name of a vault this Instance shared with. An address without
+/// `@<server>` is on the Cloud this machine is connected to (rc4-56: a
+/// machine connected to a self-hosted Cloud links there, not to the hosted
+/// one).
 pub(crate) fn target(
     value: &str,
     map: &VaultMap,
     instance: Option<&InstanceRecord>,
 ) -> Result<VaultAddress, Failure> {
     if value.contains('/') {
-        return VaultAddress::parse(value)
-            .map_err(|why| Failure::invalid(format!("--vault {value}: {why}")));
+        let mut address = VaultAddress::parse(value)
+            .map_err(|why| Failure::invalid(format!("--vault {value}: {why}")))?;
+        if !value.contains('@') {
+            address.server = instance.and_then(|i| server_of(&i.url));
+        }
+        return Ok(address);
     }
     let mut found: Vec<&VaultRecord> = map
         .vaults
@@ -253,8 +266,11 @@ fn cloud_state(error: &CloudError) -> Share {
 }
 
 /// The vault `root` is linked (link file) or else mapped to, as an
-/// address, when it is not `address`.
+/// address, when it is not `address`. The link file is named because the
+/// link replaces it; a folder the person unlinked was mapped to nothing,
+/// also not through its main checkout's record (rc4-6, bd 40158).
 pub(crate) fn previous_vault(
+    data_dir: &Path,
     root: &Path,
     map: &VaultMap,
     instance: Option<&InstanceRecord>,
@@ -262,8 +278,7 @@ pub(crate) fn previous_vault(
 ) -> Result<Option<Previous>, Failure> {
     let before = match link::read_link(root).map_err(Failure::from)? {
         Some(linked) => Some(linked.address()),
-        None => map
-            .for_root(&root.to_string_lossy())
+        None => lean_ctx_cloud::unlinked::shared_record(data_dir, map, &root.to_string_lossy())
             .map(|record| VaultAddress {
                 ws: record.ns.clone(),
                 vault: record.name.clone(),
@@ -276,6 +291,8 @@ pub(crate) fn previous_vault(
 }
 
 /// Link `root` to `address`; `share` maps it afterwards (not on a dry run).
+/// A link Cloud refuses, or one for another Cloud, is undone: the checkout
+/// keeps no link file (or its previous one) and no new identity (rc4-56).
 pub(crate) fn link_with(
     root: &Path,
     address: &VaultAddress,
@@ -289,11 +306,37 @@ pub(crate) fn link_with(
         let missing = lean_ctx::core::project_hash::project_identity(&root_str).is_none();
         (missing, Share::state("not_checked", None))
     } else {
+        let prior = link::prior_link(root);
+        // An explicit link shares a folder `cloud unlink` stopped (rc4-6).
+        // Its opt-out keeps every sender quiet through the link and the
+        // share, and is lifted only once the link is kept (bd 40060); a
+        // refused link keeps it. A damaged opt-out list fails the link
+        // before anything is written.
+        let opted_out = lean_ctx_cloud::unlinked::before_link(root).map_err(Failure::from)?;
+        // A link that fails after its file is written leaves this machine's
+        // vault records as they were too (bd 40158).
+        let records = CloudStore::open().ok().map(|store| {
+            (
+                store.data_dir().to_path_buf(),
+                VaultMap::load(store.data_dir()),
+            )
+        });
         let outcome = link::link(root, &address.to_string()).map_err(|e| match e {
             CloudError::Config(why) => Failure::invalid(why),
             other => Failure::from(other),
         })?;
-        (outcome.created_identity, share())
+        let share = share();
+        if share.unlinks() {
+            link::undo(root, &outcome, prior.as_deref()).map_err(Failure::from)?;
+            (false, share)
+        } else {
+            if opted_out && let Err(error) = lean_ctx_cloud::unlinked::forget_on_link(root) {
+                let error =
+                    undo_failed_link(root, &outcome, prior.as_deref(), records.as_ref(), error);
+                return Err(Failure::from(error));
+            }
+            (outcome.created_identity, share)
+        }
     };
     Ok(LinkDoc {
         project_root: root.to_string_lossy().into_owned(),
@@ -310,6 +353,33 @@ pub(crate) fn link_with(
         unsettled_local: Vec::new(),
         bring_local: None,
     })
+}
+
+/// A `cloud link` that fails after writing the link file (`error`) is
+/// undone, so the folder is left as it was (`cloud.link` §20, §20a,
+/// bd 40158): its previous link file and identity, and `records` (this
+/// machine's vault records before the link) saved back. The opt-out of an
+/// unlinked folder was never lifted. `error` is returned as it is, or names
+/// the link file to remove by hand when undoing failed too.
+pub(crate) fn undo_failed_link(
+    root: &Path,
+    outcome: &link::LinkOutcome,
+    prior: Option<&[u8]>,
+    records: Option<&(std::path::PathBuf, VaultMap)>,
+    error: CloudError,
+) -> CloudError {
+    if let Some((data_dir, map)) = records
+        && let Err(e) = map.save(data_dir)
+    {
+        tracing::warn!("cloud link: vault records not restored: {e}");
+    }
+    match link::undo(root, outcome, prior) {
+        Ok(()) => error,
+        Err(undo) => CloudError::Local(format!(
+            "{error}; the link could not be undone either ({undo}): remove {} by hand",
+            root.join(link::LINK_FILE).display()
+        )),
+    }
 }
 
 /// A checkout recorded for another vault than `address` leaves that record,
@@ -337,17 +407,23 @@ pub(crate) fn share_now(
     address: &VaultAddress,
 ) -> Share {
     let origin = instance.url.trim_end_matches('/').to_ascii_lowercase();
-    if !lean_ctx_protocol::cloud::same_cloud_origin(&address.origin(), &origin) {
+    // An address names its Cloud by host only (`ws/vault@host`); one on the
+    // connected Cloud's host is that Cloud, whatever its scheme (a
+    // self-hosted or test Cloud may answer on http).
+    let here = address.server.as_deref().map(str::to_ascii_lowercase) == server_of(&origin);
+    if !here && !lean_ctx_protocol::cloud::same_cloud_origin(&address.origin(), &origin) {
         return Share::state(
             "other_cloud",
             Some(format!(
-                "this link is for {}; this machine is connected to {origin}",
+                "{address} is on {}, but this computer is connected to {origin}; \
+                 nothing was linked. Leave out @<server> to link a vault of {origin}",
                 address.origin()
             )),
         );
     }
     let config = lean_ctx::core::config::Config::load().cloud.clone();
     let mut map = VaultMap::load(store.data_dir());
+    let before = map.clone();
     if forget_other_vault(&mut map, &root.to_string_lossy(), address)
         && let Err(e) = map.save(store.data_dir())
     {
@@ -355,12 +431,27 @@ pub(crate) fn share_now(
     }
     let session = lean_ctx_cloud::root_cert::trust_root(store, &config, &instance.url)
         .and_then(|cert| lean_ctx_cloud::auth::Session::load(store.clone(), cert));
-    match session {
-        Ok(session) => share_state(lean_ctx_cloud::knowledge::pull::resolve_project(
-            &session, &config, root,
-        )),
+    let share = match session {
+        Ok(session) => {
+            match lean_ctx_cloud::knowledge::pull::resolve_for_link(&session, &config, root) {
+                Err(MapError::Cloud(CloudError::Forbidden)) => Share::state(
+                    "refused",
+                    Some(lean_ctx_cloud::knowledge::pull::foreign_vault_refusal(
+                        &format!("{}/{}", address.ws, address.vault),
+                    )),
+                ),
+                result => share_state(result),
+            }
+        }
         Err(error) => cloud_state(&error),
+    };
+    // A refused link leaves this machine's vault records as they were too.
+    if share.unlinks()
+        && let Err(e) = before.save(store.data_dir())
+    {
+        tracing::warn!("cloud link: vault records not restored: {e}");
     }
+    share
 }
 
 pub(crate) fn run(args: &[String]) {
@@ -385,7 +476,7 @@ fn build(args: &[String]) -> Result<LinkDoc, Failure> {
         let address = target(value, &map, instance.as_ref())?;
         let dry_run = args.iter().any(|a| a == "--dry-run");
         let root = Path::new(&root);
-        let previous = previous_vault(root, &map, instance.as_ref(), &address)?;
+        let previous = previous_vault(store.data_dir(), root, &map, instance.as_ref(), &address)?;
         let bring = args.iter().any(|a| a == "--bring-local");
         // Linked, a project's tasks are Cloud's: a local task that is only
         // proposed, claimed or submitted would be stranded, so every link
@@ -449,6 +540,29 @@ mod tests {
         assert_eq!(by("Platform/x").unwrap_err().code, Code::InvalidArgument);
     }
 
+    /// bd 40158: an unlinked worktree was mapped to nothing, so a link names
+    /// no previous vault from its main checkout's record.
+    #[test]
+    fn unlink_of_a_worktree_names_no_previous_vault() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let data = base.join("data");
+        let (main, wt) = lean_ctx_cloud::unlinked::fake_worktree(&base);
+        let main_text = main.to_string_lossy().into_owned();
+        let known = map(&[("s1", "vlt_web", "web", &[main_text.as_str()])]);
+        let target = address("platform/api");
+        let before = previous_vault(&data, &wt, &known, None, &target).unwrap();
+        assert_eq!(
+            before.as_ref().map(|p| p.address.as_str()),
+            Some("platform/web"),
+            "through the main checkout's record"
+        );
+
+        lean_ctx_cloud::unlinked::add(&data, &wt).unwrap();
+        let after = previous_vault(&data, &wt, &known, None, &target).unwrap();
+        assert!(after.is_none(), "{after:?}");
+    }
+
     #[test]
     fn a_dry_run_writes_nothing_and_never_maps() {
         let dir = tempfile::tempdir().unwrap();
@@ -466,12 +580,26 @@ mod tests {
         link::link(dir.path(), "platform/web").unwrap();
         let before = std::fs::read(dir.path().join(link::LINK_FILE)).unwrap();
         let known = VaultMap::default();
-        let previous = previous_vault(dir.path(), &known, None, &address("platform/api")).unwrap();
+        let previous = previous_vault(
+            Path::new("/nonexistent/cloud-data"),
+            dir.path(),
+            &known,
+            None,
+            &address("platform/api"),
+        )
+        .unwrap();
         assert_eq!(
             previous.as_ref().map(|p| p.address.as_str()),
             Some("platform/web")
         );
-        let same = previous_vault(dir.path(), &known, None, &address("platform/web")).unwrap();
+        let same = previous_vault(
+            Path::new("/nonexistent/cloud-data"),
+            dir.path(),
+            &known,
+            None,
+            &address("platform/web"),
+        )
+        .unwrap();
         assert!(same.is_none(), "linking to the same vault moves nothing");
         link_with(dir.path(), &address("platform/api"), previous, true, || {
             panic!("a dry run never maps")
@@ -488,6 +616,7 @@ mod tests {
     /// comes back as a state with the commands that answer it.
     #[test]
     fn link_writes_then_maps_once_and_reports_a_waiting_consent() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join(".lean-ctx-id"),
@@ -533,6 +662,161 @@ mod tests {
                 "bring_local": null,
             })
         );
+    }
+
+    /// rc4-56: an address without `@<server>` is on the Cloud this machine
+    /// is connected to (a staging connection links there, never to the
+    /// hosted Cloud); a server the person names stays.
+    #[test]
+    fn an_address_without_a_server_is_on_the_connected_cloud() {
+        let known = VaultMap::default();
+        let staging = instance("https://staging.example.com");
+        let by = |v: &str, i: Option<&InstanceRecord>| target(v, &known, i).unwrap().to_string();
+        assert_eq!(
+            by("acme/notes", Some(&staging)),
+            "acme/notes@staging.example.com"
+        );
+        assert_eq!(by("acme/notes", None), "acme/notes");
+        assert_eq!(
+            by("acme/notes@cloud.leanctx.com", Some(&staging)),
+            "acme/notes"
+        );
+        assert_eq!(
+            by("acme/notes@other.example.com", Some(&staging)),
+            "acme/notes@other.example.com"
+        );
+    }
+
+    /// rc4-56: a vault Cloud refuses leaves the checkout as it was: no link
+    /// file and no new identity, or the previous link and identity back.
+    #[test]
+    fn a_refused_link_leaves_nothing_behind() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let refused = || {
+            Share::state(
+                "refused",
+                Some(lean_ctx_cloud::knowledge::pull::foreign_vault_refusal(
+                    "acme/notes",
+                )),
+            )
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let doc = link_with(dir.path(), &address("acme/notes"), None, false, || {
+            assert!(link::has_link_file(dir.path()), "linked before mapping");
+            refused()
+        })
+        .unwrap();
+        assert_eq!(doc.share.state, "refused");
+        assert!(!doc.created_identity);
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "nothing left"
+        );
+
+        link::link(dir.path(), "platform/web").unwrap();
+        let link_before = std::fs::read(dir.path().join(link::LINK_FILE)).unwrap();
+        let id_before = std::fs::read(dir.path().join(".lean-ctx-id")).unwrap();
+        for state in ["refused", "other_cloud"] {
+            link_with(dir.path(), &address("acme/notes"), None, false, || {
+                Share::state(state, None)
+            })
+            .unwrap();
+            assert_eq!(
+                std::fs::read(dir.path().join(link::LINK_FILE)).unwrap(),
+                link_before,
+                "{state}"
+            );
+            assert_eq!(
+                std::fs::read(dir.path().join(".lean-ctx-id")).unwrap(),
+                id_before
+            );
+        }
+    }
+
+    /// bd 39657 S-c, bd 40060: `cloud link` of an unlinked folder lifts the
+    /// opt-out only after the share kept the link (never while it runs); a
+    /// refused link keeps it, and a
+    /// damaged opt-out list fails the link before anything is written.
+    #[test]
+    fn a_refused_link_after_unlink_keeps_the_opt_out() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let store = CloudStore::open().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        lean_ctx_cloud::unlinked::add(store.data_dir(), dir.path()).unwrap();
+
+        link_with(dir.path(), &address("acme/notes"), None, false, || {
+            Share::state("refused", None)
+        })
+        .unwrap();
+        assert!(lean_ctx_cloud::unlinked::contains(
+            store.data_dir(),
+            dir.path()
+        ));
+        assert!(!link::has_link_file(dir.path()));
+
+        // bd 40060: the opt-out holds while the share runs.
+        let data = store.data_dir().to_path_buf();
+        let root = dir.path().to_path_buf();
+        link_with(dir.path(), &address("acme/notes"), None, false, || {
+            assert!(lean_ctx_cloud::unlinked::contains(&data, &root));
+            Share::state(
+                "not_connected",
+                Some("linked locally; it is shared once this machine connects".into()),
+            )
+        })
+        .unwrap();
+        assert!(!lean_ctx_cloud::unlinked::contains(
+            store.data_dir(),
+            dir.path()
+        ));
+
+        // bd 40158: when the opt-out cannot be lifted after the share, the
+        // link is undone and the folder stays unlinked (as it was).
+        let late = tempfile::tempdir().unwrap();
+        lean_ctx_cloud::unlinked::add(store.data_dir(), late.path()).unwrap();
+        let file = store.data_dir().join(lean_ctx_cloud::unlinked::FILE);
+        let failed = link_with(late.path(), &address("acme/notes"), None, false, || {
+            std::fs::write(&file, "[").unwrap();
+            Share::state("not_connected", None)
+        });
+        assert!(failed.is_err());
+        assert!(!link::has_link_file(late.path()), "the link is undone");
+        assert!(
+            !late.path().join(".lean-ctx-id").exists(),
+            "so is its identity"
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "[");
+
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(store.data_dir().join("unlinked_roots.json"), "[").unwrap();
+        let failed = link_with(other.path(), &address("acme/notes"), None, false, || {
+            panic!("a damaged opt-out list never shares")
+        });
+        assert!(failed.is_err());
+        assert!(!link::has_link_file(other.path()));
+    }
+
+    /// rc4-57: the refusal names the vault and the way forward, in the
+    /// person's words (never "lease" or "instance").
+    #[test]
+    fn a_foreign_vault_refusal_says_whose_vault_it_is() {
+        let text = lean_ctx_cloud::knowledge::pull::foreign_vault_refusal("acme/notes");
+        assert!(
+            text.starts_with("your account may not use acme/notes: it belongs to another account,"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Personal plan") && text.contains("Team plan"),
+            "{text}"
+        );
+        let generic = CloudError::Forbidden.to_string();
+        for said in [&text, &generic] {
+            assert!(
+                !said.contains("lease") && !said.contains("instance"),
+                "{said}"
+            );
+        }
     }
 
     /// Local pages are brought only into a shared vault; before that, and on

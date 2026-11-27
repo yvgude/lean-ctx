@@ -26,7 +26,7 @@ pub mod veto;
 #[cfg(feature = "http-server")]
 mod ws;
 
-use crate::config::{CloudBusMode, CloudConfig};
+use crate::config::CloudConfig;
 use crate::state::{CloudStore, StateLock, lock_state_within};
 
 /// How often the relay's process looks after CLI claims (lean-ctx #3).
@@ -48,7 +48,8 @@ fn relay_lock(store: &CloudStore) -> Result<StateLock, crate::CloudError> {
 #[cfg(feature = "http-server")]
 pub(crate) fn relay_config() -> Option<CloudConfig> {
     let config = lean_ctx::core::config::Config::load_arc().cloud.clone();
-    (config.bus != CloudBusMode::Off && config.enabled != Some(false)).then_some(config)
+    (config.bus != crate::config::CloudBusMode::Off && config.enabled != Some(false))
+        .then_some(config)
 }
 
 /// How long the daemon's relay waits before it asks for the relay lock
@@ -155,14 +156,28 @@ fn supervise(
     }
 }
 
-/// Start the bus relay thread when this machine is connected, the bus is
-/// not off and Cloud is not disabled.
-pub fn spawn(config: CloudConfig) -> Option<std::thread::JoinHandle<()>> {
+/// How often the daemon's relay thread looks again while `[cloud]` keeps
+/// the bus off: switching it on starts the relay without a daemon restart.
+const WAIT_FOR_BUS: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// `[cloud]` once it lets the relay run; until then nothing is sent to Cloud.
+fn wait_for_bus() -> CloudConfig {
+    loop {
+        #[cfg(feature = "http-server")]
+        if let Some(config) = relay_config() {
+            return config;
+        }
+        std::thread::sleep(WAIT_FOR_BUS);
+    }
+}
+
+/// Start the bus relay thread when this machine is connected. While the
+/// bus is off or Cloud is disabled it waits and sends nothing; rc4-82: a
+/// daemon started with `bus = "off"` used to stay without a relay for its
+/// whole life, so turning the bus on later never reached the team.
+pub fn spawn() -> Option<std::thread::JoinHandle<()>> {
     // The relay speaks WebSocket, which only an http-server build carries.
     if !cfg!(feature = "http-server") {
-        return None;
-    }
-    if config.bus == CloudBusMode::Off || config.enabled == Some(false) {
         return None;
     }
     let store = CloudStore::open().ok()?;
@@ -172,6 +187,7 @@ pub fn spawn(config: CloudConfig) -> Option<std::thread::JoinHandle<()>> {
     std::thread::Builder::new()
         .name("cloud-bus".into())
         .spawn(move || {
+            let config = wait_for_bus();
             // A foreground `cloud bus relay --for` may hold the lock right
             // now (#252: one that ran while the daemon started left the
             // daemon without a relay for its whole life). Wait for it.

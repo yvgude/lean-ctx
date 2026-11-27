@@ -40,8 +40,8 @@ impl McpTool for CtxShellTool {
                     "command": { "type": "string", "description": "Shell command" },
                     "raw": { "type": "boolean", "description": "Exact bytes; only for diffs to apply, hashes, encoded output" },
                     "inline": { "type": "boolean", "description": "Verbatim up to archive.inline_max_bytes, else archived" },
-                    "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
-                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
+                    "cwd": { "type": "string", "description": "Working dir for this call only (not remembered; never moves the base of relative ctx_read/ctx_patch paths)" },
+                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~90s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms (default here: the 1 h ceiling); poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job; terminal status may include archiveId. Evicted/expired jobs return a structured lookup error." },
@@ -103,7 +103,6 @@ impl McpTool for CtxShellTool {
         // two answers drift, and a guard that judged a directory the command
         // never ran in is exactly the bug #1811 reports.
         let explicit_cwd = get_str(args, "cwd");
-        let had_explicit_cwd = explicit_cwd.is_some();
         // Without a session (one-shot CLI contexts) the run directory cannot be
         // resolved here. That is not an error yet — the cat-redirect below never
         // needs one — so the guard is simply told nothing and keeps its stricter
@@ -270,12 +269,20 @@ impl McpTool for CtxShellTool {
             // the root (deliberate sandboxing). Surface that swap as a one-line
             // hint so the caller does not mistake the run dir for the requested
             // one (#629); appended at the end of the output like the other hints.
-            let cwd_jail_reason_was_none = cwd_jail_reason.is_none();
             let cwd_jail_hint = cwd_jail_reason.map_or_else(String::new, |reason| {
                 format!(
                     "\n[cwd: requested path rejected by project-root jail ({reason}) \u{2014} ran in {effective_cwd} instead]"
                 )
             });
+            // #2262: a `cwd` in another checkout (e.g. an EnterWorktree
+            // worktree) does not move relative paths in the file tools. Say so,
+            // so an agent working there does not edit the main checkout.
+            let checkout_hint = if cwd_jail_hint.is_empty() && explicit_cwd.is_some() {
+                other_checkout_note(&ctx.project_root, &effective_cwd).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let cwd_jail_hint = format!("{cwd_jail_hint}{checkout_hint}");
 
             {
                 let Some(mut session) = crate::server::bounded_lock::write_for(
@@ -324,22 +331,25 @@ impl McpTool for CtxShellTool {
                         ))
                     });
                 };
-                // #707: a jail-accepted explicit `cwd` param is the client
-                // telling us where it now works (worktree switches arrive
-                // this way, not as `cd` commands) — persist it so path
-                // resolution's divergence check tracks the live checkout.
-                if had_explicit_cwd && cwd_jail_reason_was_none {
-                    session.note_explicit_cwd(&effective_cwd);
-                }
-                session.update_shell_cwd(&command);
+                // #2262: neither the `cwd` argument nor a `cd` inside the
+                // command is stored on the session. Subagents share one MCP
+                // connection, so a stored directory let one agent move where
+                // another agent's commands ran and what its relative paths
+                // meant. Both apply to this call only.
+                //
+                // A session without a project root still learns one, but
+                // from the session's own start directory, never from this
+                // call's `cwd`: the root is shared by every agent on the
+                // connection, so one agent's worktree must not become it.
+                // An existing root is never replaced here.
                 let root_missing = session
                     .project_root
                     .as_deref()
                     .is_none_or(|r| r.trim().is_empty());
                 if root_missing {
                     let home = dirs::home_dir().map(|h| h.to_string_lossy().to_string());
-                    if let Some(root) =
-                        lean_ctx::core::protocol::detect_project_root(&effective_cwd)
+                    let start_dir = session.effective_cwd(None);
+                    if let Some(root) = lean_ctx::core::protocol::detect_project_root(&start_dir)
                         && home.as_deref() != Some(root.as_str())
                     {
                         session.project_root = Some(root.clone());
@@ -423,12 +433,12 @@ impl McpTool for CtxShellTool {
             }
 
             // Foreground runs still detach onto a pollable job if they outlast
-            // the soft cap, so the MCP host's ~120s abort never strands the
+            // the soft cap, so the MCP host's call abort (~105–120s) never strands the
             // result behind an unresolvable task id (#1106).
             //
             // #1173: `timeout_ms` is the *job's* lifetime, never the foreground
             // wait, so it must not raise this cap. Raising it bought no extra
-            // inline wait — the host aborts at ~120s regardless — it only
+            // inline wait — hosts abort the call at ~105–120s regardless — it only
             // suppressed our own detach, producing exactly the unresolvable
             // task id the cap exists to prevent. Separate knobs, one direction:
             // `LEAN_CTX_SHELL_FG_CAP_MS` moves the cap, `timeout_ms` does not.
@@ -566,12 +576,15 @@ impl McpTool for CtxShellTool {
                             {
                                 let pct = lean_ctx::shell::tee_policy::savings_pct(original, sent);
                                 // Recovery grammar is path-first: agents without ctx_expand
-                                // can still read the saved artifact directly (#936).
+                                // `cat` the saved artifact for the exact original (#936),
+                                // the wording of the proxy's tee hint (`compress::tee_hint`).
+                                // The raw path stays right after "full output at": the
+                                // Claude Code mod parses it there (`register.ts`).
                                 format!(
-                                    "\n[compressed {pct:.0}%: full output at {p} — read it directly (no MCP), or ctx_expand(id=\"{p}\", search=\"…\"|head=N|json_path=\"…\") for a slice]"
+                                    "\n[compressed {pct:.0}%: full output at {p} — `cat` it to re-read it exactly (no MCP), or ctx_expand(id=\"{p}\", search=\"…\"|head=N|json_path=\"…\") for a slice]"
                                 )
                             } else {
-                                format!("\n[full output: {p} — read it directly (no MCP), or ctx_expand(id=\"{p}\")]")
+                                format!("\n[full output: {p} — `cat` it to re-read it exactly (no MCP), or ctx_expand(id=\"{p}\")]")
                             }
                         })
                         .unwrap_or_default()
@@ -844,15 +857,23 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 }
 
 /// Foreground wait budget before a still-running command is detached into a
-/// pollable background job. Kept below the MCP host's ~120s tool-call abort so
-/// the caller always receives a real `shell_*` job id instead of an
-/// unresolvable task id (#1106). Override with `LEAN_CTX_SHELL_FG_CAP_MS`.
+/// pollable background job. Kept below the MCP host's tool-call abort so the
+/// caller always receives a real `shell_*` job id instead of an unresolvable
+/// task id (#1106). Override with `LEAN_CTX_SHELL_FG_CAP_MS`.
+///
+/// 90 s, not 110 s: hosts abort a call well before 120 s. A bench host closed
+/// the connection at 105–108 s on a plain `sleep 110`, so a 110 s cap never
+/// got to return its detach result; the host saw "Connection closed" and lost
+/// the command. 90 s leaves room for a slow host and for the result's own
+/// trip back.
+pub(crate) const DEFAULT_FOREGROUND_SOFT_CAP_MS: u64 = 90_000;
+
 fn foreground_soft_cap_ms() -> u64 {
     std::env::var("LEAN_CTX_SHELL_FG_CAP_MS")
         .ok()
         .and_then(|v| v.parse().ok())
         .filter(|&ms| ms > 0)
-        .unwrap_or(110_000)
+        .unwrap_or(DEFAULT_FOREGROUND_SOFT_CAP_MS)
 }
 
 /// Map an interpreter binary to a `ctx_execute` language name.
@@ -1254,6 +1275,34 @@ fn detect_bare_cat_file(command: &str) -> Option<String> {
         return None;
     }
     Some(file_path.to_string())
+}
+
+/// The nearest directory at or above `start` that holds a `.git` entry (a
+/// directory in a main checkout, a file in a worktree), by the shared
+/// `promote_to_git_root` walk; `None` when there is none.
+fn nearest_git_boundary(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    let start = lean_ctx::core::pathutil::safe_canonicalize_or_self(start);
+    let found = std::path::PathBuf::from(lean_ctx::core::command_root::promote_to_git_root(
+        &start.to_string_lossy(),
+    ));
+    found.join(".git").exists().then_some(found)
+}
+
+/// #2262: one stable line when `cwd` lies in a different git checkout than
+/// `project_root` (an EnterWorktree worktree, say). A monorepo subdirectory
+/// shares the root's boundary and gets no line; so does a side without `.git`.
+fn other_checkout_note(project_root: &str, cwd: &str) -> Option<String> {
+    if project_root.trim().is_empty() || project_root == "." {
+        return None;
+    }
+    let root_boundary = nearest_git_boundary(std::path::Path::new(project_root))?;
+    let cwd_boundary = nearest_git_boundary(std::path::Path::new(cwd))?;
+    (root_boundary != cwd_boundary).then(|| {
+        format!(
+            "\n[note: relative paths in ctx_read/ctx_patch resolve to {project_root}; use absolute paths for {}]",
+            cwd_boundary.display()
+        )
+    })
 }
 
 /// Classify `command` by the `tool_output` table (pz21 §1.8). A match makes

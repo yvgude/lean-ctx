@@ -771,3 +771,39 @@ fn ack_refuses_before_touching_the_directives_without_an_agent_id_or_verdict() {
         "Error: ack needs verdict=accept or verdict=refuse"
     );
 }
+
+/// rc3-57: a task notice reads plainly for people; `read` shows its agent
+/// the exact `ctx_tasks` call from the notice's structured action.
+#[test]
+fn a_task_notice_shows_its_agent_the_exact_call() {
+    use lean_ctx_cloud::bus::task_events::{TASK_ACTION_KEY, TaskAction, TaskVerb};
+    let mut entry = lean_ctx::core::agents::ScratchpadEntry {
+        id: "m1".into(),
+        from_agent: "local-tasks".into(),
+        to_agent: None,
+        task_id: None,
+        category: "status".into(),
+        priority: lean_ctx::core::a2a::message::MessagePriority::Normal,
+        privacy: lean_ctx::core::a2a::message::PrivacyLevel::Team,
+        message: "Local task #7 is open and can be claimed.".into(),
+        metadata: Default::default(),
+        project_root: None,
+        timestamp: lean_ctx_time::UtcDateTime::now(),
+        read_by: Vec::new(),
+        expires_at: None,
+    };
+    assert!(!super::render_message(&entry, "/project").contains("next:"));
+    let action = TaskAction::new(7, &[TaskVerb::Show, TaskVerb::Claim]);
+    entry.metadata.insert(
+        TASK_ACTION_KEY.into(),
+        serde_json::to_string(&action).unwrap(),
+    );
+    let shown = super::render_message(&entry, "/project");
+    assert!(
+        shown.ends_with("    next: ctx_tasks action=show number=7, then action=claim number=7\n"),
+        "{shown}"
+    );
+    // The same metadata on an agent's post: no `next:` line.
+    entry.from_agent = "claude-42".into();
+    assert!(!super::render_message(&entry, "/project").contains("next:"));
+}

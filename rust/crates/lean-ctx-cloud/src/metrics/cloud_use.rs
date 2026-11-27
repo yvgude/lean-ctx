@@ -110,9 +110,10 @@ fn day_of(at: UtcDateTime) -> String {
 
 /// The Cloud project of a local root, when it is linked.
 fn project_of(store: &CloudStore, project_root: &str) -> Option<String> {
-    crate::vault::VaultMap::load(store.data_dir())
-        .for_root(project_root)
-        .map(|p| p.vault_id.clone())
+    // An unlinked folder counts nothing for the vault, also not through its
+    // main checkout's record (bd 40060).
+    let map = crate::vault::VaultMap::load(store.data_dir());
+    crate::unlinked::shared_record(store.data_dir(), &map, project_root).map(|p| p.vault_id.clone())
 }
 
 pub use lean_ctx::core::knowledge::import_tag::is_cloud_fact;

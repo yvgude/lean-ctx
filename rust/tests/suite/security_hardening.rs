@@ -118,18 +118,23 @@ fn effective_cwd_calls_jail() {
     );
 }
 
+/// #2262: ctx_shell must not store a directory on the shared session — not
+/// the `cwd` argument and not a `cd` inside the command. Subagents share one
+/// MCP connection, so a stored directory let one agent redirect another.
 #[test]
-fn update_shell_cwd_calls_jail_path() {
-    let src = include_str!("../../src/core/session/state.rs");
-
-    let uscwd_fn = src
-        .find("fn update_shell_cwd(")
-        .expect("update_shell_cwd missing");
-    let uscwd_body = &src[uscwd_fn..uscwd_fn + 600];
+fn ctx_shell_does_not_move_the_session_cwd() {
+    let shell = include_str!("../../crates/lean-ctx-server/src/tools/registered/ctx_shell.rs");
     assert!(
-        uscwd_body.contains("jail_path("),
-        "H1: update_shell_cwd must jail_path check before storing"
+        !shell.contains("shell_cwd ="),
+        "#2262: ctx_shell must not assign session.shell_cwd"
     );
+    let state = include_str!("../../src/core/session/state.rs");
+    for setter in ["fn update_shell_cwd(", "fn note_explicit_cwd("] {
+        assert!(
+            !state.contains(setter),
+            "#2262: {setter} would let one call move every agent's cwd"
+        );
+    }
 }
 
 /// #1811: the write-doctrine guard decides where a *relative* redirect target

@@ -1369,7 +1369,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
     // One Cloud scheduler per machine (the daemon is the singleton).
     lean_ctx_cloud::scheduler::spawn(lean_ctx::core::config::Config::load().cloud.clone());
     // One Cloud bus relay per machine, beside the scheduler.
-    lean_ctx_cloud::bus::spawn(lean_ctx::core::config::Config::load().cloud.clone());
+    lean_ctx_cloud::bus::spawn();
 
     match addr {
         #[cfg(unix)]

@@ -200,7 +200,7 @@ impl KeySetV3 {
 
 /// The verified v3 set, as received, in `<config>/keys_v3.json` (re-verified
 /// on every load, like the v1 set).
-const KEYS_V3_FILE: &str = "keys_v3.json";
+pub(crate) const KEYS_V3_FILE: &str = "keys_v3.json";
 
 /// Roots this engine accepts a v3 set from: the enrolled Cloud's trust
 /// root, plus every compiled hosted root when that root is a hosted one

@@ -72,8 +72,12 @@ pub(crate) fn server_of(origin: &str) -> Option<String> {
     (!is_hosted_server(&host) && !host.is_empty()).then_some(host)
 }
 
-/// The document for `instance` (`None`: not connected).
+/// The document for `instance` (`None`: not connected). A folder the
+/// person unlinked (`cloud unlink`, rc4-6) has no current vault: neither
+/// through a record of its main checkout nor through a kept link file, and
+/// none while the opt-out store is damaged (bd 40158).
 pub(crate) fn build(
+    data_dir: &Path,
     instance: Option<&InstanceRecord>,
     map: &VaultMap,
     project_root: Option<&str>,
@@ -94,7 +98,10 @@ pub(crate) fn build(
         }
         .to_string()
     };
-    let mapped_here = project_root.and_then(|root| map.for_root(root));
+    let mapped_here =
+        project_root.and_then(|root| lean_ctx_cloud::unlinked::shared_record(data_dir, map, root));
+    let unlinked_here = project_root
+        .is_some_and(|root| lean_ctx_cloud::unlinked::contains(data_dir, Path::new(root)));
     let mut rows: BTreeMap<String, VaultRow> = BTreeMap::new();
     for record in map.vaults.values() {
         let key = address(&record.ns, &record.name);
@@ -124,7 +131,7 @@ pub(crate) fn build(
             current: false,
             sources: Vec::new(),
         });
-        row.current = true;
+        row.current = !unlinked_here;
         row.sources.push("link_file");
     }
     Ok(VaultList {
@@ -157,6 +164,7 @@ pub(crate) fn run(args: &[String]) {
             None => None,
         };
         build(
+            store.data_dir(),
             instance.as_ref(),
             &VaultMap::load(store.data_dir()),
             root.as_deref(),
@@ -169,6 +177,9 @@ pub(crate) fn run(args: &[String]) {
 pub(crate) mod tests {
     use super::*;
     use lean_ctx_cloud::vault::VaultRecord;
+
+    /// A cloud data dir without an opt-out store: nothing is unlinked.
+    const NO_DATA: &str = "/nonexistent/cloud-data";
 
     pub(crate) fn instance(url: &str) -> InstanceRecord {
         InstanceRecord {
@@ -208,7 +219,7 @@ pub(crate) mod tests {
             ("s2", "vlt_web", "web", &["/code/web"]),
             ("s1", "vlt_api", "api", &["/code/api"]),
         ]);
-        let failure = build(None, &known, None, None).unwrap_err();
+        let failure = build(Path::new(NO_DATA), None, &known, None, None).unwrap_err();
         assert_eq!(failure.code, Code::NotConnected);
 
         // Enrolled at the hosted service.
@@ -218,7 +229,14 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         link::link(dir.path(), "platform/docs").unwrap();
         let linked = link::read_link(dir.path()).unwrap();
-        let list = build(Some(&hosted), &known, Some("/code/api"), linked.as_ref()).unwrap();
+        let list = build(
+            Path::new(NO_DATA),
+            Some(&hosted),
+            &known,
+            Some("/code/api"),
+            linked.as_ref(),
+        )
+        .unwrap();
         let rows: Vec<(&str, bool, &[&str], Option<&str>)> = list
             .vaults
             .iter()
@@ -248,6 +266,7 @@ pub(crate) mod tests {
 
         // A self-hosted Instance names its server in every address.
         let own = build(
+            Path::new(NO_DATA),
             Some(&instance("https://cloud.acme.example/")),
             &known,
             None,
@@ -255,5 +274,51 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(own.vaults[0].address, "platform/api@cloud.acme.example");
+    }
+
+    /// bd 40158: an unlinked worktree whose main checkout stays shared has
+    /// no current vault, neither through that record nor a kept link file.
+    #[test]
+    fn unlink_of_a_worktree_has_no_current_vault() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let data = base.join("data");
+        let (main, wt) = lean_ctx_cloud::unlinked::fake_worktree(&base);
+        let main_text = main.to_string_lossy().into_owned();
+        let wt_text = wt.to_string_lossy().into_owned();
+        let known = map(&[("s1", "vlt_api", "api", &[main_text.as_str()])]);
+        link::link(&wt, "platform/docs").unwrap();
+        let linked = link::read_link(&wt).unwrap();
+        let hosted = instance("https://cloud.leanctx.com");
+        let current = |root: &str| -> Vec<(String, bool)> {
+            build(&data, Some(&hosted), &known, Some(root), linked.as_ref())
+                .unwrap()
+                .vaults
+                .into_iter()
+                .map(|r| (r.address, r.current))
+                .collect()
+        };
+        assert_eq!(
+            current(&wt_text),
+            [
+                ("platform/api".to_string(), true),
+                ("platform/docs".to_string(), true)
+            ],
+            "before: the main checkout's record and the link file"
+        );
+
+        lean_ctx_cloud::unlinked::add(&data, &wt).unwrap();
+        assert_eq!(
+            current(&wt_text),
+            [
+                ("platform/api".to_string(), false),
+                ("platform/docs".to_string(), false)
+            ]
+        );
+        let main_rows = build(&data, Some(&hosted), &known, Some(&main_text), None).unwrap();
+        assert!(
+            main_rows.vaults[0].current,
+            "the main checkout stays shared"
+        );
     }
 }

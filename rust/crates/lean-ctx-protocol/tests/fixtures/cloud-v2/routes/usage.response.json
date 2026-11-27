@@ -1,0 +1,91 @@
+{
+  "model_credit": {
+    "agent_hour_usd_micros": 500000,
+    "allowance_usd_micros": 7500000,
+    "balance_usd_micros": 6250000,
+    "deficit_usd_micros": 0,
+    "left_agent_hours": 12.5,
+    "left_usd_micros": 6250000,
+    "limit_agent_hours": 15.0,
+    "limit_usd_micros": 7500000,
+    "reset_at": "2026-12-01T00:00:00Z",
+    "state": "ok",
+    "topup_available_usd_micros": 0,
+    "used_agent_hours": 2.5,
+    "used_pct": 16,
+    "used_usd_micros": 1250000,
+    "written_off_usd_micros": 0
+  },
+  "notices": [
+    {
+      "at": "2026-11-12T09:14:03Z",
+      "level": 80,
+      "resource": "bus_messages"
+    },
+    {
+      "at": "2026-11-17T16:40:51Z",
+      "level": 80,
+      "resource": "transfer_bytes"
+    },
+    {
+      "at": "2026-11-18T07:02:19Z",
+      "level": 100,
+      "resource": "transfer_bytes"
+    }
+  ],
+  "plan": "personal",
+  "quotas": {
+    "bus_messages": {
+      "limit": 200000,
+      "next_step": "upgrade_team",
+      "reset_at": "2026-12-01T00:00:00Z",
+      "state": "warn",
+      "used": 160000
+    },
+    "connected_instances": {
+      "limit": 2,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 1
+    },
+    "model_credit_usd_micros": {
+      "limit": 7500000,
+      "next_step": "top_up",
+      "reset_at": "2026-12-01T00:00:00Z",
+      "state": "ok",
+      "used": 1250000
+    },
+    "private_vaults": {
+      "limit": 20,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 2
+    },
+    "registered_instances": {
+      "limit": 3,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 1
+    },
+    "storage_bytes": {
+      "limit": 1073741824,
+      "next_step": "upgrade_team",
+      "reset_at": null,
+      "state": "ok",
+      "used": 52428800
+    },
+    "transfer_bytes": {
+      "limit": 42949672960,
+      "next_step": "upgrade_team",
+      "reset_at": "2026-12-01T00:00:00Z",
+      "state": "full",
+      "used": 42949672960
+    }
+  },
+  "read_only": false,
+  "schema": "leanctx.cloud.usage/v1",
+  "suggest_team": false
+}

@@ -72,8 +72,8 @@ pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
 pub mod knowledge_shared;
 pub(crate) mod output_format;
-pub(crate) mod path_base;
 pub mod registered;
+pub mod seamit_answer;
 pub use lean_ctx::core::search_hook;
 pub use lean_ctx::core::search_kernel;
 #[cfg(test)]
@@ -740,15 +740,13 @@ mod resolve_path_tests {
         assert_eq!(session.project_root.as_deref(), Some(root_value.as_str()));
     }
 
-    // #707: a mid-session worktree switch moves shell_cwd into a nested linked
-    // worktree (own `.git` *file*) while project_root stays at initialize-time.
-    // The path `src/lib.rs` deliberately also exists relative to the test
-    // process CWD (`rust/`): the server's `p.exists()` probe used to
-    // short-circuit on exactly that and serve the stale root copy before the
-    // divergent-checkout precedence could apply.
+    // #2262: a session cwd inside a nested linked worktree (own `.git` file)
+    // does not move the base of relative paths. `src/lib.rs` also exists
+    // relative to the test process CWD (`rust/`); neither that nor the
+    // worktree may win over the project root.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_prefers_worktree_copy_after_mid_session_switch() {
+    async fn resolve_path_stays_in_project_root_with_a_worktree_shell_cwd() {
         let _iso = lean_ctx::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");
@@ -757,36 +755,20 @@ mod resolve_path_tests {
         std::fs::create_dir_all(wt.join("src")).unwrap();
         std::fs::write(wt.join(".git"), "gitdir: ../../../.git/worktrees/wt\n").unwrap();
         std::fs::create_dir_all(repo.join("src")).unwrap();
-        std::fs::write(repo.join("src/lib.rs"), "stale").unwrap();
-        std::fs::write(wt.join("src/lib.rs"), "fresh").unwrap();
+        std::fs::write(repo.join("src/lib.rs"), "root").unwrap();
+        std::fs::write(wt.join("src/lib.rs"), "worktree").unwrap();
 
         let server = LeanCtxServer::new_with_project_root(Some(&root_value));
-        {
-            // The worktree switch as ctx_shell's cwd tracking records it.
-            let mut session = server.session.write().await;
-            session.shell_cwd = Some(wt.to_string_lossy().to_string());
-        }
+        server.session.write().await.shell_cwd = Some(wt.to_string_lossy().to_string());
 
         let out = server.resolve_path("src/lib.rs").await.unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&out).unwrap(),
-            "fresh",
-            "worktree copy must win over the stale project_root copy: {out}"
-        );
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "root", "{out}");
 
-        // Switching back restores the established precedence: without
-        // divergence the project_root fallback serves the root copy again.
-        // Probed via a path that does NOT exist relative to the test process
-        // CWD — `src/lib.rs` would hit the (intended) `p.exists()` fast path
-        // and resolve to the real checkout's file, making the assertion
-        // environment-dependent (that is exactly how CI diverged from local).
-        {
-            let mut session = server.session.write().await;
-            session.shell_cwd = Some(root_value.clone());
-        }
-        std::fs::write(repo.join("src/back_707.rs"), "stale").unwrap();
-        std::fs::write(wt.join("src/back_707.rs"), "fresh").unwrap();
-        let out = server.resolve_path("src/back_707.rs").await.unwrap();
-        assert_eq!(std::fs::read_to_string(&out).unwrap(), "stale");
+        let out = server
+            .resolve_path(".claude/worktrees/wt/src/lib.rs")
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "worktree", "{out}");
+        assert_eq!(out.matches("worktrees").count(), 1, "doubled path: {out}");
     }
 }

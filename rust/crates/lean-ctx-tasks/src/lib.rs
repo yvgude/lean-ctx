@@ -98,6 +98,7 @@ impl Actor {
                 model: None,
                 mine: false,
                 profile_id: None,
+                own: None,
             },
             Self::Person { label } => TaskActorV1 {
                 kind: TaskActorKind::Person,
@@ -107,6 +108,7 @@ impl Actor {
                 model: None,
                 mine: false,
                 profile_id: None,
+                own: None,
             },
         }
     }

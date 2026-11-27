@@ -981,6 +981,8 @@
             "log.advanced",
             "trust.advanced",
             "policy.advanced",
+            "plan.advanced",
+            "decision.changed",
             "task.event",
             "consent.answered",
             "error",
@@ -1194,6 +1196,30 @@
           "if": {
             "properties": {
               "t": {
+                "const": "plan.advanced"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_plan_advanced"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "decision.changed"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_decision_changed"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
                 "const": "task.event"
               }
             }
@@ -1316,6 +1342,10 @@
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]{0,63}$"
           }
+        },
+        "metrics_sharing": {
+          "description": "F29: whether this host shares its usage metrics (the engine's metrics_upload setting), sent on every hello; the engine connects again when it changes. Sent only when GET /v1/capabilities lists instance_metrics_sharing (an older Cloud refuses the member). Stored per instance; a hello without it stores unknown",
+          "type": "boolean"
         }
       }
     },
@@ -1367,6 +1397,26 @@
           },
           "additionalProperties": {
             "$ref": "common.schema.json#/$defs/u64"
+          }
+        },
+        "cursors": {
+          "description": "per subscribed address, keyed exactly as sent in hello.subscribe (denied addresses absent): the seq after which this subscription's replay starts, min(hello.cursors[address], head) or head without a client cursor; message.deliver frames follow with seq > this value. A seq is strictly rising in commit order within one place and epoch only: a vault deleted and recreated under the same address is a new place (new place_ref in epochs) whose seq restarts at 1, and a failover raises the epoch (epochs) after which seqs past the restored point may be reissued; a client drops a stored cursor when the place (places) or epoch (epochs) it was taken under changed. Absent from older Clouds",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/address"
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/u64"
+          }
+        },
+        "places": {
+          "description": "per subscribed address, keyed exactly as sent in hello.subscribe (denied addresses absent): the place behind it, the same place_ref that keys epochs. The client keeps (place, epoch, cursor) per address and drops the cursor when places[address] or epochs[places[address]] differs from what it stored: a vault deleted and recreated under the same address is a new place whose seq restarts at 1, a failover raises the epoch. Absent from older Clouds",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/address"
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/place_ref"
           }
         },
         "features": {
@@ -1582,6 +1632,59 @@
       "properties": {
         "version": {
           "$ref": "common.schema.json#/$defs/u64"
+        }
+      }
+    },
+    "f_plan_advanced": {
+      "description": "plan updates to agents (hello feature plan_updates, docs/API.md §21): a plan of a vault the socket follows has a new version; ids only, the instance pulls GET /v1/vaults/{pid}/plans/{plan_id}?version= and checks the signed statement. Not stored, so there is no replay: an instance catches up with GET /v1/vaults/{pid}/plans?state=active after hello.ack. FROZEN: the field set {t, vault, plan_id, version} is closed (frame unevaluatedProperties false); clients up to 3.12.8 parse it with deny_unknown_fields and drop the frame on any unknown field, so a change needs a new frame type or a new hello capability flag, never a new field here.",
+      "required": [
+        "vault",
+        "plan_id",
+        "version"
+      ],
+      "properties": {
+        "vault": {
+          "$ref": "#/$defs/address"
+        },
+        "plan_id": {
+          "type": "string",
+          "pattern": "^plan_[A-Za-z0-9]{8,40}$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "f_decision_changed": {
+      "description": "plan updates to agents (hello feature plan_updates, docs/API.md §21): a decision of the team was created (active), superseded or revoked, in Cloud or by a repo decision file sync. Sent to the vault the decision covers, or to every followed vault of the team for a team-wide one. Ids and the status only; not stored, no replay. FROZEN: the field set {t, vault, decision_id, status, superseded_by} and the status set {active, superseded, revoked} are closed (frame unevaluatedProperties false, status enum); clients up to 3.12.8 parse it with deny_unknown_fields and no catch-all status and drop the frame on any unknown field or status, so a change needs a new frame type or a new hello capability flag, never a new field or status here.",
+      "required": [
+        "vault",
+        "decision_id",
+        "status"
+      ],
+      "properties": {
+        "vault": {
+          "$ref": "#/$defs/address"
+        },
+        "decision_id": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^dec-[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "superseded",
+            "revoked"
+          ]
+        },
+        "superseded_by": {
+          "description": "the successor, only with status superseded",
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^dec-[a-z0-9]+(-[a-z0-9]+)*$"
         }
       }
     },

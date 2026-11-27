@@ -1,0 +1,74 @@
+{
+  "route": "W96",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/instances?state=all",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+          "label": "ada-mbp",
+          "owner": {
+            "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+            "name": "Ada"
+          },
+          "instance_version": "3.12.0",
+          "os": "macos",
+          "enrolled_at": "2026-10-20T07:00:00Z",
+          "last_seen_at": "2026-10-26T06:58:00Z",
+          "connected": true,
+          "pending": false,
+          "revoked_at": null,
+          "lease": {
+            "expires_at": "2026-10-27T06:58:00Z",
+            "grace_until": "2026-10-28T06:58:00Z"
+          },
+          "slot_free_at": null,
+          "metrics_sharing": true,
+          "vaults": [
+            {
+              "vault": "payments",
+              "first_sync": "2026-10-20T09:00:00Z",
+              "last_sync": "2026-11-05T08:59:30Z",
+              "synced_seq": 412,
+              "behind": 3,
+              "stale": false
+            },
+            {
+              "vault": "web",
+              "first_sync": "2026-10-22T10:00:00Z",
+              "last_sync": "2026-11-05T08:40:00Z",
+              "synced_seq": null,
+              "behind": null,
+              "stale": false
+            }
+          ]
+        }
+      ],
+      "next_cursor": null,
+      "limit": 20,
+      "used": 1,
+      "registered": {
+        "limit": 30,
+        "used": 4,
+        "frees_at": null,
+        "pooled": true
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "message": "state is connected, offline, revoked or all",
+          "field": "state",
+          "reason": "invalid"
+        }
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 {
   "error": {
     "code": "sharing_not_confirmed",
-    "message": "confirm once that this workspace shares instance metrics (lean-ctx cloud metrics confirm)"
+    "message": "confirm once that this workspace shares instance metrics (lean-ctx cloud metrics confirm)",
+    "member": "sharing.share_instance_metrics"
   }
 }

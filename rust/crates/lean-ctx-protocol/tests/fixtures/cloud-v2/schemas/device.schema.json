@@ -127,7 +127,7 @@
       }
     },
     "capabilities": {
-      "description": "GET /v1/capabilities: the optional features this Cloud serves, for an enrolled instance (device_setup; instance_waiting = GET /v1/me/waiting; session_ref = accepts the V9 event envelope member and receipt invocation.session_ref). Instances ignore unknown entries",
+      "description": "GET /v1/capabilities: the optional features this Cloud serves, for an enrolled instance (change_trace = POST /v1/vaults/{pid}/tasks/{number}/evidence and GET /v1/vaults/{pid}/changes[/{change_id}/trace]; cpao = GET /v1/cpao; device_setup; instance_metrics_sharing = the bus v2 hello takes metrics_sharing; instance_optin_key = PUT /v1/me/optin active true takes only the presence_signature of the app's opt-in key, worker.schema.json $defs/optin_key_bind; instance_waiting = GET /v1/me/waiting; session_ref = accepts the V9 event envelope member and receipt invocation.session_ref; task_person_origin = POST /v1/vaults/{pid}/tasks takes origin kind person, signed with the app's task-propose key, worker.schema.json $defs/task_propose_key_bind). Instances ignore unknown entries",
       "type": "object",
       "required": [
         "schema",
@@ -144,6 +144,334 @@
           "items": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        }
+      }
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "quota_resource": {
+      "enum": [
+        "registered_instances",
+        "connected_instances",
+        "private_vaults",
+        "storage_bytes",
+        "transfer_bytes",
+        "bus_messages",
+        "model_credit_usd_micros"
+      ]
+    },
+    "usage_quota": {
+      "description": "One quota of the instance's workspace (a company's teams share the company's): state is full at or above the limit, warn from 80 %, otherwise ok; next_step names what frees more (subscribe without a plan, top_up for model credit, upgrade_team on Personal, add_seats or contact on Team, contact on Enterprise). reset_at only for monthly quotas and model credit",
+      "type": "object",
+      "required": [
+        "limit",
+        "used",
+        "reset_at",
+        "state",
+        "next_step"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "used": {
+          "type": "integer"
+        },
+        "reset_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "warn",
+            "full"
+          ]
+        },
+        "next_step": {
+          "enum": [
+            "subscribe",
+            "top_up",
+            "upgrade_team",
+            "add_seats",
+            "contact"
+          ]
+        }
+      }
+    },
+    "outcome_ref_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    },
+    "cpao_response": {
+      "description": "GET /v1/cpao (instance token; never metered): the team's cost per accepted outcome, by the same rule as the W95 months. cost = model cost (model_usage_events) of the team in [from, to) by usage time; accepted_outcomes = outcomes the team's hosts reported that landed in [from, to) and not reverted (open or accepted; reverted and late_reverted never count); settled = to lies at least 7 days back, so the 7-day revert window of every outcome of the window has closed (a window ending now is provisional); settled is not frozen: the figures come from the stored statuses at read time, so a revert reported later (late_reverted, or a reverted one reported late) still lowers accepted and changes cpao; cpao = cost / accepted (half up), null without an accepted outcome; trend_pct = change of cpao against the equal period before in percent, null when either is null or the earlier is 0; by_agent = accepted outcomes per agent type (unknown when not sent), its cost null while model usage carries no agent type",
+      "type": "object",
+      "required": [
+        "schema",
+        "periods"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.cpao/v1"
+        },
+        "periods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "period",
+              "from",
+              "to",
+              "settled",
+              "cost_usd_micros",
+              "accepted_outcomes",
+              "cpao_usd_micros",
+              "trend_pct",
+              "by_agent"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "period": {
+                "enum": [
+                  "7d",
+                  "30d"
+                ]
+              },
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "settled": {
+                "type": "boolean"
+              },
+              "cost_usd_micros": {
+                "type": "integer"
+              },
+              "accepted_outcomes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cpao_usd_micros": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "trend_pct": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "by_agent": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "agent",
+                    "cost_usd_micros",
+                    "accepted_outcomes"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "agent": {
+                      "type": "string",
+                      "pattern": "^([a-z][a-z0-9_-]{0,31})$"
+                    },
+                    "cost_usd_micros": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "accepted_outcomes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "usage_response": {
+      "description": "GET /v1/usage (instance token, feature usage of GET /v1/capabilities; never metered): the quotas of the instance's workspace, so an instance warns at 80 % instead of meeting a quota_exceeded refusal. plan locked = no plan in effect (read_only); notices = the first 80 % / 100 % notice per quota this month (at most 50); suggest_team = Personal at 100 % of an instance quota",
+      "type": "object",
+      "required": [
+        "schema",
+        "plan",
+        "read_only",
+        "quotas",
+        "notices",
+        "suggest_team",
+        "model_credit"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.usage/v1"
+        },
+        "plan": {
+          "enum": [
+            "personal",
+            "team",
+            "enterprise",
+            "locked"
+          ]
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "gateway_base_url": {
+          "description": "W1: base URL of the OpenAI-compatible model gateway (…/gateway/v1); present only when the gateway is set up. A session reads it here instead of minting a key just for the URL",
+          "type": "string",
+          "minLength": 1
+        },
+        "quotas": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/quota_resource"
+          },
+          "required": [
+            "registered_instances",
+            "connected_instances",
+            "private_vaults",
+            "storage_bytes",
+            "transfer_bytes",
+            "bus_messages",
+            "model_credit_usd_micros"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/usage_quota"
+          }
+        },
+        "notices": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "resource",
+              "level",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "resource": {
+                "$ref": "#/$defs/quota_resource"
+              },
+              "level": {
+                "enum": [
+                  80,
+                  100
+                ]
+              },
+              "at": {
+                "$ref": "#/$defs/time"
+              }
+            }
+          }
+        },
+        "suggest_team": {
+          "type": "boolean"
+        },
+        "model_credit": {
+          "description": "the month's model credit in micro-USD and in agent-hours (rounded down to one decimal each); used may exceed limit (a debit overdraws)",
+          "type": "object",
+          "required": [
+            "used_usd_micros",
+            "limit_usd_micros",
+            "allowance_usd_micros",
+            "topup_available_usd_micros",
+            "left_usd_micros",
+            "state",
+            "reset_at",
+            "agent_hour_usd_micros",
+            "used_agent_hours",
+            "limit_agent_hours",
+            "left_agent_hours"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "used_usd_micros": {
+              "type": "integer"
+            },
+            "used_pct": {"description": "the share of this month's usage that is used (used plus deficit over the allowance plus top-ups), in whole percent rounded down, 0-100; optional, the one figure shown to people", "type": "integer", "minimum": 0, "maximum": 100},
+            "limit_usd_micros": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "allowance_usd_micros": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "topup_available_usd_micros": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "left_usd_micros": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "balance_usd_micros": {
+              "description": "the real balance, limit - used - deficit, in micro-USD; signed, negative after a clawback overdraws the credit (left_usd_micros is this value floored at 0); optional, absent in older answers",
+              "type": "integer"
+            },
+            "deficit_usd_micros": {
+              "description": "the clawed-back amount the next allowance repays first, in micro-USD; 0 when nothing is owed; optional, absent in older answers",
+              "type": "integer",
+              "minimum": 0
+            },
+            "written_off_usd_micros": {
+              "description": "this month's usage overdraw a top-up wrote off (never paid from the top-up; not part of used_usd_micros), in micro-USD; 0 when none; optional, absent in older answers",
+              "type": "integer",
+              "minimum": 0
+            },
+            "state": {
+              "enum": [
+                "ok",
+                "soft",
+                "hard"
+              ]
+            },
+            "reset_at": {
+              "$ref": "#/$defs/time"
+            },
+            "agent_hour_usd_micros": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "used_agent_hours": {
+              "type": "number",
+              "minimum": 0
+            },
+            "limit_agent_hours": {
+              "type": "number",
+              "minimum": 0
+            },
+            "left_agent_hours": {
+              "type": "number",
+              "minimum": 0
+            }
           }
         }
       }
@@ -409,6 +737,437 @@
             "approved",
             "denied"
           ]
+        }
+      }
+    },
+    "trace_session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_ref",
+        "ledger_last_hash",
+        "audit_last_hash",
+        "deliveries",
+        "withheld",
+        "gaps"
+      ],
+      "properties": {
+        "session_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
+        "ledger_last_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        },
+        "audit_last_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        },
+        "deliveries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "withheld": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "agents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        }
+      }
+    },
+    "task_evidence": {
+      "description": "The leanctx.cloud.task-evidence/v1 document of a task evidence pin (the `evidence` member of task_evidence_request). Digests, chain hashes, counts and gap names only; never a brief, prompt, path, diff or output.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "vault",
+        "task_id",
+        "receipt_digest",
+        "chain_broken",
+        "sessions",
+        "policy_digests"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.task-evidence/v1"
+        },
+        "vault": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^(task:)?[1-9][0-9]{0,9}$"
+        },
+        "brief_digest": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "chain_broken": {
+          "type": "boolean"
+        },
+        "sessions": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/trace_session"
+          }
+        },
+        "policy_digests": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "task_evidence_request": {
+      "description": "POST /v1/vaults/{pid}/tasks/{number}/evidence (feature change_trace): an instance pins the content-free evidence of a task as {evidence, key_id, signature}, signed by the instance key over \"leanctx.cloud.task-evidence.v1\\n\" || canonical_json({evidence, key_id}). The engine's TaskEvidenceRequestV1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence",
+        "key_id",
+        "signature"
+      ],
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/task_evidence"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      }
+    },
+    "change_trace_response": {
+      "description": "GET /v1/vaults/{pid}/changes/{change_id}/trace (feature change_trace) and the team view: one landed change assembled from the task, the newest task evidence pin, the reported outcome, the policies the team's Hosts applied, the team audit head and the decisions active at landed_at. A missing link is a gap, never a guessed value. Content-free.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "repo_id",
+        "change_id",
+        "goal",
+        "instructions",
+        "context",
+        "action",
+        "rule",
+        "result",
+        "gaps"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.cloud.change-trace/v1"
+        },
+        "repo_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "change_id": {
+          "$ref": "#/$defs/outcome_ref_id"
+        },
+        "goal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "task_id",
+            "vault",
+            "task_state",
+            "plan_ref"
+          ],
+          "properties": {
+            "task_id": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/outcome_ref_id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "vault": {
+              "type": "string"
+            },
+            "task_state": {
+              "enum": [
+                "open",
+                "claimed",
+                "submitted",
+                "done",
+                "cancelled",
+                "failed",
+                null
+              ]
+            },
+            "plan_ref": {
+              "type": "null"
+            }
+          }
+        },
+        "instructions": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "brief_digest",
+                "acked_plan_version"
+              ],
+              "properties": {
+                "brief_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "acked_plan_version": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "receipt_schema",
+                "receipt_digest",
+                "chain_broken",
+                "pinned_by",
+                "sessions"
+              ],
+              "properties": {
+                "receipt_schema": {
+                  "const": "leanctx.task-receipt/v1"
+                },
+                "receipt_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "chain_broken": {
+                  "type": "boolean"
+                },
+                "pinned_by": {
+                  "type": "string",
+                  "pattern": "^inst_[0-9a-f]{32}$"
+                },
+                "sessions": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "$ref": "#/$defs/trace_session"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "agent",
+            "land_sha",
+            "mr_number"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "merge_landed",
+                "task_accepted"
+              ]
+            },
+            "agent": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "land_sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            "mr_number": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "rule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policies",
+            "audit_head",
+            "decisions"
+          ],
+          "properties": {
+            "policies": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "digest",
+                  "version",
+                  "key_id"
+                ],
+                "properties": {
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "version": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "key_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            },
+            "audit_head": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "seq",
+                    "hash"
+                  ],
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "hash": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "decisions": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "string",
+                "maxLength": 80,
+                "pattern": "^dec-[a-z0-9]+(-[a-z0-9]+)*$"
+              }
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "landed_at",
+            "reverted_at"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "open",
+                "accepted",
+                "reverted",
+                "late_reverted"
+              ]
+            },
+            "landed_at": {
+              "$ref": "#/$defs/time"
+            },
+            "reverted_at": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "no_task",
+              "no_brief",
+              "no_receipt",
+              "receipt_chain_broken",
+              "policy_unknown"
+            ]
+          }
         }
       }
     }

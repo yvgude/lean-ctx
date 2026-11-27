@@ -136,6 +136,15 @@ pub fn without_sharing(config: &mut CloudConfig) {
     config.bus = CloudBusMode::Off;
 }
 
+/// Every channel a "no" switches off is off: what [`without_sharing`]
+/// leaves. A yes given while it holds shares nothing until they are on again.
+pub fn switched_off_by_no(config: &CloudConfig) -> bool {
+    !config.auto_capture
+        && !config.metrics_upload
+        && !config.receipts_upload
+        && config.bus == CloudBusMode::Off
+}
+
 /// `config` with the channels a "no" switched off back at their defaults:
 /// what a later yes means.
 pub fn with_sharing(config: &mut CloudConfig) {
@@ -153,15 +162,22 @@ pub enum ProjectStep {
     None,
     /// This machine already knows the vault (`ns/name`).
     Known(String),
+    /// The person unlinked this folder (`cloud unlink`), or the list of
+    /// unlinked folders is damaged: connect shares nothing and never says
+    /// it syncs, also not through the main checkout's record (bd 40060).
+    Unlinked,
     /// Ask Cloud for the vault: it maps a known project, or (1.x and v4)
     /// creates one on first sight.
     Resolve,
 }
 
 /// The project step for `root`, from local state only.
-pub fn project_step(map: &VaultMap, root: &Path) -> ProjectStep {
+pub fn project_step(data_dir: &Path, map: &VaultMap, root: &Path) -> ProjectStep {
     if project_identity(root).is_none() {
         return ProjectStep::None;
+    }
+    if crate::unlinked::contains(data_dir, root) {
+        return ProjectStep::Unlinked;
     }
     match map.for_root(&root.to_string_lossy()) {
         Some(record) => ProjectStep::Known(format!("{}/{}", record.ns, record.name)),
@@ -277,9 +293,17 @@ mod tests {
         assert!(!left.contains("knowledge from") && !left.contains("bus messages"));
         assert!(!config.auto_capture && !config.metrics_upload && !config.receipts_upload);
         assert_eq!(config.bus, CloudBusMode::Off);
+        assert!(switched_off_by_no(&config));
         // A later yes (E2E 27.10. E2) turns the same channels back on.
         with_sharing(&mut config);
         assert_eq!(share_codes(&config), share_codes(&CloudConfig::default()));
+        assert!(!switched_off_by_no(&config));
+        // One channel switched off by hand is not a "no".
+        let one_off = CloudConfig {
+            bus: CloudBusMode::Off,
+            ..CloudConfig::default()
+        };
+        assert!(!switched_off_by_no(&one_off));
         let paused = CloudConfig {
             enabled: Some(false),
             ..CloudConfig::default()
@@ -295,8 +319,9 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let bare = base.path().join("bare");
         std::fs::create_dir_all(&bare).unwrap();
+        let data = base.path().join("data");
         let map = VaultMap::default();
-        assert_eq!(project_step(&map, &bare), ProjectStep::None);
+        assert_eq!(project_step(&data, &map, &bare), ProjectStep::None);
 
         let repo = base.path().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -305,7 +330,7 @@ mod tests {
             "[remote \"origin\"]\n\turl = git@github.com:acme/payments.git\n",
         )
         .unwrap();
-        assert_eq!(project_step(&map, &repo), ProjectStep::Resolve);
+        assert_eq!(project_step(&data, &map, &repo), ProjectStep::Resolve);
 
         let mut map = VaultMap::default();
         map.vaults.insert(
@@ -319,8 +344,36 @@ mod tests {
             },
         );
         assert_eq!(
-            project_step(&map, &repo),
+            project_step(&data, &map, &repo),
             ProjectStep::Known("acme/payments".into())
         );
+    }
+
+    /// bd 40060: connect never says an unlinked worktree syncs through its
+    /// main checkout's record.
+    #[test]
+    fn unlink_of_a_worktree_is_its_own_project_step() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (main, wt) = crate::unlinked::fake_worktree(&base);
+        std::fs::write(wt.join(".lean-ctx-id"), "payments-repo").unwrap();
+        let data = base.join("data");
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "s1".into(),
+            VaultRecord {
+                vault_id: "v1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![main.to_string_lossy().into_owned()],
+            },
+        );
+        assert_eq!(
+            project_step(&data, &map, &wt),
+            ProjectStep::Known("acme/payments".into())
+        );
+        crate::unlinked::add(&data, &wt).unwrap();
+        assert_eq!(project_step(&data, &map, &wt), ProjectStep::Unlinked);
     }
 }

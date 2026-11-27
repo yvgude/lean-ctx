@@ -106,20 +106,54 @@ fn verify_release_signature_with(
     release_tag: &str,
     cosign_program: &str,
 ) -> Result<(), String> {
+    verify_release_signature_in(
+        blob,
+        signature_file,
+        certificate_file,
+        release_tag,
+        cosign_program,
+        None,
+    )
+}
+
+/// `temp_parent` = where the cosign check stages its files; `None` is the
+/// system temp dir (`TMPDIR`). Only tests pass a different one.
+pub(super) fn verify_release_signature_in(
+    blob: &[u8],
+    signature_file: &[u8],
+    certificate_file: &[u8],
+    release_tag: &str,
+    cosign_program: &str,
+    temp_parent: Option<&std::path::Path>,
+) -> Result<(), String> {
     verify_blob(blob, signature_file, certificate_file, release_tag)
         .map_err(|e| format!("release signature verification failed: {e}"))?;
     let files = [blob, signature_file, certificate_file];
-    match verify_with_installed_cosign(cosign_program, files, release_tag) {
+    match verify_with_installed_cosign(cosign_program, files, release_tag, temp_parent) {
         Ok(()) | Err(CosignCheck::NotInstalled) => Ok(()),
         Err(CosignCheck::Failed(detail)) => Err(format!(
             "cosign release signature verification failed: {detail}"
+        )),
+        Err(CosignCheck::NotStarted(detail)) => Err(format!(
+            "could not start cosign for the release signature check: {detail}"
+        )),
+        Err(CosignCheck::LocalIo(detail)) => Err(format!(
+            "could not run the cosign release signature check: {detail}. \
+             Free disk space or set TMPDIR to a directory with room, then retry"
         )),
     }
 }
 
 enum CosignCheck {
     NotInstalled,
+    /// cosign ran and rejected the signature.
     Failed(String),
+    /// The check could not run here (temp files, disk quota, spawning cosign);
+    /// says nothing about the signature.
+    LocalIo(String),
+    /// cosign is on the PATH but could not be started (e.g. permission
+    /// denied); says nothing about the signature.
+    NotStarted(String),
 }
 
 fn cosign_identity_regexp(release_tag: &str) -> String {
@@ -131,9 +165,14 @@ fn verify_with_installed_cosign(
     program: &str,
     files: [&[u8]; 3],
     release_tag: &str,
+    temp_parent: Option<&std::path::Path>,
 ) -> Result<(), CosignCheck> {
-    let failed = |e: std::io::Error| CosignCheck::Failed(e.to_string());
-    let directory = tempfile::tempdir().map_err(failed)?;
+    let local_io = |e: std::io::Error| CosignCheck::LocalIo(e.to_string());
+    let directory = match temp_parent {
+        Some(parent) => tempfile::tempdir_in(parent),
+        None => tempfile::tempdir(),
+    }
+    .map_err(local_io)?;
     let blob_path = directory.path().join("blob");
     let signature_path = directory.path().join("blob.sig");
     let certificate_path = directory.path().join("blob.pem");
@@ -141,7 +180,7 @@ fn verify_with_installed_cosign(
         .into_iter()
         .zip(files)
     {
-        std::fs::write(path, bytes).map_err(failed)?;
+        std::fs::write(path, bytes).map_err(local_io)?;
     }
     let output = std::process::Command::new(program)
         .arg("verify-blob")
@@ -159,7 +198,7 @@ fn verify_with_installed_cosign(
             if e.kind() == std::io::ErrorKind::NotFound {
                 CosignCheck::NotInstalled
             } else {
-                failed(e)
+                CosignCheck::NotStarted(e.to_string())
             }
         })?;
     if output.status.success() {

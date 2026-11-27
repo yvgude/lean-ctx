@@ -332,7 +332,13 @@ impl LeanCtxServer {
                 autonomy: Some(self.autonomy.clone()),
                 path_errors,
                 bm25_cache: Some(self.bm25_cache.clone()),
-                progress_sender: Some(self.progress_sender.clone()),
+                // This request's own sender, `None` without a progress token or
+                // outside a `call_tool` scope.
+                progress_sender: crate::server::tool_trait::REQUEST_PROGRESS
+                    .try_with(Clone::clone)
+                    .ok()
+                    .flatten()
+                    .map(|sender| std::sync::Arc::new(std::sync::Mutex::new(Some(sender)))),
                 // #1781: the request's cancellation token, scoped per request by
                 // `call_tool`. `try_with` yields `None` outside such a scope —
                 // unit tests and internal dispatch paths — which leaves their

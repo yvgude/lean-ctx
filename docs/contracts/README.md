@@ -110,6 +110,7 @@ before interpreting them as a current product or licensing statement.
 ### Security & Trust
 
 - [extension-trust-v1.md](extension-trust-v1.md) — Extension trust.
+- [app-key-bind-v1.md](app-key-bind-v1.md) — App-key bind in the device flow (f3129 S2+S3).
 - [audit-schedule-v1.md](audit-schedule-v1.md) — Audit schedule.
 - [branch-protection-v1.md](branch-protection-v1.md) — Branch protection.
 - [certification-levels-v1.md](certification-levels-v1.md) — OCLA certification levels.

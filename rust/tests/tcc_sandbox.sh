@@ -8,8 +8,8 @@
 #   1. control    — no sandbox, proves the throwaway HOME is sane.
 #   2. detection  — deny ~/Documents + ~/Desktop + ~/Downloads with SIGKILL, so
 #                   any stray access kills the daemon and fails the test.
-#   3. production — the exact `sandbox-exec -p` wrapper lean-ctx bakes into the
-#                   LaunchAgent (silent EPERM deny), proving it boots + survives.
+#   3. production — the exact `sandbox-exec -p` wrapper lean-ctx re-execs a
+#                   LaunchAgent process under (silent EPERM deny), proving it boots + survives.
 # The daemon is told about a project living under ~/Documents (via
 # LEAN_CTX_PROJECT_ROOT and a stored .lean-ctx.toml there) — exactly the setup
 # that made #356 recur. If any boot path stats / reads / canonicalizes those

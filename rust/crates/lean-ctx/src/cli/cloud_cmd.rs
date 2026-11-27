@@ -21,6 +21,10 @@ START HERE:
                               one line of stdin with --enrollment-token-stdin or
                               from LEAN_CTX_CLOUD_ENROLLMENT_TOKEN (never as an
                               argument).
+                              LeanCTX Code only (needs its launch key in
+                              LEAN_CTX_APP_KEY, else app_only): --print-instance-key
+                              prints this computer's public key; --chat-key - reads
+                              the app's chat key offer from stdin and binds it.
   lean-ctx cloud connect --trial [--plan personal|team] [--yes] [--json]
                               Start the plan's one-step trial (default personal)
                               while connecting: the browser signs you in and starts
@@ -46,8 +50,8 @@ START HERE:
                               refuses its cloud calls, landings and running Code
                               sessions. Local agent tools keep working.
   lean-ctx cloud stop --release --confirm <team-slug> [--note <text>] [--json]
-                              Release the stop (team or company admin): prints
-                              the page that confirms it with two-factor.
+                              Release the stop (team or company admin), at once
+                              or on the page it prints (see `cloud stop --help`).
 
 EVERYDAY (LeanCTX does these in the background; run them to do it now):
   lean-ctx cloud sync         Send what your agents learned and get the team's.
@@ -56,13 +60,16 @@ EVERYDAY (LeanCTX does these in the background; run them to do it now):
   lean-ctx cloud link <workspace>/<vault>
                               Use a specific vault for this project instead of the
                               one connect chose.
+  lean-ctx cloud unlink [--json] [--project-root <p>]
+                              Stop sharing this project with its vault on this
+                              machine. The vault and its data stay in Cloud.
 
 MORE:
   lean-ctx cloud help advanced  Review, maintenance, worker mode, tasks, the
                                 agent bus and the Intelligence runtime.
 
-Plans: Personal 3 instances, 2 connected at once; Team and Enterprise
-3 per seat, 2 connected at once per seat.
+Plans: Personal up to 3 hosts registered, up to 2 connected at once; Team and
+Enterprise up to 3 hosts registered, up to 2 connected at once per seat.
 Local tools never depend on LeanCTX Cloud: offline or a lapsed lease only pause sync.
 ";
 
@@ -80,6 +87,7 @@ USAGE:
   lean-ctx cloud bus relay [--for <seconds>]
   lean-ctx cloud worker [status|pause|resume|stop|list|rename <wkr> <name>|register --cli <host> [--role <role>]|retire <wkr> [--force]|retire --idle <dur>]
   lean-ctx cloud graph publish
+  lean-ctx cloud decisions list --json [--project-root <p>]
   lean-ctx cloud decisions push [--project-root <p>] [--dry-run] [--allow-empty] [--json]
   lean-ctx cloud members list --json
   lean-ctx cloud tasks [list|show|claim|update|submit|release|propose] …
@@ -131,7 +139,7 @@ graph      publish: send this repository's code graph (files, symbols, imports;
             full graph on the web.
 worker      Worker mode: your agents pull tasks you opted in for on the web,
             within its daily budget ([cloud.worker] can only lower it).
-            status shows the opt-in and today's use; pause/resume stop and
+            status shows the opt-in and today's use (--json: the opted-in vault ids too); pause/resume stop and
             restart claiming on this machine; stop switches worker mode off
             for this instance and ends its claims (the owner turns it on again
             on the web). list shows this instance's durable workers (wkr_ ids);
@@ -232,6 +240,11 @@ pub(crate) fn cmd_cloud(args: &[String]) {
         eprintln!("{}", lean_ctx_cloud::NOT_AVAILABLE);
         std::process::exit(1);
     }
+    // rc4-16: `cloud worker on` forwards a turn-on LeanCTX Code signed with
+    // its opt-in key (stdin); nothing here can sign one.
+    if sub == "worker" && super::local_read::positionals(rest).first() == Some(&"on") {
+        std::process::exit(super::local_read::pickup_part::run_worker_on(rest));
+    }
     // Local Read v1: the reads a local reader (Cloud Desktop) makes, after
     // the same release gate as every other cloud command.
     if super::local_read::wants_json(rest) {
@@ -254,6 +267,10 @@ pub(crate) fn cmd_cloud(args: &[String]) {
             "policy" => return super::local_read::sync::run_policy(rest),
             "vaults" => return super::local_read::vaults::run(rest),
             "link" => return super::local_read::link::run(rest),
+            "unlink" => {
+                super::local_read::unlink_part::run(rest);
+                return;
+            }
             "usage" => return super::local_read::cloud_usage::run(&config),
             "gateway" if super::local_read::positionals(rest).first() == Some(&"key") => {
                 return super::local_read::cloud_gateway::run(&config);
@@ -294,6 +311,10 @@ pub(crate) fn cmd_cloud(args: &[String]) {
         "maintain" => maintain(&config, rest),
         "bus" => bus(&config, rest),
         "link" => link_project(rest),
+        "unlink" => {
+            super::local_read::unlink_part::run_human(rest);
+            Ok(())
+        }
         "runtime" if rest.first().map(String::as_str) == Some("install") => {
             super::cloud_connect_cmd::install_runtime()
         }
@@ -361,9 +382,30 @@ fn help_for(sub: &str, rest: &[String]) -> &'static str {
     match topic {
         "advanced" | "all" | "capture" | "replica" | "maintain" | "runtime" | "bus" | "worker"
         | "graph" | "tasks" => ADVANCED_HELP,
+        "stop" => STOP_HELP,
         _ => HELP,
     }
 }
+
+/// `lean-ctx cloud stop --help` (rc4-88): the team stop on its own.
+const STOP_HELP: &str = "\
+lean-ctx cloud stop — stop or release your team
+
+USAGE:
+  lean-ctx cloud stop --reason <text> [--json]
+      Stop the team (contributor and up). Your team's cloud then holds its
+      cloud requests, landings and running Code sessions until the stop is
+      released. Local agent tools keep working.
+  lean-ctx cloud stop --release --confirm <team-slug> [--note <text>] [--json]
+      Release the stop (team or company admin). Released at once, or prints
+      the page where you confirm it in the browser. --confirm names the team,
+      so a release never hits the wrong one.
+  lean-ctx cloud stop --status --json
+      Whether the team is stopped now, by whom and since when, and whether
+      you may stop or release it. Asks the cloud each time.
+
+`lean-ctx cloud status` shows the last known stop without asking the cloud.
+";
 
 pub(super) fn flag_value<'a>(
     args: &'a [String],
@@ -459,10 +501,18 @@ fn stale_here(store: &CloudStore) -> Option<lean_ctx_cloud::resolution::Stale> {
 fn project_line() -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
     let root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
-    let root = std::path::Path::new(&root);
+    let store = CloudStore::open().ok()?;
+    project_line_in(&store, std::path::Path::new(&root))
+}
+
+/// [`project_line`] for the checkout at `root` with `store`'s records.
+fn project_line_in(store: &CloudStore, root: &std::path::Path) -> Option<String> {
     lean_ctx_cloud::vault::project_identity(root)?;
     let name = root.file_name()?.to_string_lossy().into_owned();
-    let store = CloudStore::open().ok()?;
+    // A damaged opt-out list holds every folder back (bd 39936): say so.
+    if let Some(damage) = lean_ctx_cloud::unlinked::damage(store.data_dir()) {
+        return Some(format!("{name} → not shared: {damage}"));
+    }
     let map = lean_ctx_cloud::vault::VaultMap::load(store.data_dir());
     // Dogfood 5.11.: a resolution the link file or identity no longer
     // backs is never shown as "shared" (connect and sync drop it).
@@ -472,12 +522,14 @@ fn project_line() -> Option<String> {
             stale.describe()
         ));
     }
-    if let Some(record) = map.for_root(&root.to_string_lossy()) {
+    if let Some(record) =
+        lean_ctx_cloud::unlinked::shared_record(store.data_dir(), &map, &root.to_string_lossy())
+    {
         return Some(format!("{name} → {}/{} (shared)", record.ns, record.name));
     }
     let config = lean_ctx::core::config::Config::load().cloud.clone();
     let broker = lean_ctx_cloud::consent::Broker::open(
-        &store,
+        store,
         lean_ctx_cloud::consent::Trust::load(&store, &config),
     );
     let now = u64::try_from(UtcDateTime::now().timestamp_millis()).unwrap_or_default();
@@ -594,13 +646,13 @@ fn print_report(current: &CloudStatusReport) {
                 }
             ),
             None => println!(
-                "Plan:         {} · {} {} connected at once",
+                "Plan:         {} · up to {} {} connected at once",
                 plan_name(&lease.plan),
                 lease.seats_limit,
                 if lease.seats_limit == 1 {
-                    "instance"
+                    "host"
                 } else {
-                    "instances"
+                    "hosts"
                 }
             ),
         }
@@ -699,6 +751,11 @@ fn print_report(current: &CloudStatusReport) {
     }
 }
 
+/// What a revoke frees, as the web's Hosts page says it (rc3-81): the
+/// connection at once; the registration at once on Team and Enterprise, in
+/// Personal after the cool-down, a recovery, or a pairing that replaces it.
+const DISCONNECT_FREES: &str = "Its connection is free now. On Team and Enterprise its registration is free now too; on Personal it stays registered for 7 days, unless you recover its slot on the Hosts page or connect the same computer again in its place.";
+
 fn disconnect(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     let keep_local = args.iter().any(|a| a == "--keep-local");
     let store = CloudStore::open()?;
@@ -742,20 +799,12 @@ fn disconnect(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     // Cloud first; the local data goes only once Cloud ended the instance.
     use lean_ctx_cloud::disconnect::{self, Told};
     match disconnect::tell_cloud(&store, config, &instance) {
-        // Connected now and registered are two counts (rc3-81a): a Personal
-        // workspace keeps the computer registered for 7 days.
         Told::Revoked => println!(
-            "Disconnected {} from {}: LeanCTX Cloud revoked this instance; it no longer counts as connected.{}",
-            instance.label,
-            instance.org_name,
-            if instance.org_kind.as_deref() == Some("personal") {
-                " It stays registered for 7 days, then its slot is free."
-            } else {
-                ""
-            }
+            "Disconnected {} from {}: LeanCTX Cloud revoked this host. {DISCONNECT_FREES}",
+            instance.label, instance.org_name
         ),
         Told::AlreadyGone => println!(
-            "Disconnected {} from {}: LeanCTX Cloud had already ended this instance.",
+            "Disconnected {} from {}: LeanCTX Cloud had already revoked this host.",
             instance.label, instance.org_name
         ),
         Told::Unreachable(error) => {
@@ -767,12 +816,12 @@ fn disconnect(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
             return Ok(());
         }
         Told::Refused(error) if args.iter().any(|a| a == "--force") => println!(
-            "Removed the local credentials, but LeanCTX Cloud did not end the instance ({error}). Remove the instance \"{}\" in LeanCTX Cloud to free its seat.",
+            "Removed the local credentials, but LeanCTX Cloud did not end this host ({error}). Revoke the host \"{}\" on the Hosts page to free it.",
             instance.label
         ),
         Told::Refused(error) => {
             return Err(CloudError::Refused(format!(
-                "LeanCTX Cloud did not end this instance ({error}); nothing was removed. Remove the instance \"{}\" in LeanCTX Cloud, or run `lean-ctx cloud disconnect --force` to remove the local credentials anyway.",
+                "LeanCTX Cloud did not end this host ({error}); nothing was removed. Revoke the host \"{}\" on the Hosts page, or run `lean-ctx cloud disconnect --force` to remove the local credentials anyway.",
                 instance.label
             )));
         }
@@ -1028,13 +1077,14 @@ fn metrics(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
                 "usage metrics are confirmed by a person in a terminal: run `lean-ctx cloud metrics confirm` there".into(),
             ));
         }
-        if !gate::needs_confirmation(lease.plan) {
+        let sharing = gate::decide(&store, config, &instance, lease, UtcDateTime::now());
+        if !sharing.waits_for_confirmation() {
             println!(
-                "{workspace} shares usage metrics by default on its plan; its admins control it with the policy rule \"Share instance metrics\"."
+                "Nothing to confirm: {workspace} shares usage metrics by default (now: {}). Its admins control it with the policy rule \"Share instance metrics\".",
+                sharing.now_words()
             );
             return Ok(());
         }
-        let sharing = gate::decide(&store, config, &instance, lease, UtcDateTime::now());
         println!(
             "{}",
             metrics_v2::disclosure(&workspace, &web_url, &sharing, true)
@@ -1075,7 +1125,7 @@ fn metrics(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
                 &workspace,
                 &web_url,
                 &sharing,
-                gate::needs_confirmation(lease.plan)
+                sharing.waits_for_confirmation()
             )
         );
         println!("\nInstance metrics for {workspace}: {}", sharing.describe());
@@ -1171,11 +1221,16 @@ fn sync(config: &CloudConfig) -> Result<(), CloudError> {
                 .cloned()
         });
     let v2 = lean_ctx_cloud::bus::relay_v2::speaks_v2(&session.store);
+    // A folder the person stopped sharing (`cloud unlink`) syncs nothing,
+    // also not through another checkout of the same repository (rc4-6).
+    let unlinked =
+        lean_ctx_cloud::unlinked::contains(session.store.data_dir(), std::path::Path::new(&root));
+    let bound = bound.filter(|_| !unlinked);
     // The first sync of a project (after `cloud link`, or the first share
     // that maps it) has no record yet: resolve it now, so this sync already
     // clones the replica and doc writes find it.
     let bound = match bound {
-        None if v2 => lean_ctx_cloud::knowledge::pull::resolve_project(
+        None if v2 && !unlinked => lean_ctx_cloud::knowledge::pull::resolve_project(
             &session,
             config,
             std::path::Path::new(&root),
@@ -1339,7 +1394,15 @@ fn sync(config: &CloudConfig) -> Result<(), CloudError> {
         Ok(_) => {}
         Err(error) => say.refusal(&format!("cloud: receipts not sent: {error}")),
     }
-    if report.drafts_sent.is_empty() && report.pulled.is_empty() && proposals.sent.is_empty() {
+    // rc4-57: a refusal comes first and is never preceded by "Nothing new."
+    for problem in &report.problems {
+        say.refusal(&format!("cloud: {problem}"));
+    }
+    if report.drafts_sent.is_empty()
+        && report.pulled.is_empty()
+        && proposals.sent.is_empty()
+        && report.problems.is_empty()
+    {
         println!("Nothing new.");
     }
     if report.drafts_pending > 0 || report.drafts_failed > 0 {
@@ -1347,9 +1410,6 @@ fn sync(config: &CloudConfig) -> Result<(), CloudError> {
             "{} drafts still queued, {} refused (see `lean-ctx cloud status`).",
             report.drafts_pending, report.drafts_failed
         );
-    }
-    for problem in &report.problems {
-        say.refusal(&format!("cloud: {problem}"));
     }
     if let Some(reason) = &say.locked {
         session.store.record_locked(Some(reason));
@@ -1409,25 +1469,73 @@ fn link_project(args: &[String]) -> Result<(), CloudError> {
     let cwd = std::env::current_dir().map_err(|e| CloudError::Local(e.to_string()))?;
     let root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
     let root = std::path::Path::new(&root);
-    for line in link_project_at(root, args)? {
-        println!("{line}");
-    }
     let store = CloudStore::open()?;
-    let Some(instance) = store.instance()? else {
+    let instance = store.instance()?;
+    let prior = link::prior_link(root);
+    // An explicit link shares a folder `cloud unlink` stopped (rc4-6). Its
+    // opt-out keeps every sender quiet through the link and the share and is
+    // lifted only once the link is kept (bd 40060); a refused or failed link
+    // keeps it, and a damaged list fails the link.
+    let opted_out = lean_ctx_cloud::unlinked::before_link(root)?;
+    // A refused link restores this machine's vault records as they were, and
+    // so does a link that fails after its file is written (bd 40158).
+    let records = (
+        store.data_dir().to_path_buf(),
+        lean_ctx_cloud::vault::VaultMap::load(store.data_dir()),
+    );
+    let (lines, outcome) = link_project_at(root, args, instance.as_ref())?;
+    // From here every failure undoes the link: the folder is left as it was.
+    let failed = |error: CloudError| {
+        super::local_read::link::undo_failed_link(
+            root,
+            &outcome,
+            prior.as_deref(),
+            Some(&records),
+            error,
+        )
+    };
+    let kept = || -> Result<(), CloudError> {
+        if opted_out {
+            lean_ctx_cloud::unlinked::forget_on_link(root).map_err(failed)?;
+        }
+        Ok(())
+    };
+    let Some(instance) = instance else {
+        kept()?;
+        for line in lines {
+            println!("{line}");
+        }
         return Ok(());
     };
     // Dogfood 5.11.: after a connect this machine may have resolved the
     // project to another vault. That resolution is dropped, so neither
     // status nor sync keeps using it.
-    let stale = lean_ctx_cloud::resolution::forget_stale_at(store.data_dir(), root)?;
+    let stale =
+        lean_ctx_cloud::resolution::forget_stale_at(store.data_dir(), root).map_err(failed)?;
     // Team-knowledge e2e: a connected machine shares the linked
     // project right away, so decisions, tasks and docs work after `link`
     // without a `cloud sync` first (as `cloud link --json` does).
-    let Some(linked) = link::read_link(root)? else {
-        return Ok(());
+    let Some(linked) = link::read_link(root).map_err(failed)? else {
+        return kept();
     };
     let address = linked.address();
     let share = super::local_read::link::share_now(&store, &instance, root, &address);
+    // rc4-56: a vault Cloud refuses is never left linked.
+    if share.unlinks() {
+        link::undo(root, &outcome, prior.as_deref())?;
+        if let Err(e) = records.1.save(store.data_dir()) {
+            tracing::warn!("cloud link: vault records not restored: {e}");
+        }
+        let why = share.message.as_deref().and_then(|m| shown_text(m, 300));
+        return Err(CloudError::Refused(format!(
+            "not linked: {}",
+            why.unwrap_or_else(|| format!("LeanCTX Cloud refused {address}"))
+        )));
+    }
+    kept()?;
+    for line in lines {
+        println!("{line}");
+    }
     for line in link_share_lines(
         stale
             .as_ref()
@@ -1520,15 +1628,25 @@ fn shown_text(text: &str, max: usize) -> Option<String> {
 /// `cloud link <workspace>/<vault> [--leave-unsettled-local]` for the
 /// project at `root`: refused while local tasks are unsettled (they would
 /// be stranded once the project's tasks are Cloud's), unless the person
-/// leaves them local on purpose.
-fn link_project_at(root: &std::path::Path, args: &[String]) -> Result<Vec<String>, CloudError> {
+/// leaves them local on purpose. An address without `@<server>` is on the
+/// Cloud of `instance` (rc4-56).
+fn link_project_at(
+    root: &std::path::Path,
+    args: &[String],
+    instance: Option<&lean_ctx_cloud::state::InstanceRecord>,
+) -> Result<(Vec<String>, link::LinkOutcome), CloudError> {
     use lean_ctx_cloud::bring_local;
     let repo = args.iter().find(|a| !a.starts_with("--")).ok_or_else(|| {
         CloudError::Config("usage: lean-ctx cloud link <workspace>/<vault>".into())
     })?;
+    let server = instance.and_then(|i| super::local_read::vaults::server_of(&i.url));
+    let repo = match server {
+        Some(server) if !repo.contains('@') => format!("{repo}@{server}"),
+        _ => repo.clone(),
+    };
     let leave = args.iter().any(|a| a == bring_local::LEAVE_UNSETTLED_FLAG);
     let unsettled = bring_local::link_gate(root, leave).map_err(CloudError::Refused)?;
-    let outcome = link::link(root, repo)?;
+    let outcome = link::link(root, &repo)?;
     let mut lines = vec![format!(
         "Linked {} to {repo} ({}).",
         root.display(),
@@ -1543,7 +1661,7 @@ fn link_project_at(root: &std::path::Path, args: &[String]) -> Result<Vec<String
     if let Some(note) = bring_local::not_shared_note(&unsettled) {
         lines.push(note);
     }
-    Ok(lines)
+    Ok((lines, outcome))
 }
 
 /// `24h`, `90m`, `7d`, `3600s` (a bare number: hours).
@@ -1575,11 +1693,108 @@ fn seen_ago(ms: u64) -> String {
     }
 }
 
+/// Worker mode as `cloud worker status` reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkerState {
+    NotOptedIn,
+    Stopped,
+    /// Turned off on this computer (rc4-16): `cloud.pickup.set` off or `cloud worker
+    /// stop`, lifted only by the app's signed turn-on.
+    Off,
+    Paused,
+    Active,
+}
+
+impl WorkerState {
+    fn of(
+        optin: &lean_ctx_cloud::worker::Optin,
+        local: &lean_ctx_cloud::worker::WorkerState,
+    ) -> Self {
+        if local.explicit_off {
+            return Self::Off;
+        }
+        match (&optin.optin_id, optin.active, local.paused) {
+            (None, _, _) => Self::NotOptedIn,
+            (Some(_), false, _) => Self::Stopped,
+            (Some(_), true, true) => Self::Paused,
+            (Some(_), true, false) => Self::Active,
+        }
+    }
+
+    /// The `state` word of `--json`.
+    fn word(self) -> &'static str {
+        match self {
+            Self::NotOptedIn => "not_opted_in",
+            Self::Stopped => "stopped",
+            Self::Off => "off",
+            Self::Paused => "paused",
+            Self::Active => "active",
+        }
+    }
+
+    fn text(self) -> &'static str {
+        match self {
+            Self::NotOptedIn => "not opted in",
+            Self::Stopped => "stopped",
+            Self::Off => "off on this computer (LeanCTX Code turns task pickup on again)",
+            Self::Paused => {
+                "paused on this machine (resume: `lean-ctx cloud worker resume` in your terminal)"
+            }
+            Self::Active => "active",
+        }
+    }
+}
+
+/// `cloud worker status --json`: `state`, `paused_here` and the opt-in as
+/// the Cloud returned it (`optin.vaults`: the vault ids tasks are pulled from).
+fn worker_status_json(
+    state: WorkerState,
+    paused_here: bool,
+    optin: &lean_ctx_cloud::worker::Optin,
+) -> serde_json::Value {
+    serde_json::json!({
+        "state": state.word(),
+        "paused_here": paused_here,
+        "optin": optin,
+    })
+}
+
+/// rc4-16: with the app's opt-in key bound here, `cloud worker status
+/// --json` advertises `cloud worker on` (`capabilities.worker_on`) and
+/// carries what the app signs for it (`instance_id`, `turn_on`). Without
+/// the key the document stays as it was.
+fn with_worker_on(
+    mut doc: serde_json::Value,
+    key_bound: bool,
+    instance_id: &str,
+    optin: &lean_ctx_cloud::worker::Optin,
+    folder_vault: Option<String>,
+    name_of: &dyn Fn(&str) -> Option<String>,
+) -> serde_json::Value {
+    if !key_bound {
+        return doc;
+    }
+    // The opt-in's vaults plus the vault of the folder the app runs in, so
+    // that `cloud worker on` in the same folder accepts what is signed.
+    let mut vaults = optin.vaults.clone();
+    vaults.extend(folder_vault);
+    let turn_on =
+        super::local_read::pickup_part::proposal(optin, vaults, None, instance_id, name_of)
+            .ok()
+            .flatten();
+    doc["capabilities"] = serde_json::json!({"worker_on": true});
+    doc["instance_id"] = serde_json::json!(instance_id);
+    doc["turn_on"] = serde_json::to_value(turn_on).unwrap_or_default();
+    doc
+}
+
 /// `cloud worker [status|pause|resume|stop|list|rename|register|retire]`.
 fn worker(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
     use lean_ctx_cloud::worker;
     let store = CloudStore::open()?;
-    match args.first().map_or("status", String::as_str) {
+    let json = args.iter().any(|a| a == "--json");
+    let positionals = super::local_read::positionals(args);
+    match positionals.first().copied().unwrap_or("status") {
         "list" => {
             use lean_ctx_cloud::workers::attach;
             let instance = store.instance()?.ok_or(CloudError::NotConnected)?;
@@ -1718,8 +1933,16 @@ fn worker(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
             );
         }
         "resume" => {
+            // rc4-16: resume lifts only the pause; an explicit off stays
+            // until LeanCTX Code turns task pickup on again.
             worker::set_paused(&store, false)?;
-            println!("Worker mode resumed on this machine.");
+            if worker::read_state(&store).explicit_off {
+                println!(
+                    "Worker mode resumed on this machine, but task pickup stays off: it was turned off, and only the owner turns it on again, in LeanCTX Code or on the web."
+                );
+            } else {
+                println!("Worker mode resumed on this machine.");
+            }
         }
         "stop" => {
             let instance = store.instance()?.ok_or(CloudError::NotConnected)?;
@@ -1731,23 +1954,46 @@ fn worker(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
             lean_ctx_cloud::tasks::claims::clear(session.store.data_dir())?;
             stopped?;
             println!(
-                "Worker mode stopped for this instance; its claims ended. The owner turns it on again on the web."
+                "Worker mode stopped for this computer; its claims ended. The owner turns it on again on the web or in LeanCTX Code."
             );
         }
         "status" => {
-            let local = worker::read_state(&store);
             let instance = store.instance()?.ok_or(CloudError::NotConnected)?;
             let root = lean_ctx_cloud::root_cert::trust_root(&store, config, &instance.url)?;
             let session = Session::load(store, root)?;
             let optin = worker::fetch_optin(&session)?;
-            let state = match (&optin.optin_id, optin.active, local.paused) {
-                (None, _, _) => "not opted in",
-                (Some(_), false, _) => "stopped",
-                (Some(_), true, true) => {
-                    "paused on this machine (resume: `lean-ctx cloud worker resume` in your terminal)"
-                }
-                (Some(_), true, false) => "active",
-            };
+            // A turn-on on the web lifts the off kept here (rc4-16 M3).
+            let local = worker::observe(&session.store, &optin)?;
+            let state = WorkerState::of(&optin, &local);
+            if json {
+                // The app limits task pickup to `vaults` (rc4-101).
+                let key = lean_ctx_cloud::consent::optin_key::bound_optin_key(&session.store);
+                // Vault names for the app to show at the click (rc4-16 S4).
+                let map = lean_ctx::core::vault_map::VaultMap::load(session.store.data_dir());
+                let raw = serde_json::to_value(&optin).unwrap_or_default();
+                let name_of = |vault_id: &str| {
+                    super::local_read::pickup_part::vault_name(&map, &raw, vault_id)
+                };
+                let doc = with_worker_on(
+                    worker_status_json(state, local.paused, &optin),
+                    key.is_some(),
+                    &session.instance.instance_id,
+                    &optin,
+                    super::local_read::pickup_part::current_folder()
+                        .ok()
+                        .and_then(|root| {
+                            super::local_read::pickup_part::folder_vault(
+                                session.store.data_dir(),
+                                &root,
+                            )
+                            .ok()
+                        }),
+                    &name_of,
+                );
+                println!("{doc}");
+                return Ok(());
+            }
+            let state = state.text();
             println!("Worker mode:  {state}");
             println!("Opted in:     {} vaults", optin.vaults.len());
             if optin.optin_id.is_some() {
@@ -1787,7 +2033,7 @@ fn worker(config: &CloudConfig, args: &[String]) -> Result<(), CloudError> {
         }
         other => {
             return Err(CloudError::Config(format!(
-                "unknown worker command '{other}' (status, pause, resume, stop)"
+                "unknown worker command '{other}' (status, on, pause, resume, stop)"
             )));
         }
     }
@@ -1862,12 +2108,16 @@ mod link_tests {
         })
         .unwrap();
         let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        let refused = link_project_at(root, &args(&["platform/api"])).unwrap_err();
+        let refused = link_project_at(root, &args(&["platform/api"]), None).unwrap_err();
         assert!(refused.to_string().contains("#1 (proposed)"), "{refused}");
         assert!(!root.join(link::LINK_FILE).exists(), "nothing written");
 
-        let lines =
-            link_project_at(root, &args(&["platform/api", "--leave-unsettled-local"])).unwrap();
+        let (lines, _) = link_project_at(
+            root,
+            &args(&["platform/api", "--leave-unsettled-local"]),
+            None,
+        )
+        .unwrap();
         assert!(root.join(link::LINK_FILE).exists());
         assert!(
             lines
@@ -1992,6 +2242,51 @@ fn rights_line(rights: &[lean_ctx_protocol::cloud::lease::CloudRight]) -> String
 }
 
 #[cfg(test)]
+mod unlink_project_line_tests {
+    use super::*;
+
+    /// bd 40060: `cloud status` says a damaged opt-out list holds the
+    /// project back, and never calls an unlinked worktree shared through
+    /// its main checkout's record.
+    #[test]
+    fn unlink_project_line_names_damage_and_never_shared() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let store = CloudStore::at(base.join("c"), base.join("d"));
+        let (main, wt) = lean_ctx_cloud::unlinked::fake_worktree(&base);
+        std::fs::write(wt.join(".lean-ctx-id"), "payments-repo").unwrap();
+        let stable = lean_ctx_protocol::cloud::vault::stable_identity(
+            &lean_ctx_cloud::vault::project_identity(&wt).unwrap(),
+        );
+        let mut map = lean_ctx_cloud::vault::VaultMap::default();
+        map.vaults.insert(
+            stable,
+            lean_ctx_cloud::vault::VaultRecord {
+                vault_id: "vlt_1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec![main.to_string_lossy().into_owned()],
+            },
+        );
+        map.save(store.data_dir()).unwrap();
+        assert_eq!(
+            project_line_in(&store, &wt).as_deref(),
+            Some("wt → acme/payments (shared)")
+        );
+
+        lean_ctx_cloud::unlinked::add(store.data_dir(), &wt).unwrap();
+        let line = project_line_in(&store, &wt).unwrap_or_default();
+        assert!(!line.contains("(shared)"), "{line}");
+
+        std::fs::write(store.data_dir().join(lean_ctx_cloud::unlinked::FILE), "[").unwrap();
+        let line = project_line_in(&store, &wt).unwrap();
+        assert!(line.starts_with("wt → not shared: "), "{line}");
+        assert!(line.contains(lean_ctx_cloud::unlinked::FILE), "{line}");
+    }
+}
+
+#[cfg(test)]
 mod rights_line_tests {
     use super::rights_line;
     use lean_ctx_protocol::cloud::lease::CloudRight;
@@ -2030,5 +2325,145 @@ mod worker_retire_tests {
         assert_eq!(seen_ago(12 * 60_000), "12m ago");
         assert_eq!(seen_ago(5 * 3_600_000), "5h ago");
         assert_eq!(seen_ago(3 * 86_400_000), "3d ago");
+    }
+}
+
+#[cfg(test)]
+mod stop_help_tests {
+    use super::{HELP, STOP_HELP, help_for};
+
+    #[test]
+    fn stop_help_names_stop_release_and_status() {
+        let rest = ["--help".to_owned()];
+        assert_eq!(help_for("stop", &rest), STOP_HELP);
+        assert_eq!(help_for("help", &["stop".to_owned()]), STOP_HELP);
+        assert_eq!(help_for("status", &rest), HELP);
+        for usage in [
+            "--reason <text>",
+            "--release --confirm <team-slug>",
+            "--status --json",
+        ] {
+            assert!(STOP_HELP.contains(usage), "{usage}");
+        }
+        assert!(!STOP_HELP.contains("two-factor") && !STOP_HELP.contains("This Mac"));
+        let words: Vec<String> = STOP_HELP
+            .split(|c: char| !c.is_alphanumeric())
+            .map(str::to_lowercase)
+            .collect();
+        for banned in ["hive", "lease", "instance", "workspace", "engine"] {
+            assert!(!words.iter().any(|w| w == banned), "{banned}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod worker_status_json_tests {
+    use super::{WorkerState, with_worker_on, worker_status_json};
+    use lean_ctx_cloud::worker::Optin;
+
+    fn optin(optin_id: Option<&str>, active: bool) -> Optin {
+        serde_json::from_value(serde_json::json!({
+            "schema": "leanctx.engine_optin.v1",
+            "optin_id": optin_id,
+            "active": active,
+            "vaults": ["vlt_a", "vlt_b"],
+            "daily_budget": {},
+            "used_today": {"day": "2026-11-24", "tasks": 0, "tokens": 0, "usd_micros": 0},
+        }))
+        .expect("opt-in fixture")
+    }
+
+    #[test]
+    fn every_state_has_its_word() {
+        let on = optin(Some("opt_1"), true);
+        assert_eq!(
+            WorkerState::of(&optin(None, false), &here(false, false)).word(),
+            "not_opted_in"
+        );
+        assert_eq!(
+            WorkerState::of(&optin(Some("opt_1"), false), &here(true, false)).word(),
+            "stopped"
+        );
+        assert_eq!(WorkerState::of(&on, &here(true, false)).word(), "paused");
+        assert_eq!(WorkerState::of(&on, &here(false, false)).word(), "active");
+    }
+
+    fn here(paused: bool, explicit_off: bool) -> lean_ctx_cloud::worker::WorkerState {
+        lean_ctx_cloud::worker::WorkerState {
+            paused,
+            explicit_off,
+            ..Default::default()
+        }
+    }
+
+    /// An off kept on this computer shows as `off` whatever the Cloud says, so
+    /// `cloud worker status` never reports `active` while task pickup is off.
+    #[test]
+    fn pickup_worker_status_shows_an_explicit_off() {
+        let on = optin(Some("opt_1"), true);
+        for paused in [false, true] {
+            assert_eq!(WorkerState::of(&on, &here(paused, true)).word(), "off");
+        }
+        assert_eq!(
+            WorkerState::of(&optin(Some("opt_1"), false), &here(true, true)).word(),
+            "off"
+        );
+        let doc = worker_status_json(WorkerState::of(&on, &here(true, true)), true, &on);
+        assert_eq!(doc["state"], "off");
+    }
+
+    /// The app reads these keys (rc4-101); renaming one breaks its pickup.
+    #[test]
+    fn json_keeps_the_keys_the_app_reads() {
+        let on = optin(Some("opt_1"), true);
+        let doc = worker_status_json(WorkerState::of(&on, &here(true, false)), true, &on);
+        assert_eq!(doc["state"], "paused");
+        assert_eq!(doc["paused_here"], true);
+        assert_eq!(
+            doc["optin"]["vaults"],
+            serde_json::json!(["vlt_a", "vlt_b"])
+        );
+        assert_eq!(doc["optin"]["active"], true);
+    }
+
+    /// af reads `capabilities.worker_on` only when the opt-in key is bound.
+    #[test]
+    fn pickup_worker_status_advertises_worker_on_only_with_the_opt_in_key() {
+        let instance = "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09";
+        let mut on: Optin = serde_json::from_value(serde_json::json!({
+            "schema": "leanctx.engine_optin.v1",
+            "optin_id": "opt_1",
+            "active": false,
+            "vaults": ["0f3c2b6a8d4e4a7b9c105e2f6a7b8c01"],
+            "daily_budget": {"tasks": 3, "tokens": 1_000_000},
+            "used_today": {"day": "2026-11-24", "tasks": 0, "tokens": 0, "usd_micros": 0},
+        }))
+        .expect("opt-in fixture");
+        let plain = worker_status_json(WorkerState::of(&on, &here(false, false)), false, &on);
+        let without = with_worker_on(plain.clone(), false, instance, &on, None, &|_| None);
+        assert_eq!(without, plain);
+        assert!(without.get("capabilities").is_none());
+        let with = with_worker_on(
+            plain,
+            true,
+            instance,
+            &on,
+            Some("ffffffffffffffffffffffffffffffff".into()),
+            &|_| None,
+        );
+        assert_eq!(with["capabilities"], serde_json::json!({"worker_on": true}));
+        assert_eq!(with["instance_id"], instance);
+        assert_eq!(with["turn_on"]["body"]["prev_optin_id"], "opt_1");
+        assert_eq!(with["turn_on"]["domain"], "leanctx.cloud.optin.v1\n");
+        assert_eq!(
+            with["turn_on"]["body"]["vaults"],
+            serde_json::json!([
+                "0f3c2b6a8d4e4a7b9c105e2f6a7b8c01",
+                "ffffffffffffffffffffffffffffffff"
+            ])
+        );
+        on.vaults.clear();
+        let none = with_worker_on(serde_json::json!({}), true, instance, &on, None, &|_| None);
+        assert!(none["turn_on"].is_null());
     }
 }

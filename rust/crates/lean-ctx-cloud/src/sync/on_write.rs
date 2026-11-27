@@ -244,8 +244,13 @@ fn worker() {
     }
 }
 
-/// The vault bound to the checkout `root`, as this machine recorded it.
+/// The vault bound to the checkout `root`, as this machine recorded it;
+/// none for a folder the person stopped sharing (rc4-6), even when another
+/// checkout of the repository keeps the record (bd 39657).
 fn bound_record(store: &CloudStore, root: &Path) -> Option<VaultRecord> {
+    if crate::unlinked::contains(store.data_dir(), root) {
+        return None;
+    }
     let stable =
         lean_ctx_protocol::cloud::vault::stable_identity(&crate::vault::project_identity(root)?);
     crate::vault::VaultMap::load(store.data_dir())

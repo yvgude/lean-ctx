@@ -7,6 +7,16 @@
 //! answers with the task's state: a member agent's task is open at once
 //! (owners and maintainers may close it afterwards); a Cloud that still
 //! asks for approval answers `proposed`, and that is what is reported.
+//!
+//! A person's proposal from LeanCTX Code (rc4-67) goes the same way with
+//! origin `person`; only the app-only local routes queue one, never
+//! `ctx_tasks` or `lean-ctx cloud tasks propose`. Origin `person` is sent
+//! only signed by the app's task-propose key ([`prepare_person_task`] makes
+//! the exact bytes, the app signs them, [`enqueue_signed_person`] queues the
+//! request with that signature; this process never signs) and only to a
+//! Cloud that announces [`FEATURE_TASK_PERSON_ORIGIN`]. Any other person's
+//! proposal ([`propose_person_task`], an older Cloud) goes as an agent's, as
+//! before.
 
 use std::path::Path;
 
@@ -30,7 +40,16 @@ use lean_ctx_protocol::cloud::tasks::{
 pub enum ProposalKind {
     Agent,
     Contradiction,
+    /// The person this machine is linked to, from LeanCTX Code (rc4-67).
+    Person,
 }
+
+/// The `GET /v1/capabilities` feature of a Cloud that records an engine's
+/// proposal with origin `person` as the linked person's.
+pub const FEATURE_TASK_PERSON_ORIGIN: &str = "task_person_origin";
+
+/// The session label of a person's proposal: no agent session asked for it.
+const PERSON_SESSION_LABEL: &str = "leanctx-code";
 
 /// One queued proposal (the outbox payload).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +86,27 @@ pub struct QueuedProposal {
     /// kept the session id) is re-keyed before it is sent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ref_keyed: bool,
+    /// A person's proposal signed by LeanCTX Code's task-propose key
+    /// (rc4-67): sent with origin `person` only with this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed: Option<SignedPerson>,
+}
+
+/// What the app's signature on a person's proposal covers besides the body,
+/// and the signature itself (public: it proves nothing without the bound key
+/// the Cloud holds).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedPerson {
+    /// RFC 3339, whole seconds, `Z`: part of the signed body.
+    pub signed_at: String,
+    /// The vault the signature names (the path's id); a proposal whose
+    /// checkout now syncs elsewhere is never sent there.
+    pub vault_id: String,
+    /// The machine the signature names.
+    pub instance_id: String,
+    /// base64url Ed25519 over the signing input; empty while prepared.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub task_signature: String,
 }
 
 impl QueuedProposal {
@@ -77,6 +117,7 @@ impl QueuedProposal {
             kind: match self.kind {
                 ProposalKind::Agent => TaskOriginKind::Agent,
                 ProposalKind::Contradiction => TaskOriginKind::Contradiction,
+                ProposalKind::Person => TaskOriginKind::Person,
             },
             facts,
             message: None,
@@ -102,9 +143,27 @@ impl QueuedProposal {
             .unwrap_or_else(|| crate::knowledge::draft::session_ref("cloud-task-proposals"))
     }
 
-    /// The request in the clear (validated before it is queued and sent).
+    /// The request in the clear (validated before it is queued and sent): a
+    /// signed person's proposal with its `signed_at` and `task_signature`,
+    /// an unsigned one as an agent's.
     fn plain_request(&self) -> TaskProposeRequestV1 {
-        TaskProposeRequestV1 {
+        self.request_for(true)
+    }
+
+    /// The request without `task_signature`: the body the app's signature
+    /// covers (with `instance_id` and `vault_id`).
+    fn unsigned_body(&self) -> TaskProposeRequestV1 {
+        let mut request = self.request_for(true);
+        request.task_signature = None;
+        request
+    }
+
+    /// The request as sent: a person's origin only signed and only to a
+    /// Cloud that announced [`FEATURE_TASK_PERSON_ORIGIN`]; otherwise the
+    /// agent's origin it took before, without a signature (an older Cloud
+    /// refuses `person`, a newer one an unsigned `person`).
+    pub(crate) fn request_for(&self, person_origin: bool) -> TaskProposeRequestV1 {
+        let mut request = TaskProposeRequestV1 {
             schema: TASK_PROPOSE_SCHEMA.into(),
             title: Some(self.title.clone()),
             goal: self.goal.clone(),
@@ -112,7 +171,20 @@ impl QueuedProposal {
             role: self.role.clone(),
             origin: self.origin(),
             session_ref: self.session_ref(),
+            signed_at: None,
+            task_signature: None,
+        };
+        if request.origin.kind == TaskOriginKind::Person {
+            match (&self.signed, person_origin) {
+                (Some(signed), true) => {
+                    request.signed_at = Some(signed.signed_at.clone());
+                    request.task_signature =
+                        Some(signed.task_signature.clone()).filter(|s| !s.is_empty());
+                }
+                _ => request.origin.kind = TaskOriginKind::Agent,
+            }
         }
+        request
     }
 
     /// One proposal is one task, however often it is resent or requeued:
@@ -122,7 +194,7 @@ impl QueuedProposal {
     pub fn idempotency_key(&self) -> String {
         let origin = self.origin();
         let title = match self.kind {
-            ProposalKind::Agent => self.title.trim(),
+            ProposalKind::Agent | ProposalKind::Person => self.title.trim(),
             ProposalKind::Contradiction => "",
         };
         let mut text = format!(
@@ -155,6 +227,80 @@ fn checked(proposal: &QueuedProposal) -> Result<(), CloudError> {
     Ok(())
 }
 
+/// A person's proposal ready for the app to sign (rc4-67): the proposal as
+/// it will be queued, the exact body sent (without `task_signature`) and the
+/// bytes the app signs. Nothing is queued or signed here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedPerson {
+    pub proposal: QueuedProposal,
+    pub body: serde_json::Value,
+    pub signing_input: Vec<u8>,
+}
+
+/// Prepare the person's proposal for `project_root` in `vault_id` through
+/// `instance_id`, signed at `signed_at` (see [`PreparedPerson`]). Screened
+/// and validated as one that is sent.
+pub fn prepare_person_task(
+    data_dir: &Path,
+    project_root: &Path,
+    fields: &Fields<'_>,
+    instance_id: &str,
+    vault_id: &str,
+    signed_at: UtcDateTime,
+) -> Result<PreparedPerson, CloudError> {
+    let Some((instance_id, vault_id)) =
+        crate::consent::task_key::canonical_person_ids(instance_id, vault_id)
+    else {
+        return Err(CloudError::Local(
+            "this computer's or this project's Cloud id has an unexpected form".into(),
+        ));
+    };
+    let (instance_id, vault_id) = (instance_id.as_str(), vault_id.as_str());
+    let mut proposal = proposal_of(
+        data_dir,
+        project_root,
+        ProposalKind::Person,
+        fields,
+        PERSON_SESSION_LABEL,
+    )?;
+    proposal.signed = Some(SignedPerson {
+        signed_at: signed_at.to_rfc3339_opts(lean_ctx_time::SecondsFormat::Secs, true),
+        vault_id: vault_id.to_owned(),
+        instance_id: instance_id.to_owned(),
+        task_signature: String::new(),
+    });
+    screened(&[
+        ("title", Some(&proposal.title)),
+        ("goal", proposal.goal.as_deref()),
+        ("acceptance", Some(&proposal.acceptance)),
+    ])?;
+    let request = proposal.unsigned_body();
+    let signing_input =
+        crate::consent::task_key::person_task_signing_input(&request, instance_id, vault_id)
+            .map_err(CloudError::Local)?;
+    let body = serde_json::to_value(&request).map_err(|e| CloudError::Local(e.to_string()))?;
+    Ok(PreparedPerson {
+        proposal,
+        body,
+        signing_input,
+    })
+}
+
+/// Queue a prepared person's proposal with the app's `task_signature`
+/// (checked against the bound key by the caller); returns the outbox id.
+pub fn enqueue_signed_person(
+    data_dir: &Path,
+    prepared: &PreparedPerson,
+    task_signature: &str,
+) -> Result<String, CloudError> {
+    let mut proposal = prepared.proposal.clone();
+    let Some(signed) = proposal.signed.as_mut() else {
+        return Err(CloudError::Local("not a prepared person's proposal".into()));
+    };
+    task_signature.clone_into(&mut signed.task_signature);
+    enqueue(data_dir, &proposal)
+}
+
 /// Screen, validate and queue `proposal`; returns the outbox item id.
 pub fn enqueue(data_dir: &Path, proposal: &QueuedProposal) -> Result<String, CloudError> {
     checked(proposal)?;
@@ -175,7 +321,8 @@ pub fn propose_now(
     send(session, vault_id, proposal)
 }
 
-/// An agent task for the project at `project_root`.
+/// An agent task for the project at `project_root`: `ctx_tasks propose`,
+/// `lean-ctx cloud tasks propose` and imports. Always origin `agent`.
 pub fn propose_agent_task(
     data_dir: &Path,
     project_root: &Path,
@@ -185,32 +332,105 @@ pub fn propose_agent_task(
     role: Option<&str>,
     session_id: &str,
 ) -> Result<String, CloudError> {
+    let fields = Fields {
+        title,
+        goal,
+        acceptance,
+        role,
+    };
+    queue_task(
+        data_dir,
+        project_root,
+        ProposalKind::Agent,
+        &fields,
+        session_id,
+    )
+}
+
+/// A task the person this machine is linked to proposed in LeanCTX Code
+/// (rc4-67): origin `person`. Only the app-only local route calls it; the
+/// Cloud names the person from the machine's link, never from the request.
+pub fn propose_person_task(
+    data_dir: &Path,
+    project_root: &Path,
+    title: &str,
+    goal: Option<&str>,
+    acceptance: &str,
+    role: Option<&str>,
+) -> Result<String, CloudError> {
+    let fields = Fields {
+        title,
+        goal,
+        acceptance,
+        role,
+    };
+    queue_task(
+        data_dir,
+        project_root,
+        ProposalKind::Person,
+        &fields,
+        PERSON_SESSION_LABEL,
+    )
+}
+
+/// A proposal's words.
+pub struct Fields<'a> {
+    pub title: &'a str,
+    pub goal: Option<&'a str>,
+    pub acceptance: &'a str,
+    pub role: Option<&'a str>,
+}
+
+fn queue_task(
+    data_dir: &Path,
+    project_root: &Path,
+    kind: ProposalKind,
+    fields: &Fields<'_>,
+    session_id: &str,
+) -> Result<String, CloudError> {
+    enqueue(
+        data_dir,
+        &proposal_of(data_dir, project_root, kind, fields, session_id)?,
+    )
+}
+
+fn proposal_of(
+    data_dir: &Path,
+    project_root: &Path,
+    kind: ProposalKind,
+    fields: &Fields<'_>,
+    session_id: &str,
+) -> Result<QueuedProposal, CloudError> {
+    let Fields {
+        title,
+        goal,
+        acceptance,
+        role,
+    } = *fields;
     let identity = crate::vault::project_identity(project_root).ok_or_else(|| {
         CloudError::Config(
             "this repository has no identity LeanCTX Cloud can link to a vault (no git remote)"
                 .into(),
         )
     })?;
-    enqueue(
-        data_dir,
-        &QueuedProposal {
-            kind: ProposalKind::Agent,
-            stable_identity: lean_ctx_protocol::cloud::vault::stable_identity(&identity),
-            root: project_root.to_string_lossy().into_owned(),
-            facts: Vec::new(),
-            title: title.trim().to_owned(),
-            goal: goal
-                .map(str::trim)
-                .filter(|g| !g.is_empty())
-                .map(str::to_owned),
-            acceptance: acceptance.trim().to_owned(),
-            role: role.map(str::to_owned),
-            // Keyed for a label too; without the local key nothing is queued.
-            session_ref: Some(crate::session_ref::uploaded_ses_ref(data_dir, session_id)?),
-            local_number: None,
-            ref_keyed: true,
-        },
-    )
+    Ok(QueuedProposal {
+        kind,
+        stable_identity: lean_ctx_protocol::cloud::vault::stable_identity(&identity),
+        root: project_root.to_string_lossy().into_owned(),
+        facts: Vec::new(),
+        title: title.trim().to_owned(),
+        goal: goal
+            .map(str::trim)
+            .filter(|g| !g.is_empty())
+            .map(str::to_owned),
+        acceptance: acceptance.trim().to_owned(),
+        role: role.map(str::to_owned),
+        // Keyed for a label too; without the local key nothing is queued.
+        session_ref: Some(crate::session_ref::uploaded_ses_ref(data_dir, session_id)?),
+        local_number: None,
+        ref_keyed: true,
+        signed: None,
+    })
 }
 
 /// What one drain pass did.
@@ -234,7 +454,7 @@ pub enum Delivery {
     Failed(String),
 }
 
-const NO_PROPOSE_RIGHT: &str = "the LeanCTX Cloud lease does not allow task proposals";
+const NO_PROPOSE_RIGHT: &str = "your LeanCTX Cloud plan does not allow task proposals";
 
 fn deliver(
     session: &Session,
@@ -253,6 +473,13 @@ fn deliver(
         let _ = outbox.retry_later(&mut item, &error.to_string(), None, now);
         return Delivery::Waiting(error.to_string());
     }
+    // A folder the person stopped sharing sends nothing, not even through
+    // the record of another checkout; kept for a later `cloud link` (rc4-6).
+    if crate::unlinked::contains(session.store.data_dir(), Path::new(&proposal.root)) {
+        let reason = crate::unlinked::refusal(session.store.data_dir());
+        let _ = outbox.retry_later(&mut item, &reason, None, now);
+        return Delivery::Waiting(reason);
+    }
     // The checkout's current vault first: a proposal queued under an
     // identity the checkout left goes where the checkout syncs now.
     let Some(record) = map
@@ -263,6 +490,19 @@ fn deliver(
         let _ = outbox.retry_later(&mut item, reason, None, now);
         return Delivery::Waiting(reason.into());
     };
+    // A signature names its vault and machine: never sent elsewhere.
+    if let Some(signed) = &proposal.signed {
+        let now_ids = crate::consent::task_key::canonical_person_ids(
+            &session.instance.instance_id,
+            &record.vault_id,
+        );
+        let signed_ids = (signed.instance_id.clone(), signed.vault_id.clone());
+        if now_ids.as_ref() != Some(&signed_ids) {
+            let problem = "the project now syncs elsewhere; propose the task again in the app";
+            let _ = outbox.fail(&mut item, problem);
+            return Delivery::Failed(problem.into());
+        }
+    }
     match send(session, &record.vault_id, &proposal) {
         Ok((number, state)) => {
             let _ = outbox.remove(&item);
@@ -347,6 +587,26 @@ pub fn send_now(session: &Session, id: &str) -> Option<Delivery> {
     Some(deliver(session, &outbox, &map, item, UtcDateTime::now()))
 }
 
+/// [`send_now`] for a person's proposal (rc4-67): asks the Cloud first what
+/// it accepts (a failure keeps the last answer), so the answer says whether
+/// the Cloud records the task as the person's (`true`) or, an older Cloud,
+/// as an agent's.
+#[must_use]
+pub fn send_person_now(session: &Session, id: &str) -> (Option<Delivery>, bool) {
+    let person = person_origin_offered(session);
+    (send_now(session, id), person)
+}
+
+/// Whether the Cloud takes a person's origin: asked now (a failure keeps
+/// the last answer).
+#[must_use]
+pub fn person_origin_offered(session: &Session) -> bool {
+    let _ = session.with_client(|client| {
+        crate::session_ref::refresh(&session.store, &session.instance.url, client)
+    });
+    crate::session_ref::announced(&session.store, FEATURE_TASK_PERSON_ORIGIN)
+}
+
 /// The caller's line for what [`send_now`] did.
 #[must_use]
 pub fn delivery_line(delivery: Option<&Delivery>) -> String {
@@ -365,7 +625,8 @@ fn send(
     vault_id: &str,
     proposal: &QueuedProposal,
 ) -> Result<(u64, lean_ctx_protocol::cloud::tasks::TaskState), CloudError> {
-    let request = proposal.plain_request();
+    let person_origin = crate::session_ref::announced(&session.store, FEATURE_TASK_PERSON_ORIGIN);
+    let request = proposal.request_for(person_origin);
     let key = proposal.idempotency_key();
     let sent = session
         .with_client(|client| super::client::TasksApi { client, vault_id }.propose(&request, &key))
@@ -452,5 +713,199 @@ mod tests {
         assert!(reason.contains("not linked"), "{reason}");
         assert!(!reason.contains("receipts.hmac-key"), "{reason}");
         assert_eq!(outbox.list(CHANNEL_TASKS)[0].attempts, 2);
+    }
+
+    /// bd 39657 S-a: a proposal from a folder the person unlinked is not
+    /// sent through the record of its identity; it waits for a link.
+    #[test]
+    fn a_proposal_after_unlink_waits_and_is_not_sent() {
+        let (_dir, session) = crate::auth::fixture_session();
+        let data = session.store.data_dir().to_path_buf();
+        let root = tempfile::tempdir().unwrap();
+        let root_text = root.path().to_string_lossy().into_owned();
+        let stable = "a".repeat(64);
+        let outbox = Outbox::at(&data);
+        outbox
+            .enqueue(
+                CHANNEL_TASKS,
+                serde_json::json!({
+                    "kind": "agent",
+                    "stable_identity": stable,
+                    "root": root_text,
+                    "title": "Import the emspace pages",
+                    "acceptance": "Every page is a fact",
+                }),
+                UtcDateTime::now(),
+            )
+            .unwrap();
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            stable,
+            crate::vault::VaultRecord {
+                vault_id: "vlt_1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec!["/elsewhere/checkout".into()],
+            },
+        );
+        crate::unlinked::add(&data, root.path()).unwrap();
+
+        let item = outbox.list(CHANNEL_TASKS).remove(0);
+        let delivery = deliver(&session, &outbox, &map, item, UtcDateTime::now());
+        assert_eq!(delivery, Delivery::Waiting(crate::unlinked::REFUSAL.into()));
+        assert_eq!(outbox.list(CHANNEL_TASKS).len(), 1, "still queued");
+        assert_eq!(outbox.depth(CHANNEL_TASKS).failed, 0);
+    }
+
+    const INSTANCE: &str = "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c09";
+    const VAULT: &str = "9d2e4f6a1b3c4d5e8f7a6b5c4d3e2f1a";
+
+    /// A signed person's proposal for `vault`/`instance`, queued; the map
+    /// syncs its identity to `now_vault`.
+    fn queued_signed(
+        session: &Session,
+        vault: &str,
+        instance: &str,
+        now_vault: &str,
+    ) -> (Outbox, VaultMap) {
+        let proposal = QueuedProposal {
+            kind: ProposalKind::Person,
+            stable_identity: "b".repeat(64),
+            root: "/tmp/rc467-p".into(),
+            facts: Vec::new(),
+            title: "Show the retry budget in settings".into(),
+            goal: None,
+            acceptance: "The settings page names it".into(),
+            role: None,
+            session_ref: Some(PERSON_SESSION_LABEL.into()),
+            local_number: None,
+            ref_keyed: true,
+            signed: Some(SignedPerson {
+                signed_at: "2026-11-24T09:30:00Z".into(),
+                vault_id: vault.into(),
+                instance_id: instance.into(),
+                task_signature: "A".repeat(86),
+            }),
+        };
+        let outbox = Outbox::at(session.store.data_dir());
+        outbox
+            .enqueue(
+                CHANNEL_TASKS,
+                serde_json::to_value(&proposal).unwrap(),
+                UtcDateTime::now(),
+            )
+            .unwrap();
+        let mut map = VaultMap::default();
+        map.vaults.insert(
+            "b".repeat(64),
+            crate::vault::VaultRecord {
+                vault_id: now_vault.into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: Vec::new(),
+            },
+        );
+        (outbox, map)
+    }
+
+    /// rc4-67 (bd S3): a signature names its vault and machine. When the
+    /// project now syncs to another vault, or the machine is another one,
+    /// the proposal fails for good (never retried, never sent elsewhere),
+    /// before any request.
+    #[test]
+    fn a_signed_proposal_is_never_sent_to_another_vault_or_from_another_machine() {
+        let (_dir, mut session) = crate::auth::fixture_session();
+        // INSTANCE in upper case: the same machine.
+        session.instance.instance_id = INSTANCE.to_ascii_uppercase();
+        let other_vault = "0123456789abcdef0123456789abcdef";
+        let other_instance = "0a80ace1-52f1-49c2-85f7-6991bada0099";
+        for (vault, instance, now_vault) in [
+            (VAULT, INSTANCE, other_vault),
+            (VAULT, other_instance, VAULT),
+        ] {
+            let (outbox, map) = queued_signed(&session, vault, instance, now_vault);
+            let failed_before = outbox.failed(CHANNEL_TASKS).len();
+            let item = outbox.list(CHANNEL_TASKS).remove(0);
+            let delivery = deliver(&session, &outbox, &map, item, UtcDateTime::now());
+            let Delivery::Failed(problem) = &delivery else {
+                panic!("{delivery:?}");
+            };
+            assert!(problem.contains("syncs elsewhere"), "{problem}");
+            assert!(outbox.list(CHANNEL_TASKS).is_empty(), "not retried");
+            assert_eq!(outbox.failed(CHANNEL_TASKS).len(), failed_before + 1);
+        }
+    }
+
+    /// rc4-67 (bd S1): the ids are signed as the Cloud checks them.
+    #[test]
+    fn person_ids_are_signed_in_the_clouds_spelling() {
+        use crate::consent::task_key::canonical_person_ids;
+        let canonical = Some((INSTANCE.to_owned(), VAULT.to_owned()));
+        for instance in [INSTANCE, "3F1C2B6A-8D4E-4A7B-9C10-5E2F6A7B8C09"] {
+            assert_eq!(
+                canonical_person_ids(instance, VAULT),
+                canonical,
+                "{instance}"
+            );
+        }
+        assert_eq!(
+            canonical_person_ids(INSTANCE, &VAULT.to_ascii_uppercase()),
+            canonical
+        );
+        for (instance, vault) in [
+            ("inst-1", VAULT),
+            ("inst_01jb8z3k4m5n6p7q8r9s0t1v2w", VAULT),
+            ("inst_3f1c2b6a8d4e4a7b9c105e2f6a7b8c09", VAULT),
+            ("3f1c2b6a8d4e4a7b9c105e2f6a7b8c09", VAULT),
+            (INSTANCE, "p-1"),
+            (INSTANCE, "9d2e4f6a-1b3c-4d5e-8f7a-6b5c4d3e2f1a"),
+            (INSTANCE, ""),
+        ] {
+            assert_eq!(
+                canonical_person_ids(instance, vault),
+                None,
+                "{instance} {vault}"
+            );
+        }
+        // prepare refuses what it cannot sign so.
+        let (_dir, session) = crate::auth::fixture_session();
+        let fields = Fields {
+            title: "Show the retry budget in settings",
+            goal: None,
+            acceptance: "The settings page names it",
+            role: None,
+        };
+        let refused = prepare_person_task(
+            session.store.data_dir(),
+            Path::new("/tmp/rc467-p"),
+            &fields,
+            "inst-1",
+            VAULT,
+            UtcDateTime::now(),
+        );
+        assert!(refused.is_err());
+    }
+
+    /// rc4-67 (bd S3): the Cloud refusing a person's signature
+    /// (`person_unproven`, `signature_expired`) is final: neither transient
+    /// nor `Refused`, so `deliver()` fails it instead of retrying.
+    #[test]
+    fn an_unproven_or_expired_person_signature_is_never_retried() {
+        use crate::error::TaskRefusal;
+        for (reason, refusal) in [
+            ("person_unproven", TaskRefusal::PersonUnproven),
+            ("signature_expired", TaskRefusal::SignatureExpired),
+        ] {
+            let body = serde_json::json!({"error": {"code": "forbidden_right", "message": "x", "reason": reason}});
+            let error = CloudError::from_response(403, &body);
+            assert!(
+                matches!(&error, CloudError::Task { refusal: r, .. } if *r == refusal),
+                "{error:?}"
+            );
+            assert!(!error.is_transient(), "{reason}");
+            assert!(!matches!(error, CloudError::Refused(_)), "{reason}");
+        }
     }
 }
